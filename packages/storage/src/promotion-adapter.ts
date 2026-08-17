@@ -225,12 +225,17 @@ function messageContains(error: unknown, text: string): boolean {
 
 function parsePlacement(value: unknown): PromotionPlacement {
   const input = record(value, "promotion placement");
-  exact(input, ["accountId", "mailboxId", "uidValidity", "uid"], "promotion placement");
+  exact(
+    input,
+    ["accountId", "mailboxId", "uidValidity", "uid", "internalDate"],
+    "promotion placement",
+  );
   return {
     accountId: parseAccountId(input.accountId),
     mailboxId: parseMailboxId(input.mailboxId),
     uidValidity: uint32(input.uidValidity, "UIDVALIDITY"),
     uid: uint32(input.uid, "UID"),
+    internalDate: parseUtcInstant(input.internalDate),
   };
 }
 

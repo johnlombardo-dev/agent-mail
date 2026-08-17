@@ -27,6 +27,7 @@ import { messageCatalogMigration } from "../src/migrations/0001-message-catalog"
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
+import { placementObservationMigration } from "../src/migrations/0003-placement-observation";
 import {
   createSqlitePromotionAdapter,
   parsePromotionUnit,
@@ -61,10 +62,17 @@ const migrations = [
   { ...localLabelMigration, version: 4 },
   { ...routingDecisionMigration, version: 5 },
   { ...messageBlobReferencesMigration, version: 6 },
+  { ...placementObservationMigration, version: 7 },
 ] satisfies readonly Migration[];
 
 function fixture(messageId: MessageId, duplicatePlacement = false, uid = 11) {
-  const placement = { accountId, mailboxId, uidValidity: 7, uid };
+  const placement = {
+    accountId,
+    mailboxId,
+    uidValidity: 7,
+    uid,
+    internalDate: createUtcInstant("2026-08-18T00:00:00.000Z"),
+  };
   return {
     messageId,
     rawSource: { blobId: rawBlob, size: 512 },
@@ -171,7 +179,12 @@ function createMemoryAdapter(): ContractAdapter {
 function commit(unit: ReturnType<typeof parsePromotionUnit>, status: PromotionCommit["status"]): PromotionCommit {
   return {
     messageId: unit.messageId,
-    placementIds: unit.placements,
+    placementIds: unit.placements.map((placement) => ({
+      accountId: placement.accountId,
+      mailboxId: placement.mailboxId,
+      uidValidity: placement.uidValidity,
+      uid: placement.uid,
+    })),
     routingDecisionIds: unit.routingDecisions.map((routing) =>
       canonicalRoutingDecisionId(unit.messageId, routing.decision),
     ),
@@ -341,6 +354,21 @@ describe("promotion storage adapter contract P2-C20", () => {
     expect(Object.isFrozen(parsed)).toBe(true);
     expect(Object.isFrozen(parsed.placements)).toBe(true);
     expect(() => parsePromotionUnit({ ...value, unexpected: true })).toThrow(TypeError);
+    expect(() =>
+      parsePromotionUnit({
+        ...value,
+        placements: value.placements.map(({ internalDate: _internalDate, ...placement }) => placement),
+      }),
+    ).toThrow(TypeError);
+    expect(() =>
+      parsePromotionUnit({
+        ...value,
+        placements: value.placements.map((placement) => ({
+          ...placement,
+          internalDate: "not-an-instant",
+        })),
+      }),
+    ).toThrow(TypeError);
     const database = new Database(":memory:");
     try {
       const adapter = createSqlitePromotionAdapter(database);

@@ -27,6 +27,7 @@ import { structuredContentMigration } from "../src/migrations/0002-structured-co
 import { localLabelMigration } from "../src/local-label-migration";
 import { routingDecisionMigration } from "../src/routing-decision-migration";
 import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
+import { placementObservationMigration } from "../src/migrations/0003-placement-observation";
 import { canonicalRoutingDecisionId } from "../src/routing-decision-identity";
 import { persistRouteDecision } from "../src/local-label-assignment";
 
@@ -54,12 +55,21 @@ const migrations = [
   { ...localLabelMigration, version: 4 },
   { ...routingDecisionMigration, version: 5 },
   { ...messageBlobReferencesMigration, version: 6 },
+  { ...placementObservationMigration, version: 7 },
 ];
 
 const unit: PromotionUnit = {
   messageId,
   rawSource: { blobId: rawBlob, size: 512 },
-  placements: [{ accountId, mailboxId, uidValidity: 7, uid: 11 }],
+  placements: [
+    {
+      accountId,
+      mailboxId,
+      uidValidity: 7,
+      uid: 11,
+      internalDate: createUtcInstant("2026-08-18T00:00:00.000Z"),
+    },
+  ],
   headers: [
     {
       ordinal: 1,
@@ -209,7 +219,7 @@ describe("canonical promotion transaction P2-C13", () => {
     expect(promoteCanonicalMessage(opened.db, unit)).toEqual({ messageId, status: "committed" });
     await opened.close();
 
-    const reopened = await openDatabase(join(roots[0], "archive.sqlite"), { supportedSchemaVersion: 6 });
+    const reopened = await openDatabase(join(roots[0], "archive.sqlite"), { supportedSchemaVersion: 7 });
     applyMigrations(reopened, migrations);
     expect(readCanonicalPromotion(reopened.db, messageId)).toEqual({
       ...unit,

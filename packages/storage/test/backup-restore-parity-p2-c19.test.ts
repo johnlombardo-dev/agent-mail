@@ -41,6 +41,7 @@ import { identityOnlyContentMigration } from "../src/migrations/0002-identity-on
 import { localLabelMigration } from "../src/local-label-migration";
 import { routingDecisionMigration } from "../src/routing-decision-migration";
 import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
+import { placementObservationMigration } from "../src/migrations/0003-placement-observation";
 
 import comparisonFixture from "./fixtures/backup-restore-p2-c19-comparison.json";
 
@@ -53,7 +54,8 @@ const migrations: readonly Migration[] = [
   { ...localLabelMigration, version: 4 },
   { ...routingDecisionMigration, version: 5 },
   { ...messageBlobReferencesMigration, version: 6 },
-  { ...identityOnlyContentMigration, version: 7 },
+  { ...placementObservationMigration, version: 7 },
+  { ...identityOnlyContentMigration, version: 8 },
 ];
 
 type Fixture = Readonly<{
@@ -111,8 +113,20 @@ const canonicalUnit: PromotionUnit = {
     size: Buffer.byteLength(comparisonFixture.plainBody),
   },
   placements: [
-    { accountId, mailboxId, uidValidity, uid: liveUid },
-    { accountId, mailboxId, uidValidity, uid: tombstonedUid },
+    {
+      accountId,
+      mailboxId,
+      uidValidity,
+      uid: liveUid,
+      internalDate: createUtcInstant("2026-08-18T00:00:00.000Z"),
+    },
+    {
+      accountId,
+      mailboxId,
+      uidValidity,
+      uid: tombstonedUid,
+      internalDate: createUtcInstant("2026-08-18T00:00:00.000Z"),
+    },
   ],
   headers: [
     {

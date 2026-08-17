@@ -49,6 +49,7 @@ export type PromotionPlacement = Readonly<{
   readonly mailboxId: MailboxId;
   readonly uidValidity: number;
   readonly uid: number;
+  readonly internalDate: UtcInstant;
 }>;
 
 export type PromotionHeader = Readonly<{
@@ -215,13 +216,14 @@ export function promoteCanonicalMessage(
       write(
         "placement",
         "INSERT INTO remote_placements " +
-          "(account_id, mailbox_id, uid_validity, uid, message_id) VALUES (?, ?, ?, ?, ?);",
+          "(account_id, mailbox_id, uid_validity, uid, message_id, internal_date) VALUES (?, ?, ?, ?, ?, ?);",
         [
           placement.accountId,
           placement.mailboxId,
           placement.uidValidity,
           placement.uid,
           unit.messageId,
+          placement.internalDate,
         ],
       );
     }
@@ -473,7 +475,7 @@ function readPromotion(database: Database, messageId: MessageId): PromotionUnit 
 
   const placements = database
     .query(
-      "SELECT account_id, mailbox_id, uid_validity, uid FROM remote_placements " +
+      "SELECT account_id, mailbox_id, uid_validity, uid, internal_date FROM remote_placements " +
         "WHERE message_id = ? ORDER BY account_id, mailbox_id, uid_validity, uid;",
     )
     .all(messageId)
@@ -594,6 +596,7 @@ function decodePlacementRow(row: unknown): PromotionPlacement {
         decodeBoundedSafeInteger(input, { ...context, minimum: 1 }),
       ),
       uid: column((input, context) => decodeBoundedSafeInteger(input, { ...context, minimum: 1 })),
+      internal_date: column(decodeUtcMillisecondInstant),
     },
   });
   return {
@@ -601,6 +604,7 @@ function decodePlacementRow(row: unknown): PromotionPlacement {
     mailboxId: parseMailboxId(value.mailbox_id),
     uidValidity: numberValue(value.uid_validity),
     uid: numberValue(value.uid),
+    internalDate: parseUtcInstant(value.internal_date),
   };
 }
 

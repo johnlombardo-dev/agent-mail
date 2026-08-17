@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -12,6 +12,7 @@ import {
   createUtcInstant,
 } from "@agent-mail/core";
 import type { RawMessageDownloadRequest, RawMessageDownloadResult } from "../../imap/src/raw-download";
+import type { MetadataBatchItem } from "../../imap/src/metadata-batch";
 import { stageBlob } from "../../storage/src/blob-stage";
 import { applyMigrations } from "../../storage/src/migration-runner";
 import { openDatabase } from "../../storage/src/database";
@@ -22,6 +23,7 @@ import { structuredContentMigration } from "../../storage/src/migrations/0002-st
 import { localLabelMigration } from "../../storage/src/local-label-migration";
 import { routingDecisionMigration } from "../../storage/src/routing-decision-migration";
 import { messageBlobReferencesMigration } from "../../storage/src/migrations/0003-message-blob-references";
+import { placementObservationMigration } from "../../storage/src/migrations/0003-placement-observation";
 import { ingestSingleMessage, type RawMessageDownloadQueuePort } from "../src/single-message-ingestion";
 
 const roots: string[] = [];
@@ -35,6 +37,7 @@ const migrations = [
   { ...localLabelMigration, version: 4 },
   { ...routingDecisionMigration, version: 5 },
   { ...messageBlobReferencesMigration, version: 6 },
+  { ...placementObservationMigration, version: 7 },
 ] as const;
 
 const rawMessage = [
@@ -79,11 +82,15 @@ async function setup() {
   return { ...opened, root, stagingDirectory, canonicalDirectory, raw };
 }
 
-function queueFor(raw: RawMessageDownloadResult): RawMessageDownloadQueuePort {
+function queueFor(
+  raw: RawMessageDownloadResult,
+  onCall: () => void = () => {},
+): RawMessageDownloadQueuePort {
   let calls = 0;
   return {
     async download(request: RawMessageDownloadRequest): Promise<RawMessageDownloadResult> {
       calls += 1;
+      onCall();
       expect(calls).toBe(1);
       expect(request.accountId).toBe(accountId);
       return raw;
@@ -108,6 +115,15 @@ function routing() {
   ];
 }
 
+const metadata: MetadataBatchItem = {
+  identity,
+  flags: [],
+  modseq: { kind: "unknown" },
+  envelope: {},
+  size: Buffer.byteLength(rawMessage),
+  internalDate: createUtcInstant("2026-08-18T00:00:00.000Z"),
+};
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
@@ -117,12 +133,15 @@ describe("single-message parser-to-storage ingestion P3-C08", () => {
     const fixture = await setup();
     const result = await ingestSingleMessage(
       {
-        accountId,
-        mailboxId,
-        uidValidity: identity.uidValidity,
-        uid: identity.uid,
-        stagingDirectory: fixture.stagingDirectory,
-        owner: { pid: process.pid, processStartIdentity: "queue-owner" },
+        request: {
+          accountId,
+          mailboxId,
+          uidValidity: identity.uidValidity,
+          uid: identity.uid,
+          stagingDirectory: fixture.stagingDirectory,
+          owner: { pid: process.pid, processStartIdentity: "queue-owner" },
+        },
+        metadata,
       },
       {
         queue: queueFor({ identity, staged: fixture.raw }),
@@ -145,6 +164,11 @@ describe("single-message parser-to-storage ingestion P3-C08", () => {
     );
     expect(result.status).toBe("committed");
     expect(
+      fixture.db
+        .query("SELECT internal_date FROM remote_placements WHERE message_id = ?;")
+        .get(result.messageId),
+    ).toEqual({ internal_date: "2026-08-18T00:00:00.000Z" });
+    expect(
       fixture.db.query("SELECT kind, ordinal, size FROM message_blob_references ORDER BY kind, ordinal;").all(),
     ).toEqual([
       { kind: "attachment", ordinal: 1, size: 10 },
@@ -153,6 +177,129 @@ describe("single-message parser-to-storage ingestion P3-C08", () => {
     ]);
     expect(fixture.db.query("SELECT COUNT(*) AS count FROM messages;").get()).toEqual({ count: 1 });
     expect(fixture.db.query("SELECT COUNT(*) AS count FROM routing_decisions;").get()).toEqual({ count: 1 });
+    await fixture.close();
+  });
+
+  test("rejects malformed authoritative INTERNALDATE before queue side effects", async () => {
+    const fixture = await setup();
+    let queueCalls = 0;
+    const malformedMetadata = Object.assign({}, metadata, { internalDate: "not-an-instant" });
+    await expect(
+      ingestSingleMessage(
+        {
+          request: {
+            accountId,
+            mailboxId,
+            uidValidity: identity.uidValidity,
+            uid: identity.uid,
+            stagingDirectory: fixture.stagingDirectory,
+            owner: { pid: process.pid, processStartIdentity: "queue-owner" },
+          },
+          metadata: malformedMetadata,
+        },
+        {
+          queue: queueFor({ identity, staged: fixture.raw }, () => {
+            queueCalls += 1;
+          }),
+          promotion: createSqlitePromotionAdapter(fixture.db),
+          stagingDirectory: fixture.stagingDirectory,
+          canonicalDirectory: fixture.canonicalDirectory,
+          owner: { pid: process.pid, processStartIdentity: "part-owner" },
+          routing: routing(),
+          occurredAt: metadata.internalDate,
+          journal: () => {
+            throw new Error("journal must not be called");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(queueCalls).toBe(0);
+    expect(fixture.db.query("SELECT COUNT(*) AS count FROM messages;").get()).toEqual({ count: 0 });
+    await fixture.close();
+  });
+
+  test("rejects metadata/request identity mismatch before queue side effects", async () => {
+    const fixture = await setup();
+    let queueCalls = 0;
+    const otherIdentity = createRemoteUid({
+      accountId,
+      mailboxId: createMailboxId("mailbox:other"),
+      uidValidity: identity.uidValidity,
+      uid: identity.uid,
+    });
+    await expect(
+      ingestSingleMessage(
+        {
+          request: {
+            accountId,
+            mailboxId,
+            uidValidity: identity.uidValidity,
+            uid: identity.uid,
+            stagingDirectory: fixture.stagingDirectory,
+            owner: { pid: process.pid, processStartIdentity: "queue-owner" },
+          },
+          metadata: { ...metadata, identity: otherIdentity },
+        },
+        {
+          queue: queueFor({ identity, staged: fixture.raw }, () => {
+            queueCalls += 1;
+          }),
+          promotion: createSqlitePromotionAdapter(fixture.db),
+          stagingDirectory: fixture.stagingDirectory,
+          canonicalDirectory: fixture.canonicalDirectory,
+          owner: { pid: process.pid, processStartIdentity: "part-owner" },
+          routing: routing(),
+          occurredAt: metadata.internalDate,
+          journal: () => {
+            throw new Error("journal must not be called");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(queueCalls).toBe(0);
+    expect(fixture.db.query("SELECT COUNT(*) AS count FROM messages;").get()).toEqual({ count: 0 });
+    await fixture.close();
+  });
+
+  test("rejects metadata/download identity mismatch before blob or promotion side effects", async () => {
+    const fixture = await setup();
+    const downloadedIdentity = createRemoteUid({
+      accountId,
+      mailboxId,
+      uidValidity: identity.uidValidity,
+      uid: identity.uid + 1,
+    });
+    await expect(
+      ingestSingleMessage(
+        {
+          request: {
+            accountId,
+            mailboxId,
+            uidValidity: identity.uidValidity,
+            uid: identity.uid,
+            stagingDirectory: fixture.stagingDirectory,
+            owner: { pid: process.pid, processStartIdentity: "queue-owner" },
+          },
+          metadata,
+        },
+        {
+          queue: queueFor({ identity: downloadedIdentity, staged: fixture.raw }),
+          promotion: createSqlitePromotionAdapter(fixture.db),
+          stagingDirectory: fixture.stagingDirectory,
+          canonicalDirectory: fixture.canonicalDirectory,
+          owner: { pid: process.pid, processStartIdentity: "part-owner" },
+          routing: routing(),
+          occurredAt: metadata.internalDate,
+          journal: () => {
+            throw new Error("journal must not be called");
+          },
+        },
+      ),
+    ).rejects.toMatchObject({ code: "invalid-input" });
+    expect(await readdir(fixture.canonicalDirectory)).toEqual([]);
+    for (const table of ["messages", "remote_placements", "message_blob_references"]) {
+      expect(fixture.db.query(`SELECT COUNT(*) AS count FROM ${table};`).get()).toEqual({ count: 0 });
+    }
     await fixture.close();
   });
 
@@ -166,12 +313,15 @@ describe("single-message parser-to-storage ingestion P3-C08", () => {
     await expect(
       ingestSingleMessage(
         {
-          accountId,
-          mailboxId,
-          uidValidity: identity.uidValidity,
-          uid: identity.uid,
-          stagingDirectory: fixture.stagingDirectory,
-          owner: { pid: process.pid, processStartIdentity: "queue-owner" },
+          request: {
+            accountId,
+            mailboxId,
+            uidValidity: identity.uidValidity,
+            uid: identity.uid,
+            stagingDirectory: fixture.stagingDirectory,
+            owner: { pid: process.pid, processStartIdentity: "queue-owner" },
+          },
+          metadata,
         },
         {
           queue: queueFor({ identity, staged: fixture.raw }),

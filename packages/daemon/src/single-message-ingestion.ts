@@ -1,4 +1,12 @@
-import { createBlobId, createMessageId, type MessageId, type UtcInstant } from "@agent-mail/core";
+import {
+  createBlobId,
+  createMessageId,
+  createRemoteUid,
+  createUtcInstant,
+  type MessageId,
+  type RemoteUid,
+  type UtcInstant,
+} from "@agent-mail/core";
 import {
   parseStagedEml,
   type MimeAttachmentMetadata,
@@ -6,6 +14,7 @@ import {
   type MimeStreamPart,
   type ParsedStagedMime,
 } from "../../imap/src/mime-parser";
+import type { MetadataBatchItem } from "../../imap/src/metadata-batch";
 import type {
   RawMessageDownloadRequest,
   RawMessageDownloadResult,
@@ -45,12 +54,19 @@ export type RawMessageDownloadQueuePort = Readonly<{
   readonly download: (request: RawMessageDownloadRequest) => Promise<RawMessageDownloadResult>;
 }>;
 
+export type SingleMessageIngestionInput = Readonly<{
+  readonly request: RawMessageDownloadRequest;
+  /** The already parsed metadata row that authoritatively supplies INTERNALDATE. */
+  readonly metadata: MetadataBatchItem;
+}>;
+
 type DownloadedMessage = RawMessageDownloadResult;
 
 export type SingleMessageRoutingInput = Readonly<{
   readonly messageId: MessageId;
   readonly download: DownloadedMessage;
   readonly parsed: ParsedStagedMime;
+  readonly internalDate: UtcInstant;
   readonly bodyParts: readonly PromotionBodyPart[];
   readonly attachments: readonly PromotionAttachment[];
 }>;
@@ -84,10 +100,13 @@ type StagedPart = Readonly<{
  * routing all finish before the one caller-facing promotion invocation.
  */
 export async function ingestSingleMessage(
-  request: RawMessageDownloadRequest,
+  input: SingleMessageIngestionInput,
   dependencies: SingleMessageIngestionDependencies,
 ): Promise<PromotionCommit> {
-  const downloaded = await dependencies.queue.download(request);
+  const metadata = parseMetadataPlacement(input.metadata);
+  assertIdentityMatches(metadata.identity, input.request, "metadata/request identity");
+  const downloaded = await dependencies.queue.download(input.request);
+  assertIdentityMatches(metadata.identity, downloaded.identity, "metadata/download identity");
   const messageId = createMessageId(`message:${downloaded.staged.digest}`);
   const publishedParts: StagedPart[] = [];
   let partSequence = Promise.resolve();
@@ -141,6 +160,7 @@ export async function ingestSingleMessage(
       messageId,
       download: downloaded,
       parsed,
+      internalDate: metadata.internalDate,
       bodyParts,
       attachments,
     });
@@ -159,6 +179,7 @@ export async function ingestSingleMessage(
         mailboxId: downloaded.identity.mailboxId,
         uidValidity: downloaded.identity.uidValidity,
         uid: downloaded.identity.uid,
+        internalDate: metadata.internalDate,
       },
     ],
     headers: parsed.headers.map(headerFrom),
@@ -179,6 +200,43 @@ export async function ingestSingleMessage(
     throw new SingleMessageIngestionError("promotion-failed", "canonical promotion failed", {
       cause: error,
     });
+  }
+}
+
+function parseMetadataPlacement(value: MetadataBatchItem): Readonly<{
+  readonly identity: RemoteUid;
+  readonly internalDate: UtcInstant;
+}> {
+  try {
+    const identity = createRemoteUid(value.identity);
+    const internalDate = createUtcInstant(value.internalDate);
+    return { identity, internalDate };
+  } catch (error: unknown) {
+    throw new SingleMessageIngestionError(
+      "invalid-input",
+      "metadata placement identity or INTERNALDATE is invalid",
+      { cause: error },
+    );
+  }
+}
+
+function assertIdentityMatches(
+  expected: RemoteUid,
+  actual: Readonly<{
+    readonly accountId: unknown;
+    readonly mailboxId: unknown;
+    readonly uidValidity: unknown;
+    readonly uid: unknown;
+  }>,
+  name: string,
+): void {
+  if (
+    expected.accountId !== actual.accountId ||
+    expected.mailboxId !== actual.mailboxId ||
+    expected.uidValidity !== actual.uidValidity ||
+    expected.uid !== actual.uid
+  ) {
+    throw new SingleMessageIngestionError("invalid-input", `${name} does not match`);
   }
 }
 
