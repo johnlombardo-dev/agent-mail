@@ -1,0 +1,13 @@
+{
+  "identity": {
+    "accountId": "person@example.test",
+    "mailboxId": "INBOX",
+    "uidValidity": 77,
+    "uid": 42
+  },
+  "chunks": [
+    "UmF3IG1lc3NhZ2UgY2h1bmsgMQ0K",
+    "UmF3IG1lc3NhZ2UgY2h1bmsgMg0K",
+    "UmF3IG1lc3NhZ2UgY2h1bmsgMw=="
+  ]
+}
