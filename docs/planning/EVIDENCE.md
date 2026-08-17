@@ -1,0 +1,77 @@
+# Agent Mail planning evidence and defect traceability
+
+Status: planning controls and current repository, port, and dependency inputs verified; no implementation evidence attached.
+
+## Source interpretation
+
+The comparison session `01a00ade-55b1-7cb3-bfe4-5edf7baa5d85` and system-audit session `01a00b59-7554-7ef0-850d-6ae1fa44f27d` are evidence inputs. The audited source fingerprint is clean `agent-mail-sol-luna` `main` at `24bbd9da6824326dcb17ba8be523fe94ecfc954c`.
+
+The comparison's architecture findings remain useful. Its early release recommendation does not survive the later audit. The audit's demonstrated failures control this plan's regression and release gates. Neither session provides live iCloud, complete security-lane, or deployed-operations proof for this new workspace.
+
+## Current planning inputs
+
+| Input | Evidence observed on 2026-08-17 | Planning status or limit |
+|---|---|---|
+| Canonical GitHub repository | `gh repo view johnlombardo-dev/agent-mail` reports an empty repository with no default branch. | Available for first-party history; the local workspace is not yet initialized or linked. |
+| Prototype GitHub repository | `gh repo view johnlombardo-dev/agent-mail-proto` reports a non-empty `main`. | Former Sol-Luna remote; evidence only, never the delivery target. |
+| Hermes allocation | `ports show agent-mail --json` reports slug `agent-mail`, range `6110–6119`, display name “Agent Mail Canonical,” and base path `/Volumes/Jove/Developer/Projects/agent-mail-sol-luna`. | Range is authoritative and must not be reallocated; metadata correction remains pending. |
+| Package registry | Latest stable releases include Bun `1.3.14`, Vite+ `0.2.9`, ImapFlow `1.7.1`, MailParser `3.9.15`, Zod `4.4.3`, Hono `4.13.2`, XState `5.32.5`, and `sanitize-html` `2.17.7`. | Snapshot only; bootstrap and release recheck all direct packages. The prototype's `sanitize-html@2.17.0` is stale. |
+| Security review permission | User is applying for ChatGPT cybersecurity access. | Future prerequisite, not passing evidence. The full applicable security lane remains pending. |
+
+## Adopted and rejected prototype lessons
+
+| Area | Adopt | Reject or constrain |
+|---|---|---|
+| Skeleton | Sol's smaller, contract-driven mental model. | Sol's broad storage adapter, duplicate persistence types, and whole-pass result persistence. |
+| Domain | Sol's state-specific action-plan algebra and Sol-Luna's constructive ingestion/MIME states. | Status enums plus nullable fields that permit contradictory states. |
+| Contracts | Sol's shared daemon/CLI request and response schemas, moved into a transport-owned package. | Sol-Luna's hand-written CLI paths and unchecked success JSON; transport knowledge in core. |
+| Persistence | Sol-Luna's row parsing from `unknown`, numbered migrations, capability ownership, and per-target result records. | Trusting SQLite values, concentrated 1,000-line catalogs, or path existence as proof of blob validity. |
+| Lifecycle | Sol-Luna's awaited cleanup barrier with stricter single ownership. | Sol's unowned IDLE sweep and Sol-Luna states that name work performed elsewhere. |
+| Operations | Sol-Luna's user-facing README and reproducible Git history, delivered into the new canonical repository and existing Hermes range. | Command snapshot tests, fixed shared test ports, stale allocation metadata, or documentation that outruns runnable behavior. |
+
+## Finding ledger
+
+Status values begin as `specified`. During implementation, add the exact test or probe path and retained result before changing a row to `locally verified`, `live verified`, or `deployed verified`.
+
+| ID | Demonstrated weakness | Planned control | Faithful proof | Owner | Status |
+|---|---|---|---|---|---|
+| F01 | Completed backfills fail on the first non-empty periodic sweep. | Separate initial-backfill completion from reusable sweep checkpoints and transitions. | Complete backfill, add remote mail, run periodic sweep, and observe one durable ingestion. | Phase 3 | specified |
+| F02 | Future routing is committed outside message promotion. | Make promotion plus routing one transaction or durable outbox protocol. | Fail between every step, restart, and prove exactly one correct routing result. | Phases 2, 4 | specified |
+| F03 | The IDLE actor can remain healthy after its work stops. | Observe normal completion and failure; transition out of `watching`; restart under policy. | Production-shaped IDLE fake completes normally and errors; actor and API expose the new state. | Phase 3 | specified |
+| F04 | A successful remote effect followed by result-store failure is unrecoverable. | Persist per-target attempts and `uncertain`; reconcile remote state before retry. | Let IMAP succeed, fail SQLite result write, restart, reconcile, and avoid duplicate effect. | Phase 5 | specified |
+| F05 | A corrupt pre-existing content-addressed blob is accepted. | Verify digest and size before reuse; quarantine mismatch; atomically replace from valid stage. | Preseed corrupt destination and prove detection, repair, and correct final hash. | Phase 2 | specified |
+| F06 | Missing IMAP UIDNEXT becomes `1`. | Represent missing status as unknown and select an explicit safe rescan or fallback. | Omit UIDNEXT in a production-shaped result and prove no checkpoint regression or skipped mail. | Phase 3 | specified |
+| F07 | Backup omits raw and attachment blobs. | Manifest SQLite, raw EML, attachments, and required metadata; restore into an empty directory. | Destructive isolated restore reproduces search, raw, attachment, labels, routing, and action history hashes. | Phases 2, 7 | specified |
+| F08 | Routing previews are forgeable and replayable. | Persist canonical preview, targets, expiry, nonce, and digest; atomically consume once. | Tamper, extend expiry, recompute client data, and replay; every case is rejected. | Phase 4 | specified |
+| F09 | Bearer clients can impersonate the executor and resume expired plans. | Keep claim/resume/finalize behind an internal actor capability; public routes expose only user intent. | Enumerate routes/scopes and attempt executor calls and expired resume with every bearer scope. | Phases 5, 6 | specified |
+| F10 | A legal `\\Noselect` mailbox without UIDVALIDITY blocks discovery. | Skip non-selectable mailboxes before requiring selectable-mailbox status fields. | Discovery fixture begins with such a mailbox and still returns later selectable mailboxes. | Phase 3 | specified |
+| F11 | Sender preview and future routing use different semantics. | Share one normalized exact-sender predicate across preview, existing apply, and arrival. | Existing versus future routing matrix covers case, display-name, and address normalization. | Phase 4 | specified |
+| F12 | Local routing actions duplicate work per remote placement. | Define local routing targets by canonical message and remote actions by placement. | Multi-placement fixture produces one local transition and correctly scoped remote targets. | Phase 4 | specified |
+| F13 | JSONL export duplicates and misattributes action history. | Join history through explicit target identity and serialize each attributable event once. | Multi-message, multi-placement, partial-action export has exact non-duplicated attribution. | Phase 6 | specified |
+| F14 | Mailbox and flag filters include tombstoned placements. | Default active-placement filters exclude tombstones; expose history only explicitly. | Tombstoned fixtures do not match active mailbox or flag filters and remain available to history queries. | Phase 4 | specified |
+| F15 | Offset timestamps are compared lexicographically. | Parse and normalize timestamps to instants at the boundary. | Equivalent instants with different offsets sort and filter chronologically. | Phases 1, 4 | specified |
+| F16 | Unknown threads return HTTP 200 with an empty array. | Specify not-found versus empty semantics in storage, route, contract, and CLI. | Storage versus route matrix returns the shared 404/error envelope for an unknown thread. | Phases 1, 6 | specified |
+| F17 | The remote-action poller leaks abort listeners. | Use owned listener cleanup or one-shot signals on every settle or cancel path. | Repeated poll/cancel cycles keep listener counts and memory bounded. | Phases 3, 5 | specified |
+| F18 | Shutdown invokes cleanup twice and races itself. | Route all stops and restarts through one awaited idempotent barrier. | Concurrent stop, signal, failure, and restart calls close each resource once in order. | Phase 3 | specified |
+| F19 | Sync-control responses report success without observing the actor. | Acknowledge accepted events with observed state/version or return a conflict/failure. | Actor versus API matrix covers accepted, rejected, failed, cancelled, and completed controls. | Phases 1, 3, 6 | specified |
+| F20 | Production adapters prevent `authBlocked`. | Translate provider authentication failures to one typed boundary error consumed by the machine. | Production-shaped auth failure reaches `authBlocked` and blocks automatic retry until credentials change. | Phase 3 | specified |
+| F21 | Retained identity-only messages are redownloaded. | Reparse verified retained raw EML before any network fetch. | Restart with identity-only row and raw blob; normalization completes with zero IMAP body fetches. | Phases 2, 3 | specified |
+| F22 | Sparse UID mailboxes do work proportional to the highest UID. | Use server UID sets/ranges and bounded batches; never enumerate `1..maxUid`. | Sparse high-UID fixture stays under the stated round-trip and allocation ceiling. | Phase 3 | specified |
+| F23 | CLI streaming ignores backpressure and keeps a 30-second request timeout. | Await sink backpressure and separate connect/control deadlines from stream-idle policy. | Slow stdout and slow network consumers keep memory bounded and complete beyond 30 seconds when progressing. | Phase 6 | specified |
+| F24 | Doctor reports foreign-key violations as healthy and erases diagnoses. | Use `foreign_key_check`, preserve issue detail, and compute health from diagnoses. | Seeded violation appears through storage, API, and CLI as unhealthy with exact issue data. | Phase 7 | specified |
+| F25 | launchd uninstall leaves the plist behind. | Boot out the exact service, remove the exact installed plist, and verify both postconditions. | Isolated install/uninstall leaves neither loaded service nor plist. | Phase 7 | specified |
+| F26 | Tailscale setup is destructive and verifies the wrong state. | Change only the owned Serve entry, honor config path, disable owned Funnel state, and inspect exact config. | Fake-state and authorized live probes preserve unrelated services and verify the exact active entry. | Phase 7 | specified |
+| F27 | Successful routing apply prints `committed:false`. | Use the shared response schema and preserve server commit metadata through CLI rendering. | API versus CLI matrix observes `committed:true` for a successful apply. | Phases 1, 6 | specified |
+| F28 | Some invalid FTS expressions become HTTP 500. | Validate or translate the full user-query error class at the search boundary. | Invalid-expression corpus returns stable 400 errors without leaking SQLite internals. | Phases 4, 6 | specified |
+| F29 | The sweep journal grows without retention. | Define completion compaction, interrupted-run retention, and an explicit size or time ceiling. | Repeated success, failure, and restart cycles remain within the bound while preserving recovery evidence. | Phases 2, 3 | specified |
+| F30 | Selected export scans and serializes the entire archive. | Query selected identities directly and stream only selected records. | On 250,000 rows, selected-export work scales with selected IDs and meets the public-boundary budget. | Phase 6 | specified |
+
+## Review blind-spot controls
+
+| Escaped-bug cause | Planning response | Release evidence |
+|---|---|---|
+| Fakes weakened production invariants. | Reusable adapter contracts cover real shapes, optional fields, normal completion, errors, cancellation, ordering, and empty collections. | The same contract suite passes against fakes and safe production adapters or installed-SDK probes. |
+| Components were tested separately. | Require promotion plus routing, IMAP effect plus durable result, runtime API plus XState, and backup plus full restore. | Each composed seam has failure injection and restart convergence evidence. |
+| Duplicated paths lacked parity matrices. | Maintain existing versus future routing, API versus CLI, storage versus route, and actor versus API matrices. | Every row is executable and retained in the release evidence index. |
+| Performance gates covered the wrong boundaries. | Add sparse UID, selected export, slow stdout/network, whole-response timeout, journal retention, FTS, and MIME RSS gates. | Raw measurements, fixtures, hardware/runtime fingerprint, and thresholds are retained. |
+| Tests asserted implementation snapshots. | Assert observable postconditions such as restored content, absent plist, diagnosed violations, verified blob, or rejected replay. | Release evidence names the user-visible outcome, not only internal calls or command lists. |

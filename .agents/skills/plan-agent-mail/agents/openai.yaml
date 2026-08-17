@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Mail plan gates"
+  short_description: "Qualify the Agent Mail plan against F01-F30"
+  default_prompt: "Use $plan-agent-mail to qualify this Agent Mail planning pack against its project-specific evidence gates."
