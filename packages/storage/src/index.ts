@@ -16,6 +16,8 @@ export * from "./remote-placement-observation";
 export * from "./offline-root-replacement";
 export * from "./promotion-adapter";
 export * from "./search-projection";
+export * from "./routing-decision-origin";
+export * from "./routing-decision-origin-migration";
 export * from "./search-cursor";
 export * from "./search-reindex";
 

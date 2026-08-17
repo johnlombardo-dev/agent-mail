@@ -15,6 +15,7 @@ import {
   type UtcInstant,
 } from "@agent-mail/core";
 import { canonicalRoutingDecisionId } from "./routing-decision-identity";
+import { parseRoutingDecisionOrigin, type RoutingDecisionOrigin } from "./routing-decision-origin";
 import {
   decodeBoundedSafeInteger,
   decodeCanonicalIdentifier,
@@ -92,6 +93,8 @@ export type PromotionAttachment = Readonly<{
 export type PromotionRoutingDecision = Readonly<{
   readonly decisionId: string;
   readonly decision: RoutingDecision;
+  /** Non-identity caller observations persisted beside the canonical decision. */
+  readonly origins?: readonly RoutingDecisionOrigin[];
 }>;
 
 export type PromotionJournalEvent = Readonly<{
@@ -113,6 +116,7 @@ export type PromotionWriteBoundary =
   | "attachment"
   | "blob-reference"
   | "routing-decision"
+  | "routing-origin"
   | "local-label"
   | "local-label-assignment"
   | "journal";
@@ -165,6 +169,10 @@ export function promoteCanonicalMessage(
           "conflicting-identity",
           "canonical message identity already has different promotion content",
         );
+      }
+      const write = createWriter(database, options.beforeWrite);
+      for (const routing of unit.routingDecisions) {
+        writeRoutingOrigins(write, unit.messageId, routing);
       }
       database.exec("COMMIT;");
       return { messageId: unit.messageId, status: "duplicate" };
@@ -335,6 +343,7 @@ export function promoteCanonicalMessage(
           ],
         );
       }
+      writeRoutingOrigins(write, unit.messageId, routing);
     }
     write(
       "journal",
@@ -369,6 +378,23 @@ export function promoteCanonicalMessage(
     throw new CanonicalPromotionError("write-failed", "canonical promotion transaction failed", {
       cause: error,
     });
+  }
+}
+
+function writeRoutingOrigins(
+  write: ReturnType<typeof createWriter>,
+  messageId: MessageId,
+  routing: PromotionRoutingDecision,
+): void {
+  const decisionId = canonicalRoutingDecisionId(messageId, routing.decision);
+  for (const origin of routing.origins ?? []) {
+    write(
+      "routing-origin",
+      "INSERT INTO routing_decision_origins " +
+        "(decision_id, caller_source, observed_at, evaluation_id) VALUES (?, ?, ?, ?) " +
+        "ON CONFLICT(decision_id, caller_source) DO NOTHING;",
+      [decisionId, origin.callerSource, origin.observedAt, origin.evaluationId],
+    );
   }
 }
 
@@ -515,7 +541,23 @@ function readPromotion(database: Database, messageId: MessageId): PromotionUnit 
         "WHERE message_id = ? ORDER BY decision_id;",
     )
     .all(messageId)
-    .map((row: unknown) => decodeRoutingRow(row));
+    .map((row: unknown) => {
+      const routing = decodeRoutingRow(row);
+      const originTable: unknown = database
+        .query(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'routing_decision_origins';",
+        )
+        .get();
+      if (originTable === null) return routing;
+      const origins = database
+        .query(
+          "SELECT caller_source, observed_at, evaluation_id FROM routing_decision_origins " +
+            "WHERE decision_id = ? ORDER BY caller_source;",
+        )
+        .all(routing.decisionId)
+        .map((origin: unknown) => decodeRoutingOriginRow(origin));
+      return origins.length === 0 ? routing : { ...routing, origins };
+    });
   const journalRows = database
     .query(
       "SELECT id, occurred_at, category, subject_id, correlation_id, payload_version, payload_json " +
@@ -773,6 +815,28 @@ function decodeRoutingRow(row: unknown): PromotionRoutingDecision {
     decisionId,
     decision,
   };
+}
+
+function decodeRoutingOriginRow(row: unknown): RoutingDecisionOrigin {
+  const value = decodeSqliteRow({
+    table: "routing_decision_origins",
+    row,
+    columns: {
+      caller_source: column((input) => {
+        if (input !== "direct-ingestion" && input !== "recurring-sweep") {
+          throw new TypeError("invalid routing origin caller source");
+        }
+        return input;
+      }),
+      observed_at: column(decodeUtcMillisecondInstant),
+      evaluation_id: column(textDecoder),
+    },
+  });
+  return parseRoutingDecisionOrigin({
+    callerSource: value.caller_source,
+    observedAt: value.observed_at,
+    evaluationId: value.evaluation_id,
+  });
 }
 
 function decodeJournalRow(row: unknown): PromotionJournalEvent {

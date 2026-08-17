@@ -30,6 +30,7 @@ import type {
 } from "../../storage/src/canonical-promotion";
 import { promoteBlob } from "../../storage/src/blob-promotion";
 import { stageBlob, type BlobStageOwner } from "../../storage/src/blob-stage";
+import type { RoutingCaller } from "./routing-caller-adapter";
 
 /** Stable failure surface for the one-message composition boundary. */
 export type SingleMessageIngestionErrorCode =
@@ -67,8 +68,10 @@ export type SingleMessageRoutingInput = Readonly<{
   readonly download: DownloadedMessage;
   readonly parsed: ParsedStagedMime;
   readonly internalDate: UtcInstant;
+  readonly occurredAt: UtcInstant;
   readonly bodyParts: readonly PromotionBodyPart[];
   readonly attachments: readonly PromotionAttachment[];
+  readonly caller: RoutingCaller;
 }>;
 
 export type SingleMessageIngestionDependencies = Readonly<{
@@ -78,6 +81,8 @@ export type SingleMessageIngestionDependencies = Readonly<{
   readonly canonicalDirectory: string;
   readonly owner: BlobStageOwner;
   readonly routing: (input: SingleMessageRoutingInput) => readonly PromotionRoutingDecision[];
+  /** Caller metadata is set by the bound direct/sweep factories. */
+  readonly caller?: RoutingCaller;
   readonly journal: (
     input: Readonly<{
       readonly messageId: MessageId;
@@ -161,8 +166,10 @@ export async function ingestSingleMessage(
       download: downloaded,
       parsed,
       internalDate: metadata.internalDate,
+      occurredAt: dependencies.occurredAt,
       bodyParts,
       attachments,
+      caller: dependencies.caller ?? "direct-ingestion",
     });
   } catch (error: unknown) {
     throw new SingleMessageIngestionError("routing-failed", "routing input construction failed", {
@@ -201,6 +208,18 @@ export async function ingestSingleMessage(
       cause: error,
     });
   }
+}
+
+export type BoundSingleMessageIngestionCaller = (
+  input: SingleMessageIngestionInput,
+) => Promise<PromotionCommit>;
+
+/** Close one complete ingestion dependency set over a caller-specific marker. */
+export function createBoundSingleMessageIngestionCaller(
+  dependencies: SingleMessageIngestionDependencies,
+  caller: RoutingCaller,
+): BoundSingleMessageIngestionCaller {
+  return (input) => ingestSingleMessage(input, { ...dependencies, caller });
 }
 
 function parseMetadataPlacement(value: MetadataBatchItem): Readonly<{

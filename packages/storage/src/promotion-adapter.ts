@@ -28,6 +28,7 @@ import {
   type PromoteCanonicalMessageOptions,
 } from "./canonical-promotion";
 import { canonicalRoutingDecisionId } from "./routing-decision-identity";
+import { parseRoutingDecisionOrigin } from "./routing-decision-origin";
 
 /** The only caller-facing operation for canonical promotion. */
 export interface PromotionStoragePort {
@@ -362,10 +363,21 @@ function parseCanonicalBlobId(value: unknown): BlobId {
 
 function parseRouting(value: unknown): PromotionRoutingDecision {
   const input = record(value, "promotion routing decision");
-  exact(input, ["decisionId", "decision"], "promotion routing decision");
+  const keys = Object.keys(input);
+  if (
+    !keys.includes("decisionId") ||
+    !keys.includes("decision") ||
+    keys.some((key) => key !== "decisionId" && key !== "decision" && key !== "origins")
+  ) {
+    throw new TypeError("promotion routing decision has missing or unknown fields");
+  }
   return {
     decisionId: boundedText(input.decisionId, "routing decision ID", 200),
     decision: parseDecision(input.decision),
+    origins:
+      input.origins === undefined
+        ? undefined
+        : array(input.origins, "routing decision origins").map(parseRoutingDecisionOrigin),
   };
 }
 

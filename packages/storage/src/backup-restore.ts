@@ -424,14 +424,10 @@ async function makeStage(parent: string): Promise<string> {
 
 async function ensureDirectory(root: string, path: string): Promise<void> {
   const remainder = relative(root, path);
-  if (
-    remainder === "" ||
-    remainder === ".." ||
-    remainder.startsWith("../") ||
-    isAbsolute(remainder)
-  ) {
+  if (remainder === ".." || remainder.startsWith("../") || isAbsolute(remainder)) {
     fail("unsafe-path", "restore path escaped its destination", path);
   }
+  if (remainder === "") return;
   let current = root;
   for (const segment of remainder.split("/")) {
     current = join(current, segment);

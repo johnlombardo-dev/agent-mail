@@ -22,6 +22,11 @@ import type {
   InitialBackfillCompletionRepository,
 } from "./initial-backfill-loop";
 import type { MailboxCheckpoint } from "../../storage/src/checkpoint-repository";
+import {
+  createBoundSingleMessageIngestionCaller,
+  type BoundSingleMessageIngestionCaller,
+  type SingleMessageIngestionDependencies,
+} from "./single-message-ingestion";
 
 /** The actor identity that is allowed to perform one sweep invocation. */
 export type RecurringSweepActor = Readonly<{ readonly id: string }>;
@@ -70,6 +75,16 @@ export type RecurringSweepDependencies = Readonly<{
   readonly ownsActor: (identity: RecurringSweepIdentity, actor: RecurringSweepActor) => boolean;
   readonly signal?: AbortSignal;
 }>;
+
+/**
+ * Bind the same full MIME ingestion and promotion composition used directly
+ * by callers to the recurring sweep's batch injection point.
+ */
+export function createRecurringSweepIngestionCaller(
+  dependencies: SingleMessageIngestionDependencies,
+): BoundSingleMessageIngestionCaller {
+  return createBoundSingleMessageIngestionCaller(dependencies, "recurring-sweep");
+}
 
 export type RecurringMailboxSweepResult = Readonly<{
   readonly status: "completed" | "not-eligible" | "not-owner" | "cancelled";
