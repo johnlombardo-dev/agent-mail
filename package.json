@@ -1,20 +1,20 @@
 {
   "name": "agent-mail",
   "private": true,
-  "packageManager": "bun@1.3.14",
-  "engines": {
-    "bun": "1.3.14"
-  },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "format": "vp fmt --write",
     "format:check": "vp fmt --check",
-    "lint": "vp lint --fix",
-    "lint:check": "vp lint",
+    "lint": "bun run boundary:check && vp lint --fix packages/*/src boundary.config.ts",
+    "lint:check": "bun run boundary:check && vp lint packages/*/src boundary.config.ts",
     "typecheck": "vp check --no-fmt --no-lint",
     "test": "vp test run",
     "audit": "bun audit",
     "outdated": "vp outdated --recursive",
-    "build": "vp build",
+    "build": "vp run -r build",
+    "boundary:check": "bun run boundary.config.ts",
     "check:exact-versions": "bun -e 'const p=JSON.parse(await Bun.file(\"package.json\").text()); const d=Object.entries({...p.dependencies,...p.devDependencies}); const bad=d.filter(([,v])=>!/^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$/.test(v)); if(bad.length){console.error(\"Non-exact dependency versions:\",bad.map(([n,v])=>n+\"@\"+v).join(\", \")); process.exit(1)}'",
     "ready": "bun run format:check && bun run lint:check && bun run typecheck && bun run test && bun run audit && bun run outdated && bun run check:exact-versions && bun run build"
   },
@@ -34,5 +34,9 @@
     "@types/sanitize-html": "2.16.1",
     "bun": "1.3.14",
     "vite-plus": "0.2.9"
-  }
+  },
+  "engines": {
+    "bun": "1.3.14"
+  },
+  "packageManager": "bun@1.3.14"
 }

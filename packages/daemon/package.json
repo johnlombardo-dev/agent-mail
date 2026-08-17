@@ -1,0 +1,15 @@
+{
+  "name": "@agent-mail/daemon",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target bun"
+  },
+  "dependencies": {
+    "@agent-mail/contracts": "workspace:*",
+    "@agent-mail/core": "workspace:*",
+    "@agent-mail/imap": "workspace:*",
+    "@agent-mail/storage": "workspace:*",
+    "@agent-mail/workflow": "workspace:*"
+  }
+}

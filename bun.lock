@@ -22,8 +22,73 @@
         "vite-plus": "0.2.9",
       },
     },
+    "packages/cli": {
+      "name": "@agent-mail/cli",
+      "dependencies": {
+        "@agent-mail/contracts": "workspace:*",
+      },
+    },
+    "packages/contracts": {
+      "name": "@agent-mail/contracts",
+    },
+    "packages/core": {
+      "name": "@agent-mail/core",
+    },
+    "packages/daemon": {
+      "name": "@agent-mail/daemon",
+      "dependencies": {
+        "@agent-mail/contracts": "workspace:*",
+        "@agent-mail/core": "workspace:*",
+        "@agent-mail/imap": "workspace:*",
+        "@agent-mail/storage": "workspace:*",
+        "@agent-mail/workflow": "workspace:*",
+      },
+    },
+    "packages/imap": {
+      "name": "@agent-mail/imap",
+      "dependencies": {
+        "@agent-mail/core": "workspace:*",
+      },
+    },
+    "packages/skill": {
+      "name": "@agent-mail/skill",
+      "dependencies": {
+        "@agent-mail/contracts": "workspace:*",
+      },
+    },
+    "packages/storage": {
+      "name": "@agent-mail/storage",
+      "dependencies": {
+        "@agent-mail/core": "workspace:*",
+      },
+    },
+    "packages/workflow": {
+      "name": "@agent-mail/workflow",
+      "dependencies": {
+        "@agent-mail/contracts": "workspace:*",
+        "@agent-mail/core": "workspace:*",
+        "@agent-mail/imap": "workspace:*",
+        "@agent-mail/storage": "workspace:*",
+      },
+    },
   },
   "packages": {
+    "@agent-mail/cli": ["@agent-mail/cli@workspace:packages/cli"],
+
+    "@agent-mail/contracts": ["@agent-mail/contracts@workspace:packages/contracts"],
+
+    "@agent-mail/core": ["@agent-mail/core@workspace:packages/core"],
+
+    "@agent-mail/daemon": ["@agent-mail/daemon@workspace:packages/daemon"],
+
+    "@agent-mail/imap": ["@agent-mail/imap@workspace:packages/imap"],
+
+    "@agent-mail/skill": ["@agent-mail/skill@workspace:packages/skill"],
+
+    "@agent-mail/storage": ["@agent-mail/storage@workspace:packages/storage"],
+
+    "@agent-mail/workflow": ["@agent-mail/workflow@workspace:packages/workflow"],
+
     "@asteasolutions/zod-to-openapi": ["@asteasolutions/zod-to-openapi@9.1.0", "", { "dependencies": { "openapi3-ts": "^4.6.0" }, "peerDependencies": { "zod": "^4.0.0" } }, "sha512-pLMeRgRYS7/vZIgAAkOe2P6+XGTifR1MT9pqDoxZ11EmcJJ+DPmdPqLN8ZZF4U8R9KHCCQCS9c2wtuE8wSrfkw=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.29.7", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.29.7", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="],
