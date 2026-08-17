@@ -1,0 +1,3585 @@
+{
+  "format": "agent-mail.sync-statechart/v1",
+  "schemaVersion": 1,
+  "modelVersion": "1.0.0-candidate.1",
+  "status": "candidate-for-independent-review",
+  "oracle": {
+    "normative": true,
+    "description": "This file is the single normative lifecycle oracle. The accompanying Markdown files are checked views and rationale, not a second model.",
+    "transitionExpansion": "A transition whose source is an array expands to one identical transition per listed atomic source configuration. @source in stoppedActors expands to the invokedActors of that source. @target in startedActors expands to the invokedActors of the target.",
+    "eventSelection": "For one dequeued event, evaluate transitions from the active atomic state in listed priority order. Take the first transition whose guards all pass. If no state transition passes, apply globalEventPolicy.",
+    "actionOrder": "Actions execute in listed order. Actor exit cancellation occurs after source exit begins and before target invokes start; cleanupBarrier observes the same resource-registry release promises.",
+    "versionRule": "Only advanceVersion changes context.version. Ignored, stale, duplicate, rejected, and idempotent no-op events leave version and durable facts unchanged. A new process incarnation may begin at version zero.",
+    "terminalActorRule": "Every actor terminal event is emitted only after that actor has released its own listener, timer, stream, socket, and subscription handles. cleanupBarrier settles only after the ownership registry reports zero resources in its scope."
+  },
+  "frozenInputs": [
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "sha256": "a4b2c93d9ae47369e6893be0a7eace854fce9dccda14bd0d138d9c98b63a2afc"
+    },
+    {
+      "id": "EVIDENCE",
+      "path": "docs/planning/EVIDENCE.md",
+      "sha256": "544c1ee220e13b96dc88aa71096701a3887fb1adba22e9b8d60a244533f50cc9"
+    },
+    {
+      "id": "P1-C08",
+      "path": "packages/contracts/src/sync-operations.ts",
+      "gitCommit": "13e036049099241d68b724639c467d9ae8e4424a",
+      "sha256": "8a111237bdb7796f00e775cdd1e07c65cce4d30fd2b984ed1278b2efaeceb3c8"
+    },
+    {
+      "id": "P3-C10",
+      "path": "packages/daemon/src/initial-backfill-loop.ts",
+      "gitCommit": "b6d07bc56e775cc7aea4b9436b81532bba7c4e9a",
+      "sha256": "89b3eee13a5846be92b16d2e657c197f1d4ee0e5ee90fca0d0a2a542d57692e8"
+    },
+    {
+      "id": "P3-C11",
+      "path": "packages/daemon/src/recurring-mailbox-sweep.ts",
+      "gitCommit": "d5107472ffae6f5eb4deb8b87365ffda40fe30d3",
+      "sha256": "506f9dc2dff6affc311f1143a1f5d901f53bc5157836338c497a43332ec5db7f"
+    }
+  ],
+  "machine": {
+    "id": "syncLifecycle",
+    "initial": "stopped.clean",
+    "kind": "xstate-v5-hierarchical",
+    "oneLifecycleTruth": "The active atomic state configuration is the only lifecycle mode. Context contains no mode, paused, stopped, watching, retrying, or failed boolean.",
+    "snapshotPersistence": "none",
+    "restartRule": "A reconstructed actor starts at stopped.clean, reads validated durable facts only when explicitly started, and never hydrates an old XState snapshot or resurrects an old child actor."
+  },
+  "configuration": [
+    {
+      "id": "retryBaseMs",
+      "type": "positive-safe-integer",
+      "required": true
+    },
+    {
+      "id": "retryCapMs",
+      "type": "positive-safe-integer",
+      "required": true,
+      "constraint": "retryCapMs >= retryBaseMs"
+    },
+    {
+      "id": "retryJitterRatio",
+      "type": "number",
+      "required": true,
+      "constraint": "0 <= retryJitterRatio <= 1"
+    },
+    {
+      "id": "maxRetryAttempts",
+      "type": "positive-safe-integer",
+      "required": true
+    },
+    {
+      "id": "periodicStatusIntervalMs",
+      "type": "positive-safe-integer",
+      "required": true,
+      "constraint": "periodicStatusIntervalMs <= 900000"
+    }
+  ],
+  "context": [
+    {
+      "id": "incarnationId",
+      "type": "opaque-nonempty-string",
+      "persistence": "ephemeral",
+      "writer": "actor-constructor",
+      "purpose": "Disambiguates inspection and control waiters across process reconstruction; it is not in the accepted public response schema."
+    },
+    {
+      "id": "version",
+      "type": "nonnegative-safe-integer",
+      "persistence": "ephemeral",
+      "writer": "advanceVersion",
+      "purpose": "Monotonic observed snapshot version within one incarnation."
+    },
+    {
+      "id": "scopeEpoch",
+      "type": "nonnegative-safe-integer",
+      "persistence": "ephemeral",
+      "writer": "beginEffectScope",
+      "purpose": "Correlates callback-actor events and rejects late events from exited scopes."
+    },
+    {
+      "id": "idleReadyEpoch",
+      "type": "nonnegative-safe-integer|null",
+      "persistence": "ephemeral",
+      "writer": "markIdleReadyObserved",
+      "purpose": "Records that idle.ready was admitted once in the current effect scope; it is event-deduplication metadata, not lifecycle mode."
+    },
+    {
+      "id": "retryAttempt",
+      "type": "nonnegative-safe-integer",
+      "persistence": "ephemeral",
+      "writer": "recordTransientFault|resetRetryHistory",
+      "purpose": "Input to the bounded retry-delay calculation; never duplicates retryWaiting mode."
+    },
+    {
+      "id": "checkpoint",
+      "type": "SyncCheckpointSummary",
+      "persistence": "durable-projection-cache",
+      "writer": "adoptCommittedCheckpoint",
+      "purpose": "Validated projection of committed mailbox facts for status; the repositories remain authoritative."
+    },
+    {
+      "id": "authBlockedDetail",
+      "type": "SyncAuthBlockedDetail|null",
+      "persistence": "ephemeral",
+      "writer": "recordAuthBlock|clearAuthBlock",
+      "purpose": "Safe detail retained only while authBlocked is the active or pending target; the public projection exposes it only in authBlocked."
+    },
+    {
+      "id": "diagnostics",
+      "type": "SyncDiagnostic[0..32]",
+      "persistence": "ephemeral",
+      "writer": "recordTransientFault|recordFatalFault|appendCleanupDiagnostics",
+      "purpose": "Bounded safe diagnostics; raw provider errors and credentials are forbidden."
+    }
+  ],
+  "durableFacts": [
+    {
+      "id": "mailboxCheckpoint",
+      "fields": [
+        "accountId",
+        "mailboxId",
+        "uidValidity",
+        "uidNextKnown",
+        "uidNext",
+        "highestModseqKnown",
+        "highestModseq",
+        "sweepCursor",
+        "backfillCompleted",
+        "observedVersion"
+      ],
+      "owner": "checkpoint repository",
+      "restartUse": "starting reads it to choose bounded backfill or watch work"
+    },
+    {
+      "id": "initialBackfillCompletion",
+      "fields": [
+        "observedUidCeiling",
+        "observedUidNext",
+        "observedAt",
+        "nextSweepEligibleAt"
+      ],
+      "owner": "initial-backfill completion repository",
+      "restartUse": "proves initial completion without suppressing recurring sweeps"
+    },
+    {
+      "id": "recurringSweepCompletion",
+      "fields": [
+        "sweepCursor",
+        "nextSweepEligibleAt",
+        "observedAt"
+      ],
+      "owner": "recurring-sweep completion repository",
+      "restartUse": "resumes only committed discovery and reconciliation progress"
+    }
+  ],
+  "faultType": {
+    "id": "WorkflowFault",
+    "categories": [
+      "authentication",
+      "transient",
+      "permanent",
+      "invariant"
+    ],
+    "safeFields": [
+      "category",
+      "code",
+      "safeMessage",
+      "authReason"
+    ],
+    "forbiddenFields": [
+      "cause",
+      "providerPayload",
+      "password",
+      "token",
+      "authorizationHeader",
+      "rawCommand"
+    ]
+  },
+  "events": [
+    {
+      "id": "xstate.init",
+      "origin": "xstate"
+    },
+    {
+      "id": "control.start.requested",
+      "origin": "control-service",
+      "payload": [
+        "commandId",
+        "expectedVersion?"
+      ]
+    },
+    {
+      "id": "control.pause.requested",
+      "origin": "control-service",
+      "payload": [
+        "commandId",
+        "idempotencyKey",
+        "expectedVersion?"
+      ]
+    },
+    {
+      "id": "control.resume.requested",
+      "origin": "control-service",
+      "payload": [
+        "commandId",
+        "idempotencyKey",
+        "expectedVersion?"
+      ]
+    },
+    {
+      "id": "control.stop.requested",
+      "origin": "control-service",
+      "payload": [
+        "commandId",
+        "idempotencyKey",
+        "expectedVersion?"
+      ]
+    },
+    {
+      "id": "lifecycle.restart.requested",
+      "origin": "daemon-supervisor",
+      "payload": [
+        "requestId (correlation only, not an idempotency key)",
+        "reason"
+      ]
+    },
+    {
+      "id": "process.shutdown.requested",
+      "origin": "daemon-supervisor",
+      "payload": [
+        "requestId (correlation only, not an idempotency key)",
+        "signal"
+      ]
+    },
+    {
+      "id": "credentials.changed",
+      "origin": "credential-owner",
+      "payload": [
+        "revision"
+      ]
+    },
+    {
+      "id": "xstate.done.actor.bootstrapSession",
+      "origin": "bootstrapSession",
+      "payload": [
+        "output.next:backfill|idle|poll",
+        "output.checkpoint"
+      ]
+    },
+    {
+      "id": "xstate.error.actor.bootstrapSession",
+      "origin": "bootstrapSession",
+      "payload": [
+        "error:WorkflowFault"
+      ]
+    },
+    {
+      "id": "xstate.done.actor.initialBackfill",
+      "origin": "initialBackfill",
+      "payload": [
+        "output.status",
+        "output.checkpoint",
+        "output.completion",
+        "output.watchStrategy:idle|poll"
+      ]
+    },
+    {
+      "id": "xstate.error.actor.initialBackfill",
+      "origin": "initialBackfill",
+      "payload": [
+        "error:WorkflowFault"
+      ]
+    },
+    {
+      "id": "idle.ready",
+      "origin": "idleSession",
+      "payload": [
+        "scopeEpoch"
+      ]
+    },
+    {
+      "id": "idle.mailboxChanged",
+      "origin": "idleSession",
+      "payload": [
+        "scopeEpoch"
+      ]
+    },
+    {
+      "id": "idle.completed",
+      "origin": "idleSession",
+      "payload": [
+        "scopeEpoch"
+      ]
+    },
+    {
+      "id": "idle.failed",
+      "origin": "idleSession",
+      "payload": [
+        "scopeEpoch",
+        "fault:WorkflowFault"
+      ]
+    },
+    {
+      "id": "watchTimer.elapsed",
+      "origin": "periodicStatusTimer",
+      "payload": [
+        "scopeEpoch"
+      ]
+    },
+    {
+      "id": "watchTimer.failed",
+      "origin": "periodicStatusTimer",
+      "payload": [
+        "scopeEpoch",
+        "fault:WorkflowFault"
+      ]
+    },
+    {
+      "id": "xstate.done.actor.recurringSweep",
+      "origin": "recurringSweep",
+      "payload": [
+        "output.status",
+        "output.checkpoint",
+        "output.completion",
+        "output.watchStrategy:idle|poll"
+      ]
+    },
+    {
+      "id": "xstate.error.actor.recurringSweep",
+      "origin": "recurringSweep",
+      "payload": [
+        "error:WorkflowFault"
+      ]
+    },
+    {
+      "id": "retryTimer.elapsed",
+      "origin": "retryTimer",
+      "payload": [
+        "scopeEpoch"
+      ]
+    },
+    {
+      "id": "retryTimer.failed",
+      "origin": "retryTimer",
+      "payload": [
+        "scopeEpoch",
+        "fault:WorkflowFault"
+      ]
+    },
+    {
+      "id": "xstate.done.actor.cleanupBarrier",
+      "origin": "cleanupBarrier",
+      "payload": [
+        "output.scope",
+        "output.released",
+        "output.diagnostics"
+      ]
+    },
+    {
+      "id": "xstate.error.actor.cleanupBarrier",
+      "origin": "cleanupBarrier",
+      "payload": [
+        "error:WorkflowFault"
+      ]
+    }
+  ],
+  "guards": [
+    {
+      "id": "expectedVersionMatches",
+      "predicate": "event.expectedVersion is absent or equals context.version"
+    },
+    {
+      "id": "scopeIsCurrent",
+      "predicate": "event.scopeEpoch equals context.scopeEpoch"
+    },
+    {
+      "id": "idleReadyUnseenForScope",
+      "predicate": "context.idleReadyEpoch does not equal event.scopeEpoch"
+    },
+    {
+      "id": "bootstrapNeedsBackfill",
+      "predicate": "event.output.next equals backfill"
+    },
+    {
+      "id": "bootstrapUsesIdle",
+      "predicate": "event.output.next equals idle"
+    },
+    {
+      "id": "bootstrapUsesPolling",
+      "predicate": "event.output.next equals poll"
+    },
+    {
+      "id": "backfillCompletedNow",
+      "predicate": "event.output.status equals completed"
+    },
+    {
+      "id": "backfillAlreadyComplete",
+      "predicate": "event.output.status equals already-complete"
+    },
+    {
+      "id": "actorResultUsesIdle",
+      "predicate": "event.output.watchStrategy equals idle"
+    },
+    {
+      "id": "actorResultUsesPolling",
+      "predicate": "event.output.watchStrategy equals poll"
+    },
+    {
+      "id": "backfillReturnedUnexpectedCancellation",
+      "predicate": "event.output.status equals cancelled while its invoke remains active"
+    },
+    {
+      "id": "sweepCompletedNow",
+      "predicate": "event.output.status equals completed"
+    },
+    {
+      "id": "sweepNotEligible",
+      "predicate": "event.output.status equals not-eligible"
+    },
+    {
+      "id": "sweepViolatedOwnership",
+      "predicate": "event.output.status is not-owner or cancelled while its invoke remains active"
+    },
+    {
+      "id": "faultIsAuthentication",
+      "predicate": "fault.category equals authentication"
+    },
+    {
+      "id": "faultIsTransient",
+      "predicate": "fault.category equals transient"
+    },
+    {
+      "id": "faultIsFatal",
+      "predicate": "fault.category is permanent or invariant"
+    },
+    {
+      "id": "retryBudgetAvailable",
+      "predicate": "context.retryAttempt + 1 is less than or equal to configuration.maxRetryAttempts"
+    },
+    {
+      "id": "retryBudgetExhausted",
+      "predicate": "context.retryAttempt + 1 is greater than configuration.maxRetryAttempts"
+    },
+    {
+      "id": "cleanupReleasedScope",
+      "predicate": "event.output.released is true and the ownership audit reports zero resources for event.output.scope"
+    }
+  ],
+  "actions": [
+    {
+      "id": "advanceVersion",
+      "effect": "Increment context.version by one; overflow is an invariant fault."
+    },
+    {
+      "id": "beginEffectScope",
+      "effect": "Increment context.scopeEpoch and pass it as immutable input to every actor entered in the target state."
+    },
+    {
+      "id": "adoptCommittedCheckpoint",
+      "effect": "Validate and copy only an actor output explicitly marked committed into context.checkpoint."
+    },
+    {
+      "id": "resetRetryHistory",
+      "effect": "Set retryAttempt to zero and remove superseded transient diagnostics after a successful bounded operation or idle.ready."
+    },
+    {
+      "id": "markIdleReadyObserved",
+      "effect": "Set idleReadyEpoch to the admitted event.scopeEpoch before advancing version; a duplicate idle.ready in that scope then fails idleReadyUnseenForScope."
+    },
+    {
+      "id": "recordTransientFault",
+      "effect": "Increment retryAttempt and append one redacted bounded diagnostic."
+    },
+    {
+      "id": "recordAuthBlock",
+      "effect": "Set the constructive safe authBlockedDetail and append no raw provider material."
+    },
+    {
+      "id": "clearAuthBlock",
+      "effect": "Set authBlockedDetail to null before leaving authBlocked."
+    },
+    {
+      "id": "recordFatalFault",
+      "effect": "Append one redacted fatal diagnostic; retain at most 32 diagnostics."
+    },
+    {
+      "id": "appendCleanupDiagnostics",
+      "effect": "Append bounded cleanup diagnostics only after cleanupReleasedScope passes."
+    },
+    {
+      "id": "emitControlAccepted",
+      "effect": "Emit commandId, accepted=true, completed=false, target observation predicate, incarnationId, and the post-transition version to the control service."
+    },
+    {
+      "id": "emitControlCompleted",
+      "effect": "Emit commandId, accepted=true, completed=true, the current compatible state/version, and incarnationId without changing lifecycle state."
+    },
+    {
+      "id": "emitControlRejected",
+      "effect": "Emit commandId, accepted=false, stable reason, last observed state/version, and incarnationId; do not change context or durable facts."
+    },
+    {
+      "id": "emitControlPending",
+      "effect": "Emit command acceptance and the stable target predicate; the control service owns the bounded subscription and must not fabricate completion."
+    }
+  ],
+  "actors": [
+    {
+      "id": "bootstrapSession",
+      "kind": "fromPromise",
+      "owner": "starting.active",
+      "input": [
+        "AbortSignal",
+        "validated configuration",
+        "durable checkpoint identities"
+      ],
+      "success": "One result selecting backfill, IDLE watch, or polling watch plus a committed checkpoint summary.",
+      "error": "WorkflowFault after all actor-owned resources close.",
+      "cancellation": "XState exits starting.active, aborts the signal, and cleanupBarrier awaits registered release promises.",
+      "retryOwner": "syncLifecycle"
+    },
+    {
+      "id": "initialBackfill",
+      "kind": "fromPromise",
+      "owner": "backfilling.active",
+      "input": [
+        "AbortSignal",
+        "validated mailbox work set",
+        "bounded batch configuration"
+      ],
+      "success": "InitialBackfillLoopResult with completed or already-complete, committed completion facts, and the next validated watch strategy.",
+      "error": "WorkflowFault after all actor-owned resources close.",
+      "cancellation": "Exit aborts the signal; a cancelled result delivered after exit is late and ignored.",
+      "retryOwner": "syncLifecycle"
+    },
+    {
+      "id": "idleSession",
+      "kind": "fromCallback",
+      "owner": "watching.idling",
+      "input": [
+        "scopeEpoch",
+        "validated IDLE adapter",
+        "resource registry"
+      ],
+      "messages": [
+        "idle.ready",
+        "idle.mailboxChanged",
+        "idle.completed",
+        "idle.failed"
+      ],
+      "normalCompletion": "Emits idle.completed only after leaving IDLE and removing owned listeners.",
+      "cancellation": "The disposer initiates adapter cancellation, removes listeners in the same lexical owner, and registers the close promise with cleanupBarrier.",
+      "retryOwner": "syncLifecycle"
+    },
+    {
+      "id": "periodicStatusTimer",
+      "kind": "fromCallback",
+      "owner": "watching.idling|watching.polling",
+      "input": [
+        "scopeEpoch",
+        "periodicStatusIntervalMs",
+        "virtualizable clock",
+        "resource registry"
+      ],
+      "messages": [
+        "watchTimer.elapsed",
+        "watchTimer.failed"
+      ],
+      "errorCategories": [
+        "transient",
+        "permanent",
+        "invariant"
+      ],
+      "normalCompletion": "Clears its one timer and abort listener before emitting watchTimer.elapsed.",
+      "cancellation": "The disposer clears the timer and removes the exact registered listener synchronously.",
+      "timerOwner": "periodicStatusTimer"
+    },
+    {
+      "id": "recurringSweep",
+      "kind": "fromPromise",
+      "owner": "sweeping.active",
+      "input": [
+        "AbortSignal",
+        "actor identity",
+        "durable sweep completion",
+        "bounded work configuration"
+      ],
+      "success": "RecurringMailboxSweepResult with completed or not-eligible, committed progress, and the next validated watch strategy.",
+      "error": "WorkflowFault after all actor-owned resources close.",
+      "cancellation": "Exit aborts the signal; a cancelled result delivered after exit is late and ignored.",
+      "retryOwner": "syncLifecycle"
+    },
+    {
+      "id": "retryTimer",
+      "kind": "fromCallback",
+      "owner": "retryWaiting.active",
+      "input": [
+        "scopeEpoch",
+        "retryAttempt",
+        "retryBaseMs",
+        "retryCapMs",
+        "retryJitterRatio",
+        "injected random source",
+        "virtualizable clock"
+      ],
+      "messages": [
+        "retryTimer.elapsed",
+        "retryTimer.failed"
+      ],
+      "errorCategories": [
+        "invariant"
+      ],
+      "normalCompletion": "Clears its one timer before emitting retryTimer.elapsed.",
+      "cancellation": "The disposer clears the timer and removes its exact listener synchronously.",
+      "timerOwner": "retryTimer"
+    },
+    {
+      "id": "cleanupBarrier",
+      "kind": "fromPromise",
+      "owner": "every quiescing or stopping state",
+      "input": [
+        "scope:watch|workflow",
+        "resource registry"
+      ],
+      "success": "released=true plus bounded diagnostics after every selected owner reports closed.",
+      "error": "Invariant WorkflowFault only after the ownership audit confirms zero selected live resources; an unreleased resource keeps the promise pending and public controls may time out.",
+      "scopePromotion": "watch is narrower than workflow. A broader request atomically promotes the one in-flight job to the union of requested resources; a narrower request can never downgrade it. If the earlier job already settled, the broader job starts only afterward.",
+      "cancellation": "A replacement cleanup invocation awaits the same memoized in-flight barrier job; it never starts a second concurrent cleanup job.",
+      "cleanupOwner": "cleanupBarrier"
+    },
+    {
+      "id": "controlWaiter",
+      "kind": "fromCallback",
+      "owner": "in-process control service, outside the lifecycle child graph",
+      "input": [
+        "commandId",
+        "incarnationId",
+        "target predicate",
+        "deadline"
+      ],
+      "messages": [
+        "accepted",
+        "rejected",
+        "completed",
+        "failed",
+        "cancelled",
+        "timeout"
+      ],
+      "cancellation": "Every settle path unsubscribes from snapshots and clears its deadline timer.",
+      "note": "It observes but cannot mutate lifecycle state; it is not a second lifecycle authority."
+    },
+    {
+      "id": "rawDownloadQueue",
+      "kind": "xstate-v5-child-machine",
+      "owner": "initialBackfill|recurringSweep",
+      "input": [
+        "one production download adapter",
+        "positive queue capacity",
+        "parent resource registry"
+      ],
+      "success": "Serial FIFO job results with typed overflow; at most one rawDownloadJob is active.",
+      "error": "A job error rejects only that job and leaves the queue able to process or stop according to its accepted machine.",
+      "cancellation": "Parent cancellation calls and awaits queue.stop(); queued jobs reject, the active job aborts, and stop acknowledges only after adapter response stream and stage cleanup close.",
+      "children": [
+        "rawDownloadJob"
+      ],
+      "note": "Exactly one instance may exist because backfill and sweep are mutually exclusive. It cannot survive its owning bounded actor."
+    },
+    {
+      "id": "rawDownloadJob",
+      "kind": "fromPromise",
+      "owner": "rawDownloadQueue.active",
+      "input": [
+        "one raw-message request",
+        "actor-owned AbortSignal",
+        "production download adapter"
+      ],
+      "success": "One raw download result after response and staging resources settle.",
+      "error": "One typed download/cancellation error after the exact caller abort listener is removed.",
+      "cancellation": "Queue stop or job cancel aborts the job; the queue cannot acknowledge stopped before the promise finally removes its listener and closes resources."
+    }
+  ],
+  "states": [
+    {
+      "id": "stopped",
+      "kind": "compound",
+      "initial": "stopped.clean"
+    },
+    {
+      "id": "stopped.clean",
+      "kind": "atomic",
+      "parent": "stopped",
+      "reachable": true,
+      "invokedActors": [],
+      "public": {
+        "actorState": "stopped",
+        "activeOperation": null,
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "stopped.failed",
+      "kind": "atomic",
+      "parent": "stopped",
+      "reachable": true,
+      "invokedActors": [],
+      "public": {
+        "actorState": "stopped",
+        "activeOperation": null,
+        "authBlocked": null,
+        "diagnosticRequirement": "at least one fatal or cleanup diagnostic"
+      }
+    },
+    {
+      "id": "starting",
+      "kind": "compound",
+      "initial": "starting.active"
+    },
+    {
+      "id": "starting.active",
+      "kind": "atomic",
+      "parent": "starting",
+      "reachable": true,
+      "invokedActors": [
+        "bootstrapSession"
+      ],
+      "public": {
+        "actorState": "starting",
+        "activeOperation": "start",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "starting.pausing",
+      "kind": "atomic",
+      "parent": "starting",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "starting",
+        "activeOperation": "start",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "backfilling",
+      "kind": "compound",
+      "initial": "backfilling.active"
+    },
+    {
+      "id": "backfilling.active",
+      "kind": "atomic",
+      "parent": "backfilling",
+      "reachable": true,
+      "invokedActors": [
+        "initialBackfill"
+      ],
+      "public": {
+        "actorState": "backfilling",
+        "activeOperation": "backfill",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "backfilling.pausing",
+      "kind": "atomic",
+      "parent": "backfilling",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "backfilling",
+        "activeOperation": "backfill",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "watching",
+      "kind": "compound",
+      "initial": "watching.idling"
+    },
+    {
+      "id": "watching.idling",
+      "kind": "atomic",
+      "parent": "watching",
+      "reachable": true,
+      "invokedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "public": {
+        "actorState": "watching",
+        "activeOperation": "watch",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "watching.polling",
+      "kind": "atomic",
+      "parent": "watching",
+      "reachable": true,
+      "invokedActors": [
+        "periodicStatusTimer"
+      ],
+      "public": {
+        "actorState": "watching",
+        "activeOperation": "watch",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "watching.closingForSweep",
+      "kind": "atomic",
+      "parent": "watching",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "watch"
+      },
+      "public": {
+        "actorState": "watching",
+        "activeOperation": "watch",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "watching.closingForRetry",
+      "kind": "atomic",
+      "parent": "watching",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "watching",
+        "activeOperation": "watch",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "watching.closingForAuthBlock",
+      "kind": "atomic",
+      "parent": "watching",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "watching",
+        "activeOperation": "watch",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "watching.closingForPause",
+      "kind": "atomic",
+      "parent": "watching",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "watching",
+        "activeOperation": "watch",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "watching.closingForFailure",
+      "kind": "atomic",
+      "parent": "watching",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "watching",
+        "activeOperation": "watch",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "sweeping",
+      "kind": "compound",
+      "initial": "sweeping.active"
+    },
+    {
+      "id": "sweeping.active",
+      "kind": "atomic",
+      "parent": "sweeping",
+      "reachable": true,
+      "invokedActors": [
+        "recurringSweep"
+      ],
+      "public": {
+        "actorState": "sweeping",
+        "activeOperation": "sweep",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "sweeping.pausing",
+      "kind": "atomic",
+      "parent": "sweeping",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "sweeping",
+        "activeOperation": "sweep",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "retryWaiting",
+      "kind": "compound",
+      "initial": "retryWaiting.active"
+    },
+    {
+      "id": "retryWaiting.active",
+      "kind": "atomic",
+      "parent": "retryWaiting",
+      "reachable": true,
+      "invokedActors": [
+        "retryTimer"
+      ],
+      "public": {
+        "actorState": "retrying",
+        "activeOperation": "retry",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "retryWaiting.pausing",
+      "kind": "atomic",
+      "parent": "retryWaiting",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "retrying",
+        "activeOperation": "retry",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "authBlocked",
+      "kind": "atomic",
+      "reachable": true,
+      "invokedActors": [],
+      "public": {
+        "actorState": "authBlocked",
+        "activeOperation": null,
+        "authBlocked": "context.authBlockedDetail"
+      }
+    },
+    {
+      "id": "paused",
+      "kind": "atomic",
+      "reachable": true,
+      "invokedActors": [],
+      "public": {
+        "actorState": "paused",
+        "activeOperation": null,
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "stopping",
+      "kind": "compound",
+      "initial": "stopping.forStop"
+    },
+    {
+      "id": "stopping.forStop",
+      "kind": "atomic",
+      "parent": "stopping",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "stopping",
+        "activeOperation": "stop",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "stopping.forRestart",
+      "kind": "atomic",
+      "parent": "stopping",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "stopping",
+        "activeOperation": "stop",
+        "authBlocked": null
+      }
+    },
+    {
+      "id": "stopping.afterFailure",
+      "kind": "atomic",
+      "parent": "stopping",
+      "reachable": true,
+      "invokedActors": [
+        "cleanupBarrier"
+      ],
+      "actorInput": {
+        "cleanupBarrier.scope": "workflow"
+      },
+      "public": {
+        "actorState": "stopping",
+        "activeOperation": "stop",
+        "authBlocked": null
+      }
+    }
+  ],
+  "transitions": [
+    {
+      "id": "T001",
+      "source": "@uninitialized",
+      "event": "xstate.init",
+      "guards": [],
+      "target": "stopped.clean",
+      "actions": [],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Initial status is stopped at version zero with no live child."
+    },
+    {
+      "id": "T010",
+      "source": [
+        "stopped.clean",
+        "stopped.failed"
+      ],
+      "event": "control.start.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "starting.active",
+      "actions": [
+        "clearAuthBlock",
+        "beginEffectScope",
+        "advanceVersion",
+        "emitControlAccepted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "durableWrites": [],
+      "observation": "Accepted start observes starting and the new version."
+    },
+    {
+      "id": "T011",
+      "source": [
+        "starting.active",
+        "backfilling.active",
+        "sweeping.active",
+        "retryWaiting.active"
+      ],
+      "event": "control.start.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlAccepted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Idempotent start is accepted at the unchanged compatible state/version."
+    },
+    {
+      "id": "T012",
+      "source": [
+        "watching.idling",
+        "watching.polling"
+      ],
+      "event": "control.start.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlCompleted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Idempotent start completes at watching and the unchanged version."
+    },
+    {
+      "id": "T020",
+      "source": "starting.active",
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "starting.pausing",
+      "actions": [
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "The public state remains starting until cleanup reaches paused; the pause waiter remains pending."
+    },
+    {
+      "id": "T021",
+      "source": "backfilling.active",
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "backfilling.pausing",
+      "actions": [
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Backfill remains the reported active operation until its resources close."
+    },
+    {
+      "id": "T022",
+      "source": [
+        "watching.idling",
+        "watching.polling"
+      ],
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "watching.closingForPause",
+      "actions": [
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Watching remains reported while the awaited barrier closes IDLE and its timer."
+    },
+    {
+      "id": "T023",
+      "source": "sweeping.active",
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "sweeping.pausing",
+      "actions": [
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Sweep cancellation is awaited before paused can be observed."
+    },
+    {
+      "id": "T024",
+      "source": "retryWaiting.active",
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "retryWaiting.pausing",
+      "actions": [
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "retryTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Retrying remains reported until the timer has been removed and paused is reached."
+    },
+    {
+      "id": "T025",
+      "source": [
+        "watching.closingForSweep",
+        "watching.closingForRetry",
+        "watching.closingForFailure"
+      ],
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "watching.closingForPause",
+      "actions": [
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "The target intent changes to pause; the replacement invocation awaits the same cleanup job."
+    },
+    {
+      "id": "T029",
+      "source": "watching.closingForAuthBlock",
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "watching.closingForPause",
+      "actions": [
+        "clearAuthBlock",
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Explicit pause supersedes the pending auth block, clears its detail, and promotes the same cleanup job to workflow scope."
+    },
+    {
+      "id": "T026",
+      "source": [
+        "starting.pausing",
+        "backfilling.pausing",
+        "watching.closingForPause",
+        "sweeping.pausing",
+        "retryWaiting.pausing"
+      ],
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlPending"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Duplicate pause joins the same target predicate and cleanup result."
+    },
+    {
+      "id": "T027",
+      "source": "authBlocked",
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "paused",
+      "actions": [
+        "clearAuthBlock",
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "An explicit pause replaces the non-running auth block with the stable paused mode."
+    },
+    {
+      "id": "T028",
+      "source": "paused",
+      "event": "control.pause.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlCompleted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Idempotent pause completes at the unchanged paused version."
+    },
+    {
+      "id": "T030",
+      "source": "paused",
+      "event": "control.resume.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "starting.active",
+      "actions": [
+        "beginEffectScope",
+        "advanceVersion",
+        "emitControlAccepted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "durableWrites": [],
+      "observation": "Resume is accepted only after starting is observed at the new version."
+    },
+    {
+      "id": "T031",
+      "source": "starting.active",
+      "event": "control.resume.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlAccepted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Idempotent resume is accepted at the unchanged starting version."
+    },
+    {
+      "id": "T032",
+      "source": [
+        "backfilling.active",
+        "watching.idling",
+        "watching.polling",
+        "sweeping.active",
+        "retryWaiting.active"
+      ],
+      "event": "control.resume.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlCompleted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Idempotent resume completes at the unchanged compatible running version."
+    },
+    {
+      "id": "T040",
+      "source": [
+        "stopped.clean",
+        "stopped.failed"
+      ],
+      "event": "control.stop.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlCompleted"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Idempotent stop completes at the unchanged stopped version."
+    },
+    {
+      "id": "T041",
+      "source": "stopping.forStop",
+      "event": "control.stop.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": null,
+      "actions": [
+        "emitControlPending"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Duplicate stop joins the same cleanup and waits for stopped; it cannot fabricate completion."
+    },
+    {
+      "id": "T042",
+      "source": [
+        "stopping.forRestart",
+        "stopping.afterFailure"
+      ],
+      "event": "control.stop.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "stopping.forStop",
+      "actions": [
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Stop wins over restart/failure disposition and awaits the same cleanup job."
+    },
+    {
+      "id": "T043",
+      "source": [
+        "starting.active",
+        "starting.pausing",
+        "backfilling.active",
+        "backfilling.pausing",
+        "watching.idling",
+        "watching.polling",
+        "watching.closingForSweep",
+        "watching.closingForRetry",
+        "watching.closingForAuthBlock",
+        "watching.closingForPause",
+        "watching.closingForFailure",
+        "sweeping.active",
+        "sweeping.pausing",
+        "retryWaiting.active",
+        "retryWaiting.pausing",
+        "authBlocked",
+        "paused"
+      ],
+      "event": "control.stop.requested",
+      "guards": [
+        "expectedVersionMatches"
+      ],
+      "target": "stopping.forStop",
+      "actions": [
+        "clearAuthBlock",
+        "advanceVersion",
+        "emitControlPending"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Stopping is observed immediately, but completed stop is withheld until cleanup reaches stopped."
+    },
+    {
+      "id": "T050",
+      "source": [
+        "stopped.clean",
+        "stopped.failed",
+        "starting.active",
+        "starting.pausing",
+        "backfilling.active",
+        "backfilling.pausing",
+        "watching.idling",
+        "watching.polling",
+        "watching.closingForSweep",
+        "watching.closingForRetry",
+        "watching.closingForAuthBlock",
+        "watching.closingForPause",
+        "watching.closingForFailure",
+        "sweeping.active",
+        "sweeping.pausing",
+        "retryWaiting.active",
+        "retryWaiting.pausing",
+        "authBlocked",
+        "paused"
+      ],
+      "event": "lifecycle.restart.requested",
+      "guards": [],
+      "target": "stopping.forRestart",
+      "actions": [
+        "clearAuthBlock",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Every live-process restart first observes stopping and awaits the shared workflow cleanup barrier."
+    },
+    {
+      "id": "T051",
+      "source": [
+        "stopping.forStop",
+        "stopping.afterFailure"
+      ],
+      "event": "lifecycle.restart.requested",
+      "guards": [],
+      "target": "stopping.forRestart",
+      "actions": [
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Restart changes only the post-cleanup destination and reuses the one in-flight cleanup job."
+    },
+    {
+      "id": "T052",
+      "source": "stopping.forRestart",
+      "event": "lifecycle.restart.requested",
+      "guards": [],
+      "target": null,
+      "actions": [],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Duplicate restart is ignored and leaves the cleanup job and version unchanged."
+    },
+    {
+      "id": "T053",
+      "source": [
+        "starting.active",
+        "starting.pausing",
+        "backfilling.active",
+        "backfilling.pausing",
+        "watching.idling",
+        "watching.polling",
+        "watching.closingForSweep",
+        "watching.closingForRetry",
+        "watching.closingForAuthBlock",
+        "watching.closingForPause",
+        "watching.closingForFailure",
+        "sweeping.active",
+        "sweeping.pausing",
+        "retryWaiting.active",
+        "retryWaiting.pausing",
+        "authBlocked",
+        "paused",
+        "stopping.forRestart",
+        "stopping.afterFailure"
+      ],
+      "event": "process.shutdown.requested",
+      "guards": [],
+      "target": "stopping.forStop",
+      "actions": [
+        "clearAuthBlock",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "All shutdown triggers converge on the same stop cleanup disposition."
+    },
+    {
+      "id": "T054",
+      "source": [
+        "stopped.clean",
+        "stopped.failed",
+        "stopping.forStop"
+      ],
+      "event": "process.shutdown.requested",
+      "guards": [],
+      "target": null,
+      "actions": [],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Duplicate shutdown is an unchanged no-op."
+    },
+    {
+      "id": "T060",
+      "source": "authBlocked",
+      "event": "credentials.changed",
+      "guards": [],
+      "target": "starting.active",
+      "actions": [
+        "clearAuthBlock",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "durableWrites": [],
+      "observation": "Only an observed credential revision or explicit stop/pause leaves authBlocked automatically."
+    },
+    {
+      "id": "T100",
+      "source": "starting.active",
+      "event": "xstate.done.actor.bootstrapSession",
+      "guards": [
+        "bootstrapNeedsBackfill"
+      ],
+      "target": "backfilling.active",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "initialBackfill"
+      ],
+      "durableWrites": [],
+      "observation": "Committed restart facts select bounded backfill; no snapshot mode is restored."
+    },
+    {
+      "id": "T101",
+      "source": "starting.active",
+      "event": "xstate.done.actor.bootstrapSession",
+      "guards": [
+        "bootstrapUsesIdle"
+      ],
+      "target": "watching.idling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [],
+      "observation": "An IDLE-capable provider enters truthful idling with one IDLE actor and one timer."
+    },
+    {
+      "id": "T106",
+      "source": "starting.active",
+      "event": "xstate.done.actor.bootstrapSession",
+      "guards": [
+        "bootstrapUsesPolling"
+      ],
+      "target": "watching.polling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [],
+      "observation": "A provider without usable IDLE enters truthful polling with one timer and no nominal IDLE actor."
+    },
+    {
+      "id": "T102",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "guards": [
+        "faultIsAuthentication"
+      ],
+      "target": "authBlocked",
+      "actions": [
+        "recordAuthBlock",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Authentication failure bypasses retry and exposes safe authBlocked detail."
+    },
+    {
+      "id": "T103",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "guards": [
+        "faultIsTransient",
+        "retryBudgetAvailable"
+      ],
+      "target": "retryWaiting.active",
+      "actions": [
+        "recordTransientFault",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "durableWrites": [],
+      "observation": "One bounded retry timer owns the delay."
+    },
+    {
+      "id": "T104",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "guards": [
+        "faultIsTransient",
+        "retryBudgetExhausted"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Exhausted retry budget enters awaited failure cleanup."
+    },
+    {
+      "id": "T105",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "guards": [
+        "faultIsFatal"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Permanent or invariant bootstrap failure is cleaned before stopped.failed."
+    },
+    {
+      "id": "T110",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "guards": [
+        "backfillCompletedNow",
+        "actorResultUsesIdle"
+      ],
+      "target": "watching.idling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [
+        "mailboxCheckpoint.backfillCompleted",
+        "initialBackfillCompletion.nextSweepEligibleAt"
+      ],
+      "observation": "Initial completion is observed without disabling recurring sweeps."
+    },
+    {
+      "id": "T116",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "guards": [
+        "backfillCompletedNow",
+        "actorResultUsesPolling"
+      ],
+      "target": "watching.polling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [
+        "mailboxCheckpoint.backfillCompleted",
+        "initialBackfillCompletion.nextSweepEligibleAt"
+      ],
+      "observation": "Initial completion remains recurring-sweep eligible when the validated watch strategy is polling."
+    },
+    {
+      "id": "T117",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "guards": [
+        "backfillAlreadyComplete",
+        "actorResultUsesIdle"
+      ],
+      "target": "watching.idling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [],
+      "observation": "A previously committed initial completion enters IDLE watch without claiming a new durable write."
+    },
+    {
+      "id": "T118",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "guards": [
+        "backfillAlreadyComplete",
+        "actorResultUsesPolling"
+      ],
+      "target": "watching.polling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [],
+      "observation": "A previously committed initial completion enters polling without claiming a new durable write."
+    },
+    {
+      "id": "T111",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "guards": [
+        "backfillReturnedUnexpectedCancellation"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "A cancellation outcome while the invoke is still active is an invariant failure, not false success."
+    },
+    {
+      "id": "T112",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "guards": [
+        "faultIsAuthentication"
+      ],
+      "target": "authBlocked",
+      "actions": [
+        "recordAuthBlock",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Backfill authentication rejection cannot enter retry."
+    },
+    {
+      "id": "T113",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "guards": [
+        "faultIsTransient",
+        "retryBudgetAvailable"
+      ],
+      "target": "retryWaiting.active",
+      "actions": [
+        "recordTransientFault",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "durableWrites": [],
+      "observation": "Transient backfill failure schedules exactly one bounded retry timer."
+    },
+    {
+      "id": "T114",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "guards": [
+        "faultIsTransient",
+        "retryBudgetExhausted"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Backfill retry exhaustion is a cleaned terminal failure."
+    },
+    {
+      "id": "T115",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "guards": [
+        "faultIsFatal"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Fatal backfill failure cannot leave the chart nominally backfilling."
+    },
+    {
+      "id": "T120",
+      "source": "watching.idling",
+      "event": "idle.ready",
+      "guards": [
+        "scopeIsCurrent",
+        "idleReadyUnseenForScope"
+      ],
+      "target": null,
+      "actions": [
+        "resetRetryHistory",
+        "markIdleReadyObserved",
+        "advanceVersion"
+      ],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "IDLE readiness resets retry history and advances the observed version without inventing a second mode."
+    },
+    {
+      "id": "T121",
+      "source": "watching.idling",
+      "event": "idle.mailboxChanged",
+      "guards": [
+        "scopeIsCurrent"
+      ],
+      "target": "watching.closingForSweep",
+      "actions": [
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Mailbox notification closes both watch actors before sweep starts."
+    },
+    {
+      "id": "T122",
+      "source": [
+        "watching.idling",
+        "watching.polling"
+      ],
+      "event": "watchTimer.elapsed",
+      "guards": [
+        "scopeIsCurrent"
+      ],
+      "target": "watching.closingForSweep",
+      "actions": [
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "The bounded periodic trigger closes IDLE and its timer before sweep."
+    },
+    {
+      "id": "T123",
+      "source": "watching.idling",
+      "event": "idle.completed",
+      "guards": [
+        "scopeIsCurrent",
+        "retryBudgetAvailable"
+      ],
+      "target": "watching.closingForRetry",
+      "actions": [
+        "recordTransientFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Normal IDLE completion explicitly leaves watching.idling and restarts under retry policy."
+    },
+    {
+      "id": "T124",
+      "source": "watching.idling",
+      "event": "idle.completed",
+      "guards": [
+        "scopeIsCurrent",
+        "retryBudgetExhausted"
+      ],
+      "target": "watching.closingForFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Repeated normal IDLE completion cannot livelock forever."
+    },
+    {
+      "id": "T125",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "guards": [
+        "scopeIsCurrent",
+        "faultIsAuthentication"
+      ],
+      "target": "watching.closingForAuthBlock",
+      "actions": [
+        "recordAuthBlock",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Authentication failure closes the timer and session before authBlocked."
+    },
+    {
+      "id": "T126",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "guards": [
+        "scopeIsCurrent",
+        "faultIsTransient",
+        "retryBudgetAvailable"
+      ],
+      "target": "watching.closingForRetry",
+      "actions": [
+        "recordTransientFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Transient IDLE failure closes all watch resources before retry."
+    },
+    {
+      "id": "T127",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "guards": [
+        "scopeIsCurrent",
+        "faultIsTransient",
+        "retryBudgetExhausted"
+      ],
+      "target": "watching.closingForFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "IDLE retry exhaustion closes resources before failure."
+    },
+    {
+      "id": "T128",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "guards": [
+        "scopeIsCurrent",
+        "faultIsFatal"
+      ],
+      "target": "watching.closingForFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Fatal IDLE failure cannot leave a nominal watching snapshot."
+    },
+    {
+      "id": "T129",
+      "source": [
+        "watching.idling",
+        "watching.polling"
+      ],
+      "event": "watchTimer.failed",
+      "guards": [
+        "scopeIsCurrent",
+        "faultIsTransient",
+        "retryBudgetAvailable"
+      ],
+      "target": "watching.closingForRetry",
+      "actions": [
+        "recordTransientFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Timer failure uses the same owned cleanup and retry path."
+    },
+    {
+      "id": "T130",
+      "source": [
+        "watching.idling",
+        "watching.polling"
+      ],
+      "event": "watchTimer.failed",
+      "guards": [
+        "scopeIsCurrent",
+        "faultIsTransient",
+        "retryBudgetExhausted"
+      ],
+      "target": "watching.closingForFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Timer retry exhaustion closes every watch resource before failure."
+    },
+    {
+      "id": "T131",
+      "source": [
+        "watching.idling",
+        "watching.polling"
+      ],
+      "event": "watchTimer.failed",
+      "guards": [
+        "scopeIsCurrent",
+        "faultIsFatal"
+      ],
+      "target": "watching.closingForFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "A timer invariant fault is terminal after awaited cleanup."
+    },
+    {
+      "id": "T140",
+      "source": "watching.closingForSweep",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "sweeping.active",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "recurringSweep"
+      ],
+      "durableWrites": [],
+      "observation": "Sweep starts only after IDLE, timer, listeners, and watch streams are absent."
+    },
+    {
+      "id": "T141",
+      "source": "watching.closingForRetry",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "retryWaiting.active",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "durableWrites": [],
+      "observation": "Retry timer cannot overlap the watch timer or IDLE session."
+    },
+    {
+      "id": "T142",
+      "source": "watching.closingForAuthBlock",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "authBlocked",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "authBlocked is stable and has no live child."
+    },
+    {
+      "id": "T143",
+      "source": "watching.closingForPause",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "paused",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Paused becomes observable only after the adjacent live-IDLE/timer counterexample is impossible."
+    },
+    {
+      "id": "T144",
+      "source": "watching.closingForFailure",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "stopped.failed",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Terminal failure projects stopped plus bounded diagnostics after zero live resources."
+    },
+    {
+      "id": "T145",
+      "source": [
+        "watching.closingForSweep",
+        "watching.closingForRetry",
+        "watching.closingForAuthBlock",
+        "watching.closingForPause",
+        "watching.closingForFailure"
+      ],
+      "event": "xstate.error.actor.cleanupBarrier",
+      "guards": [
+        "faultIsFatal"
+      ],
+      "target": "stopped.failed",
+      "actions": [
+        "clearAuthBlock",
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "The cleanup actor may reject only after its zero-resource terminal contract holds."
+    },
+    {
+      "id": "T150",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "guards": [
+        "sweepCompletedNow",
+        "actorResultUsesIdle"
+      ],
+      "target": "watching.idling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [
+        "mailboxCheckpoint.sweepCursor",
+        "recurringSweepCompletion.nextSweepEligibleAt"
+      ],
+      "observation": "A completed initial backfill can discover later mail and re-enter watching."
+    },
+    {
+      "id": "T156",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "guards": [
+        "sweepCompletedNow",
+        "actorResultUsesPolling"
+      ],
+      "target": "watching.polling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [
+        "mailboxCheckpoint.sweepCursor",
+        "recurringSweepCompletion.nextSweepEligibleAt"
+      ],
+      "observation": "A completed sweep re-enters polling when IDLE is not the validated strategy."
+    },
+    {
+      "id": "T157",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "guards": [
+        "sweepNotEligible",
+        "actorResultUsesIdle"
+      ],
+      "target": "watching.idling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [],
+      "observation": "A not-yet-eligible sweep returns to IDLE watch without claiming durable progress."
+    },
+    {
+      "id": "T158",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "guards": [
+        "sweepNotEligible",
+        "actorResultUsesPolling"
+      ],
+      "target": "watching.polling",
+      "actions": [
+        "adoptCommittedCheckpoint",
+        "resetRetryHistory",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "durableWrites": [],
+      "observation": "A not-yet-eligible sweep returns to polling without claiming durable progress."
+    },
+    {
+      "id": "T151",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "guards": [
+        "sweepViolatedOwnership"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "not-owner or unexpected cancellation is an invariant failure, never a false completed sweep."
+    },
+    {
+      "id": "T152",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "guards": [
+        "faultIsAuthentication"
+      ],
+      "target": "authBlocked",
+      "actions": [
+        "recordAuthBlock",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Sweep authentication failure blocks automatic retry."
+    },
+    {
+      "id": "T153",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "guards": [
+        "faultIsTransient",
+        "retryBudgetAvailable"
+      ],
+      "target": "retryWaiting.active",
+      "actions": [
+        "recordTransientFault",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "durableWrites": [],
+      "observation": "Transient sweep failure schedules one retry timer after the sweep actor releases."
+    },
+    {
+      "id": "T154",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "guards": [
+        "faultIsTransient",
+        "retryBudgetExhausted"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Sweep retry exhaustion enters awaited failure cleanup."
+    },
+    {
+      "id": "T155",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "guards": [
+        "faultIsFatal"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Fatal sweep failure is cleaned and then exposed as stopped with diagnostics."
+    },
+    {
+      "id": "T160",
+      "source": "retryWaiting.active",
+      "event": "retryTimer.elapsed",
+      "guards": [
+        "scopeIsCurrent"
+      ],
+      "target": "starting.active",
+      "actions": [
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "retryTimer"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "durableWrites": [],
+      "observation": "The one-shot retry timer clears before startup begins."
+    },
+    {
+      "id": "T161",
+      "source": "retryWaiting.active",
+      "event": "retryTimer.failed",
+      "guards": [
+        "scopeIsCurrent"
+      ],
+      "target": "stopping.afterFailure",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "retryTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "durableWrites": [],
+      "observation": "Timer failure is an invariant failure and cannot create a second timer."
+    },
+    {
+      "id": "T170",
+      "source": [
+        "starting.pausing",
+        "backfilling.pausing",
+        "sweeping.pausing",
+        "retryWaiting.pausing"
+      ],
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "paused",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Paused is reached only after the source actor and all workflow resources close."
+    },
+    {
+      "id": "T171",
+      "source": [
+        "starting.pausing",
+        "backfilling.pausing",
+        "sweeping.pausing",
+        "retryWaiting.pausing"
+      ],
+      "event": "xstate.error.actor.cleanupBarrier",
+      "guards": [
+        "faultIsFatal"
+      ],
+      "target": "stopped.failed",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Cleanup failure can settle only after zero ownership; failure is then safe to expose."
+    },
+    {
+      "id": "T180",
+      "source": "stopping.forStop",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "stopped.clean",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Completed stop is observable only now, with zero workflow resources."
+    },
+    {
+      "id": "T181",
+      "source": "stopping.forRestart",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "starting.active",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "durableWrites": [],
+      "observation": "Restart cannot overlap old children; startup reads durable facts afresh."
+    },
+    {
+      "id": "T182",
+      "source": "stopping.afterFailure",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": [
+        "cleanupReleasedScope"
+      ],
+      "target": "stopped.failed",
+      "actions": [
+        "appendCleanupDiagnostics",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Failure is terminal only after cleanup; public status is stopped plus diagnostics."
+    },
+    {
+      "id": "T183",
+      "source": [
+        "stopping.forStop",
+        "stopping.forRestart",
+        "stopping.afterFailure"
+      ],
+      "event": "xstate.error.actor.cleanupBarrier",
+      "guards": [
+        "faultIsFatal"
+      ],
+      "target": "stopped.failed",
+      "actions": [
+        "recordFatalFault",
+        "advanceVersion"
+      ],
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "A rejected barrier is terminal only under its zero-resource error contract."
+    }
+  ],
+  "globalEventPolicy": [
+    {
+      "id": "GEP01",
+      "events": [
+        "control.start.requested",
+        "control.pause.requested",
+        "control.resume.requested",
+        "control.stop.requested"
+      ],
+      "when": "No local transition with expectedVersionMatches is enabled.",
+      "actions": [
+        "emitControlRejected"
+      ],
+      "result": "emitControlRejected with stale-version, incompatible-state, or busy; state, context, actors, timers, and durable facts are unchanged."
+    },
+    {
+      "id": "GEP02",
+      "events": [
+        "idle.ready",
+        "idle.mailboxChanged",
+        "idle.completed",
+        "idle.failed",
+        "watchTimer.elapsed",
+        "watchTimer.failed",
+        "retryTimer.elapsed",
+        "retryTimer.failed"
+      ],
+      "when": "scopeIsCurrent is false, the owning actor is not live, the owning state has exited, or idleReadyUnseenForScope is false for idle.ready.",
+      "actions": [],
+      "result": "Ignore as stale, late, duplicate, or reordered. State, context.version, durable facts, and actor graph are byte-for-byte unchanged; inspection may count it out of band."
+    },
+    {
+      "id": "GEP03",
+      "events": [
+        "xstate.done.actor.bootstrapSession",
+        "xstate.error.actor.bootstrapSession",
+        "xstate.done.actor.initialBackfill",
+        "xstate.error.actor.initialBackfill",
+        "xstate.done.actor.recurringSweep",
+        "xstate.error.actor.recurringSweep",
+        "xstate.done.actor.cleanupBarrier",
+        "xstate.error.actor.cleanupBarrier"
+      ],
+      "when": "The matching invoke is no longer active or the event is duplicated.",
+      "actions": [],
+      "result": "XState actor identity rejects/ignores the event; no transition, action, durable adoption, or actor resurrection occurs."
+    },
+    {
+      "id": "GEP04",
+      "events": [
+        "credentials.changed"
+      ],
+      "when": "The state is not authBlocked.",
+      "actions": [],
+      "result": "Ignore. Credential storage is owned outside this chart; the lifecycle does not auto-restart from paused or stopped."
+    },
+    {
+      "id": "GEP05",
+      "events": [
+        "any unknown event"
+      ],
+      "when": "Always.",
+      "actions": [],
+      "result": "Reject at the typed event boundary before actor.send; no machine observation changes."
+    }
+  ],
+  "controlProjection": {
+    "serviceOwner": "in-process workflow control service",
+    "idempotency": "For pause, resume, and stop, the service stores one in-flight/completed result per idempotencyKey. Same key and same command joins the original waiter; same key with different command shape returns conflict without sending a second event.",
+    "expectedVersion": "When supplied internally, a mismatch is atomically rejected by the machine guard. The current public request schemas do not expose expectedVersion.",
+    "start": {
+      "accepted": [
+        "starting",
+        "backfilling",
+        "sweeping",
+        "retrying"
+      ],
+      "completed": [
+        "watching"
+      ]
+    },
+    "pause": {
+      "accepted": [],
+      "completed": [
+        "paused"
+      ],
+      "rule": "The service withholds success while a quiescing state still projects starting, backfilling, watching, sweeping, or retrying."
+    },
+    "resume": {
+      "accepted": [
+        "starting"
+      ],
+      "completed": [
+        "backfilling",
+        "watching",
+        "sweeping",
+        "retrying"
+      ]
+    },
+    "stop": {
+      "accepted": [],
+      "completed": [
+        "stopped"
+      ],
+      "rule": "The service withholds success while stopping; timeout returns the shared non-success error envelope with the last observation."
+    },
+    "outcomes": [
+      {
+        "id": "accepted",
+        "postcondition": "Machine emitted acceptance and the waiter observed a response-schema-compatible state/version in the same incarnation."
+      },
+      {
+        "id": "completed",
+        "postcondition": "The waiter observed the command's stable completion state/version; for stopped or paused, the ownership audit is empty."
+      },
+      {
+        "id": "rejected",
+        "postcondition": "No transition occurred; stable reason and unchanged state/version are returned through the error envelope."
+      },
+      {
+        "id": "failed",
+        "postcondition": "Before the target predicate, the chart reached stopped.failed or authBlocked incompatibly; the waiter returns non-success with the exact last observed version."
+      },
+      {
+        "id": "cancelled",
+        "postcondition": "A later accepted stop, restart, or incompatible command superseded the target predicate; the waiter unsubscribed and returned non-success."
+      },
+      {
+        "id": "timeout",
+        "postcondition": "The deadline elapsed before the target predicate; the waiter unsubscribed, cleared its timer, and returned non-success with the last observation. The lifecycle continues unchanged."
+      }
+    ]
+  },
+  "invariants": [
+    {
+      "id": "I01",
+      "statement": "Exactly one reachable atomic lifecycle state is active."
+    },
+    {
+      "id": "I02",
+      "statement": "The direct lifecycle child multiset equals states[active].invokedActors; descendant ownership is governed by I17."
+    },
+    {
+      "id": "I03",
+      "statement": "stopped.clean, stopped.failed, paused, and authBlocked own zero child actors, timers, listeners, streams, sockets, and subscriptions."
+    },
+    {
+      "id": "I04",
+      "statement": "watching.idling owns exactly one idleSession and one periodicStatusTimer; watching.polling owns exactly one periodicStatusTimer and no nominal IDLE actor."
+    },
+    {
+      "id": "I05",
+      "statement": "retryWaiting.active owns exactly one retryTimer and no watch timer or IDLE session."
+    },
+    {
+      "id": "I06",
+      "statement": "At most one memoized cleanup job exists; scope promotion is monotonic from watch to workflow; a cleanup state owns only cleanupBarrier, never the work actor it is closing."
+    },
+    {
+      "id": "I07",
+      "statement": "cleanupBarrier completion or error implies zero resources in its selected scope. An unreleased resource keeps stopping or quiescing active."
+    },
+    {
+      "id": "I08",
+      "statement": "A durable fact enters context only from a validated actor result that reports its transaction committed; late results cannot write."
+    },
+    {
+      "id": "I09",
+      "statement": "initialBackfillCompletion never disables recurring sweep eligibility; watching and sweeping remain reachable after backfillCompleted=true."
+    },
+    {
+      "id": "I10",
+      "statement": "Authentication faults never schedule retryTimer and authBlocked exposes only safe constructive detail."
+    },
+    {
+      "id": "I11",
+      "statement": "context.version strictly increases on modeled observable transitions and is unchanged on ignored, rejected, or idempotent no-op events."
+    },
+    {
+      "id": "I12",
+      "statement": "Public actorState, activeOperation, authBlocked, checkpoint, diagnostics, and version are the exact projection of the active state and context."
+    },
+    {
+      "id": "I13",
+      "statement": "No successful control result exists without a compatible observed state/version from the owning actor incarnation."
+    },
+    {
+      "id": "I14",
+      "statement": "Late, duplicate, stale, and reordered actor events cannot change lifecycle state, context, durable facts, or actor ownership."
+    },
+    {
+      "id": "I15",
+      "statement": "A live-process restart traverses cleanup before starting; a process reconstruction starts with no hydrated child or ephemeral snapshot."
+    },
+    {
+      "id": "I16",
+      "statement": "Every actor and control waiter removes its exact abort listener, timer, subscription, stream, and socket handle on every settle or cancellation path."
+    },
+    {
+      "id": "I17",
+      "statement": "The direct child multiset equals states[active].invokedActors; only initialBackfill or recurringSweep may own one rawDownloadQueue descendant, and that queue may own at most one rawDownloadJob. No nested actor survives its parent terminal event."
+    }
+  ],
+  "unreachableStateAccount": {
+    "declaredUnreachableNodes": [],
+    "reason": "All 22 atomic nodes are intentionally reachable under injected actor outcomes and controls.",
+    "forbiddenConfigurations": [
+      {
+        "id": "U01",
+        "configuration": "paused with any live workflow child",
+        "excludedBy": [
+          "states.paused.invokedActors is empty",
+          "T143 and T170 require cleanupReleasedScope"
+        ]
+      },
+      {
+        "id": "U02",
+        "configuration": "stopped.clean or stopped.failed with any live workflow child",
+        "excludedBy": [
+          "stopped leaves invoke no actor",
+          "all incoming cleanup paths require cleanupReleasedScope or the cleanup zero-resource error contract"
+        ]
+      },
+      {
+        "id": "U03",
+        "configuration": "authBlocked with retryTimer or any IMAP actor",
+        "excludedBy": [
+          "authBlocked invokes no actor",
+          "faultIsAuthentication branches never target retryWaiting"
+        ]
+      },
+      {
+        "id": "U04",
+        "configuration": "watching.idling without exactly idleSession plus periodicStatusTimer, or watching.polling with any actor other than periodicStatusTimer",
+        "excludedBy": [
+          "state invocation is declarative and atomic"
+        ]
+      },
+      {
+        "id": "U05",
+        "configuration": "more than one workflow timer",
+        "excludedBy": [
+          "timer actors exist only in mutually exclusive watching.idling, watching.polling, and retryWaiting.active",
+          "periodicStatusTimer owns one timer"
+        ]
+      },
+      {
+        "id": "U06",
+        "configuration": "cleanupBarrier live with a work actor in the same state",
+        "excludedBy": [
+          "every cleanup state invokes cleanupBarrier only"
+        ]
+      },
+      {
+        "id": "U07",
+        "configuration": "two cleanup jobs",
+        "excludedBy": [
+          "cleanup owner memoizes one in-flight job and replacement invokes await it"
+        ]
+      },
+      {
+        "id": "U08",
+        "configuration": "durable checkpoint changes on ignored or rejected event",
+        "excludedBy": [
+          "only adoptCommittedCheckpoint writes the projection and it appears only on accepted actor-done transitions"
+        ]
+      },
+      {
+        "id": "U09",
+        "configuration": "completed control response without compatible observed version",
+        "excludedBy": [
+          "control waiter target predicates",
+          "accepted P1-C08 response schemas"
+        ]
+      },
+      {
+        "id": "U10",
+        "configuration": "old-incarnation child or event resurrected after restart",
+        "excludedBy": [
+          "no snapshot persistence",
+          "scopeEpoch and XState invoke identity rejection",
+          "fresh incarnationId"
+        ]
+      },
+      {
+        "id": "U11",
+        "configuration": "rawDownloadQueue outside backfilling.active or sweeping.active, more than one queue, more than one active rawDownloadJob, or a nested download actor surviving its bounded parent",
+        "excludedBy": [
+          "initialBackfill and recurringSweep are mutually exclusive direct actors",
+          "each owns exactly one queue and awaits queue.stop before terminal output",
+          "the accepted queue actor serializes at most one rawDownloadJob"
+        ]
+      }
+    ]
+  },
+  "coverage": {
+    "pathCorpus": [
+      {
+        "id": "PATH-STATE",
+        "generator": "shortest path from xstate.init to every reachable atomic state",
+        "obligations": [
+          "22 of 22 atomic states",
+          "exact public projection",
+          "exact actor multiset"
+        ]
+      },
+      {
+        "id": "PATH-TRANSITION",
+        "generator": "shortest prefix plus each expanded transition and every ordered guard branch",
+        "obligations": [
+          "100 percent expanded transitions",
+          "true and false outcome for every guard"
+        ]
+      },
+      {
+        "id": "PATH-ACTOR",
+        "generator": "each actor success, normal completion, error category, cancellation, and late terminal event",
+        "obligations": [
+          "all nine workflow actor types, including nested rawDownloadQueue and rawDownloadJob",
+          "all controlWaiter outcomes"
+        ]
+      },
+      {
+        "id": "PATH-CONTROL",
+        "generator": "start, pause, resume, and stop from every atomic state with matching, stale, duplicate, and conflicting identities",
+        "obligations": [
+          "accepted",
+          "completed",
+          "rejected",
+          "failed",
+          "cancelled",
+          "timeout"
+        ]
+      },
+      {
+        "id": "PATH-ORDER",
+        "generator": "pairwise permutations of IDLE, timer, cleanup, control, and shutdown events around every exit",
+        "obligations": [
+          "late",
+          "duplicate",
+          "reordered",
+          "stale scopeEpoch"
+        ]
+      },
+      {
+        "id": "PATH-RESTART",
+        "generator": "restart from every atomic state and at every durable commit/cancellation boundary",
+        "obligations": [
+          "cleanup before new start",
+          "durable oracle convergence",
+          "no snapshot hydration"
+        ]
+      }
+    ],
+    "generatedStatePaths": [
+      {
+        "state": "stopped.clean",
+        "transitionIds": [
+          "T001"
+        ]
+      },
+      {
+        "state": "stopped.failed",
+        "transitionIds": [
+          "T001",
+          "T050",
+          "T183"
+        ]
+      },
+      {
+        "state": "starting.active",
+        "transitionIds": [
+          "T001",
+          "T010"
+        ]
+      },
+      {
+        "state": "starting.pausing",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T020"
+        ]
+      },
+      {
+        "state": "backfilling.active",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T100"
+        ]
+      },
+      {
+        "state": "backfilling.pausing",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T100",
+          "T021"
+        ]
+      },
+      {
+        "state": "watching.idling",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101"
+        ]
+      },
+      {
+        "state": "watching.polling",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T106"
+        ]
+      },
+      {
+        "state": "watching.closingForSweep",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101",
+          "T121"
+        ]
+      },
+      {
+        "state": "watching.closingForRetry",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101",
+          "T123"
+        ]
+      },
+      {
+        "state": "watching.closingForAuthBlock",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101",
+          "T125"
+        ]
+      },
+      {
+        "state": "watching.closingForPause",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101",
+          "T022"
+        ]
+      },
+      {
+        "state": "watching.closingForFailure",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101",
+          "T124"
+        ]
+      },
+      {
+        "state": "sweeping.active",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101",
+          "T121",
+          "T140"
+        ]
+      },
+      {
+        "state": "sweeping.pausing",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T101",
+          "T121",
+          "T140",
+          "T023"
+        ]
+      },
+      {
+        "state": "retryWaiting.active",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T103"
+        ]
+      },
+      {
+        "state": "retryWaiting.pausing",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T103",
+          "T024"
+        ]
+      },
+      {
+        "state": "authBlocked",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T102"
+        ]
+      },
+      {
+        "state": "paused",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T020",
+          "T170"
+        ]
+      },
+      {
+        "state": "stopping.forStop",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T043"
+        ]
+      },
+      {
+        "state": "stopping.forRestart",
+        "transitionIds": [
+          "T001",
+          "T050"
+        ]
+      },
+      {
+        "state": "stopping.afterFailure",
+        "transitionIds": [
+          "T001",
+          "T010",
+          "T104"
+        ]
+      }
+    ],
+    "properties": [
+      {
+        "id": "PROP-01",
+        "statement": "I01 and I02 hold after every generated step."
+      },
+      {
+        "id": "PROP-02",
+        "statement": "I03 through I07 hold under virtual time and delayed cleanup release."
+      },
+      {
+        "id": "PROP-03",
+        "statement": "I08 and I09 hold under interruption before and after each durable commit."
+      },
+      {
+        "id": "PROP-04",
+        "statement": "I10 holds for every captured production-shaped authentication fault."
+      },
+      {
+        "id": "PROP-05",
+        "statement": "I11 through I14 hold for arbitrary event sequences after shrinking."
+      },
+      {
+        "id": "PROP-06",
+        "statement": "I15 and I16 hold for restart and thousands of poll/cancel cycles."
+      },
+      {
+        "id": "PROP-07",
+        "statement": "No trace deadlocks outside an actor with active work, and no retry/watch cycle livelocks beyond maxRetryAttempts without a successful reset."
+      },
+      {
+        "id": "PROP-08",
+        "statement": "Every U01-U11 forbidden configuration remains unreachable."
+      },
+      {
+        "id": "PROP-09",
+        "statement": "At every atomic state, malformed or unknown input is rejected before actor.send, and every known but locally illegal event follows globalEventPolicy without changing state, context, durable facts, or actor ownership; a rejected control may emit only its typed rejection decision."
+      }
+    ],
+    "requiredFailureArtifacts": [
+      "seed",
+      "shrunk event trace",
+      "state configuration after every step",
+      "context version and scopeEpoch",
+      "active actor/timer/listener inventory",
+      "durable checkpoint digest",
+      "public status and control observation"
+    ]
+  },
+  "traceability": [
+    {
+      "id": "F01",
+      "transitions": [
+        "T110",
+        "T116",
+        "T117",
+        "T118",
+        "T121",
+        "T122",
+        "T140",
+        "T150",
+        "T156",
+        "T157",
+        "T158"
+      ],
+      "invariants": [
+        "I08",
+        "I09"
+      ],
+      "failureInjection": "Complete initial backfill, add a higher server UID, trigger a sweep, interrupt each substep, restart, and observe one committed ingestion plus advanced sweep eligibility.",
+      "postcondition": "backfillCompleted remains true and later mail is discovered; no early return suppresses sweep."
+    },
+    {
+      "id": "F03",
+      "transitions": [
+        "T123",
+        "T124",
+        "T125",
+        "T126",
+        "T127",
+        "T128",
+        "T141",
+        "T142",
+        "T144"
+      ],
+      "invariants": [
+        "I02",
+        "I04",
+        "I14"
+      ],
+      "failureInjection": "Make a production-shaped IDLE adapter complete normally and fail in each fault category.",
+      "postcondition": "watching.idling is left immediately; retry, auth block, or terminal failure is observed after owned cleanup."
+    },
+    {
+      "id": "F17",
+      "transitions": [
+        "T022",
+        "T024",
+        "T121",
+        "T122",
+        "T140",
+        "T141",
+        "T143",
+        "T160"
+      ],
+      "invariants": [
+        "I04",
+        "I05",
+        "I16"
+      ],
+      "failureInjection": "Run thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners and timers.",
+      "postcondition": "Every settled callback actor owns zero listeners and timers; counts remain bounded."
+    },
+    {
+      "id": "F18",
+      "transitions": [
+        "T041",
+        "T042",
+        "T043",
+        "T050",
+        "T051",
+        "T053",
+        "T180",
+        "T181",
+        "T182",
+        "T183"
+      ],
+      "invariants": [
+        "I06",
+        "I07",
+        "I15"
+      ],
+      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while child closes are delayed.",
+      "postcondition": "One cleanup job cancels each resource once; all callers observe the same barrier and no terminal/restart state arrives early."
+    },
+    {
+      "id": "F19",
+      "transitions": [
+        "T010",
+        "T020",
+        "T021",
+        "T022",
+        "T023",
+        "T024",
+        "T030",
+        "T040",
+        "T041",
+        "T042",
+        "T043",
+        "T143",
+        "T170",
+        "T180"
+      ],
+      "invariants": [
+        "I11",
+        "I12",
+        "I13"
+      ],
+      "failureInjection": "Delay target transitions and cleanup past the control deadline; inject stale versions, duplicate keys, failure, and superseding controls.",
+      "postcondition": "Every success contains a compatible observed state/version; all other outcomes are typed non-success with the last real observation."
+    },
+    {
+      "id": "F20",
+      "transitions": [
+        "T102",
+        "T112",
+        "T125",
+        "T142",
+        "T152"
+      ],
+      "invariants": [
+        "I03",
+        "I10"
+      ],
+      "failureInjection": "Feed captured credential rejection and authentication server responses through the production-shaped adapter boundary.",
+      "postcondition": "authBlocked is observed with no retry timer and no credential or raw-command material."
+    },
+    {
+      "id": "S05",
+      "transitions": [
+        "all"
+      ],
+      "invariants": [
+        "I01",
+        "I02",
+        "I06",
+        "I07",
+        "I11",
+        "I12",
+        "I13",
+        "I14",
+        "I15",
+        "I16",
+        "I17"
+      ],
+      "failureInjection": "Generate controls and actor outcomes at every state, guard branch, cancellation edge, timer edge, cleanup edge, and restart boundary.",
+      "postcondition": "The active state names current work, owns every effect, and controls report only observed transitions."
+    }
+  ],
+  "residualBoundaries": [
+    {
+      "id": "R01",
+      "decision": "Process boot auto-start policy is not chosen by this chart.",
+      "effect": "The actor reconstructs stopped.clean with no children. A daemon bootstrap owner must explicitly send control.start.requested if product policy requires automatic sync.",
+      "blocking": false,
+      "reason": "No accepted artifact authorizes this design contract to choose launch policy."
+    },
+    {
+      "id": "R02",
+      "decision": "Numeric retry and timer defaults are required validated inputs, not hidden design defaults.",
+      "effect": "Implementation cannot start the actor without values satisfying configuration constraints.",
+      "blocking": false,
+      "reason": "P3-C17 and P3-C21 own calculation/configuration; this model freezes ownership and bounds."
+    },
+    {
+      "id": "R03",
+      "decision": "The current public request schemas do not expose expectedVersion although the in-process control protocol permits it.",
+      "effect": "HTTP/CLI adapters may omit it; adding it publicly requires a separate P1-C08 contract revision.",
+      "blocking": false,
+      "reason": "The accepted schema remains authoritative and unmodified."
+    }
+  ]
+}
