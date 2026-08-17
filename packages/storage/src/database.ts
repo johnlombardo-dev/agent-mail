@@ -10,6 +10,7 @@ const PRIVATE_DATABASE_MODE = 0o600;
 
 export type DatabaseOpenErrorCode =
   | "invalid-path"
+  | "invalid-schema-ceiling"
   | "unsafe-permissions"
   | "unsupported-schema"
   | "initialization-failed"
@@ -30,6 +31,11 @@ export type OpenDatabase = Readonly<{
   readonly close: () => Promise<void>;
 }>;
 
+export type OpenDatabaseOptions = Readonly<{
+  /** Highest schema version this caller has migrations and behavior for. */
+  readonly supportedSchemaVersion?: number;
+}>;
+
 type PermissionKind = "parent directory" | "database";
 
 /**
@@ -37,9 +43,15 @@ type PermissionKind = "parent directory" | "database";
  *
  * The caller owns configuration and path derivation. This boundary accepts only
  * a canonical absolute path, validates the immediate private parent, and does
- * not create directories or run schema migrations.
+ * not create directories or run schema migrations. Callers opening an
+ * application database may declare a higher supported schema ceiling while
+ * retaining the default future-version fail-closed behavior.
  */
-export async function openDatabase(databasePath: string): Promise<OpenDatabase> {
+export async function openDatabase(
+  databasePath: string,
+  options: OpenDatabaseOptions = {},
+): Promise<OpenDatabase> {
+  const supportedSchemaVersion = validateSchemaCeiling(options.supportedSchemaVersion);
   validateDatabasePath(databasePath);
   await assertPrivateParent(dirname(databasePath));
 
@@ -57,7 +69,7 @@ export async function openDatabase(databasePath: string): Promise<OpenDatabase> 
     // WAL configuration can create the companion files. Harden and verify
     // them only after SQLite has selected WAL, not before that side effect.
     await hardenCompanionFiles(databasePath);
-    verifySchemaVersion(db);
+    verifySchemaVersion(db, supportedSchemaVersion);
     verifyIntegrity(db);
 
     let handleClosed = false;
@@ -249,13 +261,24 @@ function configureDatabase(db: Database): void {
   expectPragmaNumber(db, "trusted_schema", 0);
 }
 
-function verifySchemaVersion(db: Database): void {
+function validateSchemaCeiling(value: number | undefined): number {
+  const ceiling = value ?? SUPPORTED_DATABASE_SCHEMA_VERSION;
+  if (!Number.isSafeInteger(ceiling) || ceiling < 0) {
+    throw new DatabaseOpenError(
+      "invalid-schema-ceiling",
+      "supported database schema version must be a non-negative safe integer",
+    );
+  }
+  return ceiling;
+}
+
+function verifySchemaVersion(db: Database, supportedSchemaVersion: number): void {
   const row = db.query("PRAGMA user_version;").get();
   const version = readPragmaNumber(row, "user_version");
-  if (version > SUPPORTED_DATABASE_SCHEMA_VERSION) {
+  if (version > supportedSchemaVersion) {
     throw new DatabaseOpenError(
       "unsupported-schema",
-      `storage database schema version ${version} is newer than supported version ${SUPPORTED_DATABASE_SCHEMA_VERSION}`,
+      `storage database schema version ${version} is newer than supported version ${supportedSchemaVersion}`,
     );
   }
   if (version < 0) {

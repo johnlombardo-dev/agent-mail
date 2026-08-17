@@ -25,9 +25,13 @@ async function temporaryDatabasePath(): Promise<{ readonly root: string; readonl
   return { root, path: join(root, "archive.sqlite") };
 }
 
-async function expectOpenError(path: string, code: DatabaseOpenError["code"]): Promise<void> {
+async function expectOpenError(
+  path: string,
+  code: DatabaseOpenError["code"],
+  options?: Parameters<typeof openDatabase>[1],
+): Promise<void> {
   try {
-    await openDatabase(path);
+    await openDatabase(path, options);
     throw new Error("expected database open to fail");
   } catch (error: unknown) {
     if (!(error instanceof DatabaseOpenError)) throw error;
@@ -147,6 +151,41 @@ describe("SQLite database boundary", () => {
       user_version: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
     });
     probe.close();
+  });
+
+  test("opens a version within a caller-declared schema ceiling", async () => {
+    const { path } = await temporaryDatabasePath();
+    const seed = new Database(path);
+    seed.exec(`PRAGMA user_version = ${SUPPORTED_DATABASE_SCHEMA_VERSION + 1};`);
+    seed.close();
+    await chmod(path, 0o600);
+
+    const opened = await openDatabase(path, {
+      supportedSchemaVersion: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
+    });
+    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({
+      user_version: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
+    });
+    expect(opened.db.query("PRAGMA foreign_keys;").get()).toEqual({ foreign_keys: 1 });
+    await opened.close();
+  });
+
+  test("rejects a version above a caller-declared schema ceiling", async () => {
+    const { path } = await temporaryDatabasePath();
+    const seed = new Database(path);
+    seed.exec(`PRAGMA user_version = ${SUPPORTED_DATABASE_SCHEMA_VERSION + 2};`);
+    seed.close();
+    await chmod(path, 0o600);
+
+    await expectOpenError(path, "unsupported-schema", {
+      supportedSchemaVersion: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
+    });
+  });
+
+  test("rejects an invalid schema ceiling before opening", async () => {
+    const { path } = await temporaryDatabasePath();
+    await expectOpenError(path, "invalid-schema-ceiling", { supportedSchemaVersion: -1 });
+    await expectOpenError(path, "invalid-schema-ceiling", { supportedSchemaVersion: 1.5 });
   });
 
   test("enables foreign keys even when an adjacent connection left them off", async () => {
