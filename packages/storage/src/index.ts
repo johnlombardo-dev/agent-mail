@@ -2,8 +2,18 @@ export * from "./blob-corruption";
 export * from "./blob-promotion";
 export * from "./blob-stage";
 export * from "./blob-stage-cleanup";
+export * from "./absence-reconciliation";
+export * from "./action-plan-attempt";
+export * from "./backup-manifest";
+export * from "./backup-writer";
+export * from "./backup-restore";
 export * from "./database";
 export * from "./migration-runner";
 export * from "./row-decoders";
+export * from "./remote-placement-tombstone";
+export * from "./remote-placement-observation";
+export * from "./offline-root-replacement";
+export * from "./promotion-adapter";
+export * from "./search-projection";
 
 export const packageMarker = true;
