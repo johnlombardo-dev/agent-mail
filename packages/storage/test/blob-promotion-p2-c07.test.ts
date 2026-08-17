@@ -7,6 +7,7 @@ import { promoteBlob, BlobPromotionError } from "../src/blob-promotion";
 import { stageBlob } from "../src/blob-stage";
 
 const temporaryDirectories: string[] = [];
+const OWNER = { pid: 43_127, processStartIdentity: "blob-promotion-test-owner" } as const;
 
 async function temporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "agent-mail-blob-promotion-p2-c07-"));
@@ -30,8 +31,8 @@ describe("blob promotion P2-C07", () => {
     const bytes = new TextEncoder().encode("same content wins once\n");
     const digest = digestOf(bytes);
     const [first, second] = await Promise.all([
-      stageBlob({ stagingDirectory: directory, source: (async function* () { yield bytes; })() }),
-      stageBlob({ stagingDirectory: directory, source: (async function* () { yield bytes; })() }),
+      stageBlob({ stagingDirectory: directory, owner: OWNER, source: (async function* () { yield bytes; })() }),
+      stageBlob({ stagingDirectory: directory, owner: OWNER, source: (async function* () { yield bytes; })() }),
     ]);
 
     const results = await Promise.all([
@@ -47,7 +48,7 @@ describe("blob promotion P2-C07", () => {
   test("interrupts immediately before publication without creating a canonical path", async () => {
     const directory = await temporaryDirectory();
     const bytes = new TextEncoder().encode("publication is interrupted\n");
-    const staged = await stageBlob({ stagingDirectory: directory, source: (async function* () { yield bytes; })() });
+    const staged = await stageBlob({ stagingDirectory: directory, owner: OWNER, source: (async function* () { yield bytes; })() });
     const interruption = new Error("injected interruption");
 
     await expect(
@@ -66,7 +67,7 @@ describe("blob promotion P2-C07", () => {
   test("rejects an existing same-name file with different bytes and preserves evidence", async () => {
     const directory = await temporaryDirectory();
     const bytes = new TextEncoder().encode("the valid staged bytes\n");
-    const staged = await stageBlob({ stagingDirectory: directory, source: (async function* () { yield bytes; })() });
+    const staged = await stageBlob({ stagingDirectory: directory, owner: OWNER, source: (async function* () { yield bytes; })() });
     const corrupt = new TextEncoder().encode("different bytes under the digest name\n");
     const canonicalPath = join(directory, staged.digest);
     await writeFile(canonicalPath, corrupt, { mode: 0o600 });
@@ -92,6 +93,7 @@ describe("blob promotion P2-C07", () => {
     const bytes = new TextEncoder().encode("durable publication with recoverable cleanup\n");
     const staged = await stageBlob({
       stagingDirectory,
+      owner: OWNER,
       source: (async function* () { yield bytes; })(),
     });
     const syncSteps: string[] = [];

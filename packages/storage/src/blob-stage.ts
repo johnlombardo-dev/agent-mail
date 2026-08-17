@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { open, unlink, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -7,12 +7,26 @@ export const DEFAULT_MAX_STAGE_BYTES = 256 * 1024 * 1024;
 
 export type BlobChunkSource = AsyncIterable<Uint8Array> | ReadableStream<Uint8Array>;
 
+export type BlobStageOwner = Readonly<{
+  pid: number;
+  processStartIdentity: string;
+}>;
+
 export type BlobStageOptions = Readonly<{
   /** A caller-validated, private directory reserved for staging blobs. */
   stagingDirectory: string;
+  /** The process identity captured by the caller; raw identity is never persisted. */
+  owner: BlobStageOwner;
   source: BlobChunkSource;
   maxBytes?: number;
   signal?: AbortSignal;
+}>;
+
+export type BlobStageFilenameMetadata = Readonly<{
+  version: 1;
+  pid: number;
+  identityDigest: string;
+  randomStageIdentity: string;
 }>;
 
 export type BlobStageResult = Readonly<{
@@ -24,6 +38,80 @@ export type BlobStageResult = Readonly<{
 }>;
 
 type ChunkIterator = AsyncIterator<Uint8Array>;
+
+const STAGE_FILENAME =
+  /^\.stage-v(1)-pid([1-9]\d*)-owner([0-9a-f]{64})-random([0-9a-f]{64})\.tmp$/u;
+const MAX_PROCESS_START_IDENTITY_LENGTH = 4096;
+
+function isPlainRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasControlCharacters(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      ((codePoint >= 0 && codePoint <= 0x1f) || (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function validateOwner(value: unknown): BlobStageOwner {
+  if (!isPlainRecord(value)) throw new TypeError("blob stage owner must be a plain object");
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== 2 || !keys.includes("pid") || !keys.includes("processStartIdentity")) {
+    throw new TypeError("blob stage owner has missing or unknown fields");
+  }
+  const pid = value.pid;
+  const processStartIdentity = value.processStartIdentity;
+  if (typeof pid !== "number" || !Number.isSafeInteger(pid) || pid <= 0) {
+    throw new TypeError("blob stage owner pid must be a positive safe integer");
+  }
+  if (
+    typeof processStartIdentity !== "string" ||
+    processStartIdentity.length === 0 ||
+    processStartIdentity.length > MAX_PROCESS_START_IDENTITY_LENGTH ||
+    processStartIdentity.trim() !== processStartIdentity ||
+    hasControlCharacters(processStartIdentity)
+  ) {
+    throw new TypeError("blob stage owner processStartIdentity is invalid");
+  }
+  return { pid, processStartIdentity };
+}
+
+function ownerIdentityDigest(processStartIdentity: string): string {
+  return createHash("sha256").update(processStartIdentity).digest("hex");
+}
+
+/** Parse one exact recognized stage basename; unknown files return undefined. */
+export function parseBlobStageFilename(value: unknown): BlobStageFilenameMetadata | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = STAGE_FILENAME.exec(value);
+  if (match === null) return undefined;
+  const [, versionText, pidText, identityDigest, randomStageIdentity] = match;
+  if (
+    versionText === undefined ||
+    pidText === undefined ||
+    identityDigest === undefined ||
+    randomStageIdentity === undefined
+  ) {
+    return undefined;
+  }
+  const pid = Number(pidText);
+  if (!Number.isSafeInteger(pid) || String(pid) !== pidText) return undefined;
+  if (versionText !== "1") return undefined;
+  return { version: 1, pid, identityDigest, randomStageIdentity };
+}
+
+export function isBlobStageFilename(value: unknown): value is string {
+  return parseBlobStageFilename(value) !== undefined;
+}
 
 function abortError(signal: AbortSignal): unknown {
   return signal.reason ?? new DOMException("Blob staging was aborted", "AbortError");
@@ -75,12 +163,18 @@ function mergeErrors(primary: unknown, cleanup: unknown): unknown {
   return new AggregateError([primary, cleanup], "blob staging and cleanup both failed");
 }
 
-async function createExclusiveStagePath(directory: string): Promise<{
+async function createExclusiveStagePath(
+  directory: string,
+  owner: BlobStageOwner,
+): Promise<{
   readonly path: string;
   readonly handle: FileHandle;
 }> {
+  const identityDigest = ownerIdentityDigest(owner.processStartIdentity);
   for (let attempt = 0; attempt < 8; attempt += 1) {
-    const path = join(directory, `.stage-${randomBytes(32).toString("hex")}.tmp`);
+    const randomStageIdentity = randomBytes(32).toString("hex");
+    const filename = `.stage-v1-pid${owner.pid}-owner${identityDigest}-random${randomStageIdentity}.tmp`;
+    const path = join(directory, filename);
     try {
       const handle = await open(path, "wx", 0o600);
       try {
@@ -126,9 +220,10 @@ async function writeChunk(handle: FileHandle, chunk: Uint8Array): Promise<void> 
  * file handle has been closed. Any failure removes the partial file.
  */
 export async function stageBlob(options: BlobStageOptions): Promise<BlobStageResult> {
+  const owner = validateOwner(options.owner);
   const maxBytes = validateMaxBytes(options.maxBytes);
   const hash = new Bun.CryptoHasher("sha256");
-  const { path, handle } = await createExclusiveStagePath(options.stagingDirectory);
+  const { path, handle } = await createExclusiveStagePath(options.stagingDirectory, owner);
   let fileHandle: FileHandle | undefined = handle;
   let iterator: ChunkIterator | undefined;
   let sourceFinished = false;
