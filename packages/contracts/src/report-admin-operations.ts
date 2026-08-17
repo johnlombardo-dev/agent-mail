@@ -181,9 +181,8 @@ export type ReportAdminExportRecord = z.infer<typeof reportAdminExportRecordSche
 
 export const reportAdminExportResponseSchema = z.strictObject({
   version: z.literal(1),
-  contentType: z.literal("application/x-ndjson"),
-  recordVersion: z.literal(1),
-  selectedCount: nonNegativeIntegerSchema,
+  contentType: z.literal("application/octet-stream"),
+  streamVersion: z.literal(1),
 });
 export type ReportAdminExportResponse = z.infer<typeof reportAdminExportResponseSchema>;
 
@@ -312,7 +311,7 @@ export const reportAdminExportOperation = defineOperation({
   scope: "mail:export.selected",
   request: reportAdminExportRequestSchema,
   response: reportAdminExportResponseSchema,
-  streaming: "ndjson",
+  streaming: "bytes",
   strictness: "strict",
 });
 

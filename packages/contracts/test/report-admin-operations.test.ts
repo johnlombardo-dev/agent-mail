@@ -136,12 +136,11 @@ describe("report and admin operation contracts", () => {
     ).toBe(false);
     const response = {
       version: 1,
-      contentType: "application/x-ndjson",
-      recordVersion: 1,
-      selectedCount: 1,
+      contentType: "application/octet-stream",
+      streamVersion: 1,
     };
     expect(reportAdminExportResponseSchema.parse(response)).toEqual(response);
-    expect(reportAdminExportOperation.streaming).toBe("ndjson");
+    expect(reportAdminExportOperation.streaming).toBe("bytes");
   });
 
   it("round-trips backup and restore while requiring exact destructive preconditions", () => {

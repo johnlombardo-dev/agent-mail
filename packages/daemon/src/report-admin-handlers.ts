@@ -162,9 +162,9 @@ function handlerFor<TRequest, TResponse>(
 }
 
 /**
- * Create handlers for the six non-byte-producing report/admin operations.
- * Selected export returns only its validated response metadata here; byte
- * streaming remains an explicit downstream operation.
+ * Create handlers for the report/admin operations. Selected export returns
+ * only truthful AMEX byte-stream metadata; its bytes are produced by the
+ * selected-export streaming route.
  */
 export function createReportAdminHandlers(services: ReportAdminServices): OperationHandlerMap {
   return Object.freeze({

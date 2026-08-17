@@ -3,6 +3,7 @@ import {
   type CliCommandDefinition,
 } from "../../cli/src/command-registry";
 import {
+  reportAdminExportResponseSchema,
   reportAdminExportRecordSchema,
   streamMetadataSchema,
   type OperationDefinition,
@@ -302,17 +303,10 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
   },
   "exports.selected": {
     request: { selection: { kind: "identities" as const, messageIds: [messageId] } },
-    success: { version: 1, contentType: "application/x-ndjson", recordVersion: 1, selectedCount: 1 },
+    success: { version: 1, contentType: "application/octet-stream", streamVersion: 1 },
     errors: [],
     stream: {
-      metadata: { contentType: "application/x-ndjson", contentLength: 256, digest, filename: "export.ndjson" },
-      ndjsonRecord: {
-        version: 1,
-        messageId,
-        attribution: { sourceMessageId: messageId, source: "message" as const, occurrence: null },
-        actionHistory: [],
-        contentDigest: digest,
-      },
+      metadata: { version: 1, contentType: "application/octet-stream", streamVersion: 1 },
     },
   },
   "admin.backup": {
@@ -467,6 +461,10 @@ export const corpusOperations: readonly CliCommandDefinition[] = publicCliOperat
 /** Parse a stream header using the same shared stream metadata schema. */
 export function parseStreamMetadata(fixture: OperationStreamFixture): unknown {
   return streamMetadataSchema.parse(fixture.metadata);
+}
+
+export function parseByteStreamMetadata(fixture: OperationStreamFixture): unknown {
+  return reportAdminExportResponseSchema.parse(fixture.metadata);
 }
 
 /** Parse an NDJSON item using the same shared export record schema. */

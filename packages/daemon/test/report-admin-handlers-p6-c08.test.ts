@@ -53,9 +53,8 @@ const successes = {
   },
   "exports.selected": {
     version: 1 as const,
-    contentType: "application/x-ndjson" as const,
-    recordVersion: 1 as const,
-    selectedCount: 1,
+    contentType: "application/octet-stream" as const,
+    streamVersion: 1 as const,
   },
   "admin.backup": {
     backupId: "backup:backup-1",
@@ -163,7 +162,7 @@ function servicesFor(
 }
 
 describe("P6-C08 report/admin handler adapter", () => {
-  test("runs every non-streaming route through its injected service and shared response schema", async () => {
+  test("runs every report/admin route through its injected service and shared response schema", async () => {
     const calls: string[] = [];
     const app = createHttpApp({
       authenticate: authenticated,

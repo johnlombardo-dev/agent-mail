@@ -11,6 +11,7 @@ import {
   assertCorpusComplete,
   operationCorpus,
   parseNdjsonRecord,
+  parseByteStreamMetadata,
   parseStreamMetadata,
   registeredPublicErrorApplicability,
 } from "./operation-corpus";
@@ -42,8 +43,9 @@ describe("public operation corpus", () => {
       }
 
       if (entry.stream !== undefined) {
-        const metadataCanonical = parseStreamMetadata(entry.stream);
-        expect(parseStreamMetadata({ metadata: jsonRoundTrip(metadataCanonical) })).toEqual(
+        const parseMetadata = operation.key === "exports.selected" ? parseByteStreamMetadata : parseStreamMetadata;
+        const metadataCanonical = parseMetadata(entry.stream);
+        expect(parseMetadata({ metadata: jsonRoundTrip(metadataCanonical) })).toEqual(
           metadataCanonical,
         );
         if (operation.streaming === "ndjson") {
