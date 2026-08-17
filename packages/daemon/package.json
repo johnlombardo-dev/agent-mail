@@ -1,5 +1,5 @@
 {
-  "name": "@agent-mail/daemon",
+  "name": "agent-maild",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,6 @@
     "@agent-mail/contracts": "workspace:*",
     "@agent-mail/core": "workspace:*",
     "@agent-mail/imap": "workspace:*",
-    "@agent-mail/storage": "workspace:*",
-    "@agent-mail/workflow": "workspace:*"
+    "@agent-mail/storage": "workspace:*"
   }
 }
