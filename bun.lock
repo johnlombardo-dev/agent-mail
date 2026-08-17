@@ -48,6 +48,7 @@
       "name": "@agent-mail/imap",
       "dependencies": {
         "@agent-mail/core": "workspace:*",
+        "xstate": "5.32.5",
       },
     },
     "packages/storage": {

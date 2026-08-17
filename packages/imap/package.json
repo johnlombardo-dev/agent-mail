@@ -6,6 +6,7 @@
     "build": "bun build src/index.ts --outdir dist --target bun"
   },
   "dependencies": {
-    "@agent-mail/core": "workspace:*"
+    "@agent-mail/core": "workspace:*",
+    "xstate": "5.32.5"
   }
 }
