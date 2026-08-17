@@ -15,5 +15,6 @@ export * from "./remote-placement-observation";
 export * from "./offline-root-replacement";
 export * from "./promotion-adapter";
 export * from "./search-projection";
+export * from "./search-cursor";
 
 export const packageMarker = true;

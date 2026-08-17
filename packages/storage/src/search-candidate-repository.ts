@@ -11,6 +11,15 @@ import type { Database } from "bun:sqlite";
 import { MESSAGE_FTS_BM25_WEIGHTS } from "./migrations/0003-external-content-search";
 import { SEARCH_CANDIDATE_SQL, type CompiledSearchQuery } from "./search-query-compiler";
 import type { CompiledStructuredFilter } from "./structured-filter-compiler";
+import {
+  createSearchCursor,
+  digestNormalizedSearchQuery,
+  parseSearchCursor,
+  searchKeysetPredicate,
+  SearchCursorError,
+  type SearchCursor,
+  type SearchCursorIntegrityCodec,
+} from "./search-cursor";
 
 /** The largest page that the candidate query can ask SQLite to return. */
 export const MAX_CANDIDATE_PAGE_SIZE = 100;
@@ -21,6 +30,10 @@ export type SearchCandidateRequest = Readonly<{
   readonly text: CompiledSearchQuery;
   readonly filters: CompiledStructuredFilter;
   readonly limit: number;
+  /** Opaque keyset cursor from the preceding page. */
+  readonly cursor?: unknown;
+  /** The daemon-owned codec; callers never supply or inspect an integrity tag. */
+  readonly cursorCodec?: SearchCursorIntegrityCodec;
 }>;
 
 export type SearchCandidate = Readonly<{
@@ -35,6 +48,7 @@ export type SearchCandidatePage = Readonly<{
   readonly candidates: readonly SearchCandidate[];
   readonly limit: number;
   readonly bm25Weights: typeof MESSAGE_FTS_BM25_WEIGHTS;
+  readonly nextCursor: SearchCursor | null;
 }>;
 
 type CandidateRow = Readonly<{
@@ -53,6 +67,15 @@ export function selectSearchCandidates(
   request: SearchCandidateRequest,
 ): SearchCandidatePage {
   const accountId = assertRequest(request);
+  const queryDigest = digestNormalizedSearchQuery(request.text, request.filters);
+  const cursor =
+    request.cursor === undefined
+      ? undefined
+      : parseSearchCursor(request.cursor, request.cursorCodec ?? invalidCursorCodec());
+  if (cursor !== undefined && cursor.normalizedQueryDigest !== queryDigest) {
+    throw new SearchCursorError();
+  }
+  const keyset = cursor === undefined ? undefined : searchKeysetPredicate(cursor);
 
   const sql = `
     WITH ranked AS MATERIALIZED (
@@ -89,6 +112,7 @@ export function selectSearchCandidates(
     )
     SELECT message_id, score, canonical_instant
     FROM ranked
+    ${keyset === undefined ? "" : `WHERE ${keyset.sql}`}
     ORDER BY
       score ASC,
       CASE WHEN canonical_instant IS NULL THEN 1 ELSE 0 END ASC,
@@ -101,16 +125,37 @@ export function selectSearchCandidates(
     ...request.text.parameters,
     ...request.filters.parameters,
     accountId,
+    ...(keyset?.parameters ?? []),
     request.limit,
   ];
   const rows = database.query<CandidateRow, SQLQueryBindings[]>(sql).all(...parameters);
   const candidates = rows.map((row, index) => decodeCandidate(row, index + 1));
+  const lastCandidate = candidates[candidates.length - 1];
 
   return Object.freeze({
     candidates: Object.freeze(candidates),
     limit: request.limit,
     bm25Weights: MESSAGE_FTS_BM25_WEIGHTS,
+    nextCursor:
+      request.cursorCodec === undefined || lastCandidate === undefined
+        ? null
+        : createSearchCursor(
+            {
+              normalizedQueryDigest: queryDigest,
+              score: lastCandidate.score,
+              canonicalInstant: lastCandidate.canonicalInstant,
+              identityTieBreaker: lastCandidate.messageId,
+            },
+            request.cursorCodec,
+          ),
   });
+}
+
+function invalidCursorCodec(): SearchCursorIntegrityCodec {
+  return {
+    sign: () => "",
+    verify: () => false,
+  };
 }
 
 function assertRequest(request: SearchCandidateRequest): AccountId {
