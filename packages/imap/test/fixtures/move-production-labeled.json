@@ -1,0 +1,5 @@
+{
+  "source": { "path": "INBOX", "uidValidity": 9 },
+  "destination": { "path": "客户/归档/Équipe", "uidValidity": 938475 },
+  "move": { "path": "INBOX", "destination": "客户/归档/Équipe", "uidMap": { "7": 77 } }
+}
