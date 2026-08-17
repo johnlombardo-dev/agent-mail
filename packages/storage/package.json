@@ -1,0 +1,11 @@
+{
+  "name": "@agent-mail/storage",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target bun"
+  },
+  "dependencies": {
+    "@agent-mail/core": "workspace:*"
+  }
+}
