@@ -1,0 +1,82 @@
+{
+  "accountId": "account:icloud-example",
+  "mailboxes": [
+    {
+      "path": "客户/归档/Équipe",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": "\\Archive",
+      "status": { "uidValidity": 938475, "uidNext": 41, "highestModseq": 8 }
+    },
+    {
+      "path": "Проекты/Удалённые",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": "\\Trash",
+      "status": { "uidValidity": 938476, "uidNext": 12, "highestModseq": 3 }
+    },
+    {
+      "path": "Archive",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": null,
+      "status": { "uidValidity": 938477, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "Trash",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": null,
+      "status": { "uidValidity": 938478, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "NoSelect/Archive",
+      "delimiter": "/",
+      "flags": ["\\Noselect", "\\HasChildren"],
+      "specialUse": "\\Archive",
+      "status": { "uidValidity": 938479, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "NoSelect/Trash",
+      "delimiter": "/",
+      "flags": ["\\Noselect", "\\HasChildren"],
+      "specialUse": "\\Trash",
+      "status": { "uidValidity": 938480, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "Archive-copy-1",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": "\\Archive",
+      "status": { "uidValidity": 938481, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "Archive-copy-2",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": "\\Archive",
+      "status": { "uidValidity": 938482, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "Trash-copy-1",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": "\\Trash",
+      "status": { "uidValidity": 938483, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "Trash-copy-2",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": "\\Trash",
+      "status": { "uidValidity": 938484, "uidNext": 2, "highestModseq": 1 }
+    },
+    {
+      "path": "INBOX",
+      "delimiter": "/",
+      "flags": ["\\HasNoChildren"],
+      "specialUse": "\\Inbox",
+      "status": { "uidValidity": 938485, "uidNext": 2, "highestModseq": 1 }
+    }
+  ]
+}
