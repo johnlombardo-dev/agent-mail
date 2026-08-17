@@ -1,4 +1,11 @@
-import { parseMessageId, parseUtcInstant, type MessageId, type UtcInstant } from "@agent-mail/core";
+import {
+  parseAccountId,
+  parseMessageId,
+  parseUtcInstant,
+  type AccountId,
+  type MessageId,
+  type UtcInstant,
+} from "@agent-mail/core";
 import type { SQLQueryBindings } from "bun:sqlite";
 import type { Database } from "bun:sqlite";
 import { MESSAGE_FTS_BM25_WEIGHTS } from "./migrations/0003-external-content-search";
@@ -9,6 +16,8 @@ import type { CompiledStructuredFilter } from "./structured-filter-compiler";
 export const MAX_CANDIDATE_PAGE_SIZE = 100;
 
 export type SearchCandidateRequest = Readonly<{
+  /** Untrusted account scope; parsed before any SQL executes. */
+  readonly accountId: unknown;
   readonly text: CompiledSearchQuery;
   readonly filters: CompiledStructuredFilter;
   readonly limit: number;
@@ -43,7 +52,7 @@ export function selectSearchCandidates(
   database: Database,
   request: SearchCandidateRequest,
 ): SearchCandidatePage {
-  assertRequest(request);
+  const accountId = assertRequest(request);
 
   const sql = `
     WITH ranked AS MATERIALIZED (
@@ -61,6 +70,7 @@ export function selectSearchCandidates(
           SELECT MIN(rp.internal_date)
           FROM remote_placements AS rp
           WHERE rp.message_id = m.message_id
+            AND rp.account_id = ?
             AND rp.tombstone_observed_at IS NULL
             AND rp.internal_date IS NOT NULL
         ) AS canonical_instant
@@ -69,6 +79,13 @@ export function selectSearchCandidates(
       JOIN messages AS m ON m.message_id = d.message_id
       WHERE ${request.text.sql}
         AND ${request.filters.sql}
+        AND EXISTS (
+          SELECT 1
+          FROM remote_placements AS visibility_rp
+          WHERE visibility_rp.account_id = ?
+            AND visibility_rp.message_id = m.message_id
+            AND visibility_rp.tombstone_observed_at IS NULL
+        )
     )
     SELECT message_id, score, canonical_instant
     FROM ranked
@@ -80,8 +97,10 @@ export function selectSearchCandidates(
     LIMIT ?;
   `;
   const parameters: SQLQueryBindings[] = [
+    accountId,
     ...request.text.parameters,
     ...request.filters.parameters,
+    accountId,
     request.limit,
   ];
   const rows = database.query<CandidateRow, SQLQueryBindings[]>(sql).all(...parameters);
@@ -94,7 +113,8 @@ export function selectSearchCandidates(
   });
 }
 
-function assertRequest(request: SearchCandidateRequest): void {
+function assertRequest(request: SearchCandidateRequest): AccountId {
+  const accountId = parseAccountId(request.accountId);
   if (
     request.text.kind !== "compiled" ||
     request.text.ok !== true ||
@@ -116,6 +136,7 @@ function assertRequest(request: SearchCandidateRequest): void {
   ) {
     throw new RangeError(`candidate page size must be between 1 and ${MAX_CANDIDATE_PAGE_SIZE}`);
   }
+  return accountId;
 }
 
 function decodeCandidate(row: CandidateRow, position: number): SearchCandidate {

@@ -16,6 +16,7 @@ import { compileStructuredFilters } from "../src/structured-filter-compiler";
 
 const roots: string[] = [];
 const accountId = "account:fixture";
+const otherAccountId = "account:other";
 const mailboxId = "mailbox:inbox";
 const messageIds = {
   a: createMessageId(`message:${"a".repeat(64)}`),
@@ -134,7 +135,11 @@ async function openFixture(
   return opened;
 }
 
-function request(filters: readonly unknown[] = [], limit = 100) {
+function request(
+  filters: readonly unknown[] = [],
+  limit = 100,
+  selectedAccountId: unknown = accountId,
+) {
   const text = compileSearchQuery("needle");
   const compiledFilters = compileStructuredFilters(filters);
   expect(text.kind).toBe("compiled");
@@ -142,7 +147,7 @@ function request(filters: readonly unknown[] = [], limit = 100) {
   if (text.kind !== "compiled" || compiledFilters.kind !== "compiled") {
     throw new Error("fixture compiler input did not compile");
   }
-  return { text, filters: compiledFilters, limit };
+  return { accountId: selectedAccountId, text, filters: compiledFilters, limit };
 }
 
 describe("bounded FTS candidate repository P4-C05", () => {
@@ -211,6 +216,73 @@ describe("bounded FTS candidate repository P4-C05", () => {
     await opened.close();
   });
 
+  test("returns only messages with a live placement in the selected account", async () => {
+    const opened = await openFixture();
+    opened.db
+      .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
+      .run(otherAccountId, mailboxId, 1);
+
+    // b has one live and one tombstoned placement in the selected account.
+    opened.db
+      .query(
+        "INSERT INTO remote_placements (account_id, mailbox_id, uid_validity, uid, message_id, internal_date, flags_json, tombstone_observed_at, tombstone_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+      )
+      .run(
+        accountId,
+        mailboxId,
+        1,
+        101,
+        messageIds.b,
+        "2026-01-01T00:00:00.000Z",
+        "[]",
+        "2026-01-03T00:00:00.000Z",
+        "fixture removal",
+      );
+    // c is all-tombstoned in the selected account.
+    opened.db
+      .query(
+        "UPDATE remote_placements SET tombstone_observed_at = ?, tombstone_reason = ? WHERE account_id = ? AND message_id = ?;",
+      )
+      .run("2026-01-03T00:00:00.000Z", "fixture removal", accountId, messageIds.c);
+    // d is tombstoned in the selected account but live in another account.
+    opened.db
+      .query(
+        "INSERT INTO remote_placements (account_id, mailbox_id, uid_validity, uid, message_id, internal_date, flags_json) VALUES (?, ?, ?, ?, ?, ?, ?);",
+      )
+      .run(
+        otherAccountId,
+        mailboxId,
+        1,
+        201,
+        messageIds.d,
+        "2026-01-01T00:00:00.000Z",
+        "[]",
+      );
+
+    expect(selectSearchCandidates(opened.db, request([], 100)).candidates.map(({ messageId }) => messageId)).toEqual([
+      messageIds.a,
+      messageIds.b,
+    ]);
+
+    // Tombstoning b's final live placement hides it without deleting retained content.
+    opened.db
+      .query(
+        "UPDATE remote_placements SET tombstone_observed_at = ?, tombstone_reason = ? WHERE account_id = ? AND message_id = ? AND tombstone_observed_at IS NULL;",
+      )
+      .run("2026-01-04T00:00:00.000Z", "fixture removal", accountId, messageIds.b);
+    expect(selectSearchCandidates(opened.db, request([], 100)).candidates.map(({ messageId }) => messageId)).toEqual([
+      messageIds.a,
+    ]);
+    expect(opened.db.query("SELECT COUNT(*) AS count FROM message_fts;").get()).toEqual({ count: 4 });
+    expect(opened.db.query("SELECT COUNT(*) AS count FROM messages WHERE message_id = ?;").get(messageIds.b)).toEqual({
+      count: 1,
+    });
+    expect(
+      opened.db.query("SELECT COUNT(*) AS count FROM message_search_documents WHERE message_id = ?;").get(messageIds.b),
+    ).toEqual({ count: 1 });
+    await opened.close();
+  });
+
   test("breaks equal-score/equal-time ties by canonical identity independent of insertion order", async () => {
     const first = await openFixture(["b", "a"], true);
     const second = await openFixture(["a", "b"], true);
@@ -227,10 +299,62 @@ describe("bounded FTS candidate repository P4-C05", () => {
     await second.close();
   });
 
+  test("uses only the selected account placement for canonical time and tie order", async () => {
+    const opened = await openFixture(["a", "b"], true);
+    opened.db
+      .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
+      .run(otherAccountId, mailboxId, 1);
+    opened.db
+      .query("DELETE FROM remote_placements WHERE account_id = ? AND message_id = ?;")
+      .run(accountId, messageIds.b);
+    opened.db
+      .query(
+        "INSERT INTO remote_placements (account_id, mailbox_id, uid_validity, uid, message_id, internal_date, flags_json) VALUES (?, ?, ?, ?, ?, ?, ?);",
+      )
+      .run(
+        accountId,
+        mailboxId,
+        1,
+        102,
+        messageIds.b,
+        "2026-01-02T00:00:00.000Z",
+        "[]",
+      );
+    opened.db
+      .query(
+        "INSERT INTO remote_placements (account_id, mailbox_id, uid_validity, uid, message_id, internal_date, flags_json) VALUES (?, ?, ?, ?, ?, ?, ?);",
+      )
+      .run(
+        otherAccountId,
+        mailboxId,
+        1,
+        201,
+        messageIds.b,
+        "2025-01-01T00:00:00.000Z",
+        "[]",
+      );
+
+    const page = selectSearchCandidates(opened.db, request([], 2));
+    expect(page.candidates.map(({ messageId }) => messageId)).toEqual([messageIds.b, messageIds.a]);
+    expect(page.candidates.map(({ canonicalInstant }) => canonicalInstant)).toEqual([
+      "2026-01-02T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+    ]);
+    await opened.close();
+  });
+
   test("rejects an unbounded candidate page", async () => {
     const opened = await openFixture();
     expect(() => selectSearchCandidates(opened.db, request([], 101))).toThrow(
       "candidate page size must be between 1 and 100",
+    );
+    await opened.close();
+  });
+
+  test("rejects an account scope that is not a canonical account identifier", async () => {
+    const opened = await openFixture();
+    expect(() => selectSearchCandidates(opened.db, request([], 100, "fixture"))).toThrow(
+      "Account ID serialization has the wrong namespace",
     );
     await opened.close();
   });
