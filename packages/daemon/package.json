@@ -9,6 +9,7 @@
     "@agent-mail/contracts": "workspace:*",
     "@agent-mail/core": "workspace:*",
     "@agent-mail/imap": "workspace:*",
-    "@agent-mail/storage": "workspace:*"
+    "@agent-mail/storage": "workspace:*",
+    "hono": "4.13.2"
   }
 }
