@@ -142,6 +142,11 @@ export type RemoteAttemptExecutorOptions = Readonly<{
       >;
     }>,
   ) => Promise<unknown>;
+  /** Commit dispatch evidence before the one-shot mutation capability is consumed. */
+  readonly markDispatched: (input: Readonly<{
+    readonly attempt: RemoteAttempt;
+    readonly observation: SatisfiedObservation;
+  }>) => Promise<unknown>;
   /** Internal adapter method; the capability is always supplied by this module. */
   readonly mutationAdapter: RemoteMutationAdapter;
 }>;
@@ -164,6 +169,7 @@ export async function executeRemoteAttempt(
       return { kind: "stale", observation, result };
     }
     case "satisfied": {
+      await options.markDispatched({ attempt, observation });
       const capability = createRemoteMutationCapability({
         claimedPlan: options.claimedPlan,
         durableAttempt: options.durableAttempt,

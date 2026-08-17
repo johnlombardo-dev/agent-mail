@@ -4,6 +4,7 @@ export * from "./blob-stage";
 export * from "./blob-stage-cleanup";
 export * from "./absence-reconciliation";
 export * from "./action-plan-attempt";
+export * from "./action-plan-recovery";
 export * from "./action-plan-result";
 export * from "./backup-manifest";
 export * from "./backup-writer";
@@ -15,9 +16,9 @@ export * from "./remote-placement-tombstone";
 export * from "./remote-placement-observation";
 export * from "./offline-root-replacement";
 export * from "./promotion-adapter";
-export * from "./search-projection";
 export * from "./routing-decision-origin";
 export * from "./routing-decision-origin-migration";
+export * from "./search-projection";
 export * from "./search-cursor";
 export * from "./search-reindex";
 

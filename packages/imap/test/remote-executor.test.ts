@@ -74,6 +74,7 @@ describe("remote stale-result executor gate", () => {
         expect(staleObservation.kind).toBe(observation.kind);
         return { kind: "stale", certainty: "definite" };
       },
+      markDispatched: async () => undefined,
       mutationAdapter: {
         execute: async () => {
           capabilityRequests += 1;
@@ -100,6 +101,7 @@ describe("remote stale-result executor gate", () => {
         observedUidValidity: createUidValidity(10),
       }),
       finalizeStale: async ({ observation }) => observation.kind,
+      markDispatched: async () => undefined,
       mutationAdapter: {
         execute: async () => {
           capabilityRequests += 1;
@@ -131,6 +133,7 @@ describe("remote stale-result executor gate", () => {
       finalizeStale: async () => {
         throw new Error("satisfied observation cannot finalize stale");
       },
+      markDispatched: async () => undefined,
       mutationAdapter: {
         execute: async (value) => {
           request = value;
@@ -192,6 +195,7 @@ describe("remote stale-result executor gate", () => {
         durableAttempt,
         readPrecondition: async () => observation,
         finalizeStale: async () => "unused",
+        markDispatched: async () => undefined,
         mutationAdapter: { execute: async () => "must not run" },
       }),
     ).rejects.toThrow("remote mutation evidence is not coherent");

@@ -222,6 +222,7 @@ async function execute(client: ImapFlowMoveClient) {
     durableAttempt,
     readPrecondition: async () => satisfied,
     finalizeStale: async () => "not-used",
+    markDispatched: async () => undefined,
     mutationAdapter: createMoveMutationAdapter(mutationOptions(client)),
   });
   if (result.kind !== "executed") throw new Error(`expected executed, got ${result.kind}`);
@@ -235,6 +236,7 @@ async function executeTrash(client: ImapFlowMoveClient) {
     durableAttempt: trashDurableAttempt,
     readPrecondition: async () => ({ ...satisfied, target: trashTarget.target }),
     finalizeStale: async () => "not-used",
+    markDispatched: async () => undefined,
     mutationAdapter: createMoveMutationAdapter(mutationOptions(client, "trash", trash)),
   });
   if (result.kind !== "executed") throw new Error(`expected executed, got ${result.kind}`);
@@ -458,6 +460,7 @@ const contractSuite: AdapterContractSuite<ImapFlowMoveClient> = {
           durableAttempt,
           readPrecondition: async () => satisfied,
           finalizeStale: async () => "not-used",
+          markDispatched: async () => undefined,
           mutationAdapter: createMoveMutationAdapter(mutationOptions(client)),
         });
         expect(result.kind).toBe("executed");

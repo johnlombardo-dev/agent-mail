@@ -198,6 +198,7 @@ async function run(
       observed: { uidValidity, uid, modseq: targetModseq },
     }),
     finalizeStale: async () => "unused",
+    markDispatched: async () => undefined,
     mutationAdapter: createSeenMutationAdapter({ client, mailboxPath: "INBOX" }),
   });
   if (execution.kind !== "executed") throw new Error(`expected execution, got ${execution.kind}`);
