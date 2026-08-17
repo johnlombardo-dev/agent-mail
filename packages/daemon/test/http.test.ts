@@ -8,6 +8,7 @@ import {
 import {
   createHttpApp,
   createRegistryTransportAdapter,
+  type HttpCredentialResolution,
   type PrivateHttpLogEntry,
 } from "../src/http";
 
@@ -34,9 +35,20 @@ const registry = createOperationRegistry([echoOperation] as const);
 function jsonRequest(path: string, body: string, headers: Record<string, string> = {}): Request {
   return new Request(`http://localhost${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json", ...headers },
+    headers: {
+      "content-type": "application/json",
+      authorization: "Bearer synthetic-test",
+      ...headers,
+    },
     body,
   });
+}
+
+function authenticatedEcho(): HttpCredentialResolution {
+  return {
+    kind: "authenticated",
+    principal: { subject: "test-operator", scopes: [echoOperation.scope] },
+  };
 }
 
 describe("Hono shared contract boundary", () => {
@@ -44,6 +56,7 @@ describe("Hono shared contract boundary", () => {
     let received: unknown;
     const app = createHttpApp({
       registry,
+      authenticate: authenticatedEcho,
       handlers: {
         "synthetic.echo": (input) => {
           received = input;
@@ -63,13 +76,17 @@ describe("Hono shared contract boundary", () => {
   test("rejects wrong content types, malformed JSON, unknown fields, and schema failures", async () => {
     const app = createHttpApp({
       registry,
+      authenticate: authenticatedEcho,
       handlers: { "synthetic.echo": () => ({ echoed: "unused" }) },
     });
     const cases: readonly [Request, number][] = [
       [
         new Request("http://localhost/v1/synthetic/id", {
           method: "POST",
-          headers: { "content-type": "text/plain" },
+          headers: {
+            "content-type": "text/plain",
+            authorization: "Bearer synthetic-test",
+          },
           body: JSON.stringify({ value: "ok" }),
         }),
         415,
@@ -91,6 +108,7 @@ describe("Hono shared contract boundary", () => {
     const logs: PrivateHttpLogEntry[] = [];
     const app = createHttpApp({
       registry,
+      authenticate: authenticatedEcho,
       logger: (entry) => logs.push(entry),
       handlers: {
         "synthetic.echo": (input) => {
@@ -151,10 +169,13 @@ describe("Hono shared contract boundary", () => {
   test("the registry adapter validates requests and handler responses without Hono", async () => {
     const adapter = createRegistryTransportAdapter({
       registry,
+      authenticate: authenticatedEcho,
       handlers: { "synthetic.echo": (input) => ({ echoed: requestSchema.parse(input).value }) },
     });
     const context = {
-      request: new Request("http://localhost/v1/synthetic/id"),
+      request: new Request("http://localhost/v1/synthetic/id", {
+        headers: { authorization: "Bearer synthetic-test" },
+      }),
       correlationId: "corr-adapter",
     };
 
