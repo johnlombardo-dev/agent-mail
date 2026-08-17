@@ -46,26 +46,26 @@ describe("structured filter compiler P4-C04", () => {
     [
       "flag equality",
       { field: "flag", operator: "eq", value: "\\Seen" },
-      "(EXISTS (SELECT 1 FROM message_flags AS mf WHERE mf.message_id = m.message_id AND mf.normalized_flag = ?))",
+      "(EXISTS (SELECT 1 FROM remote_placements AS rp, json_each(rp.flags_json) AS mf WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND lower(CAST(mf.value AS TEXT)) = ?))",
       ["\\seen"],
     ],
     [
       "flag inequality",
       { field: "flag", operator: "neq", value: "$Junk" },
-      "(NOT EXISTS (SELECT 1 FROM message_flags AS mf WHERE mf.message_id = m.message_id AND mf.normalized_flag = ?))",
+      "(NOT EXISTS (SELECT 1 FROM remote_placements AS rp, json_each(rp.flags_json) AS mf WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND lower(CAST(mf.value AS TEXT)) = ?))",
       ["$junk"],
     ],
     [
       "importance equality",
       { field: "importance", operator: "eq", value: "HIGH" },
-      "(m.importance = ?)",
-      ["high"],
+      "(EXISTS (SELECT 1 FROM local_label_assignments AS lla WHERE lla.message_id = m.message_id AND lla.label = ?))",
+      ["label:importance:high"],
     ],
     [
       "importance inequality",
       { field: "importance", operator: "neq", value: "normal" },
-      "(m.importance <> ?)",
-      ["normal"],
+      "(NOT EXISTS (SELECT 1 FROM local_label_assignments AS lla WHERE lla.message_id = m.message_id AND lla.label = ?))",
+      ["label:importance:normal"],
     ],
     [
       "attachment exists",
@@ -94,25 +94,25 @@ describe("structured filter compiler P4-C04", () => {
     [
       "received after",
       { field: "receivedAt", operator: "gt", value: "2026-01-01T00:00:00+08:00" },
-      "(m.received_at > ?)",
+      "(EXISTS (SELECT 1 FROM remote_placements AS rp WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND rp.internal_date > ?))",
       ["2025-12-31T16:00:00.000Z"],
     ],
     [
       "received on or after",
       { field: "receivedAt", operator: "gte", value: "2026-01-01T00:00:00.000Z" },
-      "(m.received_at >= ?)",
+      "(EXISTS (SELECT 1 FROM remote_placements AS rp WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND rp.internal_date >= ?))",
       ["2026-01-01T00:00:00.000Z"],
     ],
     [
       "received before",
       { field: "receivedAt", operator: "lt", value: "2026-01-02T00:00:00Z" },
-      "(m.received_at < ?)",
+      "(EXISTS (SELECT 1 FROM remote_placements AS rp WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND rp.internal_date < ?))",
       ["2026-01-02T00:00:00.000Z"],
     ],
     [
       "received on or before",
       { field: "receivedAt", operator: "lte", value: "2026-01-02T00:00:00.000Z" },
-      "(m.received_at <= ?)",
+      "(EXISTS (SELECT 1 FROM remote_placements AS rp WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND rp.internal_date <= ?))",
       ["2026-01-02T00:00:00.000Z"],
     ],
   ] as const)("compiles %s to its exact relational predicate", (_name, input, expectedSql, expectedParameters) => {

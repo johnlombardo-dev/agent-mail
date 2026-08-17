@@ -376,13 +376,13 @@ function predicate(
       };
     case "flag":
       return {
-        sql: `${exists} (SELECT 1 FROM message_flags AS mf WHERE mf.message_id = m.message_id AND mf.normalized_flag = ?)`,
+        sql: `${exists} (SELECT 1 FROM remote_placements AS rp, json_each(rp.flags_json) AS mf WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND lower(CAST(mf.value AS TEXT)) = ?)`,
         parameters: value,
       };
     case "importance":
       return {
-        sql: `m.importance ${filter.operator === "eq" ? "=" : "<>"} ?`,
-        parameters: value,
+        sql: `${exists} (SELECT 1 FROM local_label_assignments AS lla WHERE lla.message_id = m.message_id AND lla.label = ?)`,
+        parameters: value.map((importance) => `label:importance:${importance}`),
       };
     case "attachment":
       return {
@@ -396,7 +396,7 @@ function predicate(
       };
     case "receivedAt":
       return {
-        sql: `m.received_at ${filter.operator === "gt" ? ">" : filter.operator === "gte" ? ">=" : filter.operator === "lt" ? "<" : "<="} ?`,
+        sql: `EXISTS (SELECT 1 FROM remote_placements AS rp WHERE rp.message_id = m.message_id AND rp.tombstone_observed_at IS NULL AND rp.internal_date ${filter.operator === "gt" ? ">" : filter.operator === "gte" ? ">=" : filter.operator === "lt" ? "<" : "<="} ?)`,
         parameters: value,
       };
     default: {

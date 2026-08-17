@@ -1,0 +1,237 @@
+import { chmod, mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { afterEach, describe, expect, test } from "bun:test";
+import { createMessageId } from "@agent-mail/core";
+import { openDatabase } from "../src/database";
+import { applyMigrations, type Migration } from "../src/migration-runner";
+import { localLabelMigration } from "../src/local-label-migration";
+import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
+import { structuredContentMigration } from "../src/migrations/0002-structured-content";
+import { externalContentSearchMigration } from "../src/migrations/0003-external-content-search";
+import { placementObservationMigration } from "../src/migrations/0003-placement-observation";
+import { compileSearchQuery } from "../src/search-query-compiler";
+import { selectSearchCandidates } from "../src/search-candidate-repository";
+import { compileStructuredFilters } from "../src/structured-filter-compiler";
+
+const roots: string[] = [];
+const accountId = "account:fixture";
+const mailboxId = "mailbox:inbox";
+const messageIds = {
+  a: createMessageId(`message:${"a".repeat(64)}`),
+  b: createMessageId(`message:${"b".repeat(64)}`),
+  c: createMessageId(`message:${"c".repeat(64)}`),
+  d: createMessageId(`message:${"d".repeat(64)}`),
+} as const;
+
+const migrations: readonly Migration[] = [
+  messageCatalogMigration,
+  structuredContentMigration,
+  externalContentSearchMigration,
+  { ...placementObservationMigration, version: 4 },
+  { ...localLabelMigration, version: 5 },
+];
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+type FixtureName = keyof typeof messageIds;
+
+async function openFixture(
+  order: readonly FixtureName[] = ["a", "b", "c", "d"],
+  equalText = false,
+) {
+  const root = await mkdtemp(join(tmpdir(), "agent-mail-storage-search-candidate-p4-c05-"));
+  await chmod(root, 0o700);
+  roots.push(root);
+  const opened = await openDatabase(join(root, "archive.sqlite"));
+  applyMigrations(opened, migrations);
+  opened.db
+    .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
+    .run(accountId, mailboxId, 1);
+
+  for (const [documentId, name] of order.entries()) {
+    const messageId = messageIds[name];
+    const subject = name === "b" && !equalText ? "ordinary" : "needle";
+    opened.db.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
+    opened.db
+      .query("INSERT INTO message_search_documents (document_id, message_id) VALUES (?, ?);")
+      .run(documentId + 1, messageId);
+    opened.db
+      .query(
+        "INSERT INTO message_headers (message_id, ordinal, name, normalized_name, value, normalized_value) VALUES (?, ?, ?, ?, ?, ?);",
+      )
+      .run(messageId, 1, "Subject", "subject", subject, subject);
+    opened.db
+      .query(
+        "INSERT INTO message_headers (message_id, ordinal, name, normalized_name, value, normalized_value) VALUES (?, ?, ?, ?, ?, ?);",
+      )
+      .run(messageId, 2, "List-Id", "list-id", "<news@example.test>", "<news@example.test>");
+    opened.db
+      .query(
+        "INSERT INTO message_addresses (message_id, ordinal, role, position, address, normalized_address) VALUES (?, ?, ?, ?, ?, ?);",
+      )
+      .run(messageId, 1, "from", 1, "Alice@example.test", "alice@example.test");
+
+    const internalDate = name === "c" ? "2026-01-02T00:00:00.000Z" : "2026-01-01T00:00:00.000Z";
+    const flags = name === "a" || name === "d" ? ["\\Seen"] : [];
+    const tombstone = name === "d";
+    opened.db
+      .query(
+        "INSERT INTO remote_placements (account_id, mailbox_id, uid_validity, uid, message_id, internal_date, flags_json, tombstone_observed_at, tombstone_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+      )
+      .run(
+        accountId,
+        mailboxId,
+        1,
+        documentId + 1,
+        messageId,
+        internalDate,
+        JSON.stringify(flags),
+        tombstone ? "2026-01-03T00:00:00.000Z" : null,
+        tombstone ? "fixture removal" : null,
+      );
+
+    if (name === "a") {
+      opened.db.query("INSERT INTO local_labels (label) VALUES (?);").run("label:importance:high");
+      opened.db
+        .query(
+          "INSERT INTO local_label_assignments (message_id, label, rule_id, rule_version, matched_facts_json, decided_at, provenance_source, provenance_evaluation_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+        )
+        .run(
+          messageId,
+          "label:importance:high",
+          "rule:fixture",
+          1,
+          '["fixture"]',
+          "2026-01-01T00:00:00.000Z",
+          "fixture",
+          "evaluation:fixture",
+        );
+    }
+    if (name === "a" || (name === "b" && equalText)) {
+      opened.db
+        .query(
+          "INSERT INTO message_attachments (message_id, ordinal, filename, content_type, normalized_content_type, size, blob_id) VALUES (?, ?, ?, ?, ?, ?, ?);",
+        )
+        .run(messageId, 1, "invoice.pdf", "application/pdf", "application/pdf", 1, "f".repeat(64));
+    }
+    if (name === "b" && !equalText) {
+      opened.db
+        .query(
+          "INSERT INTO message_body_parts (message_id, ordinal, content_type, normalized_content_type, blob_id, plain_text) VALUES (?, ?, ?, ?, ?, ?);",
+        )
+        .run(messageId, 1, "text/plain", "text/plain", "e".repeat(64), "needle");
+    }
+  }
+
+  opened.db
+    .query(
+      "INSERT INTO message_fts(rowid, subject, participants, body_plain, body_html, attachment_names) SELECT rowid, subject, participants, body_plain, body_html, attachment_names FROM indexed_messages;",
+    )
+    .run();
+  return opened;
+}
+
+function request(filters: readonly unknown[] = [], limit = 100) {
+  const text = compileSearchQuery("needle");
+  const compiledFilters = compileStructuredFilters(filters);
+  expect(text.kind).toBe("compiled");
+  expect(compiledFilters.kind).toBe("compiled");
+  if (text.kind !== "compiled" || compiledFilters.kind !== "compiled") {
+    throw new Error("fixture compiler input did not compile");
+  }
+  return { text, filters: compiledFilters, limit };
+}
+
+describe("bounded FTS candidate repository P4-C05", () => {
+  test("executes every compiled structured predicate against placement-aware schema", async () => {
+    const opened = await openFixture();
+    const cases: readonly [string, readonly unknown[]][] = [
+      ["sender", [{ field: "sender", operator: "eq", value: "alice@example.test" }]],
+      ["list", [{ field: "list", operator: "eq", value: "<news@example.test>" }]],
+      ["remote mailbox", [{ field: "remoteMailbox", operator: "eq", value: "mailbox:inbox" }]],
+      ["flag", [{ field: "flag", operator: "eq", value: "\\Seen" }]],
+      ["importance", [{ field: "importance", operator: "eq", value: "high" }]],
+      ["attachment", [{ field: "attachment", operator: "exists" }]],
+      ["local label", [{ field: "localLabel", operator: "eq", value: "label:importance:high" }]],
+      ["receivedAt", [{ field: "receivedAt", operator: "gte", value: "2026-01-01T00:00:00Z" }]],
+    ];
+    for (const [name, filters] of cases) {
+      expect(() => selectSearchCandidates(opened.db, request(filters)), name).not.toThrow();
+    }
+
+    expect(
+      selectSearchCandidates(
+        opened.db,
+        request([{ field: "flag", operator: "eq", value: "\\Seen" }]),
+      ).candidates.map((candidate) => candidate.messageId),
+    ).not.toContain(messageIds.d);
+    expect(
+      selectSearchCandidates(
+        opened.db,
+        request([{ field: "receivedAt", operator: "gte", value: "2026-01-03T00:00:00Z" }]),
+      ).candidates,
+    ).toEqual([]);
+    expect(
+      selectSearchCandidates(
+        opened.db,
+        request([{ field: "importance", operator: "eq", value: "high" }]),
+      ).candidates.map((candidate) => candidate.messageId),
+    ).toEqual([messageIds.a]);
+    await opened.close();
+  });
+
+  test("returns pinned BM25 scores, canonical instants, and bounded deterministic order", async () => {
+    const opened = await openFixture(["a", "b", "c"]);
+    const page = selectSearchCandidates(opened.db, request([], 3));
+
+    expect(page.limit).toBe(3);
+    expect(page.bm25Weights).toEqual({
+      subject: 10,
+      participants: 4,
+      bodyPlain: 3,
+      bodyHtml: 2,
+      attachmentNames: 1,
+    });
+    expect(page.candidates).toHaveLength(3);
+    expect(page.candidates.map(({ messageId }) => messageId)).toEqual([messageIds.c, messageIds.a, messageIds.b]);
+    expect(page.candidates.map(({ position }) => position)).toEqual([1, 2, 3]);
+    expect(page.candidates.map(({ canonicalInstant }) => canonicalInstant)).toEqual([
+      "2026-01-02T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+      "2026-01-01T00:00:00.000Z",
+    ]);
+    expect(page.candidates.map(({ score }) => score)).toEqual([
+      -0.000001996370235934664,
+      -0.0000019332161687170474,
+      -0.0000015714285714285712,
+    ]);
+    await opened.close();
+  });
+
+  test("breaks equal-score/equal-time ties by canonical identity independent of insertion order", async () => {
+    const first = await openFixture(["b", "a"], true);
+    const second = await openFixture(["a", "b"], true);
+    const firstPage = selectSearchCandidates(first.db, request([], 2));
+    const secondPage = selectSearchCandidates(second.db, request([], 2));
+
+    expect(firstPage.candidates.map(({ messageId }) => messageId)).toEqual([messageIds.a, messageIds.b]);
+    expect(secondPage.candidates.map(({ messageId }) => messageId)).toEqual([messageIds.a, messageIds.b]);
+    expect(firstPage.candidates.map(({ score }) => score)).toEqual(secondPage.candidates.map(({ score }) => score));
+    expect(firstPage.candidates.map(({ canonicalInstant }) => canonicalInstant)).toEqual(
+      secondPage.candidates.map(({ canonicalInstant }) => canonicalInstant),
+    );
+    await first.close();
+    await second.close();
+  });
+
+  test("rejects an unbounded candidate page", async () => {
+    const opened = await openFixture();
+    expect(() => selectSearchCandidates(opened.db, request([], 101))).toThrow(
+      "candidate page size must be between 1 and 100",
+    );
+    await opened.close();
+  });
+});
