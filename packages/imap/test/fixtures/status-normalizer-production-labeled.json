@@ -1,0 +1,27 @@
+{
+  "complete": {
+    "capabilities": ["IMAP4rev1", "IDLE", "SPECIAL-USE"],
+    "mailbox": {
+      "uidValidity": 938475,
+      "uidNext": 1201,
+      "highestModseq": 884422,
+      "flags": ["\\All", "\\Inbox"],
+      "specialUse": ["\\All", "\\Inbox"]
+    }
+  },
+  "partial": {
+    "capabilities": {"IDLE": true},
+    "mailbox": {
+      "uidValidity": 12,
+      "flags": ["\\Noselect"],
+      "specialUse": "unsupported"
+    }
+  },
+  "capabilityAbsent": {
+    "mailbox": {
+      "uidValidity": 17,
+      "highestModseq": 0,
+      "flags": ["\\Inbox"]
+    }
+  }
+}
