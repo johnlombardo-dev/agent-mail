@@ -1,0 +1,14 @@
+{
+  "mailbox": {
+    "path": "INBOX",
+    "uidValidity": 938475,
+    "uidNext": 43,
+    "highestModseq": 884422,
+    "flags": ["\\HasNoChildren", "\\Inbox"]
+  },
+  "fetch": {
+    "seq": 42,
+    "uid": 42,
+    "modseq": 7
+  }
+}
