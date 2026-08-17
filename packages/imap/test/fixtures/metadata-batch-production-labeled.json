@@ -1,0 +1,79 @@
+{
+  "present": [
+    {
+      "seq": 4,
+      "uid": 4,
+      "flags": ["\\Seen", "\\Flagged"],
+      "modseq": 41,
+      "envelope": {
+        "date": "2026-08-17T00:00:00.000Z",
+        "subject": "four",
+        "messageId": "<four@example.test>",
+        "from": [{"name": "Four", "address": "four@example.test"}],
+        "to": [{"address": "person@example.test"}]
+      },
+      "size": 400,
+      "internalDate": "2026-08-17T04:00:00.000Z"
+    },
+    {
+      "seq": 2,
+      "uid": 2,
+      "flags": [],
+      "modseq": 39,
+      "envelope": {
+        "date": "2026-08-17T00:00:00.000Z",
+        "subject": "two",
+        "messageId": "<two@example.test>",
+        "from": [{"address": "two@example.test"}],
+        "to": [{"address": "person@example.test"}]
+      },
+      "size": 200,
+      "internalDate": "2026-08-17T02:00:00.000Z"
+    }
+  ],
+  "missing": [
+    {
+      "seq": 4,
+      "uid": 4,
+      "flags": ["\\Seen", "\\Flagged"],
+      "modseq": 41,
+      "envelope": {
+        "date": "2026-08-17T00:00:00.000Z",
+        "subject": "four",
+        "messageId": "<four@example.test>"
+      },
+      "size": 400,
+      "internalDate": "2026-08-17T04:00:00.000Z"
+    }
+  ],
+  "sparse": [
+    {
+      "seq": 1000000,
+      "uid": 1000000,
+      "flags": [],
+      "modseq": 100,
+      "envelope": {
+        "date": "2026-08-17T00:00:00.000Z",
+        "subject": "high UID",
+        "messageId": "<high@example.test>"
+      },
+      "size": 1000000,
+      "internalDate": "2026-08-17T10:00:00.000Z"
+    }
+  ],
+  "outOfRequest": [
+    {
+      "seq": 9,
+      "uid": 9,
+      "flags": [],
+      "modseq": 9,
+      "envelope": {
+        "date": "2026-08-17T00:00:00.000Z",
+        "subject": "outside",
+        "messageId": "<outside@example.test>"
+      },
+      "size": 9,
+      "internalDate": "2026-08-17T09:00:00.000Z"
+    }
+  ]
+}
