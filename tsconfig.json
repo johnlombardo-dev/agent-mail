@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "module": "Preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ESNext",
+    "types": ["bun"]
+  },
+  "exclude": ["**/dist/**", "**/node_modules/**"]
+}
