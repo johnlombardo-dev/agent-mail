@@ -14,6 +14,7 @@ import {
   type RoutingDecision,
   type UtcInstant,
 } from "@agent-mail/core";
+import { canonicalRoutingDecisionId } from "./routing-decision-identity";
 import {
   decodeBoundedSafeInteger,
   decodeCanonicalIdentifier,
@@ -245,11 +246,20 @@ export function promoteCanonicalMessage(
     }
     for (const routing of unit.routingDecisions) {
       const decision = serializeRoutingDecision(routing.decision);
+      const decisionId = canonicalRoutingDecisionId(unit.messageId, routing.decision);
       write(
         "routing-decision",
         "INSERT INTO routing_decisions " +
-          "(decision_id, message_id, decision_json) VALUES (?, ?, ?);",
-        [routing.decisionId, unit.messageId, decision],
+          "(decision_id, message_id, rule_id, rule_version, matched_facts_json, decision_json) " +
+          "VALUES (?, ?, ?, ?, ?, ?);",
+        [
+          decisionId,
+          unit.messageId,
+          routing.decision.ruleId,
+          routing.decision.ruleVersion,
+          JSON.stringify(routing.decision.matchedFacts),
+          decision,
+        ],
       );
       if (routing.decision.kind === "route") {
         write(
@@ -449,7 +459,8 @@ function readPromotion(database: Database, messageId: MessageId): PromotionUnit 
     .map((row: unknown) => decodeAttachmentRow(row));
   const routingDecisions = database
     .query(
-      "SELECT decision_id, message_id, decision_json FROM routing_decisions " +
+      "SELECT decision_id, message_id, rule_id, rule_version, matched_facts_json, decision_json " +
+        "FROM routing_decisions " +
         "WHERE message_id = ? ORDER BY decision_id;",
     )
     .all(messageId)
@@ -605,12 +616,28 @@ function decodeRoutingRow(row: unknown): PromotionRoutingDecision {
     columns: {
       decision_id: column(textDecoder),
       message_id: column((input, context) => decodeCanonicalIdentifier(input, "message", context)),
+      rule_id: column(textDecoder),
+      rule_version: column((input, context) =>
+        decodeBoundedSafeInteger(input, { ...context, minimum: 1 }),
+      ),
+      matched_facts_json: column(textDecoder),
       decision_json: column(textDecoder),
     },
   });
+  const decision = parseRoutingDecision(value.decision_json);
+  const decisionId = stringValue(value.decision_id);
+  const messageId = parseMessageId(stringValue(value.message_id));
+  if (
+    decision.ruleId !== value.rule_id ||
+    decision.ruleVersion !== value.rule_version ||
+    JSON.stringify(decision.matchedFacts) !== value.matched_facts_json ||
+    decisionId !== canonicalRoutingDecisionId(messageId, decision)
+  ) {
+    throw new TypeError("routing decision row identity does not match its decision");
+  }
   return {
-    decisionId: stringValue(value.decision_id),
-    decision: parseRoutingDecision(value.decision_json),
+    decisionId,
+    decision,
   };
 }
 
@@ -728,7 +755,7 @@ function serializeUnit(unit: PromotionUnit): string {
     bodyParts: unit.bodyParts,
     attachments: unit.attachments,
     routingDecisions: unit.routingDecisions.map((routing) => ({
-      decisionId: routing.decisionId,
+      decisionId: canonicalRoutingDecisionId(unit.messageId, routing.decision),
       decision: serializeRoutingDecision(routing.decision),
     })),
     journal: unit.journal,

@@ -13,7 +13,7 @@ import {
   createRoutingRuleId,
   createUtcInstant,
 } from "@agent-mail/core";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { applyMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import {
   CanonicalPromotionError,
@@ -25,6 +25,9 @@ import { messageCatalogMigration } from "../src/migrations/0001-message-catalog"
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { localLabelMigration } from "../src/local-label-migration";
+import { routingDecisionMigration } from "../src/routing-decision-migration";
+import { canonicalRoutingDecisionId } from "../src/routing-decision-identity";
+import { persistRouteDecision } from "../src/local-label-assignment";
 
 const roots: string[] = [];
 const messageId = createMessageId(`message:${"a".repeat(64)}`);
@@ -42,24 +45,13 @@ const decision = createRouteDecision({
   label: createLocalLabel("label:important"),
 });
 
-const routingDecisionMigration: Migration = {
-  version: 5,
-  name: "routing-decisions-for-promotion-test",
-  sql: `
-CREATE TABLE routing_decisions (
-  decision_id TEXT PRIMARY KEY NOT NULL,
-  message_id TEXT NOT NULL REFERENCES messages(message_id) ON DELETE RESTRICT,
-  decision_json TEXT NOT NULL CHECK (json_valid(decision_json))
-);`,
-};
-
 const migrations = [
   { ...messageCatalogMigration, version: 1 },
   { ...structuredContentMigration, version: 2 },
   { ...operationalJournalMigration, version: 3 },
   { ...localLabelMigration, version: 4 },
-  routingDecisionMigration,
-] satisfies readonly Migration[];
+  { ...routingDecisionMigration, version: 5 },
+];
 
 const unit: PromotionUnit = {
   messageId,
@@ -212,7 +204,13 @@ describe("canonical promotion transaction P2-C13", () => {
 
     const reopened = await openDatabase(join(roots[0], "archive.sqlite"), { supportedSchemaVersion: 5 });
     applyMigrations(reopened, migrations);
-    expect(readCanonicalPromotion(reopened.db, messageId)).toEqual(unit);
+    expect(readCanonicalPromotion(reopened.db, messageId)).toEqual({
+      ...unit,
+      routingDecisions: unit.routingDecisions.map((routing) => ({
+        ...routing,
+        decisionId: canonicalRoutingDecisionId(messageId, routing.decision),
+      })),
+    });
     expect(promoteCanonicalMessage(reopened.db, unit)).toEqual({ messageId, status: "duplicate" });
     const beforeConflict = countRows(reopened.db);
     expect(() =>
@@ -235,6 +233,31 @@ describe("canonical promotion transaction P2-C13", () => {
     expect(failure).toMatchObject({ code: "write-failed" });
     expect(countRows(opened.db).messages).toBe(0);
     expect(countRows(opened.db).routing_decisions).toBe(0);
+    await opened.close();
+  });
+
+  test("promotion and equivalent sweep persistence converge on one durable decision", async () => {
+    const opened = await openPromotionDatabase();
+    expect(promoteCanonicalMessage(opened.db, unit)).toEqual({ messageId, status: "committed" });
+
+    const sweep = persistRouteDecision(opened.db, {
+      messageId,
+      decisionId: "sweep-caller",
+      decision: {
+        ...decision,
+        provenance: { source: "sweep", evaluationId: "evaluation:sweep" },
+      },
+    });
+    expect(sweep.created).toBe(false);
+    expect(opened.db.query("SELECT COUNT(*) AS count FROM routing_decisions;").get()).toEqual({
+      count: 1,
+    });
+    expect(opened.db.query("SELECT COUNT(*) AS count FROM local_label_assignments;").get()).toEqual({
+      count: 1,
+    });
+    expect(opened.db.query("SELECT decision_id FROM routing_decisions;").get()).toEqual({
+      decision_id: canonicalRoutingDecisionId(messageId, decision),
+    });
     await opened.close();
   });
 });
