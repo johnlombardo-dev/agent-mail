@@ -1,0 +1,55 @@
+{
+  "selected": {
+    "path": "INBOX",
+    "uidValidity": 938475
+  },
+  "conditionalStore": {
+    "command": {
+      "name": "UID STORE",
+      "uid": "42",
+      "operation": "+FLAGS",
+      "flags": ["\\Seen"],
+      "unchangedSince": "7"
+    },
+    "responses": {
+      "applied": { "status": "OK" },
+      "modified": { "status": "NO", "code": "MODIFIED", "uidSet": "42" }
+    },
+    "rawCommandAttributes": [
+      { "type": "SEQUENCE", "value": "42" },
+      [
+        { "type": "ATOM", "value": "UNCHANGEDSINCE" },
+        { "type": "ATOM", "value": "7" }
+      ],
+      { "type": "ATOM", "value": "+FLAGS" },
+      [{ "type": "ATOM", "value": "\\Seen" }]
+    ],
+    "rawResponses": {
+      "applied": { "tag": "A1", "command": "OK", "attributes": [] },
+      "modified": {
+        "tag": "A1",
+        "command": "OK",
+        "attributes": [
+          {
+            "type": "ATOM",
+            "value": "",
+            "section": [
+              { "type": "ATOM", "value": "MODIFIED" },
+              { "type": "SEQUENCE", "value": "42" }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "seenPostcondition": {
+    "uid": 42,
+    "flags": ["\\Flagged", "\\Answered", "\\Seen"],
+    "modseq": 8
+  },
+  "postconditionAfterModifiedAlreadyDesired": {
+    "uid": 42,
+    "flags": ["\\Flagged", "\\Seen"],
+    "modseq": 9
+  }
+}
