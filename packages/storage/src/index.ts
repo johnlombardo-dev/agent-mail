@@ -17,5 +17,6 @@ export * from "./offline-root-replacement";
 export * from "./promotion-adapter";
 export * from "./search-projection";
 export * from "./search-cursor";
+export * from "./search-reindex";
 
 export const packageMarker = true;
