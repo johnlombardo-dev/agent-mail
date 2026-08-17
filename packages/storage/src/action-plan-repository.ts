@@ -112,7 +112,7 @@ export function createPendingActionPlan(
   try {
     database.exec("BEGIN IMMEDIATE;");
     transactionStarted = true;
-    requireProposalSchema(database);
+    assertPendingActionPlanSchema(database);
 
     const existingByIdempotency = readByIdempotency(database, prepared.idempotencyIdentity);
     if (existingByIdempotency !== undefined) {
@@ -149,7 +149,7 @@ export function readPendingActionPlan(
   planIdInput: unknown,
 ): PendingActionPlanProposal | undefined {
   const planId = parsePlanId(planIdInput);
-  requireProposalSchema(database);
+  assertPendingActionPlanSchema(database);
   const metadataRow: unknown = database
     .query(
       `SELECT p.plan_id, p.preview_digest, p.authorization_scope, p.idempotency_identity,
@@ -589,7 +589,7 @@ function assertMetadataKeys(actual: readonly string[], required: readonly string
   }
 }
 
-function requireProposalSchema(database: Database): void {
+export function assertPendingActionPlanSchema(database: Database): void {
   const table = database
     .query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?;")
     .get(PROPOSAL_TABLE);
