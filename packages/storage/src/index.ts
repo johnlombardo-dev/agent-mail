@@ -4,6 +4,7 @@ export * from "./blob-stage";
 export * from "./blob-stage-cleanup";
 export * from "./absence-reconciliation";
 export * from "./action-plan-attempt";
+export * from "./action-plan-result";
 export * from "./backup-manifest";
 export * from "./backup-writer";
 export * from "./backup-restore";

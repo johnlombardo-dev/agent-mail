@@ -3,8 +3,12 @@ import {
   createActionPlanId,
   createMonotonicSequence,
   createRemoteAttemptId,
+  createRemoteAttemptFailed,
+  createRemoteAttemptRejected,
+  createRemoteAttemptSuccess,
   createRemoteAttemptResult,
   createRemoteAttemptStale,
+  createRemoteAttemptUncertain,
   createRemoteUidValue,
   createUidValidity,
   parseAccountId,
@@ -53,7 +57,31 @@ export type ActionPlanStaleResult =
 
 export type ActionPlanResultRepository = Readonly<{
   readonly recordStale: (input: unknown) => ActionPlanStaleResult;
+  readonly recordDefinite: (input: unknown) => ActionPlanDefiniteResult;
   readonly read: (attemptId: unknown) => RemoteAttemptResult | undefined;
+}>;
+
+export type ActionPlanDefiniteResult =
+  | Readonly<{
+      readonly kind: "recorded";
+      readonly result: Exclude<RemoteAttemptResult, { readonly certainty: "uncertain" }>;
+      readonly journalId: string;
+    }>
+  | Readonly<{
+      readonly kind: "rejected";
+      readonly attemptId: string;
+      readonly reason:
+        | "missing"
+        | "inactive-claim"
+        | "identity"
+        | "result-exists"
+        | "result-conflict";
+    }>;
+
+/** Input accepted by the one-attempt definite-result transaction. */
+export type ActionPlanDefiniteResultInput = Readonly<{
+  /** A normalized adapter result. The boundary still parses it as unknown. */
+  readonly result: unknown;
 }>;
 
 const DETAIL_VERSION = 1;
@@ -147,6 +175,82 @@ export function recordStaleActionPlanResult(
   }
 }
 
+/**
+ * Persist one normalized definite adapter outcome and its audit event as one
+ * SQLite transaction. The remote adapter result is parsed before the write
+ * lock; the attempt and active claim are rechecked under that lock.
+ */
+export function recordDefiniteActionPlanResult(
+  database: Database,
+  input: unknown,
+): ActionPlanDefiniteResult {
+  const result = parseDefiniteResultInput(input);
+  const attemptId = result.attemptId;
+  let transactionStarted = false;
+  try {
+    database.exec("BEGIN IMMEDIATE;");
+    transactionStarted = true;
+    requireResultSchema(database, true);
+
+    const attempt = readAttempt(database, attemptId);
+    if (attempt === undefined)
+      return commitDefiniteResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "missing",
+      });
+    if (!isActiveUnresolvedAttempt(database, attempt))
+      return commitDefiniteResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "inactive-claim",
+      });
+    if (!matchesAttemptIdentity(attempt, result))
+      return commitDefiniteResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "identity",
+      });
+
+    const existing = readActionPlanResult(database, attemptId);
+    if (existing !== undefined) {
+      if (existing.certainty !== "definite") {
+        return commitDefiniteResult(database, {
+          kind: "rejected",
+          attemptId,
+          reason: "result-exists",
+        });
+      }
+      if (sameResult(existing, result)) {
+        const journalId = actionResultJournalId(attemptId);
+        ensureJournalEvent(database, journalId);
+        return commitDefiniteResult(database, { kind: "recorded", result: existing, journalId });
+      }
+      return commitDefiniteResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "result-conflict",
+      });
+    }
+    if (hasResult(database, attemptId))
+      return commitDefiniteResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "result-exists",
+      });
+
+    insertStoredResult(database, attempt, result);
+    const journalId = actionResultJournalId(attemptId);
+    insertActionResultJournal(database, journalId, result);
+    database.exec("COMMIT;");
+    transactionStarted = false;
+    return { kind: "recorded", result, journalId };
+  } catch (error: unknown) {
+    if (transactionStarted) rollback(database, error);
+    throw error;
+  }
+}
+
 /** Reopen the exact durable result for one attempt after a restart. */
 export function readActionPlanResult(
   database: Database,
@@ -179,26 +283,13 @@ export function readActionPlanResult(
   ) {
     throw new TypeError("action result identity does not match its attempt");
   }
-  if (row.result_kind !== "stale" || row.certainty !== "definite") {
-    throw new TypeError("stored action result is not a definite stale result");
-  }
-  return createRemoteAttemptResult({
-    kind: "stale",
-    planId: row.plan_id,
-    action: actionAttempt.action,
-    target: actionAttempt.target,
-    attemptId: row.attempt_id,
-    idempotencyKey: row.idempotency_key,
-    startedAt: row.started_at,
-    resultAt: row.result_at,
-    certainty: "definite",
-    detail: row.detail,
-  });
+  return decodeStoredResult(row, actionAttempt);
 }
 
 export function createActionPlanResultRepository(database: Database): ActionPlanResultRepository {
   return {
     recordStale: (input) => recordStaleActionPlanResult(database, input),
+    recordDefinite: (input) => recordDefiniteActionPlanResult(database, input),
     read: (attemptId) => readActionPlanResult(database, attemptId),
   };
 }
@@ -206,7 +297,19 @@ export function createActionPlanResultRepository(database: Database): ActionPlan
 /** Compatibility names for the transaction boundary. */
 export const finalizeStaleActionPlanAttempt = recordStaleActionPlanResult;
 export const recordStaleActionPlanAttempt = recordStaleActionPlanResult;
-export const recordActionPlanAttemptResult = recordStaleActionPlanResult;
+/** Compatibility dispatcher for the original stale-only repository surface. */
+export function recordActionPlanAttemptResult(
+  database: Database,
+  input: unknown,
+): ActionPlanDefiniteResult | ActionPlanStaleResult {
+  const value = record(input, "action plan result input");
+  return Object.prototype.hasOwnProperty.call(value, "observation")
+    ? recordStaleActionPlanResult(database, input)
+    : recordDefiniteActionPlanResult(database, input);
+}
+export const finalizeActionPlanAttemptResult = recordDefiniteActionPlanResult;
+export const recordActionPlanResult = recordDefiniteActionPlanResult;
+export const finalizeDefiniteActionPlanResult = recordDefiniteActionPlanResult;
 export const finalizeStaleActionAttempt = recordStaleActionPlanResult;
 export const reopenActionPlanResult = readActionPlanResult;
 export const readActionPlanAttemptResult = readActionPlanResult;
@@ -255,7 +358,10 @@ type AttemptRow = Readonly<{
   readonly action: Action;
   readonly idempotencyKey: string;
   readonly startedAt: string;
+  readonly claimId: string;
 }>;
+
+type DefiniteResult = Exclude<RemoteAttemptResult, { readonly certainty: "uncertain" }>;
 
 function prepareInput(value: unknown): PreparedInput {
   const input = record(value, "stale action result input");
@@ -328,7 +434,8 @@ function readAttempt(database: Database, attemptId: string): AttemptRow | undefi
   const value: unknown = database
     .query(
       "SELECT attempt_id, plan_id, target_ordinal, account_id, mailbox_id, uid_validity, uid, " +
-        "idempotency_key, started_at, action_kind, precondition_modseq FROM action_attempts WHERE attempt_id = ?;",
+        "idempotency_key, started_at, action_kind, precondition_modseq, claim_id " +
+        "FROM action_attempts WHERE attempt_id = ?;",
     )
     .get(attemptId);
   if (value === null) return undefined;
@@ -347,7 +454,332 @@ function readAttempt(database: Database, attemptId: string): AttemptRow | undefi
     action: parseAction(row.action_kind),
     idempotencyKey: requireText(row.idempotency_key),
     startedAt: parseUtcInstant(row.started_at),
+    claimId: requireNamespacedText(row.claim_id, "claim ID", "claim:"),
   };
+}
+
+function parseDefiniteResultInput(value: unknown): DefiniteResult {
+  const input = record(value, "definite action result input");
+  const rawResult = Object.prototype.hasOwnProperty.call(input, "result")
+    ? (() => {
+        exactKeys(input, ["result"]);
+        return input.result;
+      })()
+    : value;
+  const result = createRemoteAttemptResult(rawResult);
+  if (result.certainty !== "definite") {
+    throw new TypeError("uncertain transport outcomes cannot be finalized as definite");
+  }
+  return result;
+}
+
+function matchesAttemptIdentity(attempt: AttemptRow, result: DefiniteResult): boolean {
+  return (
+    result.attemptId === attempt.attemptId &&
+    result.planId === attempt.planId &&
+    result.action.kind === attempt.action.kind &&
+    result.target.accountId === attempt.target.accountId &&
+    result.target.mailboxId === attempt.target.mailboxId &&
+    result.target.uidValidity === attempt.target.uidValidity &&
+    result.target.uid === attempt.target.uid &&
+    result.target.precondition.modseq === attempt.target.precondition.modseq &&
+    result.idempotencyKey === attempt.idempotencyKey &&
+    result.startedAt === attempt.startedAt
+  );
+}
+
+function isActiveUnresolvedAttempt(database: Database, attempt: AttemptRow): boolean {
+  const row: unknown = database
+    .query(
+      "SELECT 1 AS active " +
+        "FROM action_attempts AS attempt " +
+        "JOIN action_plans AS plan ON plan.plan_id = attempt.plan_id " +
+        "JOIN action_plan_claims AS claim ON claim.plan_id = attempt.plan_id AND claim.claim_id = attempt.claim_id " +
+        "WHERE attempt.attempt_id = ? AND attempt.certainty = 'unresolved' " +
+        "AND plan.state = 'executing' AND plan.claim_id = attempt.claim_id " +
+        "AND plan.started_at = claim.claimed_at;",
+    )
+    .get(attempt.attemptId);
+  return row !== null;
+}
+
+function insertStoredResult(database: Database, attempt: AttemptRow, result: DefiniteResult): void {
+  const stored = storedResultFields(result);
+  database
+    .query(
+      "INSERT INTO action_results " +
+        "(attempt_id, plan_id, target_ordinal, account_id, mailbox_id, uid_validity, uid, " +
+        "idempotency_key, started_at, result_at, result_kind, certainty, uncertain_reason, " +
+        "failure_reason, detail, postcondition_kind, postcondition_observed_at, " +
+        "postcondition_modseq, postcondition_flags, postcondition_mailbox_id, " +
+        "postcondition_uid_validity, postcondition_uid) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'definite', NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    )
+    .run(
+      attempt.attemptId,
+      attempt.planId,
+      attempt.targetOrdinal,
+      attempt.target.accountId,
+      attempt.target.mailboxId,
+      attempt.target.uidValidity,
+      attempt.target.uid,
+      attempt.idempotencyKey,
+      attempt.startedAt,
+      result.resultAt,
+      stored.resultKind,
+      stored.failureReason,
+      stored.detail,
+      stored.postconditionKind,
+      stored.postconditionObservedAt,
+      stored.postconditionModseq,
+      stored.postconditionFlags,
+      stored.postconditionMailboxId,
+      stored.postconditionUidValidity,
+      stored.postconditionUid,
+    );
+}
+
+type StoredResultFields = Readonly<{
+  readonly resultKind: DefiniteResult["kind"];
+  readonly failureReason: string | null;
+  readonly detail: string | null;
+  readonly postconditionKind: "flags" | "mailbox" | null;
+  readonly postconditionObservedAt: string | null;
+  readonly postconditionModseq: number | null;
+  readonly postconditionFlags: string | null;
+  readonly postconditionMailboxId: string | null;
+  readonly postconditionUidValidity: number | null;
+  readonly postconditionUid: number | null;
+}>;
+
+function storedResultFields(result: DefiniteResult): StoredResultFields {
+  switch (result.kind) {
+    case "success":
+      return result.postcondition.kind === "flags"
+        ? {
+            resultKind: result.kind,
+            failureReason: null,
+            detail: null,
+            postconditionKind: "flags",
+            postconditionObservedAt: result.postcondition.observedAt,
+            postconditionModseq: result.postcondition.modseq,
+            postconditionFlags: JSON.stringify(result.postcondition.flags),
+            postconditionMailboxId: null,
+            postconditionUidValidity: null,
+            postconditionUid: null,
+          }
+        : {
+            resultKind: result.kind,
+            failureReason: null,
+            detail: null,
+            postconditionKind: "mailbox",
+            postconditionObservedAt: result.postcondition.observedAt,
+            postconditionModseq: result.postcondition.modseq,
+            postconditionFlags: null,
+            postconditionMailboxId: result.postcondition.mailboxId,
+            postconditionUidValidity: result.postcondition.uidValidity,
+            postconditionUid: result.postcondition.uid,
+          };
+    case "stale":
+    case "rejected":
+      return {
+        resultKind: result.kind,
+        failureReason: null,
+        detail: result.detail,
+        postconditionKind: null,
+        postconditionObservedAt: null,
+        postconditionModseq: null,
+        postconditionFlags: null,
+        postconditionMailboxId: null,
+        postconditionUidValidity: null,
+        postconditionUid: null,
+      };
+    case "failed":
+      return {
+        resultKind: result.kind,
+        failureReason: result.failureReason,
+        detail: result.detail,
+        postconditionKind: null,
+        postconditionObservedAt: null,
+        postconditionModseq: null,
+        postconditionFlags: null,
+        postconditionMailboxId: null,
+        postconditionUidValidity: null,
+        postconditionUid: null,
+      };
+    default: {
+      const exhaustive: never = result;
+      return exhaustive;
+    }
+  }
+}
+
+function insertActionResultJournal(database: Database, journalId: string, result: DefiniteResult): void {
+  const payloadJson = serializeActionResultJournalPayload(result);
+  database
+    .query(
+      "INSERT INTO operational_journal " +
+        "(id, occurred_at, category, subject_id, correlation_id, payload_version, payload_json) " +
+        "VALUES (?, ?, 'action', ?, ?, 1, ?) ON CONFLICT(id) DO NOTHING;",
+    )
+    .run(journalId, result.resultAt, result.attemptId, result.planId, payloadJson);
+  const row: unknown = database
+    .query(
+      "SELECT occurred_at, category, subject_id, correlation_id, payload_version, payload_json " +
+        "FROM operational_journal WHERE id = ?;",
+    )
+    .get(journalId);
+  const stored = record(row, "action result journal row");
+  if (
+    stored.occurred_at !== result.resultAt ||
+    stored.category !== "action" ||
+    stored.subject_id !== result.attemptId ||
+    stored.correlation_id !== result.planId ||
+    stored.payload_version !== 1 ||
+    stored.payload_json !== payloadJson
+  ) {
+    throw new TypeError("action result journal identity conflicts with the result");
+  }
+}
+
+function ensureJournalEvent(database: Database, journalId: string): void {
+  const row: unknown = database
+    .query("SELECT 1 AS present FROM operational_journal WHERE id = ?;")
+    .get(journalId);
+  if (row === null) throw new Error("action result journal event is missing");
+}
+
+function serializeActionResultJournalPayload(result: DefiniteResult): string {
+  const base = {
+    version: 1,
+    kind: result.kind,
+    attemptId: result.attemptId,
+    planId: result.planId,
+    action: result.action.kind,
+    resultAt: result.resultAt,
+  };
+  switch (result.kind) {
+    case "success":
+      return JSON.stringify({ ...base, postcondition: result.postcondition });
+    case "stale":
+    case "rejected":
+      return JSON.stringify({ ...base, detail: result.detail });
+    case "failed":
+      return JSON.stringify({ ...base, failureReason: result.failureReason, detail: result.detail });
+    default: {
+      const exhaustive: never = result;
+      return exhaustive;
+    }
+  }
+}
+
+function actionResultJournalId(attemptId: string): string {
+  return `event:action-result:${attemptId}`;
+}
+
+function sameResult(left: RemoteAttemptResult, right: DefiniteResult): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function decodeStoredResult(
+  row: Readonly<Record<string, unknown>>,
+  attempt: AttemptRow,
+): RemoteAttemptResult {
+  const base = {
+    planId: row.plan_id,
+    action: attempt.action,
+    target: attempt.target,
+    attemptId: row.attempt_id,
+    idempotencyKey: row.idempotency_key,
+    startedAt: row.started_at,
+    resultAt: row.result_at,
+  };
+  switch (row.result_kind) {
+    case "success": {
+      if (row.certainty !== "definite") throw new TypeError("stored success result is not definite");
+      const postcondition = decodeStoredPostcondition(row);
+      return createRemoteAttemptSuccess({ ...base, kind: "success", certainty: "definite", postcondition });
+    }
+    case "stale":
+      if (row.certainty !== "definite") throw new TypeError("stored stale result is not definite");
+      return createRemoteAttemptStale({
+        ...base,
+        kind: "stale",
+        certainty: "definite",
+        detail: requireText(row.detail),
+      });
+    case "rejected":
+      if (row.certainty !== "definite") throw new TypeError("stored rejected result is not definite");
+      return createRemoteAttemptRejected({
+        ...base,
+        kind: "rejected",
+        certainty: "definite",
+        detail: requireText(row.detail),
+      });
+    case "failed":
+      if (row.certainty !== "definite") throw new TypeError("stored failed result is not definite");
+      return createRemoteAttemptFailed({
+        ...base,
+        kind: "failed",
+        certainty: "definite",
+        failureReason: row.failure_reason,
+        detail: requireText(row.detail),
+      });
+    case "uncertain":
+      if (row.certainty !== "uncertain") throw new TypeError("stored uncertain result has invalid certainty");
+      return createRemoteAttemptUncertain({
+        ...base,
+        kind: "uncertain",
+        certainty: "uncertain",
+        uncertainReason: row.uncertain_reason,
+        detail: requireText(row.detail),
+      });
+    default:
+      throw new TypeError("stored action result kind is invalid");
+  }
+}
+
+function decodeStoredPostcondition(
+  row: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  if (row.postcondition_kind === "flags") {
+    return {
+      kind: "flags",
+      observedAt: row.postcondition_observed_at,
+      flags: parseFlagsJson(row.postcondition_flags),
+      modseq: row.postcondition_modseq,
+    };
+  }
+  if (row.postcondition_kind === "mailbox") {
+    return {
+      kind: "mailbox",
+      observedAt: row.postcondition_observed_at,
+      mailboxId: row.postcondition_mailbox_id,
+      uidValidity: row.postcondition_uid_validity,
+      uid: row.postcondition_uid,
+      modseq: row.postcondition_modseq,
+    };
+  }
+  throw new TypeError("stored success result has no postcondition kind");
+}
+
+function parseFlagsJson(value: unknown): readonly string[] {
+  if (typeof value !== "string") throw new TypeError("stored flags postcondition is invalid");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error: unknown) {
+    throw new TypeError("stored flags postcondition is invalid", { cause: error });
+  }
+  if (!Array.isArray(parsed) || parsed.some((flag) => typeof flag !== "string")) {
+    throw new TypeError("stored flags postcondition is invalid");
+  }
+  return parsed;
+}
+
+function commitDefiniteResult(database: Database, result: ActionPlanDefiniteResult): ActionPlanDefiniteResult {
+  database.exec("COMMIT;");
+  return result;
 }
 
 function matchesTarget(left: ActionPlanTarget, right: ActionPlanTarget): boolean {
@@ -368,7 +800,7 @@ function hasResult(database: Database, attemptId: string): boolean {
   );
 }
 
-function requireResultSchema(database: Database): void {
+function requireResultSchema(database: Database, requiresJournal = false): void {
   const resultColumns: readonly unknown[] = database
     .query("PRAGMA table_info(action_results);")
     .all();
@@ -377,6 +809,9 @@ function requireResultSchema(database: Database): void {
     .all();
   const requiredResult = new Set(["attempt_id", "result_kind", "certainty", "detail"]);
   const requiredAttempt = new Set(["claim_id", "action_kind", "precondition_modseq"]);
+  const journalColumns: readonly unknown[] = requiresJournal
+    ? database.query("PRAGMA table_info(operational_journal);").all()
+    : [];
   const names = (columns: readonly unknown[]): ReadonlySet<string> =>
     new Set(
       columns.flatMap((value) => {
@@ -388,7 +823,12 @@ function requireResultSchema(database: Database): void {
     resultColumns.length === 0 ||
     attemptColumns.length === 0 ||
     [...requiredResult].some((column) => !names(resultColumns).has(column)) ||
-    [...requiredAttempt].some((column) => !names(attemptColumns).has(column))
+    [...requiredAttempt].some((column) => !names(attemptColumns).has(column)) ||
+    (requiresJournal &&
+      (journalColumns.length === 0 ||
+        ["id", "occurred_at", "category", "subject_id", "correlation_id", "payload_version", "payload_json"].some(
+          (column) => !names(journalColumns).has(column),
+        )))
   ) {
     throw new Error("action result migration is required before result use");
   }
@@ -437,6 +877,12 @@ function requireText(value: unknown): string {
     throw new TypeError("action result text is invalid");
   }
   return value;
+}
+
+function requireNamespacedText(value: unknown, label: string, prefix: string): string {
+  const text = requireText(value);
+  if (!text.startsWith(prefix)) throw new TypeError(`${label} is invalid`);
+  return text;
 }
 
 function record(value: unknown, label: string): Readonly<Record<string, unknown>> {
