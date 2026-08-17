@@ -1,5 +1,5 @@
 {
-  "name": "@agent-mail/cli",
+  "name": "agent-mail",
   "private": true,
   "type": "module",
   "scripts": {

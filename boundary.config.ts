@@ -6,41 +6,29 @@ type PackageName =
   | "@agent-mail/contracts"
   | "@agent-mail/storage"
   | "@agent-mail/imap"
-  | "@agent-mail/workflow"
-  | "@agent-mail/daemon"
-  | "@agent-mail/cli"
-  | "@agent-mail/skill";
+  | "agent-maild"
+  | "agent-mail";
 type JsonObject = Record<string, unknown>;
 const packageNames: readonly PackageName[] = [
   "@agent-mail/core",
   "@agent-mail/contracts",
   "@agent-mail/storage",
   "@agent-mail/imap",
-  "@agent-mail/workflow",
-  "@agent-mail/daemon",
-  "@agent-mail/cli",
-  "@agent-mail/skill",
+  "agent-maild",
+  "agent-mail",
 ];
 const allowedDependencies: Readonly<Record<PackageName, readonly PackageName[]>> = {
   "@agent-mail/core": [],
   "@agent-mail/contracts": [],
   "@agent-mail/storage": ["@agent-mail/core"],
   "@agent-mail/imap": ["@agent-mail/core"],
-  "@agent-mail/workflow": [
+  "agent-maild": [
     "@agent-mail/contracts",
     "@agent-mail/core",
     "@agent-mail/imap",
     "@agent-mail/storage",
   ],
-  "@agent-mail/daemon": [
-    "@agent-mail/contracts",
-    "@agent-mail/core",
-    "@agent-mail/imap",
-    "@agent-mail/storage",
-    "@agent-mail/workflow",
-  ],
-  "@agent-mail/cli": ["@agent-mail/contracts"],
-  "@agent-mail/skill": ["@agent-mail/contracts"],
+  "agent-mail": ["@agent-mail/contracts"],
 };
 const workspaceRoot = process.env.BOUNDARY_ROOT ?? process.cwd();
 function isJsonObject(value: unknown): value is JsonObject {
@@ -50,7 +38,7 @@ function isPackageName(value: string): value is PackageName {
   return packageNames.some((name) => name === value);
 }
 function workspacePackageNameFromSpecifier(value: string): PackageName | undefined {
-  const packageSpecifier = /^(@agent-mail\/[^/]+)(?:\/.*)?$/.exec(value)?.[1];
+  const packageSpecifier = /^(?:((?:@agent-mail\/)?[^/]+))(?:\/.*)?$/.exec(value)?.[1];
   return packageSpecifier !== undefined && isPackageName(packageSpecifier)
     ? packageSpecifier
     : undefined;
@@ -80,7 +68,7 @@ async function sourceFiles(directory: string): Promise<string[]> {
 }
 function importedWorkspacePackages(source: string): readonly PackageName[] {
   const imports = source.matchAll(
-    /(?:from\s*["']|import\s*["']|import\s*\(\s*["'])((?:@agent-mail\/)[^"']+)["']/g,
+    /(?:from\s*["']|import\s*["']|import\s*\(\s*["'])((?:@agent-mail\/[^"']+|agent-maild(?:\/[^"']*)?|agent-mail(?:\/[^"']*)?))["']/g,
   );
   return [...imports].flatMap((match) => {
     const packageName =
@@ -91,7 +79,12 @@ function importedWorkspacePackages(source: string): readonly PackageName[] {
 const violations: string[] = [];
 const graph = new Map<PackageName, readonly PackageName[]>();
 for (const expectedName of packageNames) {
-  const directory = join(workspaceRoot, "packages", expectedName.replace("@agent-mail/", ""));
+  const directoryName = expectedName.startsWith("@agent-mail/")
+    ? expectedName.replace("@agent-mail/", "")
+    : expectedName === "agent-maild"
+      ? "daemon"
+      : "cli";
+  const directory = join(workspaceRoot, "packages", directoryName);
   const manifestPath = join(directory, "package.json");
   const manifest = await readJson(manifestPath);
   const actualName = packageName(manifest.name, manifestPath);
