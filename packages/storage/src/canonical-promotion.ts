@@ -28,6 +28,7 @@ import {
 /** Rows supplied by the already parsed and normalized MIME pipeline. */
 export type PromotionUnit = Readonly<{
   readonly messageId: MessageId;
+  readonly rawSource: PromotionBlobReference;
   readonly placements: readonly PromotionPlacement[];
   readonly headers: readonly PromotionHeader[];
   readonly addresses: readonly PromotionAddress[];
@@ -35,6 +36,12 @@ export type PromotionUnit = Readonly<{
   readonly attachments: readonly PromotionAttachment[];
   readonly routingDecisions: readonly PromotionRoutingDecision[];
   readonly journal: PromotionJournalEvent;
+}>;
+
+/** Authoritative content-addressed blob evidence captured at promotion time. */
+export type PromotionBlobReference = Readonly<{
+  readonly blobId: BlobId;
+  readonly size: number;
 }>;
 
 export type PromotionPlacement = Readonly<{
@@ -66,6 +73,7 @@ export type PromotionBodyPart = Readonly<{
   readonly ordinal: number;
   readonly contentType: string;
   readonly normalizedContentType: string;
+  readonly size: number;
   readonly blobId: BlobId;
 }>;
 
@@ -102,6 +110,7 @@ export type PromotionWriteBoundary =
   | "address"
   | "body-part"
   | "attachment"
+  | "blob-reference"
   | "routing-decision"
   | "local-label"
   | "local-label-assignment"
@@ -162,6 +171,46 @@ export function promoteCanonicalMessage(
 
     const write = createWriter(database, options.beforeWrite);
     write("message", "INSERT INTO messages (message_id) VALUES (?);", [unit.messageId]);
+    write(
+      "blob-reference",
+      "INSERT INTO message_blob_references " +
+        "(message_id, kind, ordinal, blob_id, size) VALUES (?, ?, ?, ?, ?);",
+      [
+        unit.messageId,
+        "raw-eml",
+        1,
+        unit.rawSource.blobId.replace(/^blob:/u, ""),
+        unit.rawSource.size,
+      ],
+    );
+    for (const bodyPart of unit.bodyParts) {
+      write(
+        "blob-reference",
+        "INSERT INTO message_blob_references " +
+          "(message_id, kind, ordinal, blob_id, size) VALUES (?, ?, ?, ?, ?);",
+        [
+          unit.messageId,
+          "body-part",
+          bodyPart.ordinal,
+          bodyPart.blobId.replace(/^blob:/u, ""),
+          bodyPart.size,
+        ],
+      );
+    }
+    for (const attachment of unit.attachments) {
+      write(
+        "blob-reference",
+        "INSERT INTO message_blob_references " +
+          "(message_id, kind, ordinal, blob_id, size) VALUES (?, ?, ?, ?, ?);",
+        [
+          unit.messageId,
+          "attachment",
+          attachment.ordinal,
+          attachment.blobId.replace(/^blob:/u, ""),
+          attachment.size,
+        ],
+      );
+    }
     for (const placement of unit.placements) {
       write(
         "placement",
@@ -473,13 +522,58 @@ function readPromotion(database: Database, messageId: MessageId): PromotionUnit 
     .all(messageId)
     .map((row: unknown) => decodeJournalRow(row));
   if (journalRows.length !== 1) return undefined;
+  const references = database
+    .query(
+      "SELECT kind, ordinal, blob_id, size FROM message_blob_references " +
+        "WHERE message_id = ? ORDER BY kind, ordinal;",
+    )
+    .all(messageId)
+    .map((row: unknown) => decodeBlobReferenceRow(row));
+  const rawSource = references.find((reference) => reference.kind === "raw-eml");
+  if (
+    rawSource === undefined ||
+    references.filter((reference) => reference.kind === "raw-eml").length !== 1
+  ) {
+    return undefined;
+  }
+  const bodyReferences = new Map(
+    references
+      .filter((reference) => reference.kind === "body-part")
+      .map((reference) => [reference.ordinal, reference]),
+  );
+  const attachmentReferences = new Map(
+    references
+      .filter((reference) => reference.kind === "attachment")
+      .map((reference) => [reference.ordinal, reference]),
+  );
+  if (
+    bodyReferences.size !== bodyParts.length ||
+    attachmentReferences.size !== attachments.length
+  ) {
+    return undefined;
+  }
+  const bodyPartsWithSizes = bodyParts.map((bodyPart) => {
+    const reference = bodyReferences.get(bodyPart.ordinal);
+    if (reference === undefined || reference.blob.blobId !== bodyPart.blobId) {
+      throw new TypeError("body part blob reference does not match its content row");
+    }
+    return { ...bodyPart, size: reference.blob.size };
+  });
+  const attachmentsWithSizes = attachments.map((attachment) => {
+    const reference = attachmentReferences.get(attachment.ordinal);
+    if (reference === undefined || reference.blob.blobId !== attachment.blobId) {
+      throw new TypeError("attachment blob reference does not match its content row");
+    }
+    return { ...attachment, size: reference.blob.size };
+  });
   return {
     messageId: parseMessageId(decodedId),
+    rawSource: rawSource.blob,
     placements,
     headers,
     addresses,
-    bodyParts,
-    attachments,
+    bodyParts: bodyPartsWithSizes,
+    attachments: attachmentsWithSizes,
     routingDecisions,
     journal: journalRows[0],
   };
@@ -576,7 +670,43 @@ function decodeBodyPartRow(row: unknown): PromotionBodyPart {
     ordinal: numberValue(value.ordinal),
     contentType: stringValue(value.content_type),
     normalizedContentType: stringValue(value.normalized_content_type),
+    size: 0,
     blobId: blobValue(value.blob_id),
+  };
+}
+
+type BlobReferenceRow = Readonly<{
+  readonly kind: "raw-eml" | "body-part" | "attachment";
+  readonly ordinal: number;
+  readonly blob: PromotionBlobReference;
+}>;
+
+function decodeBlobReferenceRow(row: unknown): BlobReferenceRow {
+  const value = decodeSqliteRow({
+    table: "message_blob_references",
+    row,
+    columns: {
+      kind: column((input, context) =>
+        decodeClosedEnum(input, {
+          ...context,
+          values: ["raw-eml", "body-part", "attachment"] as const,
+        }),
+      ),
+      ordinal: column((input, context) =>
+        decodeBoundedSafeInteger(input, { ...context, minimum: 1 }),
+      ),
+      blob_id: column(decodeStoredBlobId),
+      size: column((input, context) => decodeBoundedSafeInteger(input, { ...context, minimum: 0 })),
+    },
+  });
+  const kind = value.kind;
+  if (kind !== "raw-eml" && kind !== "body-part" && kind !== "attachment") {
+    throw new TypeError("decoded blob reference kind is invalid");
+  }
+  return {
+    kind,
+    ordinal: numberValue(value.ordinal),
+    blob: { blobId: blobValue(value.blob_id), size: numberValue(value.size) },
   };
 }
 
@@ -749,6 +879,7 @@ function numberValue(value: unknown): number {
 function serializeUnit(unit: PromotionUnit): string {
   return JSON.stringify({
     messageId: unit.messageId,
+    rawSource: unit.rawSource,
     placements: unit.placements,
     headers: unit.headers,
     addresses: unit.addresses,

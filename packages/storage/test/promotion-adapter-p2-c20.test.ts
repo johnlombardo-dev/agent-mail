@@ -26,6 +26,7 @@ import { localLabelMigration } from "../src/local-label-migration";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
+import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
 import {
   createSqlitePromotionAdapter,
   parsePromotionUnit,
@@ -41,6 +42,7 @@ const accountId = createAccountId("account:promotion-contract");
 const mailboxId = createMailboxId("mailbox:inbox");
 const plainBlob = createBlobId("1".repeat(64));
 const attachmentBlob = createBlobId("2".repeat(64));
+const rawBlob = createBlobId("3".repeat(64));
 
 const routingDecision = createRouteDecision({
   kind: "route",
@@ -58,12 +60,14 @@ const migrations = [
   { ...operationalJournalMigration, version: 3 },
   { ...localLabelMigration, version: 4 },
   { ...routingDecisionMigration, version: 5 },
+  { ...messageBlobReferencesMigration, version: 6 },
 ] satisfies readonly Migration[];
 
 function fixture(messageId: MessageId, duplicatePlacement = false, uid = 11) {
   const placement = { accountId, mailboxId, uidValidity: 7, uid };
   return {
     messageId,
+    rawSource: { blobId: rawBlob, size: 512 },
     placements: duplicatePlacement ? [placement, placement] : [placement],
     headers: [
       {
@@ -90,6 +94,7 @@ function fixture(messageId: MessageId, duplicatePlacement = false, uid = 11) {
         ordinal: 1,
         contentType: "text/plain",
         normalizedContentType: "text/plain",
+        size: 18,
         blobId: plainBlob,
       },
     ],

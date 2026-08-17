@@ -26,6 +26,7 @@ import { operationalJournalMigration } from "../src/migrations/0001-operational-
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { localLabelMigration } from "../src/local-label-migration";
 import { routingDecisionMigration } from "../src/routing-decision-migration";
+import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
 import { canonicalRoutingDecisionId } from "../src/routing-decision-identity";
 import { persistRouteDecision } from "../src/local-label-assignment";
 
@@ -35,6 +36,7 @@ const accountId = createAccountId("account:one");
 const mailboxId = createMailboxId("mailbox:inbox");
 const plainBlob = createBlobId("1".repeat(64));
 const attachmentBlob = createBlobId("2".repeat(64));
+const rawBlob = createBlobId("3".repeat(64));
 const decision = createRouteDecision({
   kind: "route",
   ruleId: createRoutingRuleId("rule:inbox"),
@@ -51,10 +53,12 @@ const migrations = [
   { ...operationalJournalMigration, version: 3 },
   { ...localLabelMigration, version: 4 },
   { ...routingDecisionMigration, version: 5 },
+  { ...messageBlobReferencesMigration, version: 6 },
 ];
 
 const unit: PromotionUnit = {
   messageId,
+  rawSource: { blobId: rawBlob, size: 512 },
   placements: [{ accountId, mailboxId, uidValidity: 7, uid: 11 }],
   headers: [
     {
@@ -81,6 +85,7 @@ const unit: PromotionUnit = {
       ordinal: 1,
       contentType: "text/plain",
       normalizedContentType: "text/plain",
+      size: 18,
       blobId: plainBlob,
     },
   ],
@@ -130,6 +135,7 @@ function countRows(database: Database): Record<string, number> {
     "message_addresses",
     "message_body_parts",
     "message_attachments",
+    "message_blob_references",
     "routing_decisions",
     "local_labels",
     "local_label_assignments",
@@ -190,6 +196,7 @@ describe("canonical promotion transaction P2-C13", () => {
         routing_decisions: 0,
         local_labels: 0,
         local_label_assignments: 0,
+        message_blob_references: 0,
         operational_journal: 0,
       });
       await opened.close();
@@ -202,7 +209,7 @@ describe("canonical promotion transaction P2-C13", () => {
     expect(promoteCanonicalMessage(opened.db, unit)).toEqual({ messageId, status: "committed" });
     await opened.close();
 
-    const reopened = await openDatabase(join(roots[0], "archive.sqlite"), { supportedSchemaVersion: 5 });
+    const reopened = await openDatabase(join(roots[0], "archive.sqlite"), { supportedSchemaVersion: 6 });
     applyMigrations(reopened, migrations);
     expect(readCanonicalPromotion(reopened.db, messageId)).toEqual({
       ...unit,

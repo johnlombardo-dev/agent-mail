@@ -40,6 +40,7 @@ import { structuredContentMigration } from "../src/migrations/0002-structured-co
 import { identityOnlyContentMigration } from "../src/migrations/0002-identity-only-content";
 import { localLabelMigration } from "../src/local-label-migration";
 import { routingDecisionMigration } from "../src/routing-decision-migration";
+import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
 
 import comparisonFixture from "./fixtures/backup-restore-p2-c19-comparison.json";
 
@@ -51,7 +52,8 @@ const migrations: readonly Migration[] = [
   { ...operationalJournalMigration, version: 3 },
   { ...localLabelMigration, version: 4 },
   { ...routingDecisionMigration, version: 5 },
-  { ...identityOnlyContentMigration, version: 6 },
+  { ...messageBlobReferencesMigration, version: 6 },
+  { ...identityOnlyContentMigration, version: 7 },
 ];
 
 type Fixture = Readonly<{
@@ -104,6 +106,10 @@ function assertFixtureNumber(value: number, name: string): number {
 
 const canonicalUnit: PromotionUnit = {
   messageId,
+  rawSource: {
+    blobId: createBlobId(createHash("sha256").update(comparisonFixture.plainBody).digest("hex")),
+    size: Buffer.byteLength(comparisonFixture.plainBody),
+  },
   placements: [
     { accountId, mailboxId, uidValidity, uid: liveUid },
     { accountId, mailboxId, uidValidity, uid: tombstonedUid },
@@ -133,6 +139,7 @@ const canonicalUnit: PromotionUnit = {
       ordinal: 1,
       contentType: "text/plain",
       normalizedContentType: "text/plain",
+      size: Buffer.byteLength(comparisonFixture.plainBody),
       blobId: createBlobId(createHash("sha256").update(comparisonFixture.plainBody).digest("hex")),
     },
   ],

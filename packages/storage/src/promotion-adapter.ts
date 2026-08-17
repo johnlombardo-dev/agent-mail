@@ -17,6 +17,7 @@ import {
   promoteCanonicalMessage,
   type PromotionAddress,
   type PromotionAttachment,
+  type PromotionBlobReference,
   type PromotionBodyPart,
   type PromotionFailureInjector,
   type PromotionHeader,
@@ -78,6 +79,7 @@ export function parsePromotionUnit(value: unknown): PromotionUnit {
     input,
     [
       "messageId",
+      "rawSource",
       "placements",
       "headers",
       "addresses",
@@ -91,6 +93,7 @@ export function parsePromotionUnit(value: unknown): PromotionUnit {
 
   const unit: PromotionUnit = {
     messageId: parseCanonicalMessageId(input.messageId),
+    rawSource: parseBlobReference(input.rawSource, "raw source"),
     placements: array(input.placements, "promotion placements").map(parsePlacement),
     headers: array(input.headers, "promotion headers").map(parseHeader),
     addresses: array(input.addresses, "promotion addresses").map(parseAddress),
@@ -287,7 +290,7 @@ function parseBodyPart(value: unknown): PromotionBodyPart {
   const input = record(value, "promotion body part");
   exact(
     input,
-    ["ordinal", "contentType", "normalizedContentType", "blobId"],
+    ["ordinal", "contentType", "normalizedContentType", "size", "blobId"],
     "promotion body part",
   );
   return {
@@ -298,7 +301,17 @@ function parseBodyPart(value: unknown): PromotionBodyPart {
       "normalized content type",
       255,
     ),
+    size: nonNegativeInteger(input.size, "body part size"),
     blobId: parseCanonicalBlobId(input.blobId),
+  };
+}
+
+function parseBlobReference(value: unknown, name: string): PromotionBlobReference {
+  const input = record(value, name);
+  exact(input, ["blobId", "size"], name);
+  return {
+    blobId: parseCanonicalBlobId(input.blobId),
+    size: nonNegativeInteger(input.size, `${name} size`),
   };
 }
 
