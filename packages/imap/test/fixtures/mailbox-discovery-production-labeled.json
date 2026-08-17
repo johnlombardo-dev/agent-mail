@@ -1,0 +1,24 @@
+[
+  {
+    "path": "Projects",
+    "delimiter": "/",
+    "flags": ["\\Noselect", "\\HasChildren"]
+  },
+  {
+    "path": "Projects/Inbox",
+    "delimiter": "/",
+    "flags": ["\\HasNoChildren"],
+    "specialUse": "\\Inbox"
+  },
+  {
+    "path": "客户/2026/收件箱",
+    "delimiter": "/",
+    "flags": ["\\HasNoChildren"]
+  },
+  {
+    "path": "Archive.Équipe",
+    "delimiter": ".",
+    "flags": ["\\HasNoChildren"],
+    "specialUse": "\\Archive"
+  }
+]
