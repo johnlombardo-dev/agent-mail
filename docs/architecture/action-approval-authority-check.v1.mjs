@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "227affdce102226e2c1dcec3cf549145d35a9615cc3ef6bb144850239ed51425";
+const EXPECTED_ORACLE_SHA256 = "4042c52dfe8c9377f722cbde465b9d7a3eb0af3b995863d649c8f37754474768";
 const architectureDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(architectureDirectory, "../..");
 const oraclePath = join(architectureDirectory, "action-approval-authority-oracle.v1.json");
@@ -108,8 +108,8 @@ const forbiddenIds = uniqueIds(oracle.structurallyForbidden, "forbidden rules");
 
 for (const [label, actual, expected] of [
   ["requirements", requirementIds.size, 9],
-  ["decisions", decisionIds.size, 27],
-  ["rejected alternatives", rejectedIds.size, 20],
+  ["decisions", decisionIds.size, 28],
+  ["rejected alternatives", rejectedIds.size, 21],
   ["retirements", retirementIds.size, 16],
   ["probes", probeIds.size, 20],
   ["implementation obligations", obligationIds.size, 11],
@@ -178,6 +178,9 @@ const requiredCaseTags = new Set([
   "closure-version",
   "seal-key-rotation",
   "active-key-removal",
+  "same-uid-administration-bypass",
+  "administration-assertion-replay",
+  "administration-binding",
   "backup-key-exclusion",
   "revoke-vs-consume",
   "key-removal-vs-consume",
@@ -274,8 +277,17 @@ const authorityVersionTable = oracle.storageSchema.tables.find(
 const consumptionTable = oracle.storageSchema.tables.find(
   ({ name }) => name === "action_approval_consumptions",
 );
+const challengeConsumptionTable = oracle.storageSchema.tables.find(
+  ({ name }) => name === "operator_presence_challenge_consumptions",
+);
 const terminalAuditTable = oracle.storageSchema.tables.find(
   ({ name }) => name === "action_plan_terminal_audit",
+);
+assert(
+  challengeConsumptionTable.columns.some((column) =>
+    column.includes("operator-session|approval|cancellation|seal-key-rotation|seal-key-removal"),
+  ),
+  "challenge consumption cannot attribute seal-key administration",
 );
 assert(
   authorityVersionTable.columns.some((column) =>
@@ -445,6 +457,8 @@ assert(
       "requestPath",
       "requestBodyBase64url",
     ]) &&
+    oracle.operatorAuthenticatorProtocol.challenge.issueRequest.operation ===
+      "open-session|approve|cancel-approval|seal-key-rotate|seal-key-remove" &&
     oracle.operatorAuthenticatorProtocol.challenge.issueFraming.includes("getpeereid") &&
     oracle.operatorAuthenticatorProtocol.challenge.issueFraming.includes("4096 bytes") &&
     oracle.operatorAuthenticatorProtocol.challenge.issueFraming.includes("exactly one LF byte"),
@@ -512,6 +526,25 @@ assert(
     oracle.approvalSealKeyring.removal.includes("verify-only") &&
     oracle.approvalSealKeyring.removal.includes("Active-key removal is rejected"),
   "approval seal keyring is not exact",
+);
+const sealAdministration = oracle.approvalSealKeyring.administrationProtocol;
+assert(
+  JSON.stringify(sealAdministration.challengeOperations) ===
+    JSON.stringify(["seal-key-rotate", "seal-key-remove"]) &&
+    sealAdministration.requestMethod === "ADMIN" &&
+    sealAdministration.requestPaths["seal-key-rotate"] ===
+      "/internal/action-authority/seal-keyring/rotate" &&
+    sealAdministration.requestPaths["seal-key-remove"] ===
+      "/internal/action-authority/seal-keyring/remove" &&
+    JSON.stringify(sealAdministration.strictBodies["seal-key-rotate"].fieldsInOrder) ===
+      JSON.stringify(["expectedKeyringRevision", "expectedActiveKeyId"]) &&
+    JSON.stringify(sealAdministration.strictBodies["seal-key-remove"].fieldsInOrder) ===
+      JSON.stringify(["expectedKeyringRevision", "keyId"]) &&
+    sealAdministration.mutationTransport.includes("Same UID is transport admission only") &&
+    sealAdministration.verification.includes("rejects the old bare rotate/remove discriminants") &&
+    sealAdministration.atomicMutation.includes("consume the challenge") &&
+    sealAdministration.crashAndReplay.includes("expectedKeyringRevision"),
+  "daemon-verifiable seal-key administration protocol drifted",
 );
 assert(
   oracle.authorityLinearization.order.length === 6 &&
@@ -829,18 +862,30 @@ function operatorSessionBody() {
   return { requestedScopes: ["mail:action.create", "mail:action.inspect"] };
 }
 
+function sealKeyAdminBody(store, operation, keyId = sealKeyOneId) {
+  return operation === "seal-key-rotate"
+    ? {
+        expectedKeyringRevision: store.keyring.revision,
+        expectedActiveKeyId: store.keyring.activeKeyId,
+      }
+    : { expectedKeyringRevision: store.keyring.revision, keyId };
+}
+
 function rawBody(value) {
   return Buffer.from(JSON.stringify(value), "utf8");
 }
 
 function expectedPath(operation, body) {
   if (operation === "open-session") return "/v1/operator-sessions";
+  if (operation === "seal-key-rotate") return "/internal/action-authority/seal-keyring/rotate";
+  if (operation === "seal-key-remove") return "/internal/action-authority/seal-keyring/remove";
   if (operation === "approve")
     return `/v1/action-plans/${encodeURIComponent(body.planId)}/approvals`;
   return `/v1/action-plans/${encodeURIComponent(body.planId)}/approvals/${encodeURIComponent(body.approvalId)}`;
 }
 
 function expectedMethod(operation) {
+  if (operation === "seal-key-rotate" || operation === "seal-key-remove") return "ADMIN";
   return operation === "cancel-approval" ? "DELETE" : "POST";
 }
 
@@ -856,14 +901,26 @@ function parseOperatorBody(operation, bytes) {
   const keys =
     operation === "open-session"
       ? ["requestedScopes"]
-      : operation === "approve"
-        ? ["planId", "planVersion", "previewDigest"]
-        : ["planId", "approvalId", "planVersion", "previewDigest"];
+      : operation === "seal-key-rotate"
+        ? ["expectedKeyringRevision", "expectedActiveKeyId"]
+        : operation === "seal-key-remove"
+          ? ["expectedKeyringRevision", "keyId"]
+          : operation === "approve"
+            ? ["planId", "planVersion", "previewDigest"]
+            : ["planId", "approvalId", "planVersion", "previewDigest"];
   if (
     !strictKeys(value, keys) ||
     (operation === "open-session" &&
       JSON.stringify(value.requestedScopes) !==
-        JSON.stringify(["mail:action.create", "mail:action.inspect"]))
+        JSON.stringify(["mail:action.create", "mail:action.inspect"])) ||
+    ((operation === "seal-key-rotate" || operation === "seal-key-remove") &&
+      (!Number.isSafeInteger(value.expectedKeyringRevision) ||
+        value.expectedKeyringRevision <= 0)) ||
+    (operation === "seal-key-rotate" &&
+      (typeof value.expectedActiveKeyId !== "string" ||
+        !value.expectedActiveKeyId.startsWith("approval-seal-key:"))) ||
+    (operation === "seal-key-remove" &&
+      (typeof value.keyId !== "string" || !value.keyId.startsWith("approval-seal-key:")))
   )
     return { kind: "rejected", code: "action.operator_assertion_invalid" };
   return { kind: "parsed", value };
@@ -878,6 +935,19 @@ function operatorDisplayCode(operation, body) {
         operatorCredential.authorityInstanceId,
         "mail:action.create",
         "mail:action.inspect",
+      ]),
+    ).slice(0, 20);
+    return digest.match(/.{4}/gu).join("-");
+  }
+  if (operation === "seal-key-rotate" || operation === "seal-key-remove") {
+    const targetKeyId = operation === "seal-key-rotate" ? body.expectedActiveKeyId : body.keyId;
+    const digest = sha256(
+      JSON.stringify([
+        "agent-mail-presence-display-v1",
+        operation,
+        operatorCredential.authorityInstanceId,
+        body.expectedKeyringRevision,
+        targetKeyId,
       ]),
     ).slice(0, 20);
     return digest.match(/.{4}/gu).join("-");
@@ -1060,9 +1130,11 @@ function operatorChallengeRpcEnvelope(store, operation) {
   const body =
     operation === "open-session"
       ? operatorSessionBody()
-      : operation === "approve"
-        ? approveBody(store)
-        : cancelBody(store);
+      : operation === "seal-key-rotate" || operation === "seal-key-remove"
+        ? sealKeyAdminBody(store, operation)
+        : operation === "approve"
+          ? approveBody(store)
+          : cancelBody(store);
   return {
     version: "agent-mail-macos-operator-presence-v1",
     credentialId: operatorCredential.credentialId,
@@ -1164,9 +1236,11 @@ function prepareSignedOperatorRequest(store, operation, mutations = {}) {
   const body =
     operation === "open-session"
       ? operatorSessionBody()
-      : operation === "approve"
-        ? approveBody(store)
-        : cancelBody(store);
+      : operation === "seal-key-rotate" || operation === "seal-key-remove"
+        ? sealKeyAdminBody(store, operation, mutations.keyId)
+        : operation === "approve"
+          ? approveBody(store)
+          : cancelBody(store);
   const bytes = rawBody(body);
   const issued = issueOperatorChallenge(
     store,
@@ -1680,6 +1754,7 @@ function rotateSealKey(store) {
   store.keyring.keys.set(sealKeyTwoId, { status: "active", keyHex: sealKeyTwoHex });
   store.keyring.activeKeyId = sealKeyTwoId;
   store.keyring.revision += 1;
+  return { kind: "rotated" };
 }
 
 function removeSealKey(store, keyId, at = "2026-08-18T00:10:45.000Z") {
@@ -1698,6 +1773,78 @@ function revokeOperatorCredential(store, at = "2026-08-18T00:10:45.000Z") {
   store.operatorConfigurationRevision += 1;
   store.operatorSessions.clear();
   closePendingApproval(store, "invalidated", at, "operator-credential-revoked");
+}
+
+function sealKeyAdminEnvelope(request, mutations = {}) {
+  return {
+    version: mutations.version ?? "agent-mail-action-authority-admin-v1",
+    requestBodyBase64url: mutations.requestBodyBase64url ?? base64url(request.bytes),
+    assertion: mutations.assertion ?? request.assertion,
+  };
+}
+
+function sealKeyAdminBoundary(
+  store,
+  envelope,
+  peerUid = 501,
+  ownerUid = 501,
+  now = "2026-08-18T00:10:00.000Z",
+) {
+  const rejected = { kind: "rejected", code: "action.operator_assertion_invalid" };
+  if (
+    peerUid !== ownerUid ||
+    !strictOrderedKeys(envelope, ["version", "requestBodyBase64url", "assertion"]) ||
+    envelope.version !== "agent-mail-action-authority-admin-v1" ||
+    typeof envelope.requestBodyBase64url !== "string" ||
+    envelope.requestBodyBase64url.includes("=")
+  )
+    return rejected;
+  const challenge = store.challenges.get(envelope.assertion?.challengeId);
+  if (
+    challenge === undefined ||
+    !["seal-key-rotate", "seal-key-remove"].includes(challenge.operation)
+  )
+    return rejected;
+  const bytes = Buffer.from(envelope.requestBodyBase64url, "base64url");
+  if (
+    bytes.length === 0 ||
+    bytes.length > 2_048 ||
+    bytes.toString("base64url") !== envelope.requestBodyBase64url
+  )
+    return rejected;
+  const operation = challenge.operation;
+  const parsed = parseOperatorBody(operation, bytes);
+  if (parsed.kind !== "parsed") return rejected;
+  const verified = verifyOperatorAssertion(
+    store,
+    operation,
+    bytes,
+    expectedMethod(operation),
+    expectedPath(operation, parsed.value),
+    envelope.assertion,
+    now,
+  );
+  if (verified.kind !== "verified") return verified;
+  if (
+    verified.body.expectedKeyringRevision !== store.keyring.revision ||
+    (operation === "seal-key-rotate" &&
+      verified.body.expectedActiveKeyId !== store.keyring.activeKeyId)
+  )
+    return { kind: "rejected", code: "action.approval_mismatch" };
+  const mutation =
+    operation === "seal-key-rotate"
+      ? rotateSealKey(store)
+      : removeSealKey(store, verified.body.keyId, now);
+  if (mutation.kind === "rejected") return mutation;
+  store.challengeClosures.set(challenge.challengeId, {
+    kind: "consumed",
+    operation,
+    authorityOutputKind: operation === "seal-key-rotate" ? "seal-key-rotation" : "seal-key-removal",
+    authorityOutputId: `seal-keyring-revision:${store.keyring.revision}`,
+    signatureBase64url: envelope.assertion.signatureBase64url,
+    consumedAt: now,
+  });
+  return { kind: mutation.kind, keyringRevision: store.keyring.revision };
 }
 
 const modelProbeResults = [];
@@ -2411,6 +2558,95 @@ probe("P-CLOSURE-REAPPROVAL", () => {
 });
 
 probe("P-SEAL-KEYRING", () => {
+  const bare = newStore();
+  assert(
+    sealKeyAdminBoundary(bare, { operation: "seal-key-rotate" }).kind === "rejected" &&
+      bare.keyring.revision === 1,
+    "same-UID bare administration discriminant mutated the keyring",
+  );
+  const valid = newStore();
+  const rotateRequest = prepareSignedOperatorRequest(valid, "seal-key-rotate");
+  const rotateEnvelope = sealKeyAdminEnvelope(rotateRequest);
+  assert(
+    sealKeyAdminBoundary(valid, rotateEnvelope).kind === "rotated" &&
+      valid.keyring.revision === 2 &&
+      valid.keyring.activeKeyId === sealKeyTwoId,
+    "signed A1 rotation failed",
+  );
+  assert(
+    sealKeyAdminBoundary(valid, rotateEnvelope).code === "action.operator_challenge_consumed" &&
+      valid.keyring.revision === 2,
+    "administration assertion replay mutated twice",
+  );
+  const removeRequest = prepareSignedOperatorRequest(valid, "seal-key-remove", {
+    keyId: sealKeyOneId,
+  });
+  assert(
+    sealKeyAdminBoundary(valid, sealKeyAdminEnvelope(removeRequest)).kind === "removed" &&
+      valid.keyring.revision === 3 &&
+      !valid.keyring.keys.has(sealKeyOneId),
+    "signed A1 verify-only removal failed",
+  );
+
+  for (const attack of [
+    "wrong-uid",
+    "missing-assertion",
+    "forged-signature",
+    "operation",
+    "method",
+    "path",
+    "body",
+    "target",
+    "revision",
+  ]) {
+    const store = newStore();
+    const request = prepareSignedOperatorRequest(store, "seal-key-rotate");
+    let envelope = sealKeyAdminEnvelope(request);
+    let peerUid = 501;
+    if (attack === "wrong-uid") peerUid = 502;
+    if (attack === "missing-assertion") envelope = { ...envelope, assertion: undefined };
+    if (attack === "forged-signature") {
+      const signature = Buffer.from(envelope.assertion.signatureBase64url, "base64url");
+      signature[0] ^= 1;
+      envelope = {
+        ...envelope,
+        assertion: { ...envelope.assertion, signatureBase64url: base64url(signature) },
+      };
+    }
+    if (attack === "method")
+      store.challenges.get(request.challenge.challengeId).requestMethod = "POST";
+    if (attack === "operation")
+      store.challenges.get(request.challenge.challengeId).operation = "seal-key-remove";
+    if (attack === "path")
+      store.challenges.get(request.challenge.challengeId).requestPath = "/internal/wrong";
+    if (attack === "body")
+      envelope = { ...envelope, requestBodyBase64url: base64url(Buffer.from("{}")) };
+    if (attack === "target")
+      envelope = {
+        ...envelope,
+        requestBodyBase64url: base64url(
+          rawBody({ expectedKeyringRevision: 1, expectedActiveKeyId: sealKeyTwoId }),
+        ),
+      };
+    if (attack === "revision") store.keyring.revision += 1;
+    assert(
+      sealKeyAdminBoundary(store, envelope, peerUid).kind === "rejected" &&
+        store.keyring.activeKeyId === sealKeyOneId,
+      `${attack} seal-key administration attack succeeded`,
+    );
+  }
+
+  const signedActiveRemoval = newStore();
+  const activeRequest = prepareSignedOperatorRequest(signedActiveRemoval, "seal-key-remove", {
+    keyId: sealKeyOneId,
+  });
+  assert(
+    sealKeyAdminBoundary(signedActiveRemoval, sealKeyAdminEnvelope(activeRequest)).code ===
+      "seal-key-removal-forbidden" &&
+      !signedActiveRemoval.challengeClosures.has(activeRequest.challenge.challengeId) &&
+      signedActiveRemoval.keyring.revision === 1,
+    "signed active-key removal consumed authority or mutated state",
+  );
   const activeRemoval = newStore();
   assert(
     removeSealKey(activeRemoval, sealKeyOneId).code === "seal-key-removal-forbidden" &&

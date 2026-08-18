@@ -4,7 +4,7 @@ Status: frozen design for issue #203
 
 Normative oracle: `action-approval-authority-oracle.v1.json`
 
-Oracle SHA-256: `227affdce102226e2c1dcec3cf549145d35a9615cc3ef6bb144850239ed51425`
+Oracle SHA-256: `4042c52dfe8c9377f722cbde465b9d7a3eb0af3b995863d649c8f37754474768`
 
 The JSON oracle is normative. This document is a checked human view. Policy A is fully determined: a human-present operator approves one exact frozen preview, then a distinct unattended agent principal may consume that approval once and commit. No consequential product choice remains.
 
@@ -82,6 +82,10 @@ Public approve/cancel admission is two-phase. Before reading the body, HTTP admi
 
 The approval HMAC keyring is exact canonical JSON at `<privateRoot>/secrets/action-approval-seal-keyring.v1.json`, below a mode-0700 directory with a mode-0600 file. Each `approval-seal-key:<UUIDv4>` stores one canonical unpadded base64url encoding of exactly 32 OS-CSPRNG bytes and status `active` or `verify-only`. Initial creation is allowed only with a new database; a missing or malformed keyring beside an existing database blocks admission. Atomic writes use owner-only `O_EXCL` temporary creation, file fsync, rename, and directory fsync. Rotation demotes the old active key. Removal accepts only an existing `verify-only` key and closes dependent available approvals; active or missing removal rejects without mutation. Key bytes are categorically excluded from database backups, backup manifests, exports, logs, diagnostics, and crash reports.
 
+Seal-key administration reuses A1 without adding a public surface. The broker serializes exactly `{expectedKeyringRevision,expectedActiveKeyId}` for rotation or `{expectedKeyringRevision,keyId}` for removal, requests a daemon challenge for `seal-key-rotate` or `seal-key-remove`, method `ADMIN`, and the fixed internal path, then signs the stored commitment with the current Secure Enclave operator key using a fresh zero-reuse `LAContext`. The OS reason and CLI both show the exact key target, revision, and five-group display code. The existing owner-only mutation UDS accepts only `{version,requestBodyBase64url,assertion}`; same UID is transport admission, never authority, and old bare rotate/remove discriminants reject.
+
+Under the exclusive authority locks, the daemon rechecks the active credential, authority/configuration instance, exact operation/path/raw-body digest, target status, and expected keyring revision. It replaces/fsyncs the keyring, then consumes the challenge in `BEGIN IMMEDIATE` with the resulting revision and performs removal invalidations. The old revision in the signed body makes a crash-before-consumption challenge unusable after the file reaches revision n+1; startup closes it and completes invalidations. Replay, forged/absent assertions, method/path/body/target/revision changes, operator sessions, agent credentials, software keys, and prompt-only or unattended fallback all fail closed.
+
 All authority admission and configuration mutations share `<privateRoot>/locks/action-authority.lock`: process-shared file lock first, in-process RW lock second, then file reads/revision capture, `BEGIN IMMEDIATE`, revision/file-identity recheck, DB work, commit, and capability return before releasing the read locks. Credential/key mutation holds the exclusive locks, atomically replaces the file, then closes affected DB authority before release. No lock ordering lets revocation or key removal linearize first while a later consume returns an executor capability.
 
 ## Exact bindings and seal
@@ -155,7 +159,7 @@ The logical migration is `action-approval-authority-v1`, after action-result-rec
 | Table                                       | Key / uniqueness                                              | Required role                                                                                                                           |
 | ------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | `operator_presence_challenges`              | `challenge_id`; unique nonce                                  | Immutable instance/credential/operation/method/path/raw-body/display-code challenge and commitment.                                     |
-| `operator_presence_challenge_consumptions`  | `challenge_id`                                                | One-use signature proof atomically joined to one approval issue or cancellation.                                                        |
+| `operator_presence_challenge_consumptions`  | `challenge_id`                                                | One-use signature proof joined to operator session, approval, cancellation, or resulting seal-key revision.                             |
 | `operator_presence_challenge_expirations`   | `challenge_id`                                                | Durable 60-second expiry closure.                                                                                                       |
 | `operator_presence_challenge_invalidations` | `challenge_id`                                                | Durable revocation/instance/configuration/database-restore closure.                                                                     |
 | `action_plan_authority_versions`            | `plan_id`                                                     | Exact pairs `trusted-v1`/`trusted-create` or `legacy-untrusted`/`legacy-pre-authority`, with reason/time.                               |

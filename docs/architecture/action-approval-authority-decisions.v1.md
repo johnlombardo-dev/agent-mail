@@ -2,7 +2,7 @@
 
 Normative oracle: `action-approval-authority-oracle.v1.json`
 
-Oracle SHA-256: `227affdce102226e2c1dcec3cf549145d35a9615cc3ef6bb144850239ed51425`
+Oracle SHA-256: `4042c52dfe8c9377f722cbde465b9d7a3eb0af3b995863d649c8f37754474768`
 
 This is a checked decision and retirement view. The oracle is normative.
 
@@ -37,6 +37,7 @@ This is a checked decision and retirement view. The oracle is normative.
 | `D25` | Linearize authority admission and outside-DB credential/key changes under one ordered file/process/SQLite lock protocol with revision rechecks.        | Revocation or removal cannot linearize first while a later consume still returns an executor capability.                                                                |
 | `D26` | On explicit restore, make every restored receipt-backed executing plan terminal `restore-quarantined` before recovery.                                 | Audit remains available, but the restored timeline has no path to a new remote effect.                                                                                  |
 | `D27` | Freeze strict reason pairs, constructive closure versions, receipt/claim linkage, and terminal receipt/plan/claim attribution.                         | #204 can implement DDL, triggers, and audit attribution without selecting storage semantics.                                                                            |
+| `D28` | Require a daemon-issued one-use A1 challenge for every seal-key rotation or removal, bound to exact target and expected revision.                      | Same UID and a client prompt are insufficient; only the current Secure Enclave operator key can authorize one mutation.                                                 |
 
 ## Rejected alternatives
 
@@ -62,6 +63,7 @@ This is a checked decision and retirement view. The oracle is normative.
 | `R18` | Treat explicit restore like ordinary restart for consumed work            | A restored pre-dispatch snapshot can replay an effect already dispatched on the original timeline.                               |
 | `R19` | Update credential/key files and approval rows under independent locks     | Consume could validate stale authority after revocation/removal and still return a capability.                                   |
 | `R20` | Omit credential expiry or regenerate a missing keyring                    | Either invents authority not derivable from trusted durable state.                                                               |
+| `R21` | Accept a same-UID bare seal-key discriminant after a client-side prompt   | The daemon cannot verify that ceremony, so unattended same-UID software could cause rotation/removal denial of service.          |
 
 ## Retirement ledger
 
