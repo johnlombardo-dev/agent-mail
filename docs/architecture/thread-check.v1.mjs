@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "cddac2500b0a71a5e51525aa42e827b3e487a65aeaf9ad5f5405f39d9de70239";
+const EXPECTED_ORACLE_SHA256 = "e24efd672113aa5743ef776c3c3add502eea509512cc0573febc7b1d3b1ea269";
 const architectureDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(architectureDirectory, "../..");
 const oraclePath = join(architectureDirectory, "thread-oracle.v1.json");
@@ -19,6 +20,20 @@ function fail(message) {
 
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function readFrozenAuthority(input) {
+  if (input.gitCommit === undefined) return readFileSync(join(repositoryRoot, input.path));
+  if (!/^[0-9a-f]{40}$/u.test(input.gitCommit)) fail(`${input.id} has invalid gitCommit`);
+  try {
+    return execFileSync("git", ["show", `${input.gitCommit}:${input.path}`], {
+      cwd: repositoryRoot,
+      encoding: "buffer",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch {
+    fail(`${input.id} committed authority ${input.gitCommit}:${input.path} is unreadable`);
+  }
 }
 
 function uniqueIds(items, label) {
@@ -65,9 +80,9 @@ const contradictionIds = uniqueIds(oracle.upstreamContradictions, "upstream cont
 const expectedCounts = {
   requirements: 13,
   decisions: 18,
-  examples: 18,
+  examples: 19,
   properties: 11,
-  obligations: 8,
+  obligations: 10,
   contradictions: 3,
 };
 for (const [label, expected] of Object.entries(expectedCounts)) {
@@ -133,6 +148,7 @@ const requiredCaseTags = new Set([
   "restart",
   "backup-restore",
   "unknown-thread",
+  "pagination-identity-recovery-empty-continuation",
 ]);
 const observedCaseTags = new Set(oracle.examples.flatMap(({ caseTags = [] }) => caseTags));
 for (const tag of requiredCaseTags)
@@ -144,11 +160,65 @@ for (const example of oracle.examples) {
   }
 }
 
+const frozenInputById = new Map(oracle.frozenInputs.map((input) => [input.id, input]));
+const downstreamWorktreeDrift = [];
 for (const input of oracle.frozenInputs) {
-  const bytes = readFileSync(join(repositoryRoot, input.path));
+  const bytes = readFrozenAuthority(input);
   const digest = sha256(bytes);
   if (digest !== input.sha256) fail(`${input.id} digest ${digest} != ${input.sha256}`);
+  if (input.gitCommit !== undefined) {
+    try {
+      const worktreeDigest = sha256(readFileSync(join(repositoryRoot, input.path)));
+      if (worktreeDigest !== digest) {
+        downstreamWorktreeDrift.push({
+          id: input.id,
+          authoritySha256: digest,
+          worktreeSha256: worktreeDigest,
+        });
+      }
+    } catch {
+      downstreamWorktreeDrift.push({
+        id: input.id,
+        authoritySha256: digest,
+        worktreeSha256: null,
+      });
+    }
+  }
 }
+
+const liveRecoveryExample = oracle.examples.find(
+  ({ id }) => id === "EX-LIVE-PAGINATION-IDENTITY-RECOVERY-EMPTY",
+);
+if (
+  liveRecoveryExample?.firstPageExpected?.successStatus !== 200 ||
+  liveRecoveryExample.firstPageExpected.messageCount !== 3 ||
+  liveRecoveryExample.firstPageExpected.messageIds?.length !== 2 ||
+  liveRecoveryExample.continuationRequest?.limit !== 2 ||
+  liveRecoveryExample.recovery?.sentAt !== "2025-01-01T00:00:00.000Z" ||
+  liveRecoveryExample?.continuationExpected?.successStatus !== 200 ||
+  liveRecoveryExample.continuationExpected.messageCount !== 3 ||
+  liveRecoveryExample.continuationExpected.messageIds?.length !== 0 ||
+  liveRecoveryExample.continuationExpected.messages?.length !== 0 ||
+  liveRecoveryExample.continuationExpected.nextCursor !== null ||
+  liveRecoveryExample.freshInitialExpected?.messageIds?.length < 1 ||
+  liveRecoveryExample.freshInitialExpected.emptyAllowed !== false
+) {
+  fail("identity-recovery empty-continuation counterexample drifted");
+}
+if (
+  typeof oracle.pagination?.serviceBoundary?.classificationOrder !== "string" ||
+  typeof oracle.pagination?.serviceBoundary?.initialKnown !== "string" ||
+  typeof oracle.pagination?.serviceBoundary?.knownContinuation !== "string" ||
+  typeof oracle.pagination?.serviceBoundary?.emptyContinuation !== "string" ||
+  typeof oracle.pagination?.serviceBoundary?.nextCursor !== "string"
+) {
+  fail("live page service-boundary rule is incomplete");
+}
+exactSet(
+  new Set(oracle.implementationObligations.map(({ issue }) => issue)),
+  new Set([137, 195, 198, 199]),
+  "downstream issue owners",
+);
 
 const viewTexts = viewPaths.map((path) => readFileSync(path, "utf8"));
 for (const [index, text] of viewTexts.entries()) {
@@ -173,12 +243,21 @@ for (const standard of oracle.primaryStandards) {
   }
 }
 
-const placeholder = readFileSync(
-  join(repositoryRoot, "packages/storage/src/search-summary-hydration-repository.ts"),
-  "utf8",
-);
+const placeholderInput = frozenInputById.get("P4-C07-SEARCH-SUMMARY");
+if (placeholderInput === undefined) fail("UC02 frozen input is missing");
+const placeholder = readFrozenAuthority(placeholderInput).toString("utf8");
 if (!placeholder.includes("'thread:' || substr(cp.message_id, 9) AS thread_id")) {
   fail("UC02 placeholder evidence changed; re-audit the contradiction ledger");
+}
+
+const acceptedContractInput = frozenInputById.get("P6-C04-THREAD-CONTRACT");
+if (acceptedContractInput === undefined) fail("UC01 frozen input is missing");
+const acceptedContract = readFrozenAuthority(acceptedContractInput).toString("utf8");
+if (
+  !acceptedContract.includes("messageIds: z.array(messageIdSchema).min(1).max(100)") ||
+  !acceptedContract.includes("messages: z.array(hydratedMessageSchema).min(1).max(100)")
+) {
+  fail("UC01 accepted contract evidence changed; re-audit the contradiction ledger");
 }
 
 console.log(
@@ -194,6 +273,8 @@ console.log(
       obligations: obligationIds.size,
       contradictions: contradictionIds.size,
       views: viewPaths.length,
+      authorityMode: "committed-blob-when-gitCommit-is-present",
+      downstreamWorktreeDrift,
       status: "ok",
     },
     null,

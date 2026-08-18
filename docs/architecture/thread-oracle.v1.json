@@ -1,7 +1,7 @@
 {
   "format": "agent-mail.thread-oracle/v1",
   "schemaVersion": 1,
-  "modelVersion": "1.0.0",
+  "modelVersion": "1.0.1",
   "status": "frozen-design-with-downstream-contract-blockers",
   "oracle": {
     "normative": true,
@@ -48,7 +48,7 @@
     {
       "id": "P2-C13-CANONICAL-PROMOTION",
       "path": "packages/storage/src/canonical-promotion.ts",
-      "gitCommit": "da026418fe6eb33614732173e2bd4434c4cd1588",
+      "gitCommit": "96de7238ed71d5859c2fb69d6aa672d978783d1e",
       "sha256": "431012fff89ab7c71c5bf88cc2c530901b6bf75c82a97cdc53b4ffd10bc59208"
     },
     {
@@ -76,10 +76,10 @@
       "sha256": "7e468a50e442668aa16ee5311a012184934658656ab6fba366abdf4923370c0d"
     },
     {
-      "id": "P1-C09-RETRIEVAL-CONTRACT",
+      "id": "P6-C04-THREAD-CONTRACT",
       "path": "packages/contracts/src/retrieval-operations.ts",
-      "gitCommit": "55c01ab0471d806f5c713559f17a55d4c84ecb52",
-      "sha256": "97c2bae6dc411fdb72cf6ff7a90a55903d4f89c362618f923aafd761fabd9bcc"
+      "gitCommit": "8cf0d139c47094433b83bf29b46d0c42a2b47e86",
+      "sha256": "386aaecfb647bc71008072fca26323cdaec9591d955017d6e15a14682efe9d8d"
     },
     {
       "id": "P2-C16-BACKUP-MANIFEST",
@@ -90,7 +90,7 @@
     {
       "id": "P2-C18-BACKUP-RESTORE",
       "path": "packages/storage/src/backup-restore.ts",
-      "gitCommit": "21ce2ac47544e28e5dc10c7e75df983968352995",
+      "gitCommit": "96de7238ed71d5859c2fb69d6aa672d978783d1e",
       "sha256": "91a3cd217abead59c5288d4c70d06c8c4df1566464e0c3e30de5826758433c3e"
     },
     {
@@ -160,7 +160,7 @@
     },
     {
       "id": "REQ-PAGINATION",
-      "text": "Thread pages use an integrity-protected keyset cursor with explicit live-pagination behavior under late arrivals and merges."
+      "text": "Thread pages use an integrity-protected keyset cursor with explicit live-pagination behavior under late arrivals, identity-only recovery, and merges, including a truthful empty known continuation when no current tuple remains after the cursor."
     },
     {
       "id": "REQ-BOUNDS",
@@ -180,7 +180,7 @@
     },
     {
       "id": "REQ-PUBLIC",
-      "text": "Search, direct message, direct thread, alias, unknown, REST, and CLI behavior share one truthful contract."
+      "text": "Search, direct message, direct thread, alias, initial page, continuation page, unknown, REST, and CLI behavior share one truthful contract that distinguishes a nonempty known thread from an exhausted page."
     },
     {
       "id": "REQ-UNTRUSTED",
@@ -188,7 +188,7 @@
     },
     {
       "id": "REQ-DOWNSTREAM",
-      "text": "Issues 137 and 195 have explicit implementation and proof obligations, including required authority reshaping."
+      "text": "Issues 198, 199, 137, and 195 have explicit implementation and proof obligations, including required authority reshaping."
     }
   ],
   "limits": {
@@ -517,11 +517,19 @@
     "envelope": "Canonical JSON [\"thread-cursor-v1\", payloadJson, hmacSha256Hex(payloadJson)] encoded as unpadded base64url with the daemon-owned key selected by cursorKeyId. Reject noncanonical encoding, unknown versions/keys, invalid tuples, wrong account scope, wrong requested handle, and invalid tags as invalid_cursor.",
     "keyLifecycle": "Normal restart reloads the same owner-only cursor key, so cursors survive restart. Explicit key rotation or restore without that external key invalidates old cursors as invalid_cursor, never not_found; restore parity compares fresh cursor boundaries rather than promising secret export in the archive.",
     "query": "Resolve requestedThreadHandle on every page, then select members strictly after the stored order tuple with the same ORDER BY and LIMIT. Never use OFFSET or client-side sorting.",
+    "serviceBoundary": {
+      "classificationOrder": "After structural request validation, resolve the exact account-scoped requested handle inside the read transaction. An absent handle returns the exact thread not_found outcome before the optional cursor is classified. Only a resolved handle can be an initial-known request or known-continuation request.",
+      "initialKnown": "A resolved request with no cursor is an initial-known request. Because every retained thread has at least one member, its successful page arrays contain 1..limit members.",
+      "knownContinuation": "A resolved request with a cursor is a known-continuation request only after the cursor authenticates and binds to the account and exact requested handle. Its successful page arrays contain 0..limit members selected strictly after the tuple.",
+      "emptyContinuation": "If a valid known continuation has no current member strictly after its cursor, return HTTP/domain success with messageIds:[], messages:[], the complete current nonempty-thread aggregates, and nextCursor:null. Never repeat the input cursor, fabricate a member, return not_found, or return invalid_cursor for this state.",
+      "nextCursor": "Emit nextCursor only when the same read snapshot contains at least one member after the last returned tuple. An empty page or a page that exhausts the current suffix has nextCursor:null."
+    },
     "lateArrivalSemantics": [
       "Pagination is a live keyset, not a hidden snapshot.",
       "A member or merged component whose tuple sorts at or before the cursor is omitted from continuation and appears on a fresh read.",
       "A member or merged component whose tuple sorts after the cursor may appear on continuation.",
       "Identity-only recovery can move one member from the null tail to an earlier dated position. If already returned it cannot repeat; if not yet returned and it moves at/before the cursor it appears on a fresh read, matching the late-arrival rule.",
+      "When identity-only recovery or another permitted live reorder moves every not-yet-returned member at or before the cursor, the valid known continuation is the exact empty-continuation success; the cursor remains valid and the complete component remains nonempty.",
       "Immutable tuples and message uniqueness prevent duplicates. The cursor remains valid when the canonical handle changes because it binds the permanent originally requested handle, which resolves through thread_handles.",
       "A continuation over a handle that existed when issued cannot become not_found. Cursor expiry policy, if any, is global and cannot masquerade as not_found."
     ]
@@ -543,10 +551,14 @@
       "knownAlias": "Resolve and return the current canonical thread payload. resolvedFromThreadId is the requested alias, or null when the request was canonical.",
       "unknownStatus": 404,
       "unknownBody": "The accepted thread not_found envelope with details.resource='thread' and details.id equal to the exact validated requested handle.",
-      "forbiddenUnknownBodies": ["[]", "{thread:null}", "{thread:{messageIds:[],messages:[]}}"],
-      "members": "Direct retrieval returns retained canonical members including tombstoned-only members. messageIds and messages are the same nonempty page in identical server order.",
-      "completeAggregates": "messageCount, participants, participantsTruncated, subject, firstReceivedAt, and lastReceivedAt describe the current complete component; nextCursor pages messages only.",
-      "empty": "A known v1 thread cannot have zero members because membership is retained and there is no canonical-message deletion path."
+      "forbiddenUnknownBodies": [
+        "[]",
+        "{thread:null}",
+        "any success object, including a known-continuation-shaped success with empty page arrays"
+      ],
+      "members": "Direct retrieval returns retained canonical members including tombstoned-only members. messageIds and messages are identical server-ordered pages: nonempty for an initial-known request and possibly empty only for a valid known continuation.",
+      "completeAggregates": "messageCount is at least one, and messageCount, participants, participantsTruncated, subject, firstReceivedAt, and lastReceivedAt describe the current complete component even when a continuation page is empty; nextCursor pages messages only.",
+      "empty": "A known v1 thread cannot have zero members because membership is retained and there is no canonical-message deletion path. An empty known continuation is an exhausted live page of that nonempty resource, not an empty thread and not an absence outcome."
     },
     "requiredContractRevision": {
       "threadId": "thread:<64-lowercase-hex> for both canonical and alias handles",
@@ -564,14 +576,16 @@
         "lastReceivedAt",
         "nextCursor"
       ],
-      "arrayInvariant": "1 <= messageIds.length == messages.length <= requested limit and messageIds[i] == messages[i].messageId",
-      "reason": "The accepted P1-C09 schema has whole unbounded arrays and no request cursor, count, truncation, or alias provenance. It cannot express the required bounded public behavior."
+      "structuralSuccessInvariant": "messageCount >= 1; 0 <= messageIds.length == messages.length <= 100; messageIds[i] == messages[i].messageId; every message carries the canonical returned threadId; complete aggregates remain required when both arrays are empty.",
+      "requestSuccessInvariant": "The shared contract boundary validates the parsed request together with success: page length <= requested limit; cursor absent implies page length >= 1; page length 0 implies a supplied cursor and nextCursor == null.",
+      "reason": "The accepted P6-C04 threadSchema applies min(1) to both page arrays. That cannot express a truthful empty known continuation after live identity-only recovery, while merely removing min(1) without the request-success invariant would silently permit an empty initial-known page."
     },
     "apiCliParity": [
       "API and CLI consume the same revised shared operation schemas. API maps thread not_found to HTTP 404.",
       "CLI JSON writes the exact validated success object without reordering. Human output iterates the server-provided messages array and never assembles or sorts a thread locally.",
+      "A valid empty known continuation remains success in storage, REST, and CLI: JSON preserves complete aggregates plus empty page arrays and nextCursor:null; human output identifies that the requested page is exhausted without calling the thread unknown.",
       "CLI not_found writes the shared safe error through the global error renderer and exits nonzero. The numeric exit code must come from the shared global policy owned upstream of issue 195; thread code cannot invent it.",
-      "Alias, canonical, single-member, multi-member, page continuation, tombstoned member, unknown, invalid ID, invalid cursor, and authorization fixtures have storage/REST/CLI parity rows."
+      "Alias, canonical, single-member, multi-member, nonempty continuation, empty identity-recovery continuation, tombstoned member, unknown, invalid ID, invalid cursor, and authorization fixtures have storage/REST/CLI parity rows."
     ]
   },
   "recovery": {
@@ -619,7 +633,7 @@
     },
     {
       "id": "D10",
-      "decision": "Use live integrity-protected keyset pagination and state its late-arrival behavior."
+      "decision": "Use live integrity-protected keyset pagination; a valid known continuation may truthfully exhaust to an empty page after identity-only recovery or another permitted live reorder."
     },
     {
       "id": "D11",
@@ -627,7 +641,7 @@
     },
     {
       "id": "D12",
-      "decision": "Return shared 404/not_found for an unknown direct thread and never 200-empty."
+      "decision": "Resolve direct-thread identity before continuation classification: unknown is always shared 404/not_found, an initial-known success is nonempty, and only a valid known continuation may be a 200 success with empty page arrays."
     },
     {
       "id": "D13",
@@ -643,7 +657,7 @@
     },
     {
       "id": "D16",
-      "decision": "Revise the accepted thread request/success schema before issue 137; the current whole-array shape is not a bounded contract."
+      "decision": "Revise the accepted issue-198 thread success contract and add one shared request-success boundary invariant before issue 137; structural zero-length pages are necessary but an initial-known success remains nonempty."
     },
     {
       "id": "D17",
@@ -656,28 +670,40 @@
   ],
   "implementationObligations": [
     {
+      "id": "I198-01",
+      "issue": 198,
+      "owner": "@agent-mail/contracts request/response boundary",
+      "obligation": "Remove min(1) from the two page arrays while retaining equal length, maximum 100, canonical message alignment, and positive messageCount. Export one shared parsed-request/success validator: length <= request.limit; no request cursor requires length >= 1; length 0 requires a request cursor and nextCursor null. Keep unknown thread not_found and invalid_cursor envelopes exact, regenerate the operation corpus/OpenAPI/CLI mapping, and add the identity-recovery empty-continuation fixture plus negative empty-initial and empty-with-nextCursor fixtures."
+    },
+    {
+      "id": "I199-01",
+      "issue": 199,
+      "owner": "@agent-mail/storage live page boundary",
+      "obligation": "Resolve the account-scoped handle first inside the read transaction. Unknown throws not_found. A resolved cursorless read must return at least one member or fail as an invariant. A resolved valid-cursor read returns only tuples strictly after the cursor and may return messageIds:[], messages:[], complete aggregates with messageCount >= 1, and nextCursor:null. Execute EX-LIVE-PAGINATION-IDENTITY-RECOVERY-EMPTY and the corresponding property against real SQLite."
+    },
+    {
       "id": "I137-01",
       "issue": 137,
-      "owner": "contract-reshaping prerequisite",
+      "owner": "issue-199 storage prerequisite",
       "obligation": "Add a dependency on an implementation contract that owns the v1 thread migration, normalization adapter, graph repository, merge/alias transaction, message/thread hydration repository, and replacement of the search-summary placeholder. Issue 137's current handler-only authority cannot own this work."
     },
     {
       "id": "I137-02",
       "issue": 137,
       "owner": "@agent-mail/contracts plus route contract",
-      "obligation": "Reshape authority to revise threadRequestSchema/threadSchema with limit, cursor, messageCount, participantsTruncated, resolvedFromThreadId, and nextCursor before handlers are implemented. Regenerate OpenAPI and CLI mapping from the shared registry."
+      "obligation": "Depend on the repaired issue-198 shared thread schemas and request-success validator before handlers are implemented. The route must not copy, weaken, or independently reinterpret the initial-known versus known-continuation rule."
     },
     {
       "id": "I137-03",
       "issue": 137,
       "owner": "REST handlers",
-      "obligation": "Validate the revised request, execute one account-scoped repository read transaction, preserve server order, return canonical and alias success, map unknown direct handle to exact 404/not_found, and map invalid cursor to the registered invalid_cursor class without SQLite detail."
+      "obligation": "Validate the revised request, execute one account-scoped repository read transaction, validate success with the shared request-success rule, preserve server order, and return canonical/alias success including an empty known continuation. Map unknown direct handle to exact 404/not_found and invalid cursor to the registered invalid_cursor class without SQLite detail."
     },
     {
       "id": "I137-04",
       "issue": 137,
       "owner": "composed storage/REST proof",
-      "obligation": "Run real-SQLite HTTP fixtures for every oracle example plus canonical/alias paging, unknown versus empty, tombstoned history, restart, and search threadId replacement."
+      "obligation": "Run real-SQLite HTTP fixtures for every oracle example plus canonical/alias paging, nonempty continuation, identity-recovery empty continuation, rejected empty initial success, unknown versus exhausted page, tombstoned history, restart, and search threadId replacement."
     },
     {
       "id": "I195-01",
@@ -689,19 +715,19 @@
       "id": "I195-02",
       "issue": 195,
       "owner": "thread-show adapter",
-      "obligation": "Require threadId, accept shared page arguments, perform exactly one mapped operation per page, validate the shared response, and never fetch missing bodies, assemble membership, resolve aliases, or sort locally."
+      "obligation": "Require threadId, accept shared page arguments, perform exactly one mapped operation per page, validate the shared request/response pair, and treat an empty known continuation as success without following another cursor. Never fetch missing bodies, assemble membership, resolve aliases, or sort locally."
     },
     {
       "id": "I195-03",
       "issue": 195,
       "owner": "CLI projections",
-      "obligation": "JSON emits the exact server object. Human output shows alias provenance, count/truncation, and messages in server order. Unknown emits the shared error and global nonzero exit; it never prints No messages with exit zero."
+      "obligation": "JSON emits the exact server object, including complete aggregates, empty page arrays, and nextCursor:null for a known exhausted continuation. Human output shows alias provenance, count/truncation, and server-order messages; for an empty continuation it reports page exhaustion as success. Unknown emits the shared error and global nonzero exit and can never reuse the page-exhaustion projection."
     },
     {
       "id": "I195-04",
       "issue": 195,
       "owner": "storage/REST/CLI parity proof",
-      "obligation": "Cover canonical, alias, single-member, multi-member, continuation, equal-time order, tombstoned member, unknown, invalid ID, invalid cursor, and authorization with exact request, response, stdout/stderr, and exit evidence."
+      "obligation": "Cover canonical, alias, single-member, multi-member, nonempty continuation, identity-recovery empty continuation, rejected empty initial success, equal-time order, tombstoned member, unknown, invalid ID, invalid cursor, and authorization with exact request, response, stdout/stderr, and exit evidence."
     }
   ],
   "properties": [
@@ -727,8 +753,8 @@
     },
     {
       "id": "PROP-LIVE-CURSOR",
-      "generator": "Page a component, then add older/equal/newer descendants, recover identity-only content, add a late root, add a bridge, add placements, and tombstone placements before every continuation.",
-      "assertion": "No message repeats; only tuples strictly after the cursor can appear; preceding late or recovered members appear on a fresh read; aliases keep the cursor resolvable."
+      "generator": "Page a component, then add older/equal/newer descendants, recover zero/one/all identity-only null-tail members to tuples before/at/after the cursor, add a late root, add a bridge, add placements, and tombstone placements before every continuation.",
+      "assertion": "No message repeats; only tuples strictly after the cursor can appear; preceding late or recovered members appear on a fresh read; aliases keep the cursor resolvable. When no current tuple remains after a valid cursor, the known continuation succeeds with equal empty arrays, complete aggregates, positive messageCount, and nextCursor null; the same component's fresh initial page remains nonempty."
     },
     {
       "id": "PROP-BOUNDED-NORMALIZATION",
@@ -752,8 +778,8 @@
     },
     {
       "id": "PROP-NOT-FOUND",
-      "generator": "Generate well-formed nonexistent thread handles and malformed IDs through storage, REST, and CLI.",
-      "assertion": "Well-formed unknown is shared not_found/HTTP 404/nonzero CLI; malformed is invalid request; neither path can produce a 200/exit-0 empty thread."
+      "generator": "Generate well-formed nonexistent thread handles with absent and structurally valid optional cursors, malformed IDs, known initial pages, and exhausted known continuations through storage, REST, and CLI.",
+      "assertion": "After structural request validation, a well-formed unknown is shared not_found/HTTP 404/nonzero CLI before continuation classification; malformed is invalid request. A known initial success is nonempty. Only a resolved, valid-cursor continuation can be a 200/exit-0 success with empty page arrays, complete aggregates, and nextCursor null."
     },
     {
       "id": "PROP-CROSS-MAILBOX-DUPLICATE",
@@ -1148,6 +1174,95 @@
       }
     },
     {
+      "id": "EX-LIVE-PAGINATION-IDENTITY-RECOVERY-EMPTY",
+      "caseTags": ["pagination-identity-recovery-empty-continuation", "identity-only-recovery"],
+      "accountId": "account:example",
+      "fixture": {
+        "parsedMembers": [
+          {
+            "messageId": "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "headers": {
+              "message-id": "<root-aaaa@oracle.test>"
+            },
+            "sentAt": "2026-01-01T00:00:00.000Z",
+            "receivedAt": "2026-01-01T00:00:00.000Z"
+          },
+          {
+            "messageId": "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "headers": {
+              "message-id": "<reply-bbbb@oracle.test>",
+              "references": "<root-aaaa@oracle.test>"
+            },
+            "sentAt": "2026-01-02T00:00:00.000Z",
+            "receivedAt": "2026-01-02T00:00:00.000Z"
+          }
+        ],
+        "identityOnlyMember": {
+          "messageId": "message:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "contentState": "identity-only",
+          "headers": {
+            "message-id": "<pending@oracle.test>",
+            "references": "<root-aaaa@oracle.test>"
+          },
+          "sentAt": null,
+          "receivedAt": "2026-01-03T00:00:00.000Z"
+        },
+        "initialRequest": {
+          "limit": 2,
+          "cursor": null
+        }
+      },
+      "firstPageExpected": {
+        "successStatus": 200,
+        "messageCount": 3,
+        "messageIds": [
+          "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ],
+        "nextCursor": "non-null cursor after message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "recovery": {
+        "messageId": "message:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "contentState": "parsed",
+        "sentAt": "2025-01-01T00:00:00.000Z",
+        "effect": "The sole not-yet-returned null-tail member moves strictly before the retained cursor; the cursor remains valid and duplicates remain forbidden."
+      },
+      "continuationRequest": {
+        "threadId": "the exact same requested handle as the first page",
+        "limit": 2,
+        "cursor": "the exact first-page nextCursor"
+      },
+      "continuationExpected": {
+        "requestKind": "known-continuation",
+        "successStatus": 200,
+        "threadId": "the same canonical thread ID as the first page",
+        "resolvedFromThreadId": null,
+        "messageCount": 3,
+        "messageIds": [],
+        "messages": [],
+        "subject": null,
+        "participants": [],
+        "participantsTruncated": false,
+        "firstReceivedAt": "2026-01-01T00:00:00.000Z",
+        "lastReceivedAt": "2026-01-03T00:00:00.000Z",
+        "nextCursor": null,
+        "notFound": false,
+        "invalidCursor": false
+      },
+      "freshInitialExpected": {
+        "request": {
+          "limit": 3,
+          "cursor": null
+        },
+        "messageIds": [
+          "message:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ],
+        "emptyAllowed": false
+      }
+    },
+    {
       "id": "EX-OVERSIZED-REFERENCES",
       "caseTags": ["oversized-headers"],
       "accountId": "account:example",
@@ -1241,9 +1356,9 @@
     },
     "REQ-PAGINATION": {
       "decisions": ["D10", "D16"],
-      "examples": ["EX-LIVE-PAGINATION-LATE-ARRIVAL"],
+      "examples": ["EX-LIVE-PAGINATION-LATE-ARRIVAL", "EX-LIVE-PAGINATION-IDENTITY-RECOVERY-EMPTY"],
       "properties": ["PROP-LIVE-CURSOR"],
-      "obligations": ["I137-02", "I137-03", "I195-02"]
+      "obligations": ["I198-01", "I199-01", "I137-02", "I137-03", "I195-02"]
     },
     "REQ-BOUNDS": {
       "decisions": ["D08", "D10", "D14"],
@@ -1271,9 +1386,13 @@
     },
     "REQ-PUBLIC": {
       "decisions": ["D11", "D12", "D16", "D18"],
-      "examples": ["EX-TOMBSTONED-MEMBER", "EX-UNKNOWN-THREAD"],
-      "properties": ["PROP-NOT-FOUND"],
-      "obligations": ["I137-02", "I137-03", "I195-02", "I195-03"]
+      "examples": [
+        "EX-TOMBSTONED-MEMBER",
+        "EX-UNKNOWN-THREAD",
+        "EX-LIVE-PAGINATION-IDENTITY-RECOVERY-EMPTY"
+      ],
+      "properties": ["PROP-LIVE-CURSOR", "PROP-NOT-FOUND"],
+      "obligations": ["I198-01", "I199-01", "I137-02", "I137-03", "I195-02", "I195-03"]
     },
     "REQ-UNTRUSTED": {
       "decisions": ["D02", "D15"],
@@ -1283,9 +1402,11 @@
     },
     "REQ-DOWNSTREAM": {
       "decisions": ["D16", "D17", "D18"],
-      "examples": ["EX-UNKNOWN-THREAD"],
-      "properties": ["PROP-NOT-FOUND"],
+      "examples": ["EX-UNKNOWN-THREAD", "EX-LIVE-PAGINATION-IDENTITY-RECOVERY-EMPTY"],
+      "properties": ["PROP-LIVE-CURSOR", "PROP-NOT-FOUND"],
       "obligations": [
+        "I198-01",
+        "I199-01",
         "I137-01",
         "I137-02",
         "I137-03",
@@ -1302,8 +1423,9 @@
       "id": "UC01",
       "severity": "blocking-for-137",
       "acceptedArtifact": "packages/contracts/src/retrieval-operations.ts",
-      "contradiction": "The accepted thread request has only threadId and the success schema has unbounded whole messageIds/messages arrays with no limit, cursor, nextCursor, messageCount, participant truncation, or alias provenance.",
-      "resolution": "Reshape issue 137 to depend on and consume the revised shared contract in requiredContractRevision. Stable identity is not impossible, but bounded truthful retrieval is impossible under the current shape."
+      "acceptedCommit": "8cf0d139c47094433b83bf29b46d0c42a2b47e86",
+      "contradiction": "The accepted issue-198 threadSchema applies min(1) to messageIds and messages for every success. EX-LIVE-PAGINATION-IDENTITY-RECOVERY-EMPTY proves that a resolved nonempty thread can have a valid live continuation with no tuple after the cursor, so the only truthful duplicate-free page has two empty arrays, complete aggregates, and nextCursor null.",
+      "resolution": "Reopen issue 198. Permit structurally empty matching arrays, require positive messageCount, and add the shared request-success invariant that keeps cursorless initial-known success nonempty and allows empty arrays only for a supplied valid cursor. Issue 137 consumes this boundary without reinterpreting it."
     },
     {
       "id": "UC02",

@@ -1,6 +1,6 @@
 # Deterministic message threads v1
 
-Status: frozen design with downstream contract blockers. Normative oracle SHA-256: `cddac2500b0a71a5e51525aa42e827b3e487a65aeaf9ad5f5405f39d9de70239`.
+Status: frozen design with downstream contract blockers. Normative oracle SHA-256: `e24efd672113aa5743ef776c3c3add502eea509512cc0573febc7b1d3b1ea269`.
 
 [`thread-oracle.v1.json`](thread-oracle.v1.json) is the single normative model. This document, the decisions view, and the coverage view are checked explanations. If prose conflicts with JSON, JSON wins.
 
@@ -61,21 +61,23 @@ Thread order is oldest to newest by this final tuple:
 2. normalized UTC `sentAt` ascending;
 3. canonical `messageId` ascending.
 
-Placement UID, row insertion order, and received time never break ties. A parsed tuple is immutable. Identity-only starts with null `sentAt` and may move once to the recovered parsed instant; because null sorts last, recovery moves only earlier and cannot duplicate a member in live keyset continuation. `receivedAt` remains the minimum placement `INTERNALDATE` for the account, including tombstones; an identity-only message with no `INTERNALDATE` uses its durable `observed_at`. It is presentation/history metadata rather than the order key. Equal instants with different offsets therefore tie and fall through to message identity. Missing/invalid dates sort last.
+Placement UID, row insertion order, and received time never break ties. A parsed tuple is immutable. Identity-only starts with null `sentAt` and may move once to the recovered parsed instant; because null sorts last, recovery moves only earlier and cannot duplicate a member in live keyset continuation. It can move the last not-yet-returned member to or before an issued cursor, truthfully exhausting that continuation. `receivedAt` remains the minimum placement `INTERNALDATE` for the account, including tombstones; an identity-only message with no `INTERNALDATE` uses its durable `observed_at`. It is presentation/history metadata rather than the order key. Equal instants with different offsets therefore tie and fall through to message identity. Missing/invalid dates sort last.
 
 Thread requests require a handle and accept `limit` (default 50, maximum 100) plus an opaque `thread-cursor-v1`. The signed cursor binds a nonsecret cursor-key ID, the account, the permanent originally requested handle, and the last exact order tuple. Normal restart reloads the same owner-only HMAC key. Explicit rotation or restore without that external key yields `invalid_cursor`, never `not_found`. Reads resolve the handle on every page and use a strict keyset predicate. There is no `OFFSET` and no client-side sort.
 
 Pagination is deliberately live, not a hidden snapshot. A late member at or before the cursor appears only on a fresh read. A late member after the cursor may appear on continuation. Parsed tuples and unique membership prevent duplicates; the one identity-recovery transition only moves from the null tail to an earlier position, so an already returned member cannot repeat. A merge cannot invalidate the cursor because the originally requested handle remains resolvable.
 
+The service boundary classifies pages in one exact order. After structural request validation, it resolves the account-scoped handle inside the read transaction. Absence is the exact thread `not_found` outcome before cursor classification. A resolved request without a cursor is **initial-known** and returns `1..limit` members. A resolved request with an authenticated cursor bound to that account and exact requested handle is **known-continuation** and returns `0..limit` members strictly after the tuple. If no current member remains after a valid cursor, the result is a successful empty continuation: `messageIds:[]`, `messages:[]`, complete current aggregates with positive `messageCount`, and `nextCursor:null`. It is never `not_found`, `invalid_cursor`, a repeated member, or a repeated input cursor.
+
 ## Public semantics
 
 Search keeps its accepted live-placement visibility rule. Search hydration joins `(account_id,message_id)` to durable thread membership instead of fabricating `thread:<message-sha>`. Tombstoned-only messages leave default search but remain in direct message and thread history. A thread filter accepts an alias; a well-formed unknown filter produces a normal empty search page because it is a filter, not direct resource retrieval.
 
-Direct message retrieval returns the current canonical thread handle for a retained known message, including a tombstoned-only message. Direct thread retrieval accepts canonical or alias handles and returns retained members, including tombstoned-only members, in server order. A known v1 thread is never empty.
+Direct message retrieval returns the current canonical thread handle for a retained known message, including a tombstoned-only message. Direct thread retrieval accepts canonical or alias handles and returns retained members, including tombstoned-only members, in server order. A known v1 thread is never empty: its complete `messageCount` is at least one even when a live continuation page is exhausted.
 
-The bounded thread success object must expose canonical `threadId`, nullable `resolvedFromThreadId`, subject, at most 256 participants plus `participantsTruncated`, complete `messageCount`, one nonempty `messageIds`/`messages` page, complete received-time bounds, and `nextCursor`. Page arrays have identical length/order and `messageIds[i] == messages[i].messageId`.
+The bounded thread success object must expose canonical `threadId`, nullable `resolvedFromThreadId`, subject, at most 256 participants plus `participantsTruncated`, complete positive `messageCount`, one bounded `messageIds`/`messages` page, complete received-time bounds, and `nextCursor`. Page arrays have identical length/order and `messageIds[i] == messages[i].messageId`. Structural response validation permits equal empty arrays, while the shared parsed-request/success validator requires a nonempty initial-known page and permits an empty page only when the request supplied a valid cursor; an empty page always has `nextCursor:null`.
 
-A well-formed unknown direct handle returns the accepted thread `not_found` envelope and HTTP 404. `[]`, `{thread:null}`, and a 200 thread with empty arrays are forbidden. CLI JSON preserves the server object; human output iterates server order. CLI not-found uses the shared global nonzero policy and cannot invent a thread-local exit code.
+A well-formed unknown direct handle returns the accepted thread `not_found` envelope and HTTP 404. `[]`, `{thread:null}`, or any success object is forbidden for an unknown handle. This does not forbid the precisely classified empty known continuation. CLI JSON preserves that success object, including its complete aggregates and empty arrays. Human output reports page exhaustion without calling the thread unknown. CLI not-found uses the shared global nonzero policy and cannot invent a thread-local exit code.
 
 ## Recovery and versioning
 
@@ -85,10 +87,11 @@ The v1 normalizer and identity formula are immutable. A future change that can r
 
 ## Downstream blockers
 
-The current accepted contract and issue boundaries cannot implement this design unchanged:
+The current accepted contract and issue boundaries cannot implement this repaired design unchanged:
 
-- `threadRequestSchema` has no page arguments; `threadSchema` has unbounded whole arrays and no count, truncation, cursor, or alias provenance. Issue #137 must gain a contract-revision prerequisite.
-- Search still computes `'thread:' || substr(message_id, 9)`. No thread migration/repository exists, but #137 currently owns handlers only and protects query/storage changes. It needs a separate storage implementation dependency.
+- Accepted issue #198 added bounded page arguments and projections, but `threadSchema` applies `.min(1)` to both arrays. Reopened #198 must allow structural empty arrays, require positive `messageCount`, and export the shared request/success rule that rejects an empty initial page while accepting the exact live-cursor continuation.
+- Accepted storage evidence still computes `'thread:' || substr(message_id, 9)`. Issue #199 owns the downstream migration/repository, search replacement, and real-SQLite empty-continuation proof; its concurrent worktree is diagnostic evidence, not a frozen authority input. #137 remains handler-only.
+- Issue #137 must consume the repaired #198 boundary and #199 page result. It returns an empty known continuation as HTTP 200, preserves complete aggregates, and still maps an unknown resolved handle to exact 404/not_found.
 - Issue #195 says the route/client and global exit policy are frozen, but #137 and #155 are open and no numeric global CLI exit policy exists. #195 must remain blocked and must not choose a local number.
 
 These are delivery blockers, not a proof that stable multi-message identity is impossible. The generic `thread:` namespace can carry the v1 digest once the shared bounded retrieval contract and storage owner are accepted.
@@ -100,8 +103,8 @@ The oracle pins exact hashes and commits for PLAN/EVIDENCE, accepted MIME parsin
 - MIME parser `1776503132bd4fbe7cd36128e046ab9a618f66f4`
 - canonical message/placement migration `202e83ce2a8b9369a11eaa714832f2ba3ad00486`
 - identity-only repository `d83265b4101db6af4b2a3567e7eeb85cb1572020`
-- canonical promotion `da026418fe6eb33614732173e2bd4434c4cd1588` and placement tombstone `c0a5ac7824a2d85bf59d1ccfc9113fa7d8d12f3b`
+- canonical promotion `96de7238ed71d5859c2fb69d6aa672d978783d1e` and placement tombstone `c0a5ac7824a2d85bf59d1ccfc9113fa7d8d12f3b`
 - search summary `165d4a3aff7361de02c456cf592dde6ad4a83a69`
 - search cursor `7a9fac905f6635050543e3a2add3de96baecca75`
-- retrieval contract `55c01ab0471d806f5c713559f17a55d4c84ecb52`
-- manifest `a907766557bf84e5b8d79bd429834c143a1b51a9` and restore `21ce2ac47544e28e5dc10c7e75df983968352995`
+- accepted bounded retrieval contract `8cf0d139c47094433b83bf29b46d0c42a2b47e86` (reopened because its page arrays require `.min(1)`)
+- manifest `a907766557bf84e5b8d79bd429834c143a1b51a9` and restore `96de7238ed71d5859c2fb69d6aa672d978783d1e`
