@@ -34,13 +34,18 @@ export type PlanFinalizationResultCounts = Readonly<{
   readonly rejected: number;
   readonly failed: number;
   readonly uncertain: number;
-  readonly missing: number;
 }>;
 
 export type PlanFinalizationTarget = Readonly<{
   readonly targetOrdinal: number;
   readonly target: ActionPlanTarget;
   readonly result: RemoteAttemptResult | undefined;
+}>;
+
+type CompletePlanFinalizationTarget = Readonly<{
+  readonly targetOrdinal: number;
+  readonly target: ActionPlanTarget;
+  readonly result: RemoteAttemptResult;
 }>;
 
 export type PlanFinalizationPolicy = Readonly<{
@@ -54,9 +59,11 @@ export type PlanFinalizationPolicy = Readonly<{
 export type PlanFinalizationDecision = Readonly<{
   readonly state: PlanFinalizationState;
   readonly counts: PlanFinalizationResultCounts;
-  readonly targetResults: readonly [PlanFinalizationTarget, ...PlanFinalizationTarget[]];
+  readonly targetResults: readonly [
+    CompletePlanFinalizationTarget,
+    ...CompletePlanFinalizationTarget[],
+  ];
   readonly uncertainTargetOrdinals: readonly number[];
-  readonly missingTargetOrdinals: readonly number[];
 }>;
 
 export type FinalizeActionPlanInput = Readonly<{
@@ -72,7 +79,10 @@ export type FinalizeActionPlanResult = Readonly<{
   readonly state: PlanFinalizationState;
   readonly version: number;
   readonly counts: PlanFinalizationResultCounts;
-  readonly targetResults: readonly [PlanFinalizationTarget, ...PlanFinalizationTarget[]];
+  readonly targetResults: readonly [
+    CompletePlanFinalizationTarget,
+    ...CompletePlanFinalizationTarget[],
+  ];
 }>;
 
 export class ActionPlanFinalizationError extends Error {
@@ -86,8 +96,9 @@ export class ActionPlanFinalizationError extends Error {
 
 /**
  * Pure, order-independent aggregation. Target ordinals are the identity; the
- * input order is never allowed to change the decision. Missing or uncertain
- * evidence wins over every definite outcome, including expiry.
+ * input order is never allowed to change the decision. Missing evidence is a
+ * precondition failure, while a durable uncertain result remains a terminal
+ * uncertain outcome.
  */
 export function mapPlanFinalization(
   policy: PlanFinalizationPolicy,
@@ -127,44 +138,42 @@ export function mapPlanFinalization(
     rejected: 0,
     failed: 0,
     uncertain: 0,
-    missing: 0,
   } satisfies Record<keyof PlanFinalizationResultCounts, number>;
   const uncertainTargetOrdinals: number[] = [];
-  const missingTargetOrdinals: number[] = [];
+  const completeResults: CompletePlanFinalizationTarget[] = [];
   for (const item of ordered) {
     const result = item.result;
-    if (result === undefined) {
-      counts.missing += 1;
-      missingTargetOrdinals.push(item.targetOrdinal);
-      continue;
-    }
+    if (result === undefined)
+      throw new ActionPlanFinalizationError(
+        "plan finalization requires every durable target result",
+      );
     counts[result.kind] += 1;
+    completeResults.push({ targetOrdinal: item.targetOrdinal, target: item.target, result });
     if (result.certainty === "uncertain") uncertainTargetOrdinals.push(item.targetOrdinal);
   }
 
-  const state = decideState(policy, ordered, counts);
-  const first = ordered[0];
+  const state = decideState(policy, completeResults, counts);
+  const first = completeResults[0];
   if (first === undefined)
     throw new ActionPlanFinalizationError("plan finalization has no targets");
-  const orderedTuple: readonly [PlanFinalizationTarget, ...PlanFinalizationTarget[]] = [
-    first,
-    ...ordered.slice(1),
-  ];
+  const orderedTuple: readonly [
+    CompletePlanFinalizationTarget,
+    ...CompletePlanFinalizationTarget[],
+  ] = [first, ...completeResults.slice(1)];
   return Object.freeze({
     state,
     counts: Object.freeze(counts),
     targetResults: orderedTuple,
     uncertainTargetOrdinals: Object.freeze(uncertainTargetOrdinals),
-    missingTargetOrdinals: Object.freeze(missingTargetOrdinals),
   });
 }
 
 function decideState(
   policy: PlanFinalizationPolicy,
-  targetResults: readonly PlanFinalizationTarget[],
+  targetResults: readonly CompletePlanFinalizationTarget[],
   counts: PlanFinalizationResultCounts,
 ): PlanFinalizationState {
-  if (counts.missing > 0 || counts.uncertain > 0) return "uncertain";
+  if (counts.uncertain > 0) return "uncertain";
   if (Date.parse(policy.now) >= Date.parse(policy.expiresAt)) return "expired";
   if (targetResults.every((item) => item.result?.kind === "success")) return "completed";
   if (
@@ -373,12 +382,15 @@ function readTargetResults(
     }
     assertTargetIdentity(target, opened.attempt.target);
     const result = readActionPlanResult(database, attemptIdentity.attemptId);
-    if (result !== undefined) {
-      if (result.planId !== plan.planId || result.action.kind !== plan.action.kind) {
-        throw new ActionPlanFinalizationError("target result plan identity is stale");
-      }
-      assertTargetIdentity(target, result.target);
+    if (result === undefined) {
+      throw new ActionPlanFinalizationError(
+        "plan finalization requires every durable target result",
+      );
     }
+    if (result.planId !== plan.planId || result.action.kind !== plan.action.kind) {
+      throw new ActionPlanFinalizationError("target result plan identity is stale");
+    }
+    assertTargetIdentity(target, result.target);
     results.push({ targetOrdinal: ordinal, target, result });
   }
   const first = results[0];
@@ -406,14 +418,9 @@ function updatePlan(
   decision: PlanFinalizationDecision,
 ): void {
   const uncertainResult = decision.targetResults.find(
-    (item) => item.result?.certainty === "uncertain",
+    (item) => item.result.certainty === "uncertain",
   );
-  const missingResult = decision.targetResults.find((item) => item.result === undefined);
-  const uncertainAttemptId =
-    uncertainResult?.result?.attemptId ??
-    (missingResult === undefined
-      ? undefined
-      : readAttemptIdForOrdinal(database, plan.planId, missingResult.targetOrdinal));
+  const uncertainAttemptId = uncertainResult?.result.attemptId;
   if (decision.state === "uncertain" && uncertainAttemptId === undefined) {
     throw new ActionPlanFinalizationError("uncertain finalization has no durable attempt identity");
   }
@@ -447,18 +454,6 @@ function updatePlan(
     throw new ActionPlanFinalizationError("action plan finalization lost its version race");
 }
 
-function readAttemptIdForOrdinal(
-  database: Database,
-  planId: ActionPlanId,
-  ordinal: number,
-): string | undefined {
-  const row: unknown = database
-    .query("SELECT attempt_id FROM action_attempts WHERE plan_id = ? AND target_ordinal = ?;")
-    .get(planId, ordinal);
-  if (row === null) return undefined;
-  return namespaced(record(row, "missing-result attempt row").attempt_id, "attempt:");
-}
-
 function serializeSummary(
   input: Readonly<{
     readonly claimId: ReturnType<typeof createClaimId>;
@@ -467,7 +462,7 @@ function serializeSummary(
   decision: PlanFinalizationDecision,
   version: number,
 ): string {
-  const resultKinds = decision.targetResults.map((item) => item.result?.kind ?? "missing");
+  const resultKinds = decision.targetResults.map((item) => item.result.kind);
   const payload = {
     version: 1,
     claimId: input.claimId,
@@ -477,7 +472,6 @@ function serializeSummary(
     counts: decision.counts,
     resultKinds,
     uncertainTargetOrdinals: decision.uncertainTargetOrdinals,
-    missingTargetOrdinals: decision.missingTargetOrdinals,
   };
   const serialized = JSON.stringify(payload);
   if (serialized.length > 16_000)
@@ -569,7 +563,7 @@ function readTargetResultsForReplay(
   database: Database,
   planId: ActionPlanId,
   kinds: readonly string[],
-): readonly [PlanFinalizationTarget, ...PlanFinalizationTarget[]] {
+): readonly [CompletePlanFinalizationTarget, ...CompletePlanFinalizationTarget[]] {
   const row = readPlanRow(database, planId);
   if (row === undefined) throw new ActionPlanFinalizationError("terminal plan disappeared");
   const fake = {
@@ -591,14 +585,14 @@ function readTargetResultsForReplay(
         attemptId: namespaced(attempt.attempt_id, "attempt:"),
       };
     });
-  const results: PlanFinalizationTarget[] = [];
+  const results: CompletePlanFinalizationTarget[] = [];
   for (const [index, target] of plan.targets.entries()) {
     const attempt = attempts.find((item) => item.ordinal === index + 1);
     if (attempt === undefined)
       throw new ActionPlanFinalizationError("replay target identity is incomplete");
     const result = readActionPlanResult(database, attempt.attemptId);
     const expectedKind = kinds[index];
-    if (expectedKind === undefined || (result?.kind ?? "missing") !== expectedKind) {
+    if (result === undefined || expectedKind === undefined || result.kind !== expectedKind) {
       throw new ActionPlanFinalizationError("finalization replay result set changed");
     }
     results.push({ targetOrdinal: index + 1, target, result });
@@ -641,7 +635,6 @@ function parseSummary(value: unknown): Summary {
       rejected: nonNegativeInteger(counts.rejected, "rejected count"),
       failed: nonNegativeInteger(counts.failed, "failed count"),
       uncertain: nonNegativeInteger(counts.uncertain, "uncertain count"),
-      missing: nonNegativeInteger(counts.missing, "missing count"),
     },
     resultKinds: row.resultKinds.map((item) => text(item, "result kind")),
   };

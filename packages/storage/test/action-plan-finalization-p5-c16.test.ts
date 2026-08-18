@@ -167,11 +167,13 @@ describe("plan finalization P5-C16", () => {
     const firstMissing = pure.results[0];
     const secondMissing = pure.results[1];
     if (firstMissing === undefined || secondMissing === undefined) throw new Error("pure fixture is incomplete");
-    const missing = mapPlanFinalization(pure.policy, [
+    const missing: readonly [PlanFinalizationTarget, PlanFinalizationTarget] = [
       { ...firstMissing, result: undefined },
       secondMissing,
-    ]);
-    expect(missing.state).toBe("uncertain");
+    ];
+    expect(() => mapPlanFinalization(pure.policy, missing)).toThrow(
+      "requires every durable target result",
+    );
     const firstResult = first.result;
     if (firstResult === undefined) throw new Error("pure fixture result is incomplete");
     const stale = createRemoteAttemptStale({
@@ -221,25 +223,50 @@ describe("plan finalization P5-C16", () => {
     }).state).toBe("expired");
   });
 
-  test("success plus uncertain remains uncertain and missing result remains uncertain", () => {
+  test("success plus uncertain remains uncertain while missing result fails closed unchanged", () => {
     const uncertainDatabase = openPlan();
     recordResults(uncertainDatabase, ["success"]);
     insertUncertainResult(uncertainDatabase, 1);
-    expect(finalizeActionPlan(uncertainDatabase, {
+    const uncertainFinalization = finalizeActionPlan(uncertainDatabase, {
       planId: "plan:finalize",
       claimId: "claim:finalize",
       expectedVersion: 2,
       now: resultAt,
-    }).state).toBe("uncertain");
+    });
+    expect(uncertainFinalization.state).toBe("uncertain");
+    expect(
+      uncertainFinalization.targetResults.find((item) => item.targetOrdinal === 2)?.result.attemptId,
+    ).toBe("attempt:finalize-2");
+    expect(uncertainDatabase.query("SELECT state, version, uncertain_attempt_id FROM action_plans;").get()).toEqual({
+      state: "uncertain",
+      version: 3,
+      uncertain_attempt_id: "attempt:finalize-2",
+    });
 
     const missingDatabase = openPlan();
     recordResults(missingDatabase, ["success"]);
-    expect(finalizeActionPlan(missingDatabase, {
+    const before = {
+      plan: missingDatabase.query("SELECT * FROM action_plans ORDER BY plan_id;").all(),
+      claims: missingDatabase.query("SELECT * FROM action_plan_claims ORDER BY plan_id, claim_id;").all(),
+      targets: missingDatabase.query("SELECT * FROM action_plan_targets ORDER BY plan_id, target_ordinal;").all(),
+      attempts: missingDatabase.query("SELECT * FROM action_attempts ORDER BY attempt_id;").all(),
+      results: missingDatabase.query("SELECT * FROM action_results ORDER BY attempt_id;").all(),
+      journal: missingDatabase.query("SELECT * FROM operational_journal ORDER BY id;").all(),
+    };
+    expect(() => finalizeActionPlan(missingDatabase, {
       planId: "plan:finalize",
       claimId: "claim:finalize",
       expectedVersion: 2,
       now: resultAt,
-    }).state).toBe("uncertain");
+    })).toThrow("requires every durable target result");
+    expect({
+      plan: missingDatabase.query("SELECT * FROM action_plans ORDER BY plan_id;").all(),
+      claims: missingDatabase.query("SELECT * FROM action_plan_claims ORDER BY plan_id, claim_id;").all(),
+      targets: missingDatabase.query("SELECT * FROM action_plan_targets ORDER BY plan_id, target_ordinal;").all(),
+      attempts: missingDatabase.query("SELECT * FROM action_attempts ORDER BY attempt_id;").all(),
+      results: missingDatabase.query("SELECT * FROM action_results ORDER BY attempt_id;").all(),
+      journal: missingDatabase.query("SELECT * FROM operational_journal ORDER BY id;").all(),
+    }).toEqual(before);
   });
 
   test("wrong claim/version and incomplete target identity fail closed", () => {
