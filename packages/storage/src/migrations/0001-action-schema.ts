@@ -33,11 +33,12 @@ export const actionSchemaMigration = {
         expires_at >= created_at
       ),
       state TEXT NOT NULL CHECK (
-        state IN ('pending', 'executing', 'completed', 'partial', 'rejected', 'expired', 'uncertain')
+        state IN ('pending', 'executing', 'completed', 'partial', 'rejected', 'expired', 'failed', 'uncertain')
       ),
       claim_id TEXT,
       started_at TEXT,
       completed_at TEXT,
+      failed_at TEXT,
       rejected_at TEXT,
       rejection_reason TEXT,
       expired_at TEXT,
@@ -45,15 +46,17 @@ export const actionSchemaMigration = {
       missing_local_result_at TEXT,
       UNIQUE (plan_id, claim_id),
       CHECK (
-        (state = 'pending' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
-        (state = 'executing' AND claim_id IS NOT NULL AND started_at IS NOT NULL AND completed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
-        (state IN ('completed', 'partial') AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NOT NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
-        (state = 'rejected' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND rejected_at IS NOT NULL AND rejection_reason IS NOT NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
-        (state = 'expired' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NOT NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
-        (state = 'uncertain' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NOT NULL AND missing_local_result_at IS NOT NULL)
+        (state = 'pending' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND failed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
+        (state = 'executing' AND claim_id IS NOT NULL AND started_at IS NOT NULL AND completed_at IS NULL AND failed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
+        (state IN ('completed', 'partial') AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NOT NULL AND failed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
+        (state = 'failed' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND failed_at IS NOT NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
+        (state = 'rejected' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND failed_at IS NULL AND rejected_at IS NOT NULL AND rejection_reason IS NOT NULL AND expired_at IS NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
+        (state = 'expired' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND failed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NOT NULL AND uncertain_attempt_id IS NULL AND missing_local_result_at IS NULL) OR
+        (state = 'uncertain' AND claim_id IS NULL AND started_at IS NULL AND completed_at IS NULL AND failed_at IS NULL AND rejected_at IS NULL AND rejection_reason IS NULL AND expired_at IS NULL AND uncertain_attempt_id IS NOT NULL AND missing_local_result_at IS NOT NULL)
       ),
       CHECK (started_at IS NULL OR (length(started_at) = 24 AND substr(started_at, 12, 2) BETWEEN '00' AND '23' AND strftime('%Y-%m-%dT%H:%M:%fZ', started_at) = started_at AND started_at >= created_at)),
       CHECK (completed_at IS NULL OR (length(completed_at) = 24 AND substr(completed_at, 12, 2) BETWEEN '00' AND '23' AND strftime('%Y-%m-%dT%H:%M:%fZ', completed_at) = completed_at AND completed_at >= created_at)),
+      CHECK (failed_at IS NULL OR (length(failed_at) = 24 AND substr(failed_at, 12, 2) BETWEEN '00' AND '23' AND strftime('%Y-%m-%dT%H:%M:%fZ', failed_at) = failed_at AND failed_at >= created_at)),
       CHECK (rejected_at IS NULL OR (length(rejected_at) = 24 AND substr(rejected_at, 12, 2) BETWEEN '00' AND '23' AND strftime('%Y-%m-%dT%H:%M:%fZ', rejected_at) = rejected_at AND rejected_at >= created_at)),
       CHECK (expired_at IS NULL OR (length(expired_at) = 24 AND substr(expired_at, 12, 2) BETWEEN '00' AND '23' AND strftime('%Y-%m-%dT%H:%M:%fZ', expired_at) = expired_at AND expired_at >= expires_at)),
       CHECK (missing_local_result_at IS NULL OR (length(missing_local_result_at) = 24 AND substr(missing_local_result_at, 12, 2) BETWEEN '00' AND '23' AND strftime('%Y-%m-%dT%H:%M:%fZ', missing_local_result_at) = missing_local_result_at AND missing_local_result_at >= created_at)),
@@ -216,9 +219,9 @@ export const actionSchemaMigration = {
     BEFORE UPDATE OF state ON action_plans
     WHEN NOT (
       (OLD.state = 'pending' AND NEW.state IN ('pending', 'executing', 'rejected', 'expired')) OR
-      (OLD.state = 'executing' AND NEW.state IN ('executing', 'completed', 'partial', 'uncertain')) OR
-      (OLD.state = 'uncertain' AND NEW.state IN ('uncertain', 'completed', 'partial', 'rejected')) OR
-      (OLD.state IN ('completed', 'partial', 'rejected', 'expired') AND NEW.state = OLD.state)
+      (OLD.state = 'executing' AND NEW.state IN ('executing', 'completed', 'partial', 'failed', 'rejected', 'expired', 'uncertain')) OR
+      (OLD.state = 'uncertain' AND NEW.state IN ('uncertain', 'completed', 'partial', 'failed', 'rejected')) OR
+      (OLD.state IN ('completed', 'partial', 'failed', 'rejected', 'expired') AND NEW.state = OLD.state)
     )
     BEGIN
       SELECT RAISE(ABORT, 'action plan transition is not allowed');

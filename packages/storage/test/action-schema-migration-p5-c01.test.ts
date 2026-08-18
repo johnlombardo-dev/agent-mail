@@ -38,6 +38,7 @@ function planValues(planId: string, state: string): readonly (string | null)[] {
     claimId: state === "executing" ? "claim:fixture" : null,
     startedAt: state === "executing" ? startedAt : null,
     completedAt: state === "completed" || state === "partial" ? resultAt : null,
+    failedAt: state === "failed" ? resultAt : null,
     rejectedAt: state === "rejected" ? resultAt : null,
     rejectionReason: state === "rejected" ? "operator rejected" : null,
     expiredAt: state === "expired" ? expiresAt : null,
@@ -53,6 +54,7 @@ function planValues(planId: string, state: string): readonly (string | null)[] {
     stateFields.claimId,
     stateFields.startedAt,
     stateFields.completedAt,
+    stateFields.failedAt,
     stateFields.rejectedAt,
     stateFields.rejectionReason,
     stateFields.expiredAt,
@@ -69,9 +71,9 @@ function insertPlan(
   database
     .query(
       "INSERT INTO action_plans " +
-        "(plan_id, action_kind, created_at, expires_at, state, claim_id, started_at, completed_at, " +
+        "(plan_id, action_kind, created_at, expires_at, state, claim_id, started_at, completed_at, failed_at, " +
         "rejected_at, rejection_reason, expired_at, uncertain_attempt_id, missing_local_result_at) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
     )
     .run(...planValues(planId, state));
 }
@@ -225,7 +227,7 @@ function decodePlanRow(row: unknown): Readonly<Record<string, unknown>> {
         decode: (value, context) =>
           decodeClosedEnum(value, {
             ...context,
-            values: ["pending", "executing", "completed", "partial", "rejected", "expired", "uncertain"] as const,
+            values: ["pending", "executing", "completed", "partial", "rejected", "expired", "failed", "uncertain"] as const,
           }),
       },
       created_at: { decode: decodeUtcMillisecondInstant },
@@ -261,6 +263,7 @@ describe("action schema migration", () => {
     insertPlan(opened.db, "plan:pending", "pending");
     insertPlan(opened.db, "plan:completed", "completed");
     insertPlan(opened.db, "plan:partial", "partial");
+    insertPlan(opened.db, "plan:failed", "failed");
     insertPlan(opened.db, "plan:rejected", "rejected");
     insertPlan(opened.db, "plan:expired", "expired");
 
@@ -291,6 +294,7 @@ describe("action schema migration", () => {
     expect(decodedPlans.map((row) => [row.plan_id, row.action_kind, row.state, row.created_at, row.expires_at])).toEqual([
       ["plan:completed", "markSeen", "completed", createdAt, expiresAt],
       ["plan:expired", "markSeen", "expired", createdAt, expiresAt],
+      ["plan:failed", "markSeen", "failed", createdAt, expiresAt],
       ["plan:partial", "markSeen", "partial", createdAt, expiresAt],
       ["plan:pending", "markSeen", "pending", createdAt, expiresAt],
       ["plan:rejected", "markSeen", "rejected", createdAt, expiresAt],
@@ -300,6 +304,7 @@ describe("action schema migration", () => {
     expect(decodedPlans.map((row) => row.state)).toEqual([
       "completed",
       "expired",
+      "failed",
       "partial",
       "pending",
       "rejected",
