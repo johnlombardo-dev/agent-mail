@@ -206,7 +206,6 @@ export const searchPageSchema = z.strictObject({
   nextCursor: opaqueSearchCursorSchema.nullable(),
 });
 export type SearchPage = z.infer<typeof searchPageSchema>;
-export const searchResponseSchema = searchPageSchema;
 
 const attachmentSummarySchema = z.strictObject({
   attachmentId: attachmentIdSchema,
@@ -330,6 +329,48 @@ export const threadNotFoundErrorSchema = notFoundFor("thread", threadIdSchema);
 export const rawMessageNotFoundErrorSchema = notFoundFor("raw-message", messageIdSchema);
 export const attachmentNotFoundErrorSchema = notFoundFor("attachment", attachmentIdSchema);
 
+const searchInvalidQueryMessage = "invalid search query";
+const searchInvalidCursorMessage = "search cursor is invalid";
+
+/** Search feature failures intentionally expose only the operation resource. */
+export const searchFeatureErrorDetailsSchema = z.strictObject({
+  resource: z.literal("search"),
+});
+
+export const searchInvalidQueryErrorDefinition = defineError({
+  code: "invalid_query",
+  message: searchInvalidQueryMessage,
+  details: searchFeatureErrorDetailsSchema,
+});
+export const searchInvalidCursorErrorDefinition = defineError({
+  code: "invalid_cursor",
+  message: searchInvalidCursorMessage,
+  details: searchFeatureErrorDetailsSchema,
+});
+export const searchRetrievalErrorDefinitions = Object.freeze([
+  searchInvalidQueryErrorDefinition,
+  searchInvalidCursorErrorDefinition,
+]);
+export const searchRetrievalErrorRegistry = createErrorRegistry(searchRetrievalErrorDefinitions);
+export const searchErrorDefinitions = searchRetrievalErrorDefinitions;
+export const searchErrorRegistry = searchRetrievalErrorRegistry;
+
+export const searchInvalidQueryErrorSchema = z.strictObject({
+  code: z.literal("invalid_query"),
+  message: z.literal(searchInvalidQueryMessage),
+  correlationId: correlationIdSchema,
+  details: searchFeatureErrorDetailsSchema,
+});
+export type SearchInvalidQueryError = z.infer<typeof searchInvalidQueryErrorSchema>;
+
+export const searchInvalidCursorErrorSchema = z.strictObject({
+  code: z.literal("invalid_cursor"),
+  message: z.literal(searchInvalidCursorMessage),
+  correlationId: correlationIdSchema,
+  details: searchFeatureErrorDetailsSchema,
+});
+export type SearchInvalidCursorError = z.infer<typeof searchInvalidCursorErrorSchema>;
+
 const threadInvalidCursorMessage = "thread cursor is invalid";
 export const threadInvalidCursorDetailsSchema = z.strictObject({
   resource: z.literal("thread"),
@@ -356,6 +397,13 @@ export const messageResponseSchema = z.union([
   messageNotFoundErrorSchema,
 ]);
 export type MessageResponse = z.infer<typeof messageResponseSchema>;
+
+export const searchResponseSchema = z.union([
+  searchPageSchema,
+  searchInvalidQueryErrorSchema,
+  searchInvalidCursorErrorSchema,
+]);
+export type SearchResponse = z.infer<typeof searchResponseSchema>;
 
 export const threadSuccessResponseSchema = z.strictObject({ thread: threadSchema });
 export type ThreadSuccessResponse = z.infer<typeof threadSuccessResponseSchema>;
@@ -448,7 +496,7 @@ export const searchOperation = defineOperation({
   cliName: "messages-search",
   scope: "mail:read.search",
   request: searchRequestSchema,
-  response: searchPageSchema,
+  response: searchResponseSchema,
   streaming: "none",
   strictness: "strict",
 });

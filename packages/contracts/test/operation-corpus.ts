@@ -95,6 +95,18 @@ const invalidThreadCursor = {
   correlationId: "correlation:thread-cursor-例",
   details: { resource: "thread" },
 };
+const invalidSearchQuery = {
+  code: "invalid_query",
+  message: "invalid search query",
+  correlationId: "correlation:search-query-例",
+  details: { resource: "search" },
+};
+const invalidSearchCursor = {
+  code: "invalid_cursor",
+  message: "search cursor is invalid",
+  correlationId: "correlation:search-cursor-例",
+  details: { resource: "search" },
+};
 
 function encodeBase64Url(value: string): string {
   const bytes = new TextEncoder().encode(value);
@@ -297,7 +309,10 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
       ],
       nextCursor: null,
     },
-    errors: [],
+    errors: [
+      { code: "invalid_query", response: invalidSearchQuery },
+      { code: "invalid_cursor", response: invalidSearchCursor },
+    ],
   },
   "messages.get": {
     request: { messageId },
@@ -575,7 +590,9 @@ export const registeredPublicErrorApplicability: Readonly<Record<string, readonl
               ? operation.key === "threads.get"
                 ? ["invalid_cursor", "not_found"]
                 : ["not_found"]
-              : [],
+              : operation.key === "messages.search"
+                ? ["invalid_query", "invalid_cursor"]
+                : [],
       ]),
     ),
   );

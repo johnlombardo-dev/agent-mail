@@ -127,6 +127,9 @@ describe("public operation corpus", () => {
     expect(JSON.stringify(search)).toContain("réunion");
     expect(JSON.stringify(action)).toContain("9007199254740991");
     expect(registeredPublicErrorApplicability["messages.get"]).toEqual(["not_found"]);
-    expect(registeredPublicErrorApplicability["messages.search"]).toEqual([]);
+    expect(registeredPublicErrorApplicability["messages.search"]).toEqual([
+      "invalid_query",
+      "invalid_cursor",
+    ]);
   });
 });

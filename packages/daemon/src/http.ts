@@ -61,6 +61,38 @@ export type PrivateHttpLogEntry = Readonly<{
 
 export type PrivateHttpLogger = (entry: PrivateHttpLogEntry) => void;
 
+/**
+ * The only feature failure shape the transport will project from a handler.
+ * Its fields remain untrusted until the operation response schema validates
+ * them at this boundary; the request supplies the public correlation ID.
+ */
+export type RegisteredFeatureError = Readonly<{
+  readonly code: string;
+  readonly message: string;
+  readonly details: Readonly<Record<string, unknown>>;
+}>;
+
+/** A typed alternative to returning a registered feature error directly. */
+export type RegisteredFeatureOutcome = Readonly<{
+  readonly kind: "feature-error";
+  readonly error: RegisteredFeatureError;
+}>;
+
+/** Handlers may throw this when a feature outcome cannot be returned directly. */
+export class RegisteredFeatureErrorException extends Error {
+  readonly featureError: RegisteredFeatureError;
+
+  constructor(featureError: RegisteredFeatureError) {
+    super("registered feature operation error");
+    this.name = "RegisteredFeatureErrorException";
+    this.featureError = Object.freeze({
+      code: featureError.code,
+      message: featureError.message,
+      details: Object.freeze({ ...featureError.details }),
+    });
+  }
+}
+
 /** The only identity and authority value a public HTTP handler can receive. */
 export type HttpPrincipal = Readonly<{
   readonly subject: string;
@@ -138,6 +170,8 @@ function operationRouteToHonoRoute(route: string): string {
 
 type PublicHttpErrorCode =
   | "invalid_request"
+  | "invalid_query"
+  | "invalid_cursor"
   | "missing_credentials"
   | "invalid_credentials"
   | "expired_credentials"
@@ -150,6 +184,8 @@ function errorStatus(body: unknown): 200 | 400 | 401 | 403 | 404 | 500 {
   if (!result.success) return 200;
   switch (result.data.code) {
     case "invalid_request":
+    case "invalid_query":
+    case "invalid_cursor":
       return 400;
     case "missing_credentials":
     case "invalid_credentials":
@@ -318,6 +354,49 @@ function logPrivate(logger: PrivateHttpLogger | undefined, entry: PrivateHttpLog
   }
 }
 
+type FeatureProjection = Readonly<{
+  readonly status: 200 | 400 | 401 | 403 | 404 | 500;
+  readonly body: PublicErrorEnvelope;
+}>;
+
+function featureErrorCandidate(value: unknown): unknown {
+  if (value instanceof RegisteredFeatureErrorException) return value.featureError;
+  if (!isJsonObject(value)) return undefined;
+  if (value.kind === "feature-error" && Object.hasOwn(value, "error")) return value.error;
+  return Object.hasOwn(value, "code") ? value : undefined;
+}
+
+/**
+ * Project only registered operation errors. Success values, malformed error
+ * objects, and private exceptions deliberately return no projection so the
+ * caller can use the redacted internal-error path.
+ */
+function projectRegisteredFeatureError(
+  operation: OperationDefinition,
+  value: unknown,
+  correlationId: string,
+): FeatureProjection | undefined {
+  const candidate = featureErrorCandidate(value);
+  if (!isJsonObject(candidate)) return undefined;
+  if (typeof candidate.message !== "string" || !isJsonObject(candidate.details)) return undefined;
+
+  const parsed = operation.response.safeParse({
+    code: candidate.code,
+    message: candidate.message,
+    correlationId,
+    details: candidate.details,
+  });
+  if (!parsed.success) return undefined;
+  const publicParsed = publicErrorEnvelopeSchema.safeParse(parsed.data);
+  if (!publicParsed.success) return undefined;
+
+  const body: PublicErrorEnvelope = publicParsed.data;
+  return Object.freeze({
+    status: errorStatus(body),
+    body,
+  });
+}
+
 /**
  * Adapt one shared operation registry to request parsing, handler execution,
  * and response validation. The adapter never hands a handler raw JSON.
@@ -425,7 +504,9 @@ export function createRegistryTransportAdapter(
           query: context.query ?? {},
           principal: authentication.principal,
         });
-      } catch {
+      } catch (error: unknown) {
+        const feature = projectRegisteredFeatureError(operation, error, context.correlationId);
+        if (feature !== undefined) return feature;
         logPrivate(options.logger, {
           kind: "handler-error",
           operationKey,
@@ -441,6 +522,9 @@ export function createRegistryTransportAdapter(
           ),
         };
       }
+
+      const feature = projectRegisteredFeatureError(operation, output, context.correlationId);
+      if (feature !== undefined) return feature;
 
       let parsedOutput: unknown;
       try {

@@ -10,6 +10,10 @@ import {
   rawMessageResponseSchema,
   retrievalNotFoundErrorSchema,
   retrievalOperations,
+  searchInvalidCursorErrorSchema,
+  searchInvalidQueryErrorSchema,
+  searchResponseSchema,
+  searchRetrievalErrorRegistry,
   type RetrievalNotFoundError,
   searchOperation,
   searchPageSchema,
@@ -120,6 +124,28 @@ describe("retrieval operation contracts", () => {
     };
     expect(searchPageSchema.parse(page)).toEqual(page);
     expect(opaqueSearchCursorSchema.parse(page.nextCursor)).toBe(page.nextCursor);
+  });
+
+  it("round-trips strict search feature failures with fixed messages", () => {
+    const invalidQuery = {
+      code: "invalid_query",
+      message: "invalid search query",
+      correlationId: "request-search-query",
+      details: { resource: "search" },
+    };
+    const invalidCursor = {
+      code: "invalid_cursor",
+      message: "search cursor is invalid",
+      correlationId: "request-search-cursor",
+      details: { resource: "search" },
+    };
+    expect(searchInvalidQueryErrorSchema.parse(invalidQuery)).toEqual(invalidQuery);
+    expect(searchInvalidCursorErrorSchema.parse(invalidCursor)).toEqual(invalidCursor);
+    expect(searchResponseSchema.parse(invalidQuery)).toEqual(invalidQuery);
+    expect(searchResponseSchema.parse(invalidCursor)).toEqual(invalidCursor);
+    expect(searchRetrievalErrorRegistry.codes).toEqual(["invalid_query", "invalid_cursor"]);
+    expect(() => searchResponseSchema.parse({ ...invalidCursor, message: "private SQL" })).toThrow();
+    expect(() => searchResponseSchema.parse({ ...invalidCursor, details: { resource: "search", sql: "secret" } })).toThrow();
   });
 
   it("round-trips hydrated message and thread success payloads", () => {
