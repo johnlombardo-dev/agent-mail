@@ -11,6 +11,7 @@
     "lint:check": "bun run boundary:check && vp lint packages/*/src boundary.config.ts",
     "typecheck": "vp check --no-fmt --no-lint",
     "test": "bun test",
+    "test:live:mutation": "bun scripts/live/disposable-mutation-harness.ts",
     "audit": "bun audit",
     "outdated": "vp outdated --recursive",
     "build": "vp run -r build",

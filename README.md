@@ -133,6 +133,31 @@ Remote mutation, live iCloud reads, launchd changes, and Tailscale changes requi
 explicit authorization and an isolated verification target when they are
 implemented.
 
+## Disposable mutation qualification
+
+The opt-in command below performs only local prerequisite validation by default.
+With no environment, it prints truthful `blocked` evidence and constructs no
+provider connection:
+
+```sh
+bun run test:live:mutation
+```
+
+The qualification module accepts an injected connection factory for focused fake
+and captured-adapter tests. A future authorized live runner must provide all of
+these values before connection construction: the exact confirmation switch,
+account and mailbox allowlists, one unique disposable marker, four exact frozen
+target identities, two isolated sentinel identities, and an absolute evidence
+directory. The harness never chooses newest or arbitrary mail. It records full
+command traces after redaction, rejects non-allowlisted commands and targets,
+rejects `EXPUNGE` and `CLOSE`, snapshots unrelated/unread sentinels before and
+after, and constrains cleanup to the four exact fixtures without expunge.
+
+This command and the local fake suite do not contact iCloud, read live mail,
+send or append messages, change flags, move mail, clean remote fixtures, or read
+credentials. A `passed` dry result is prerequisite evidence only, not live
+provider evidence.
+
 ## Planning and evidence
 
 - [Implementation plan](PLAN.md)
