@@ -35,7 +35,7 @@ export type OperationDefinition<
   readonly key: string;
   readonly route: string;
   readonly cliName: string;
-  readonly scope: string;
+  readonly scope: string | null;
   readonly request: TRequest;
   readonly response: TResponse;
   readonly streaming: OperationStreaming;
@@ -51,7 +51,7 @@ export type OperationMetadata = Readonly<{
   readonly key: string;
   readonly route: string;
   readonly cliName: string;
-  readonly scope: string;
+  readonly scope: string | null;
   readonly streaming: OperationStreaming;
   readonly strictness: OperationStrictness;
 }>;
@@ -79,7 +79,7 @@ function validateOperationDefinition(definition: OperationDefinition): void {
   checkedText(definition.key, operationNameSchema, "operation key");
   checkedText(definition.route, routeSchema, "operation route");
   checkedText(definition.cliName, operationNameSchema, "operation CLI name");
-  checkedText(definition.scope, scopeSchema, "operation scope");
+  if (definition.scope !== null) checkedText(definition.scope, scopeSchema, "operation scope");
   operationStreamingSchema.parse(definition.streaming);
   operationStrictnessSchema.parse(definition.strictness);
   if (typeof definition.request?.parse !== "function")
@@ -135,10 +135,19 @@ export function createOperationRegistry(
     definitions.map((definition) => definition.cliName),
     "CLI name",
   );
-  assertUnique(
-    definitions.map((definition) => definition.scope),
-    "scope",
-  );
+  const scopes = new Map<string, string>();
+  for (const definition of definitions) {
+    if (definition.scope === null) continue;
+    const previous = scopes.get(definition.scope);
+    const sharedApprovalScope =
+      definition.scope === "mail:action.approve" &&
+      previous !== undefined &&
+      ((previous === "action-plans.approve" && definition.key === "action-plans.cancel-approval") ||
+        (previous === "action-plans.cancel-approval" && definition.key === "action-plans.approve"));
+    if (previous !== undefined && !sharedApprovalScope)
+      throw new Error(`duplicate operation scope: ${definition.scope}`);
+    scopes.set(definition.scope, definition.key);
+  }
 
   const operations = Object.freeze(
     definitions.map((definition) => Object.freeze({ ...definition })),

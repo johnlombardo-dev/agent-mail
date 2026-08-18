@@ -16,6 +16,7 @@ import { dirname, isAbsolute, join, normalize, parse, relative } from "node:path
 import {
   BACKUP_MANIFEST_HASH_ALGORITHM,
   BACKUP_MANIFEST_VERSION,
+  isExcludedBackupPath,
   type BackupManifest,
   type BackupManifestArtifact,
   type BackupManifestArtifactRole,
@@ -164,6 +165,9 @@ function manifestRelativePath(path: string): string {
     path.split("/").some((segment) => segment.length === 0 || segment === "." || segment === "..")
   ) {
     fail("unsafe-path", "manifest artifact path is unsafe", path);
+  }
+  if (isExcludedBackupPath(path)) {
+    fail("invalid-manifest", "backup contains excluded secret material", path);
   }
   return path;
 }

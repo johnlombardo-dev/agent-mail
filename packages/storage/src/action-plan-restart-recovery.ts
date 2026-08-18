@@ -15,6 +15,7 @@ import {
 export type ExecutingActionPlanRecoveryCandidate = Readonly<{
   readonly plan: ExecutingActionPlan;
   readonly version: number;
+  readonly authorityVersion: "trusted-v1" | "legacy-untrusted";
 }>;
 
 /**
@@ -27,16 +28,62 @@ export type ExecutingActionPlanRecoveryCandidate = Readonly<{
 export function discoverExecutingActionPlans(
   database: Database,
 ): readonly ExecutingActionPlanRecoveryCandidate[] {
+  const hasAuthority =
+    database
+      .query(
+        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_approval_consumptions';",
+      )
+      .get() !== null;
   const rows: readonly unknown[] = database
     .query(
-      "SELECT plan_id, action_kind, created_at, expires_at, claim_id, started_at, version " +
-        "FROM action_plans WHERE state = 'executing' ORDER BY plan_id;",
+      "SELECT p.plan_id, p.action_kind, p.created_at, p.expires_at, p.claim_id, p.started_at, p.version " +
+        "FROM action_plans AS p " +
+        (hasAuthority
+          ? "JOIN action_approval_consumptions AS c ON c.plan_id = p.plan_id AND c.claim_id = p.claim_id LEFT JOIN action_plan_terminal_audit AS t ON t.plan_id = p.plan_id "
+          : "") +
+        "WHERE p.state = 'executing' " +
+        (hasAuthority ? "AND t.plan_id IS NULL " : "") +
+        "ORDER BY p.plan_id;",
     )
     .all();
-  return rows.map((value) => readCandidate(database, value));
+  return rows.map((value) => readCandidate(database, value, "trusted-v1"));
 }
 
-function readCandidate(database: Database, value: unknown): ExecutingActionPlanRecoveryCandidate {
+/**
+ * Select only legacy plans whose every durable attempt already crossed the
+ * dispatch marker. No receipt is manufactured and undispatched legacy plans
+ * are intentionally excluded from this effect-capable recovery list.
+ */
+export function discoverLegacyExecutingActionPlans(
+  database: Database,
+): readonly ExecutingActionPlanRecoveryCandidate[] {
+  if (
+    database
+      .query(
+        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_plan_authority_versions';",
+      )
+      .get() === null
+  )
+    return [];
+  const values: readonly unknown[] = database
+    .query(
+      "SELECT p.plan_id, p.action_kind, p.created_at, p.expires_at, p.claim_id, p.started_at, p.version " +
+        "FROM action_plans AS p JOIN action_plan_authority_versions AS v ON v.plan_id = p.plan_id " +
+        "WHERE p.state = 'executing' AND v.authority_version = 'legacy-untrusted' " +
+        "AND (SELECT COUNT(*) FROM action_plan_targets t WHERE t.plan_id = p.plan_id) > 0 " +
+        "AND (SELECT COUNT(DISTINCT a.attempt_id) FROM action_attempts a JOIN action_attempt_dispatches d ON d.attempt_id = a.attempt_id AND d.plan_id = a.plan_id WHERE a.plan_id = p.plan_id AND a.claim_id = p.claim_id) = " +
+        "(SELECT COUNT(*) FROM action_plan_targets t WHERE t.plan_id = p.plan_id) " +
+        "ORDER BY p.plan_id;",
+    )
+    .all();
+  return values.map((value) => readCandidate(database, value, "legacy-untrusted"));
+}
+
+function readCandidate(
+  database: Database,
+  value: unknown,
+  authorityVersion: "trusted-v1" | "legacy-untrusted",
+): ExecutingActionPlanRecoveryCandidate {
   const row = record(value, "executing action plan row");
   const planId = createActionPlanId(row.plan_id);
   const claimId = text(row.claim_id, "executing action plan claim ID");
@@ -79,6 +126,7 @@ function readCandidate(database: Database, value: unknown): ExecutingActionPlanR
       startedAt,
     }),
     version,
+    authorityVersion,
   };
 }
 

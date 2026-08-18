@@ -50,7 +50,7 @@ export type ActionPlanClaimResult =
   | Readonly<{
       readonly kind: "terminal";
       readonly planId: string;
-      readonly state: "completed" | "partial" | "failed" | "uncertain";
+      readonly state: "completed" | "partial" | "failed" | "uncertain" | "restore-quarantined";
       readonly version: number;
     }>;
 
@@ -67,6 +67,16 @@ export class ActionPlanClaimSchemaError extends Error {
   }
 }
 
+/** Legacy scope/evidence claims are retired once authority-v1 is installed. */
+export class LegacyActionAuthorityError extends Error {
+  readonly code = "action.legacy_authority" as const;
+
+  constructor() {
+    super("action plan lacks trusted approval authority");
+    this.name = "LegacyActionAuthorityError";
+  }
+}
+
 /** Claim one authorized pending plan under SQLite's write lock. */
 export function claimPendingActionPlan(database: Database, input: unknown): ActionPlanClaimResult {
   const prepared = prepareClaim(input);
@@ -76,6 +86,9 @@ export function claimPendingActionPlan(database: Database, input: unknown): Acti
     transactionStarted = true;
     assertPendingActionPlanSchema(database);
     requireClaimSchema(database);
+    if (authoritySchemaInstalled(database)) {
+      throw new LegacyActionAuthorityError();
+    }
 
     const row = readClaimRow(database, prepared.planId);
     if (row === undefined) throw new TypeError("pending action plan does not exist");
@@ -120,7 +133,8 @@ export function claimPendingActionPlan(database: Database, input: unknown): Acti
       row.state === "completed" ||
       row.state === "partial" ||
       row.state === "failed" ||
-      row.state === "uncertain"
+      row.state === "uncertain" ||
+      row.state === "restore-quarantined"
     ) {
       return commitResult(database, {
         kind: "terminal",
@@ -181,6 +195,15 @@ export function claimPendingActionPlan(database: Database, input: unknown): Acti
     if (transactionStarted) rollback(database, error);
     throw error;
   }
+}
+
+function authoritySchemaInstalled(database: Database): boolean {
+  const row: unknown = database
+    .query(
+      "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_approvals';",
+    )
+    .get();
+  return row !== null;
 }
 
 export function createPendingActionPlanClaimRepository(

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import {
-  actionPlanAuthorizeOperation,
-  actionPlanAuthorizeRequestSchema,
+  actionPlanApproveOperation,
+  actionPlanApproveRequestV1Schema,
   actionPlanCommitOperation,
-  actionPlanCommitRequestSchema,
-  actionPlanCommitResponseSchema,
+  actionPlanCommitRequestV1Schema,
+  actionPlanCommitResponseV1Schema,
   actionPlanCreateOperation,
   expiredActionPlanSchema,
   failedActionPlanSchema,
@@ -75,6 +75,20 @@ const failed = {
   detail: "the remote server rejected the frozen action",
 } as const;
 
+const consumptionReceipt = {
+  receiptId: "approval-receipt:one",
+  approvalId: "approval:one",
+  planId: basePlan.planId,
+  claimId: "claim:one",
+  consumedAt: "2026-08-18T00:02:30.000Z",
+  committer: { principalId: "principal:agent", profile: "agent-unattended" },
+  executorProfile: "internal-action-executor",
+} as const;
+
+function commitResponse(plan: unknown, results: readonly unknown[]) {
+  return { plan, results, consumptionReceipt };
+}
+
 describe("remote action operation contracts", () => {
   it("round-trips partial plans and preserves each target/result identity", () => {
     const plan = actionPlanSchema.parse({
@@ -135,21 +149,18 @@ describe("remote action operation contracts", () => {
     expect(plan.state).toBe("failed");
     expect(plan.failedAt).toBe("2026-08-18T00:03:00.000Z");
     expect(
-      actionPlanCommitResponseSchema.parse({ plan, results: [failed] }),
-    ).toEqual({ plan, results: [failed] });
+      actionPlanCommitResponseV1Schema.parse(commitResponse(plan, [failed])),
+    ).toEqual(commitResponse(plan, [failed]));
     expect(() => failedActionPlanSchema.parse({
       ...basePlan,
       state: "failed",
       failedAt: "2026-08-17T23:59:59.999Z",
     })).toThrow(/failure precedes creation/);
-    expect(() => actionPlanCommitResponseSchema.parse({
-      plan: {
-        ...basePlan,
-        state: "failed",
-        failedAt: "2026-08-17T23:59:59.999Z",
-      },
-      results: [failed],
-    })).toThrow(/failure precedes creation/);
+    expect(() => actionPlanCommitResponseV1Schema.parse(commitResponse({
+      ...basePlan,
+      state: "failed",
+      failedAt: "2026-08-17T23:59:59.999Z",
+    }, [failed]))).toThrow(/failure precedes creation/);
     expect(() => failedActionPlanSchema.parse({
       ...basePlan,
       state: "failed",
@@ -164,18 +175,25 @@ describe("remote action operation contracts", () => {
       state: "expired",
       expiredAt: basePlan.expiresAt,
     });
-    expect(actionPlanCommitResponseSchema.parse({ plan, results: [] })).toEqual({
-      plan,
-      results: [],
+    expect(actionPlanCommitResponseV1Schema.parse(commitResponse(plan, []))).toEqual(
+      commitResponse(plan, []),
+    );
+    expect(() => actionPlanCommitResponseV1Schema.parse(commitResponse({
+      ...basePlan,
+      state: "expired",
+      expiredAt: "2026-08-18T00:59:59.999Z",
+    }, []))).toThrow(/expiration precedes expiry/);
+  });
+
+  it("round-trips a restore-quarantined terminal plan", () => {
+    const plan = actionPlanSchema.parse({
+      ...basePlan,
+      state: "restore-quarantined",
     });
-    expect(() => actionPlanCommitResponseSchema.parse({
-      plan: {
-        ...basePlan,
-        state: "expired",
-        expiredAt: "2026-08-18T00:59:59.999Z",
-      },
-      results: [],
-    })).toThrow(/expiration precedes expiry/);
+    expect(plan.state).toBe("restore-quarantined");
+    expect(actionPlanCommitResponseV1Schema.parse(commitResponse(plan, []))).toEqual(
+      commitResponse(plan, []),
+    );
   });
 
   it("rejects duplicate immutable identities, missing MODSEQ, and unknown fields", () => {
@@ -204,39 +222,38 @@ describe("remote action operation contracts", () => {
       state: "expired",
       expiredAt: "2026-08-18T00:30:00.000Z",
     })).toThrow();
-    expect(() => actionPlanCommitResponseSchema.parse({
-      plan: {
-        ...basePlan,
-        state: "partial",
-        completedAt: "2026-08-18T00:03:00.000Z",
-      },
-      results: [{ ...success, planId: "plan:other" }],
-    })).toThrow();
+    expect(() => actionPlanCommitResponseV1Schema.parse(commitResponse({
+      ...basePlan,
+      state: "partial",
+      completedAt: "2026-08-18T00:03:00.000Z",
+    }, [{ ...success, planId: "plan:other" }]))).toThrow();
   });
 
-  it("defines create, inspect, authorize, and commit with strict public scopes", () => {
+  it("defines create, inspect, approve, cancel, and commit with strict public scopes", () => {
     expect(actionPlanOperationDefinitions.map((operation) => operation.key)).toEqual([
       "action-plans.create",
       "action-plans.inspect",
-      "action-plans.authorize",
+      "action-plans.approve",
+      "action-plans.cancel-approval",
       "action-plans.commit",
     ]);
     expect(actionPlanOperationDefinitions.every((operation) => operation.strictness === "strict")).toBe(true);
     expect(actionPlanCreateOperation.scope).toBe("mail:action.create");
     expect(actionPlanInspectOperation.scope).toBe("mail:action.inspect");
-    expect(actionPlanAuthorizeOperation.scope).toBe("mail:action.authorize");
+    expect(actionPlanApproveOperation.scope).toBe("mail:action.approve");
     expect(actionPlanCommitOperation.scope).toBe("mail:action.commit");
-    expect(createActionOperationRegistry(actionPlanOperationDefinitions).operations).toHaveLength(4);
-    expect(actionPlanAuthorizeRequestSchema.parse({
+    expect(createActionOperationRegistry(actionPlanOperationDefinitions).operations).toHaveLength(5);
+    expect(actionPlanApproveRequestV1Schema.parse({
       planId: basePlan.planId,
-      digest: "a".repeat(64),
-      intent: "Approve the exact frozen targets",
-    }).intent).toContain("frozen");
-    expect(actionPlanCommitRequestSchema.parse({
+      planVersion: 1,
+      previewDigest: "a".repeat(64),
+    }).planVersion).toBe(1);
+    expect(actionPlanCommitRequestV1Schema.parse({
       planId: basePlan.planId,
-      digest: "a".repeat(64),
-      authorizationId: "authorization:one",
-    }).authorizationId).toBe("authorization:one");
+      planVersion: 1,
+      previewDigest: "a".repeat(64),
+      approvalId: "approval:one",
+    }).approvalId).toBe("approval:one");
   });
 
   it("rejects an executeRaw operation before registry construction", () => {

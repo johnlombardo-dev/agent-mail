@@ -64,9 +64,13 @@ export type ActionPlanTargetLoopOptions = Readonly<{
   readonly now: UtcInstant;
   /** The optimistic plan version captured by claim or restart discovery. */
   readonly expectedPlanVersion: number;
+  /** Stable executor instance identity recorded before the first remote effect. */
+  readonly executorInstanceId?: string;
   /** Actor-owned clock sampled at every target/effect authority boundary. */
   readonly freshNow: () => UtcInstant;
   readonly signal?: AbortSignal;
+  /** Legacy-untrusted recovery may only reopen dispatched attempts. */
+  readonly legacyReadOnly?: boolean;
   /** Production adapters translate their result algebra into the core result algebra here. */
   readonly normalizeMutationResult?: (
     input: Readonly<{
@@ -150,6 +154,8 @@ async function runTarget(
     return resolveExistingResult(options, existingResult, targetOrdinal);
   }
 
+  if (options.legacyReadOnly) return runLegacyReadOnlyTarget(options, attemptId);
+
   let boundary = readActionPlanAttempt(options.database, attemptId);
   if (boundary === undefined) {
     const attemptNow = currentNow(options);
@@ -161,6 +167,9 @@ async function runTarget(
       idempotencyKey,
       startedAt: laterInstant(attemptNow, options.claimedPlan.startedAt),
       now: attemptNow,
+      ...(options.executorInstanceId === undefined
+        ? {}
+        : { executorInstanceId: options.executorInstanceId }),
     });
     boundary = startedBoundary(started);
   }
@@ -234,6 +243,28 @@ async function runTarget(
     }
     return await recoverAfterInterruption(options, durableAttempt.attempt);
   }
+}
+
+async function runLegacyReadOnlyTarget(
+  options: ActionPlanTargetLoopOptions,
+  attemptId: string,
+): Promise<RemoteAttemptResult> {
+  const boundary = readActionPlanAttempt(options.database, attemptId);
+  if (boundary === undefined) throw new Error("legacy recovery attempt is missing");
+  if (
+    options.database
+      .query("SELECT 1 AS present FROM action_attempt_dispatches WHERE attempt_id = ?;")
+      .get(attemptId) === null
+  )
+    throw new Error("legacy recovery requires an existing dispatch marker");
+  const recovered = recoverExistingDispatch(options, attemptId);
+  if (recovered !== undefined) {
+    const result = await resultAfterRecovery(options, recovered, boundary.attempt);
+    if (result !== undefined) return result;
+  }
+  const existing = readActionPlanResult(options.database, attemptId);
+  if (existing !== undefined && existing.certainty !== "uncertain") return existing;
+  throw new Error("legacy recovery could not reconcile dispatched attempt");
 }
 
 function freshAuthority(

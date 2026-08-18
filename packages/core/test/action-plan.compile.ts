@@ -40,6 +40,8 @@ function describeState(plan: ActionPlan): string {
       return plan.expiredAt;
     case "uncertain":
       return plan.remoteAttemptId;
+    case "restore-quarantined":
+      return plan.planId;
     default: {
       const exhaustive: never = plan;
       return exhaustive;

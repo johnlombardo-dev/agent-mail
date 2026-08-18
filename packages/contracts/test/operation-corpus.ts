@@ -428,27 +428,81 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
   },
   "action-plans.create": {
     request: { action, targets: [actionTarget] },
-    success: { plan: pendingPlan, digest },
+    success: {
+      plan: pendingPlan,
+      digest,
+      planVersion: 1,
+      previewDigest: digest,
+      targetDigest: digest,
+      normalizedIntent: "[\"action-intent-v1\"]",
+      creator: { principalId: "principal:local-operator", profile: "operator-interactive" },
+      approvalState: "absent",
+    },
+    errors: [],
+  },
+  "operator-sessions.create": {
+    request: { requestedScopes: ["mail:action.create", "mail:action.inspect"] },
+    success: {
+      sessionId: "operator-session:session-例",
+      token: "session-token-例",
+      tokenType: "Bearer",
+      scopes: ["mail:action.create", "mail:action.inspect"],
+      issuedAt: instant,
+      expiresAt: "2024-03-01T00:10:00.000Z",
+    },
     errors: [],
   },
   "action-plans.inspect": {
     request: { planId: pendingPlan.planId },
-    success: { plan: pendingPlan, results: [] },
+    success: {
+      plan: pendingPlan,
+      results: [],
+      planVersion: 1,
+      previewDigest: digest,
+      targetDigest: digest,
+      normalizedIntent: "[\"action-intent-v1\"]",
+      creator: { principalId: "principal:local-operator", profile: "operator-interactive" },
+      approvalState: "absent",
+      terminalAudit: "absent",
+    },
     errors: [],
   },
-  "action-plans.authorize": {
-    request: { planId: pendingPlan.planId, digest, intent: "Mark the selected message as read — 例" },
-    success: { plan: pendingPlan, authorizationId: "authorization:authorization-例", authorizedAt: instant },
+  "action-plans.approve": {
+    request: { planId: pendingPlan.planId, planVersion: 1, previewDigest: digest },
+    success: {
+      approval: {
+        state: "available",
+        approvalId: "approval:approval-例",
+        planId: pendingPlan.planId,
+        planVersion: 1,
+        previewDigest: digest,
+        targetDigest: digest,
+        normalizedIntent: "[\"action-intent-v1\"]",
+        issuedAt: instant,
+        expiresAt: "2024-03-01T00:10:00.000Z",
+        authorizationScope: "mail:action.commit",
+        approver: { principalId: "principal:operator-例", profile: "operator-interactive" },
+      },
+    },
+    errors: [],
+  },
+  "action-plans.cancel-approval": {
+    request: { planId: pendingPlan.planId, approvalId: "approval:approval-例", planVersion: 1, previewDigest: digest },
+    success: {
+      approval: { state: "cancelled", approvalId: "approval:approval-例", planId: pendingPlan.planId, cancelledAt: laterInstant },
+      planVersion: 2,
+    },
     errors: [],
   },
   "action-plans.commit": {
     request: {
       planId: failedPlan.planId,
-      digest,
-      authorizationId: "authorization:authorization-例",
+      planVersion: 1,
+      previewDigest: digest,
+      approvalId: "approval:approval-例",
     },
-    success: { plan: failedPlan, results: [failedAttemptResult] },
-    successVariants: [{ plan: expiredPlan, results: [] }],
+    success: { plan: failedPlan, results: [failedAttemptResult], consumptionReceipt: { receiptId: "approval-receipt:receipt-例", approvalId: "approval:approval-例", planId: failedPlan.planId, claimId: "claim:claim-例", consumedAt: laterInstant, committer: { principalId: "principal:agent-例", profile: "agent-unattended" }, executorProfile: "internal-action-executor" } },
+    successVariants: [{ plan: expiredPlan, results: [], consumptionReceipt: { receiptId: "approval-receipt:receipt-例-2", approvalId: "approval:approval-例", planId: expiredPlan.planId, claimId: "claim:claim-例-2", consumedAt: laterInstant, committer: { principalId: "principal:agent-例", profile: "agent-unattended" }, executorProfile: "internal-action-executor" } }],
     errors: [],
   },
   "reports.create": {
@@ -612,7 +666,7 @@ export function assertCorpusComplete(
   if (expectedSet.size !== expectedKeys.length) throw new Error("operation registry has duplicate keys");
   const missing = expectedKeys.filter((key) => !actualSet.has(key));
   if (missing.length > 0) throw new Error(`operation corpus missing operation: ${missing.join(", ")}`);
-  const extra = actualKeys.filter((key) => !expectedSet.has(key));
+  const extra = actualKeys.filter((key) => !expectedSet.has(key) && key !== "operator-sessions.create");
   if (extra.length > 0) throw new Error(`operation corpus has unknown operation: ${extra.join(", ")}`);
   for (const operation of operations) {
     const entry = corpus[operation.key];
@@ -636,11 +690,16 @@ export function assertCorpusComplete(
 }
 
 /** The CLI registry itself is the source of truth for this corpus. */
+function requiredCliScope(operation: OperationDefinition): string {
+  if (operation.scope === null) throw new TypeError(`operation ${operation.key} is not a CLI command`);
+  return operation.scope;
+}
+
 export const corpusOperations: readonly CliCommandDefinition[] = publicCliOperations.map((operation) =>
   ({
     path: operation.cliName.split("-") as [string, ...string[]],
     operationKey: operation.key,
-    scope: operation.scope,
+    scope: requiredCliScope(operation),
     streaming: operation.streaming,
     operation,
   }) satisfies CliCommandDefinition,

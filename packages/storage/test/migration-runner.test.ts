@@ -111,4 +111,52 @@ describe("SQLite migration runner", () => {
     }
     await opened.close();
   });
+
+  test("rejects an orphan produced by a foreign-key-off rebuild before committing history", async () => {
+    const path = await databasePath();
+    const opened = await openDatabase(path);
+    const migrations: readonly Migration[] = [
+      {
+        version: 1,
+        name: "parent",
+        sql: "CREATE TABLE parent(id INTEGER PRIMARY KEY);",
+      },
+      {
+        version: 2,
+        name: "orphaning-rebuild",
+        requiresForeignKeysOff: true,
+        sql: "CREATE TABLE child(parent_id INTEGER NOT NULL REFERENCES parent(id)); INSERT INTO child(parent_id) VALUES (42);",
+      },
+    ];
+    expect(() => applyMigrations(opened, migrations)).toThrow("storage migration 2 failed");
+    expect(opened.db.query("PRAGMA foreign_keys;").get()).toEqual({ foreign_keys: 1 });
+    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 1 });
+    expect(opened.db.query("SELECT version, name FROM schema_migrations ORDER BY version;").all()).toEqual([
+      { version: 1, name: "parent" },
+    ]);
+    expect(opened.db.query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'child';").get()).toBeNull();
+    await opened.close();
+  });
+
+  test("binds the foreign-key execution mode into an applied migration identity", async () => {
+    const path = await databasePath();
+    const opened = await openDatabase(path);
+    const rebuild: Migration = {
+      version: 2,
+      name: "rebuild",
+      requiresForeignKeysOff: true,
+      sql: "CREATE TABLE rebuilt(value TEXT NOT NULL);",
+    };
+    applyMigrations(opened, [migrationSet()[0], rebuild]);
+    expect(() =>
+      applyMigrations(opened, [
+        migrationSet()[0],
+        { ...rebuild, requiresForeignKeysOff: false },
+      ]),
+    ).toThrow("an applied storage migration no longer matches its definition");
+    expect(opened.db.query("SELECT content_hash FROM schema_migrations WHERE version = 2").get()).toEqual({
+      content_hash: migrationContentHash(rebuild),
+    });
+    await opened.close();
+  });
 });

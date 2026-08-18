@@ -21,7 +21,7 @@ import type {
 export type RoutingServiceContext = Readonly<{
   readonly correlationId: string;
   readonly operationKey: string;
-  readonly scope: string;
+  readonly scope: string | null;
   readonly principal: HttpPrincipal;
 }>;
 

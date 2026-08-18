@@ -24,7 +24,7 @@ const jsonRoundTrip = (value: unknown): unknown => JSON.parse(JSON.stringify(val
 describe("public operation corpus", () => {
   it("proves completeness before parsing and covers the exact CLI registry", () => {
     assertCorpusComplete(publicCliOperations, operationCorpus);
-    expect(Object.keys(operationCorpus)).toHaveLength(23);
+    expect(Object.keys(operationCorpus)).toHaveLength(25);
     expect(cliCommandRegistry.commands.map(({ operationKey }) => operationKey)).toEqual(
       publicCliOperations.map(({ key }) => key),
     );

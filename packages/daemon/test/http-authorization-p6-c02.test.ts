@@ -53,7 +53,7 @@ describe("HTTP operation authentication and exact-scope authorization", () => {
         principals.push(context.principal.subject);
         expect(Object.isFrozen(context.principal)).toBe(true);
         expect(Object.isFrozen(context.principal.scopes)).toBe(true);
-        expect(context.principal.scopes).toEqual([operation.scope]);
+        expect(context.principal.scopes).toEqual(operation.scope === null ? [] : [operation.scope]);
         expect("credential" in context).toBe(false);
         return fixture.success;
       };
@@ -70,7 +70,7 @@ describe("HTTP operation authentication and exact-scope authorization", () => {
         if (operation !== undefined) {
           return {
             kind: "authenticated",
-            principal: { subject: "operator", scopes: [operation.scope] },
+            principal: { subject: "operator", scopes: operation.scope === null ? [] : [operation.scope] },
           };
         }
       }
@@ -79,7 +79,7 @@ describe("HTTP operation authentication and exact-scope authorization", () => {
         const operationKey = credential.slice(insufficientPrefix.length);
         const operation = publicOperationRegistry.get(operationKey);
         const otherOperation = publicOperationRegistry.operations.find(
-          (candidate) => candidate.scope !== operation?.scope,
+          (candidate) => candidate.scope !== null && candidate.scope !== operation?.scope,
         );
         if (operation !== undefined && otherOperation !== undefined) {
           return {
@@ -149,21 +149,22 @@ describe("HTTP operation authentication and exact-scope authorization", () => {
       expect(invocations).toHaveLength(before + 1);
     }
 
-    expect(publicOperationRegistry.operations).toHaveLength(23);
+    expect(publicOperationRegistry.operations).toHaveLength(25);
     expect([...categoryPrefixes].sort()).toEqual([
       "action-plans",
       "admin",
       "attachments",
       "exports",
       "messages",
+      "operator-sessions",
       "reports",
       "routing",
       "sync",
       "threads",
     ]);
-    expect(new Set(invocations).size).toBe(23);
-    expect(principals).toHaveLength(23);
-    expect(credentialsSeen).toHaveLength(23 * 4);
+    expect(new Set(invocations).size).toBe(25);
+    expect(principals).toHaveLength(25);
+    expect(credentialsSeen).toHaveLength(25 * 4);
     expect(JSON.stringify({ responseBodies, logs })).not.toContain("invalid-token");
     expect(JSON.stringify({ responseBodies, logs })).not.toContain("expired-token");
     expect(JSON.stringify({ responseBodies, logs })).not.toContain("insufficient:");

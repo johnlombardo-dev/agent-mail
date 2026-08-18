@@ -21,6 +21,7 @@ import {
   actionAttemptStartMigration,
   actionAttemptStartMigrations,
 } from "./migrations/0004-action-attempt-start";
+import { recordActionAttemptAuthority } from "./action-approval-authority";
 
 /** The exact input that an internal executor may pass to its remote adapter. */
 export type ActionAttemptExecutorInput = Readonly<{
@@ -107,6 +108,16 @@ export function readActionPlanAttemptAuthority(
     attempt.attempt.planId !== prepared.planId ||
     attempt.attempt.action.kind !== plan.action.kind ||
     !sameTarget(attempt.attempt.target, prepared.target)
+  ) {
+    return { kind: "rejected", reason: "attempt" };
+  }
+  if (
+    hasAuthorityTables(database) &&
+    database
+      .query(
+        "SELECT 1 AS present FROM action_attempt_authorities a JOIN action_approval_consumptions c ON c.receipt_id = a.receipt_id AND c.plan_id = a.plan_id AND c.claim_id = a.claim_id WHERE a.plan_id = ? AND a.attempt_id = ? AND a.claim_id = ? AND a.executor_profile = 'internal-action-executor' AND c.executor_profile = 'internal-action-executor';",
+      )
+      .get(prepared.planId, prepared.attemptId, prepared.claimId) === null
   ) {
     return { kind: "rejected", reason: "attempt" };
   }
@@ -232,6 +243,20 @@ export function startActionPlanAttempt(
         target.precondition.modseq,
       );
 
+    if (hasAuthorityTables(database)) {
+      if (prepared.executorInstanceId === undefined) {
+        throw new Error("authority executor identity is required before dispatch");
+      }
+      recordActionAttemptAuthority(database, {
+        planId: prepared.planId,
+        attemptId: prepared.attemptId,
+        receiptId: receiptIdForClaim(database, prepared.planId, prepared.claimId),
+        claimId: prepared.claimId,
+        executorInstanceId: prepared.executorInstanceId,
+        attributedAt: prepared.startedAt,
+      });
+    }
+
     const executorInput = makeExecutorInput({
       planId: prepared.planId,
       claimId: prepared.claimId,
@@ -323,6 +348,7 @@ type PreparedStart = Readonly<{
   readonly idempotencyKey: string;
   readonly startedAt: string;
   readonly now: string;
+  readonly executorInstanceId: string | undefined;
 }>;
 
 type PlanRow = Readonly<{
@@ -349,6 +375,7 @@ function prepareStart(value: unknown): PreparedStart {
   const input = record(value, "action attempt start input");
   const hasOrdinal = Object.prototype.hasOwnProperty.call(input, "targetOrdinal");
   const hasTarget = Object.prototype.hasOwnProperty.call(input, "target");
+  const hasExecutorInstanceId = Object.prototype.hasOwnProperty.call(input, "executorInstanceId");
   if (hasOrdinal === hasTarget) {
     throw new TypeError("action attempt start input must provide exactly one target selector");
   }
@@ -359,6 +386,7 @@ function prepareStart(value: unknown): PreparedStart {
     "idempotencyKey",
     "startedAt",
     "now",
+    ...(hasExecutorInstanceId ? ["executorInstanceId"] : []),
     ...(hasOrdinal ? ["targetOrdinal"] : ["target"]),
   ]);
   const targetOrdinal = input.targetOrdinal;
@@ -380,6 +408,9 @@ function prepareStart(value: unknown): PreparedStart {
     idempotencyKey: createRemoteIdempotencyKey(input.idempotencyKey),
     startedAt,
     now,
+    executorInstanceId: hasExecutorInstanceId
+      ? parseExecutorInstanceId(input.executorInstanceId)
+      : undefined,
   };
 }
 
@@ -578,6 +609,26 @@ function requireAttemptStartSchema(database: Database): void {
   }
 }
 
+function hasAuthorityTables(database: Database): boolean {
+  return (
+    database
+      .query(
+        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_attempt_authorities';",
+      )
+      .get() !== null
+  );
+}
+
+function receiptIdForClaim(database: Database, planId: string, claimId: ClaimId): string {
+  const value: unknown = database
+    .query(
+      "SELECT receipt_id FROM action_approval_consumptions WHERE plan_id = ? AND claim_id = ? AND executor_profile = 'internal-action-executor';",
+    )
+    .get(planId, claimId);
+  const row = record(value, "action approval consumption row");
+  return requireNamespacedText(row.receipt_id, "approval receipt ID", "approval-receipt:");
+}
+
 function commitResult(
   database: Database,
   result: ActionAttemptStartResult,
@@ -613,6 +664,12 @@ function parseAttemptId(value: unknown): string {
   return id;
 }
 
+function parseExecutorInstanceId(value: unknown): string {
+  const id = requireText(value, "executor instance ID");
+  if (!id.startsWith("executor:")) throw new TypeError("executor instance ID has wrong namespace");
+  return id;
+}
+
 function parseState(value: unknown): ActionPlanState {
   if (
     value !== "pending" &&
@@ -622,7 +679,8 @@ function parseState(value: unknown): ActionPlanState {
     value !== "failed" &&
     value !== "rejected" &&
     value !== "expired" &&
-    value !== "uncertain"
+    value !== "uncertain" &&
+    value !== "restore-quarantined"
   ) {
     throw new TypeError("action plan state is not recognized");
   }
@@ -683,6 +741,12 @@ function requireText(value: unknown, label: string): string {
     throw new TypeError(`${label} must be canonical text`);
   }
   return value;
+}
+
+function requireNamespacedText(value: unknown, label: string, namespace: string): string {
+  const text = requireText(value, label);
+  if (!text.startsWith(namespace)) throw new TypeError(`${label} has the wrong namespace`);
+  return text;
 }
 
 function exactKeys(recordValue: Readonly<Record<string, unknown>>, keys: readonly string[]): void {

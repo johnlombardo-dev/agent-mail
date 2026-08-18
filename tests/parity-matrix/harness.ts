@@ -1,5 +1,6 @@
 import {
   assertCorpusComplete,
+  parseByteStreamMetadata,
   parseNdjsonRecord,
   parseStreamMetadata,
   type OperationCorpus,
@@ -307,7 +308,9 @@ function validateCorpus(
       operation.response.parse(entry.success);
       for (const error of entry.errors) operation.response.parse(error.response);
       if (entry.stream !== undefined) {
-        parseStreamMetadata(entry.stream);
+        const parseMetadata =
+          operation.key === "exports.selected" ? parseByteStreamMetadata : parseStreamMetadata;
+        parseMetadata(entry.stream);
         if (operation.streaming === "ndjson") parseNdjsonRecord(entry.stream);
       }
     }

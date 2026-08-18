@@ -1,4 +1,5 @@
 import type { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import {
   createActionPlanId,
   createClaimId,
@@ -18,6 +19,10 @@ import {
 } from "@agent-mail/core";
 import { readActionPlanAttempt } from "./action-plan-attempt";
 import { readActionPlanResult } from "./action-plan-result";
+import {
+  readEffectAuthorityProjection,
+  recordActionPlanTerminalAudit,
+} from "./action-approval-authority";
 
 /** A status produced only after every durable target slot has been inspected. */
 export type PlanFinalizationState =
@@ -71,6 +76,8 @@ export type FinalizeActionPlanInput = Readonly<{
   readonly claimId: unknown;
   readonly expectedVersion: unknown;
   readonly now: unknown;
+  /** The process that actually performs terminal finalization. */
+  readonly executorInstanceId?: unknown;
 }>;
 
 export type FinalizeActionPlanResult = Readonly<{
@@ -191,6 +198,53 @@ export function finalizeActionPlan(
   input: FinalizeActionPlanInput,
 ): FinalizeActionPlanResult {
   const prepared = prepareInput(input);
+  const authorityInstalled =
+    database
+      .query(
+        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_approval_consumptions';",
+      )
+      .get() !== null;
+  if (authorityInstalled && prepared.executorInstanceId === undefined)
+    throw new ActionPlanFinalizationError(
+      "terminal executor identity is required when approval authority is installed",
+    );
+  return finalizeActionPlanInternal(database, input, {
+    kind: "effect-executor",
+    instanceId: prepared.executorInstanceId ?? "executor:legacy-finalizer",
+  });
+}
+
+/** Finalize durable results after restart without becoming an effect executor. */
+export function finalizeActionPlanAfterRecovery(
+  database: Database,
+  input: FinalizeActionPlanInput,
+  finalizerInstanceId: unknown,
+): FinalizeActionPlanResult {
+  const finalizer = text(finalizerInstanceId, "recovery finalizer instance ID");
+  if (
+    !finalizer.startsWith("recovery-finalizer:") ||
+    finalizer.length > 256 ||
+    finalizer.length === "recovery-finalizer:".length ||
+    /[\u0000-\u001f\u007f-\u009f]/u.test(finalizer)
+  )
+    throw new ActionPlanFinalizationError("recovery finalizer identity is invalid");
+  return finalizeActionPlanInternal(database, input, {
+    kind: "ordinary-recovery",
+    instanceId: finalizer,
+  });
+}
+
+type FinalizerMode = Readonly<{
+  readonly kind: "effect-executor" | "ordinary-recovery";
+  readonly instanceId: string;
+}>;
+
+function finalizeActionPlanInternal(
+  database: Database,
+  input: FinalizeActionPlanInput,
+  finalizer: FinalizerMode,
+): FinalizeActionPlanResult {
+  const prepared = prepareInput(input);
   let transactionStarted = false;
   try {
     database.exec("BEGIN IMMEDIATE;");
@@ -232,6 +286,15 @@ export function finalizeActionPlan(
     updatePlan(database, plan, prepared.claimId, prepared.expectedVersion, prepared.now, decision);
     const journalId = `action-plan-finalization:${plan.planId}`;
     const payload = serializeSummary(prepared, decision, terminalVersion);
+    recordAuthorityTerminalAudit(
+      database,
+      plan.planId,
+      prepared.claimId,
+      decision.state,
+      prepared.now,
+      payload,
+      finalizer,
+    );
     insertAndVerifyJournal(
       database,
       journalId,
@@ -256,17 +319,157 @@ export function finalizeActionPlan(
   }
 }
 
+/**
+ * Reconcile a pre-authority executing plan after a restart. Legacy plans have
+ * no receipt and therefore cannot receive a fabricated terminal audit or a
+ * new executor capability. This path only accepts already-dispatched target
+ * results and records the terminal state in the existing plan/journal rows.
+ */
+export function finalizeLegacyActionPlan(
+  database: Database,
+  input: FinalizeActionPlanInput,
+): FinalizeActionPlanResult {
+  const prepared = prepareInput(input);
+  let transactionStarted = false;
+  try {
+    database.exec("BEGIN IMMEDIATE;");
+    transactionStarted = true;
+    const row = readPlanRow(database, prepared.planId);
+    if (row === undefined) throw new ActionPlanFinalizationError("action plan does not exist");
+    if (row.state !== "executing") {
+      const replay = readReplay(database, prepared, row.state);
+      if (replay !== undefined) {
+        database.exec("COMMIT;");
+        transactionStarted = false;
+        return replay;
+      }
+      throw new ActionPlanFinalizationError("legacy action plan is not executing");
+    }
+    if (row.version !== prepared.expectedVersion)
+      throw new ActionPlanFinalizationError("legacy action plan version is stale");
+    if (row.claimId !== prepared.claimId)
+      throw new ActionPlanFinalizationError("legacy action plan claim identity is stale");
+    const authority = database
+      .query("SELECT authority_version FROM action_plan_authority_versions WHERE plan_id = ?;")
+      .get(prepared.planId);
+    if (!isRecord(authority) || authority.authority_version !== "legacy-untrusted")
+      throw new ActionPlanFinalizationError("action plan is not legacy-untrusted");
+    const plan = readExecutingPlan(database, row);
+    assertActiveClaim(database, plan);
+    const targetResults = readTargetResults(database, plan, prepared.claimId);
+    const decision = mapPlanFinalization(
+      {
+        planId: plan.planId,
+        targets: plan.targets,
+        createdAt: plan.createdAt,
+        expiresAt: plan.expiresAt,
+        now: prepared.now,
+      },
+      targetResults,
+    );
+    const terminalVersion = prepared.expectedVersion + 1;
+    updatePlan(database, plan, prepared.claimId, prepared.expectedVersion, prepared.now, decision);
+    const payload = serializeSummary(prepared, decision, terminalVersion);
+    insertAndVerifyJournal(
+      database,
+      `action-plan-finalization:${plan.planId}`,
+      prepared.now,
+      plan.planId,
+      prepared.claimId,
+      payload,
+    );
+    database.exec("COMMIT;");
+    transactionStarted = false;
+    return {
+      kind: "finalized",
+      planId: plan.planId,
+      state: decision.state,
+      version: terminalVersion,
+      counts: decision.counts,
+      targetResults: decision.targetResults,
+    };
+  } catch (error: unknown) {
+    if (transactionStarted) rollback(database, error);
+    throw error;
+  }
+}
+
+function recordAuthorityTerminalAudit(
+  database: Database,
+  planId: ActionPlanId,
+  claimId: string,
+  state: PlanFinalizationState,
+  terminalAt: string,
+  payload: string,
+  finalizer: FinalizerMode,
+): void {
+  const authorityInstalled =
+    database
+      .query(
+        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_approval_consumptions';",
+      )
+      .get() !== null;
+  if (!authorityInstalled) return;
+  const receipt = database
+    .query(
+      "SELECT receipt_id FROM action_approval_consumptions WHERE plan_id = ? AND claim_id = ?;",
+    )
+    .get(planId, claimId);
+  if (typeof receipt !== "object" || receipt === null || Array.isArray(receipt))
+    throw new ActionPlanFinalizationError("authority receipt is missing for terminal action plan");
+  const receiptId = Object.fromEntries(Object.entries(receipt)).receipt_id;
+  if (typeof receiptId !== "string")
+    throw new ActionPlanFinalizationError("authority receipt identity is invalid");
+  const effect = readEffectAuthorityProjection(database, { planId, receiptId, claimId });
+  if (effect.count === 0)
+    throw new ActionPlanFinalizationError("terminal effect authority set is empty");
+  const effectExecutorIds = new Set<string>();
+  for (const [attemptId] of effect.rows) {
+    const attempt = readActionPlanAttempt(database, attemptId);
+    if (attempt === undefined || attempt.claimId !== claimId)
+      throw new ActionPlanFinalizationError("terminal effect authority attempt is incomplete");
+    if (readActionPlanResult(database, attemptId) === undefined)
+      throw new ActionPlanFinalizationError("terminal effect authority result is incomplete");
+    const row = effect.rows.find((candidate) => candidate[0] === attemptId);
+    if (row !== undefined) effectExecutorIds.add(row[2]);
+  }
+  if (finalizer.kind === "effect-executor" && !effectExecutorIds.has(finalizer.instanceId))
+    throw new ActionPlanFinalizationError(
+      "terminal executor identity is not attributed to the consumed receipt",
+    );
+  recordActionPlanTerminalAudit(database, {
+    planId,
+    receiptId,
+    claimId,
+    terminalState: state,
+    terminalAt,
+    executorDisposition: "started",
+    effectAttemptCount: effect.count,
+    effectAuthoritySetDigest: effect.digest,
+    executorInstanceId: effect.executorInstanceId,
+    finalizerKind: finalizer.kind,
+    finalizerInstanceId: finalizer.instanceId,
+    reasonCode: "normal-finalization",
+    restoreEventId: "restore-event:none",
+    resultDigest: createHash("sha256").update(payload).digest("hex"),
+  });
+}
+
 function prepareInput(input: FinalizeActionPlanInput): Readonly<{
   readonly planId: ActionPlanId;
   readonly claimId: ReturnType<typeof createClaimId>;
   readonly expectedVersion: number;
   readonly now: UtcInstant;
+  readonly executorInstanceId: string | undefined;
 }> {
+  const executorInstanceId =
+    input.executorInstanceId === undefined ? undefined : executorIdentity(input.executorInstanceId);
   return {
     planId: createActionPlanId(input.planId),
     claimId: createClaimId(input.claimId),
     expectedVersion: positiveInteger(input.expectedVersion, "expected plan version"),
     now: parseUtcInstant(input.now),
+    executorInstanceId,
   };
 }
 
@@ -660,7 +863,8 @@ function closedState(value: unknown): ActionPlanState {
     value !== "rejected" &&
     value !== "expired" &&
     value !== "failed" &&
-    value !== "uncertain"
+    value !== "uncertain" &&
+    value !== "restore-quarantined"
   )
     throw new ActionPlanFinalizationError("stored plan state is invalid");
   return value;
@@ -693,6 +897,18 @@ function text(value: unknown, label: string): string {
   if (typeof value !== "string" || value.length === 0 || value.trim() !== value)
     throw new ActionPlanFinalizationError(`${label} is invalid`);
   return value;
+}
+
+function executorIdentity(value: unknown): string {
+  const identity = text(value, "executor instance ID");
+  if (
+    identity.length > 256 ||
+    identity.length <= "executor:".length ||
+    !identity.startsWith("executor:") ||
+    /[\u0000-\u001f\u007f-\u009f]/u.test(identity)
+  )
+    throw new ActionPlanFinalizationError("executor instance ID is invalid");
+  return identity;
 }
 
 function namespaced(value: unknown, prefix: string): string {

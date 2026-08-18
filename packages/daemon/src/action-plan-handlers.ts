@@ -1,8 +1,10 @@
 import {
-  actionPlanAuthorizeRequestSchema,
-  actionPlanAuthorizeResponseSchema,
-  actionPlanCommitRequestSchema,
-  actionPlanCommitResponseSchema,
+  actionPlanApproveRequestSchema,
+  actionPlanApproveResponseSchema,
+  actionPlanCancelApprovalRequestSchema,
+  actionPlanCancelApprovalResponseSchema,
+  actionPlanAuthorityCommitRequestSchema,
+  actionPlanAuthorityCommitResponseSchema,
   actionPlanCreateRequestSchema,
   actionPlanInspectRequestSchema,
   actionPlanInspectResponseSchema,
@@ -11,26 +13,32 @@ import {
 } from "@agent-mail/contracts";
 import { z } from "zod";
 import type {
+  AuthenticatedRequestContext,
   HttpPrincipal,
   OperationHandler,
   OperationHandlerContext,
   OperationHandlerMap,
 } from "./http";
+import { isTrustedAuthContext } from "./trusted-auth-context";
 
 type ActionPlanInspectRequest = z.infer<typeof actionPlanInspectRequestSchema>;
-type ActionPlanAuthorizeRequest = z.infer<typeof actionPlanAuthorizeRequestSchema>;
-type ActionPlanCommitRequest = z.infer<typeof actionPlanCommitRequestSchema>;
+type ActionPlanApproveRequest = z.infer<typeof actionPlanApproveRequestSchema>;
+type ActionPlanCancelApprovalRequest = z.infer<typeof actionPlanCancelApprovalRequestSchema>;
+type ActionPlanAuthorityCommitRequest = z.infer<typeof actionPlanAuthorityCommitRequestSchema>;
 type ActionPlanPreviewResponse = z.infer<typeof actionPlanPreviewResponseSchema>;
 type ActionPlanInspectResponse = z.infer<typeof actionPlanInspectResponseSchema>;
-type ActionPlanAuthorizeResponse = z.infer<typeof actionPlanAuthorizeResponseSchema>;
-type ActionPlanCommitResponse = z.infer<typeof actionPlanCommitResponseSchema>;
+type ActionPlanApproveResponse = z.infer<typeof actionPlanApproveResponseSchema>;
+type ActionPlanCancelApprovalResponse = z.infer<typeof actionPlanCancelApprovalResponseSchema>;
+type ActionPlanAuthorityCommitResponse = z.infer<typeof actionPlanAuthorityCommitResponseSchema>;
 
 /** The authority context forwarded to a plan service after HTTP auth succeeds. */
 export type ActionPlanServiceContext = Readonly<{
   readonly correlationId: string;
   readonly operationKey: string;
-  readonly scope: string;
+  readonly scope: string | null;
   readonly principal: HttpPrincipal;
+  readonly authContext: AuthenticatedRequestContext;
+  readonly requestBodySha256?: string;
 }>;
 
 /** A service may report a private durable failure without fabricating a result. */
@@ -70,11 +78,15 @@ export type ActionPlanService<TRequest, TResponse> = (
 export type ActionPlanServices = Readonly<{
   readonly createPlan: ActionPlanService<ActionPlanCreateRequest, ActionPlanPreviewResponse>;
   readonly inspectPlan: ActionPlanService<ActionPlanInspectRequest, ActionPlanInspectResponse>;
-  readonly authorizePlan: ActionPlanService<
-    ActionPlanAuthorizeRequest,
-    ActionPlanAuthorizeResponse
+  readonly approvePlan: ActionPlanService<ActionPlanApproveRequest, ActionPlanApproveResponse>;
+  readonly cancelApproval: ActionPlanService<
+    ActionPlanCancelApprovalRequest,
+    ActionPlanCancelApprovalResponse
   >;
-  readonly commitPlan: ActionPlanService<ActionPlanCommitRequest, ActionPlanCommitResponse>;
+  readonly authorityCommitPlan: ActionPlanService<
+    ActionPlanAuthorityCommitRequest,
+    ActionPlanAuthorityCommitResponse
+  >;
 }>;
 
 type ActionPlanServiceFailureOutcome = ActionPlanServiceFailure | ActionPlanServiceBlocked;
@@ -123,11 +135,41 @@ function serviceSuccess(value: unknown): ServiceSuccess | undefined {
 }
 
 function serviceContext(context: OperationHandlerContext): ActionPlanServiceContext {
+  if (context.authContext === undefined)
+    throw new TypeError("action operation requires trusted authenticated context");
+  if (!isTrustedAuthContext(context.authContext))
+    throw new TypeError("action operation requires authenticator provenance");
+  const auth = context.authContext;
+  const has = (scope: string) => auth.scopes.includes(scope);
+  if (
+    (context.operation.key === "action-plans.create" ||
+      context.operation.key === "action-plans.inspect") &&
+    !has("mail:action.create") &&
+    !has("mail:action.inspect")
+  )
+    throw new TypeError("action create/inspect requires a trusted action profile");
+  if (
+    (context.operation.key === "action-plans.approve" ||
+      context.operation.key === "action-plans.cancel-approval") &&
+    (auth.profile !== "operator-interactive" ||
+      auth.presence.kind !== "human-present" ||
+      !has("mail:action.approve"))
+  )
+    throw new TypeError("action approval requires fresh trusted operator presence");
+  if (
+    context.operation.key === "action-plans.commit" &&
+    (auth.profile !== "agent-unattended" ||
+      auth.presence.kind !== "unattended" ||
+      !has("mail:action.commit"))
+  )
+    throw new TypeError("action commit requires trusted unattended authority");
   return Object.freeze({
     correlationId: context.correlationId,
     operationKey: context.operation.key,
     scope: context.operation.scope,
     principal: context.principal,
+    authContext: context.authContext,
+    requestBodySha256: context.requestBodySha256,
   });
 }
 
@@ -159,7 +201,7 @@ function handlerFor<TRequest, TResponse>(
     invokeService(input, serviceContext(context), requestSchema, responseSchema, service);
 }
 
-/** Create handlers for the four public action-plan lifecycle operations. */
+/** Create handlers for the authority-aware public action-plan lifecycle operations. */
 export function createActionPlanHandlers(services: ActionPlanServices): OperationHandlerMap {
   return Object.freeze({
     "action-plans.create": handlerFor(
@@ -172,15 +214,20 @@ export function createActionPlanHandlers(services: ActionPlanServices): Operatio
       actionPlanInspectResponseSchema,
       services.inspectPlan,
     ),
-    "action-plans.authorize": handlerFor(
-      actionPlanAuthorizeRequestSchema,
-      actionPlanAuthorizeResponseSchema,
-      services.authorizePlan,
+    "action-plans.approve": handlerFor(
+      actionPlanApproveRequestSchema,
+      actionPlanApproveResponseSchema,
+      services.approvePlan,
+    ),
+    "action-plans.cancel-approval": handlerFor(
+      actionPlanCancelApprovalRequestSchema,
+      actionPlanCancelApprovalResponseSchema,
+      services.cancelApproval,
     ),
     "action-plans.commit": handlerFor(
-      actionPlanCommitRequestSchema,
-      actionPlanCommitResponseSchema,
-      services.commitPlan,
+      actionPlanAuthorityCommitRequestSchema,
+      actionPlanAuthorityCommitResponseSchema,
+      services.authorityCommitPlan,
     ),
   });
 }

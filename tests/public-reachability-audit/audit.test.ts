@@ -23,8 +23,8 @@ describe("public entrypoint to executor reachability audit", () => {
   test("starts from every accepted HTTP operation and CLI command entrypoint", async () => {
     const operationKeys = publicOperationRegistry.operations.map(({ key }) => key);
     const commandKeys = cliCommandRegistry.commands.map(({ operationKey }) => operationKey);
-    expect(operationKeys).toHaveLength(23);
-    expect(commandKeys).toEqual(operationKeys);
+    expect(operationKeys).toHaveLength(25);
+    expect(commandKeys).toEqual(operationKeys.filter((key) => key !== "operator-sessions.create"));
 
     const roots = [
       ...operationKeys.map((key) => root(`http-operation:${key}`, "packages/daemon/src/index.ts")),

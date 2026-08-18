@@ -19,7 +19,11 @@ import { createPendingActionPlan } from "../../storage/src/action-plan-repositor
 import { actionAttemptDispatchMigrations } from "../../storage/src/action-plan-recovery";
 import { actionResultReconciliationMigrations } from "../../storage/src/action-plan-result";
 import { operationalJournalMigration } from "../../storage/src/migrations/0001-operational-journal";
-import { discoverExecutingActionPlans } from "../../storage/src/action-plan-restart-recovery";
+import { threadGraphMigration } from "../../storage/src/migrations/0008-thread-graph";
+import { actionApprovalAuthorityMigration } from "../../storage/src/migrations/0009-action-approval-authority";
+import { actionPlanRestoreQuarantineMigration } from "../../storage/src/migrations/0010-action-plan-restore-quarantine";
+import { discoverExecutingActionPlans, discoverLegacyExecutingActionPlans } from "../../storage/src/action-plan-restart-recovery";
+import { markActionPlanAttemptDispatched } from "../../storage/src/action-plan-recovery";
 import {
   createFileActionPlanOwnerLeaseStore,
   recoverExecutingActionPlans,
@@ -42,6 +46,12 @@ const migrations: readonly Migration[] = [
   ...actionAttemptDispatchMigrations,
   { ...operationalJournalMigration, version: 6 },
   ...actionResultReconciliationMigrations.map((migration) => ({ ...migration, version: 7 })),
+];
+const legacyMigrations: readonly Migration[] = [
+  ...migrations,
+  { ...threadGraphMigration, version: 8 },
+  actionApprovalAuthorityMigration,
+  actionPlanRestoreQuarantineMigration,
 ];
 
 type CrashCutPoint =
@@ -79,6 +89,60 @@ function openDatabase(): Database {
     expectedVersion: 1,
   });
   if (claimed.kind !== "claimed") throw new Error("test plan was not claimed");
+  return database;
+}
+
+function openLegacyDatabase(dispatched: boolean): Database {
+  const database = new Database(":memory:");
+  databases.push(database);
+  applyMigrations(database, migrations);
+  createPendingActionPlan(database, {
+    planId: dispatched ? "plan:legacy-dispatched" : "plan:legacy-undispatched",
+    action: { kind: "moveToArchive" },
+    targets: [target],
+    createdAt: "2026-08-18T00:00:00.000Z",
+    expiresAt: "2026-08-19T00:00:00.000Z",
+    previewDigest: digest,
+    authorizationScope: "mail:action.create",
+    idempotencyIdentity: dispatched ? "caller:legacy-dispatched" : "caller:legacy-undispatched",
+  });
+  const planId = dispatched ? "plan:legacy-dispatched" : "plan:legacy-undispatched";
+  const claimed = claimPendingActionPlan(database, {
+    planId,
+    claimId: dispatched ? "claim:legacy-dispatched" : "claim:legacy-undispatched",
+    startedAt: "2026-08-18T01:00:00.000Z",
+    now: "2026-08-18T01:00:00.000Z",
+    digest,
+    authorizationScope: "mail:action.create",
+    expectedVersion: 1,
+  });
+  if (claimed.kind !== "claimed") throw new Error("legacy plan was not claimed");
+  if (dispatched) {
+    const attempt = startActionPlanAttempt(database, {
+      planId,
+      claimId: claimed.plan.claimId,
+      targetOrdinal: 1,
+      attemptId: "attempt:plan:legacy-dispatched:1",
+      idempotencyKey: "action:plan:legacy-dispatched:1",
+      startedAt: "2026-08-18T01:00:01.000Z",
+      now: "2026-08-18T01:00:01.000Z",
+    });
+    if (attempt.kind !== "started") throw new Error("legacy attempt was not started");
+    const marked = markActionPlanAttemptDispatched(database, {
+      attemptId: attempt.attempt.attemptId,
+      planId,
+      claimId: claimed.plan.claimId,
+      expectedVersion: 2,
+      dispatchedAt: "2026-08-18T01:00:02.000Z",
+      observation: {
+        kind: "satisfied",
+        target,
+        observed: { uidValidity: target.uidValidity, uid: target.uid, modseq: target.precondition.modseq },
+      },
+    });
+    if (marked.kind !== "marked") throw new Error("legacy attempt was not dispatched");
+  }
+  applyMigrations(database, legacyMigrations);
   return database;
 }
 
@@ -271,6 +335,60 @@ async function traceLines(path: string): Promise<readonly unknown[]> {
 }
 
 describe("executing action-plan restart recovery P5-C17", () => {
+  test("keeps legacy executing plans fail-closed while reconciling dispatched work read-only", async () => {
+    const dispatched = openLegacyDatabase(true);
+    expect(discoverExecutingActionPlans(dispatched)).toHaveLength(0);
+    expect(discoverLegacyExecutingActionPlans(dispatched)).toMatchObject([
+      { authorityVersion: "legacy-untrusted", plan: { planId: "plan:legacy-dispatched" } },
+    ]);
+    let remoteCalls = 0;
+    let observerCalls = 0;
+    const report = await recoverExecutingActionPlans({
+      database: dispatched,
+      ownerLeases: ownerLeases(),
+      now,
+      freshNow: () => now,
+      targetLoopOptions: () => ({
+        readPrecondition: async () => {
+          throw new Error("legacy recovery must not read preconditions");
+        },
+        mutationAdapter: {
+          execute: async () => {
+            remoteCalls += 1;
+            throw new Error("legacy recovery must not execute");
+          },
+        },
+        uncertainObserver: {
+          read: async ({ attempt, resultAt }) => {
+            observerCalls += 1;
+            return success(attempt, resultAt);
+          },
+        },
+      }),
+    });
+    expect(report).toMatchObject({
+      discovered: 1,
+      outcomes: [{ planId: "plan:legacy-dispatched", kind: "recovered", finalized: { state: "completed" } }],
+    });
+    expect(remoteCalls).toBe(0);
+    expect(observerCalls).toBe(1);
+    expect(dispatched.query("SELECT state, claim_id FROM action_plans WHERE plan_id = ?;").get("plan:legacy-dispatched")).toEqual({ state: "completed", claim_id: null });
+    expect(dispatched.query("SELECT authority_version, reason_code FROM action_plan_authority_versions WHERE plan_id = ?;").get("plan:legacy-dispatched")).toEqual({ authority_version: "legacy-untrusted", reason_code: "legacy-pre-authority" });
+
+    const undispatched = openLegacyDatabase(false);
+    const undispatchedReport = await recoverExecutingActionPlans({
+      database: undispatched,
+      ownerLeases: ownerLeases(),
+      now,
+      freshNow: () => now,
+      targetLoopOptions: () => {
+        throw new Error("undispatched legacy plan must not be selected");
+      },
+    });
+    expect(undispatchedReport).toEqual({ discovered: 0, outcomes: [] });
+    expect(undispatched.query("SELECT state, claim_id FROM action_plans WHERE plan_id = ?;").get("plan:legacy-undispatched")).toEqual({ state: "executing", claim_id: "claim:legacy-undispatched" });
+  });
+
   test("recovers a pre-expiry persisted undispatched attempt after expiry with no remote calls", async () => {
     const database = openDatabase();
     expect(

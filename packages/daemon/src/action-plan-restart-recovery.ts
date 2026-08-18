@@ -8,11 +8,14 @@ import {
   type ProcessIdentityObservation,
 } from "../../../port-lease";
 import {
+  discoverLegacyExecutingActionPlans,
   discoverExecutingActionPlans,
   type ExecutingActionPlanRecoveryCandidate,
 } from "../../storage/src/action-plan-restart-recovery";
 import {
   finalizeActionPlan,
+  finalizeActionPlanAfterRecovery,
+  finalizeLegacyActionPlan,
   type FinalizeActionPlanResult,
 } from "../../storage/src/action-plan-finalization";
 import { readActionPlanResult } from "../../storage/src/action-plan-result";
@@ -23,6 +26,101 @@ import {
   type ActionPlanTargetLoopResult,
 } from "./action-plan-target-loop";
 import type { Database } from "bun:sqlite";
+import {
+  invalidateAuthorityForConfigurationChange,
+  invalidateApprovalsForMissingKeys,
+  invalidatePendingSealKeyAdministrationChallenges,
+  quarantineRestoredAuthority,
+  readEffectAuthorityProjection,
+  type ApprovalSealKeyring,
+} from "../../storage/src/action-approval-authority";
+import type { AuthorityFileLock } from "./action-authority-lock";
+
+export type AuthorityStartupAdmission = Readonly<{
+  readonly database: Database;
+  readonly restored: boolean;
+  readonly restoreEventId?: string;
+  readonly now: UtcInstant;
+  /** Startup cannot admit authority without the validated seal-key projection. */
+  readonly keyring: ApprovalSealKeyring;
+  readonly authorityInstanceId: string;
+  readonly configurationRevision: number;
+  readonly activeCredentialIds: readonly string[];
+}>;
+
+/** Must run before listeners, session/auth services, or executing-plan discovery. */
+export function admitAuthorityStartup(options: AuthorityStartupAdmission): Readonly<{
+  readonly kind: "ordinary-restart" | "explicit-restore";
+  readonly invalidatedApprovals: number;
+  readonly quarantinedPlans: number;
+}> {
+  if (!options.restored) {
+    invalidatePendingSealKeyAdministrationChallenges(options.database, options.now);
+    const configuration = invalidateAuthorityForConfigurationChange(options.database, {
+      authorityInstanceId: options.authorityInstanceId,
+      configurationRevision: options.configurationRevision,
+      activeCredentialIds: options.activeCredentialIds,
+      invalidatedAt: options.now,
+    });
+    const invalidatedApprovals = invalidateApprovalsForMissingKeys(
+      options.database,
+      options.keyring,
+      options.now,
+    );
+    return {
+      kind: "ordinary-restart",
+      invalidatedApprovals: configuration.invalidatedApprovals + invalidatedApprovals,
+      quarantinedPlans: 0,
+    };
+  }
+  if (options.restoreEventId === undefined || !options.restoreEventId.startsWith("restore-event:"))
+    throw new Error("restore admission requires a restore event ID");
+  const result = quarantineRestoredAuthority(options.database, options.restoreEventId, options.now);
+  return { kind: "explicit-restore", ...result };
+}
+
+export type AuthorityStartupOrchestrationOptions = Readonly<{
+  readonly admission: AuthorityStartupAdmission;
+  readonly authorityLock: AuthorityFileLock;
+  /** Recovery is deliberately injected so the daemon can use its actor-owned adapters. */
+  readonly recover: () => Promise<RestartRecoveryReport>;
+  /** Memory-only sessions and provisional challenge caches are cleared before recovery. */
+  readonly clearEphemeralAuthority: () => void | Promise<void>;
+  /** Network listeners are installed only after admission and recovery complete. */
+  readonly startListeners: () => void | Promise<void>;
+  /** The owner-only native ceremony adapter is exposed only after recovery. */
+  readonly startAuthorityMutationServer: () => void | Promise<void>;
+  /** The daemon-owned durable challenge issuer is exposed only after recovery. */
+  readonly startAuthorityChallengeServer: () => void | Promise<void>;
+}>;
+
+export type AuthorityStartupResult = Readonly<{
+  readonly admission: Readonly<{
+    readonly kind: "ordinary-restart" | "explicit-restore";
+    readonly invalidatedApprovals: number;
+    readonly quarantinedPlans: number;
+  }>;
+  readonly recovery: RestartRecoveryReport;
+}>;
+
+/**
+ * Compose restore admission, ephemeral authority reset, recovery, and listener
+ * startup in one ordered boundary. Callers cannot accidentally expose a
+ * listener or session service while restored rows are still eligible work.
+ */
+export async function startAuthorityRuntime(
+  options: AuthorityStartupOrchestrationOptions,
+): Promise<AuthorityStartupResult> {
+  const admission = await options.authorityLock.runExclusive(() =>
+    admitAuthorityStartup(options.admission),
+  );
+  await options.clearEphemeralAuthority();
+  const recovery = await options.recover();
+  await options.startAuthorityMutationServer();
+  await options.startAuthorityChallengeServer();
+  await options.startListeners();
+  return Object.freeze({ admission, recovery });
+}
 
 /** Process identity is injected so tests can exercise PID reuse and child death deterministically. */
 export type RecoveryProcessIdentityAdapter = ProcessIdentityAdapter;
@@ -213,7 +311,13 @@ export type RestartRecoveryOptions = Readonly<{
   readonly now: UtcInstant;
   /** Actor-owned clock for fresh authority observations during recovery. */
   readonly freshNow: () => UtcInstant;
-  readonly targetLoopOptions: (
+  /** Identity of the non-authorizing process that finalizes durable results. */
+  readonly finalizerInstanceId?: string;
+  /** Identity used only when this restart genuinely opens a new effect boundary. */
+  readonly executorInstanceId?: string;
+  /** Effect-capable recovery callback. It is intentionally optional so a
+   * complete result/authority set can finalize without receiving adapters. */
+  readonly targetLoopOptions?: (
     candidate: ExecutingActionPlanRecoveryCandidate,
   ) => Omit<
     ActionPlanTargetLoopOptions,
@@ -234,7 +338,10 @@ export type RestartRecoveryOptions = Readonly<{
 export async function recoverExecutingActionPlans(
   options: RestartRecoveryOptions,
 ): Promise<RestartRecoveryReport> {
-  const candidates = discoverExecutingActionPlans(options.database);
+  const candidates = [
+    ...discoverExecutingActionPlans(options.database),
+    ...discoverLegacyExecutingActionPlans(options.database),
+  ];
   const outcomes: RestartRecoveryPlanOutcome[] = [];
   for (const candidate of candidates) {
     const planId = candidate.plan.planId;
@@ -256,7 +363,61 @@ export async function recoverExecutingActionPlans(
     }
 
     try {
-      const loopOptions = options.targetLoopOptions(candidate);
+      const authorityInstalled = hasAuthorityTables(options.database);
+      const preflight =
+        candidate.authorityVersion === "legacy-untrusted"
+          ? undefined
+          : readTrustedRecoveryPreflight(options.database, candidate, authorityInstalled);
+
+      // A complete trusted result/authority set is a read-only recovery case.
+      // Do this before resolving targetLoopOptions so no mutation adapter or
+      // effect-capable closure is even constructed for the recovery finalizer.
+      if (
+        candidate.authorityVersion !== "legacy-untrusted" &&
+        preflight !== undefined &&
+        preflight.kind === "complete"
+      ) {
+        await options.onAllTargetsDurable?.(candidate);
+        try {
+          const finalized = finalizeActionPlanAfterRecovery(
+            options.database,
+            {
+              planId,
+              claimId: candidate.plan.claimId,
+              expectedVersion: candidate.version,
+              now: options.now,
+            },
+            options.finalizerInstanceId ?? `recovery-finalizer:${process.pid}`,
+          );
+          outcomes.push({ planId, kind: "recovered", finalized });
+        } catch {
+          outcomes.push({ planId, kind: "failed", reason: "finalization" });
+        }
+        continue;
+      }
+
+      // A fully-resulted trusted plan with an incomplete/tampered authority
+      // projection must fail closed. It must not be handed to an effect loop
+      // merely because the target result rows happen to exist.
+      if (candidate.authorityVersion !== "legacy-untrusted" && preflight?.kind === "invalid") {
+        outcomes.push({ planId, kind: "failed", reason: "finalization" });
+        continue;
+      }
+
+      if (
+        candidate.authorityVersion !== "legacy-untrusted" &&
+        authorityInstalled &&
+        !isExecutorIdentity(options.executorInstanceId)
+      ) {
+        outcomes.push({ planId, kind: "failed", reason: "target-loop" });
+        continue;
+      }
+
+      const loopOptions = options.targetLoopOptions?.(candidate);
+      if (loopOptions === undefined) {
+        outcomes.push({ planId, kind: "failed", reason: "target-loop" });
+        continue;
+      }
       let loopResult: ActionPlanTargetLoopResult;
       try {
         loopResult = await runActionPlanTargetLoop({
@@ -267,6 +428,12 @@ export async function recoverExecutingActionPlans(
           expectedPlanVersion: candidate.version,
           freshNow: options.freshNow,
           signal: options.signal,
+          ...(candidate.authorityVersion === "legacy-untrusted"
+            ? { legacyReadOnly: true as const }
+            : {}),
+          ...(candidate.authorityVersion !== "legacy-untrusted" && authorityInstalled
+            ? { executorInstanceId: options.executorInstanceId }
+            : {}),
         });
       } catch {
         outcomes.push({ planId, kind: "failed", reason: "target-loop" });
@@ -282,12 +449,32 @@ export async function recoverExecutingActionPlans(
       // P5-C16 precondition: finalization is attempted only after every target
       // has a durable result, regardless of loop cancellation or progress shape.
       try {
-        const finalized = finalizeActionPlan(options.database, {
-          planId,
-          claimId: candidate.plan.claimId,
-          expectedVersion: candidate.version,
-          now: options.now,
-        });
+        const finalized =
+          candidate.authorityVersion === "legacy-untrusted"
+            ? finalizeLegacyActionPlan(options.database, {
+                planId,
+                claimId: candidate.plan.claimId,
+                expectedVersion: candidate.version,
+                now: options.now,
+              })
+            : authorityInstalled
+              ? finalizeActionPlan(options.database, {
+                  planId,
+                  claimId: candidate.plan.claimId,
+                  expectedVersion: candidate.version,
+                  now: options.now,
+                  executorInstanceId: options.executorInstanceId,
+                })
+              : finalizeActionPlanAfterRecovery(
+                  options.database,
+                  {
+                    planId,
+                    claimId: candidate.plan.claimId,
+                    expectedVersion: candidate.version,
+                    now: options.now,
+                  },
+                  options.finalizerInstanceId ?? `recovery-finalizer:${process.pid}`,
+                );
         outcomes.push({ planId, kind: "recovered", finalized });
       } catch {
         outcomes.push({ planId, kind: "failed", reason: "finalization" });
@@ -298,6 +485,171 @@ export async function recoverExecutingActionPlans(
     }
   }
   return { discovered: candidates.length, outcomes: Object.freeze(outcomes) };
+}
+
+type TrustedRecoveryPreflight = Readonly<{
+  readonly kind: "complete" | "incomplete" | "invalid";
+  readonly durableTargetCount: number;
+}>;
+
+function readTrustedRecoveryPreflight(
+  database: Database,
+  candidate: ExecutingActionPlanRecoveryCandidate,
+  authorityInstalled: boolean,
+): TrustedRecoveryPreflight {
+  const durableTargetCount = countDurableResults(database, candidate.plan);
+  const allTargetResultsDurable = targetResultsAreDurable(database, candidate.plan);
+  if (!authorityInstalled) {
+    return {
+      kind:
+        durableTargetCount === candidate.plan.targets.length &&
+        allTargetResultsDurable &&
+        targetResultsAreDefinite(database, candidate.plan)
+          ? "complete"
+          : "incomplete",
+      durableTargetCount,
+    };
+  }
+
+  const receipt = database
+    .query(
+      "SELECT receipt_id FROM action_approval_consumptions WHERE plan_id = ? AND claim_id = ?;",
+    )
+    .get(candidate.plan.planId, candidate.plan.claimId);
+  if (!isRecord(receipt) || typeof receipt.receipt_id !== "string") {
+    return { kind: "invalid", durableTargetCount };
+  }
+  const effect = readEffectAuthorityProjection(database, {
+    planId: candidate.plan.planId,
+    receiptId: receipt.receipt_id,
+    claimId: candidate.plan.claimId,
+  });
+  if (effect.count > candidate.plan.targets.length) {
+    return { kind: "invalid", durableTargetCount };
+  }
+
+  const ordinals = new Set<number>();
+  for (const [attemptId] of effect.rows) {
+    const attempt = readActionPlanAttempt(database, attemptId);
+    if (attempt === undefined || attempt.claimId !== candidate.plan.claimId) {
+      return { kind: "invalid", durableTargetCount };
+    }
+    const row = database
+      .query("SELECT target_ordinal FROM action_attempts WHERE plan_id = ? AND attempt_id = ?;")
+      .get(candidate.plan.planId, attemptId);
+    const targetOrdinal = isRecord(row) ? safeInteger(row.target_ordinal) : undefined;
+    if (targetOrdinal === undefined) {
+      return { kind: "invalid", durableTargetCount };
+    }
+    if (
+      targetOrdinal < 1 ||
+      targetOrdinal > candidate.plan.targets.length ||
+      ordinals.has(targetOrdinal)
+    ) {
+      return { kind: "invalid", durableTargetCount };
+    }
+    ordinals.add(targetOrdinal);
+  }
+
+  const complete =
+    durableTargetCount === candidate.plan.targets.length &&
+    allTargetResultsDurable &&
+    effect.count === candidate.plan.targets.length &&
+    ordinals.size === candidate.plan.targets.length;
+  if (complete) return { kind: "complete", durableTargetCount };
+  if (durableTargetCount === candidate.plan.targets.length && allTargetResultsDurable) {
+    return { kind: "invalid", durableTargetCount };
+  }
+  return { kind: "incomplete", durableTargetCount };
+}
+
+function targetResultsAreDurable(database: Database, plan: ExecutingActionPlan): boolean {
+  const rows: readonly unknown[] = database
+    .query("SELECT attempt_id, target_ordinal FROM action_attempts WHERE plan_id = ?;")
+    .all(plan.planId);
+  const attempts = new Map<number, string>();
+  for (const value of rows) {
+    if (!isRecord(value) || typeof value.attempt_id !== "string") {
+      return false;
+    }
+    const ordinal = safeInteger(value.target_ordinal);
+    if (
+      ordinal === undefined ||
+      ordinal < 1 ||
+      ordinal > plan.targets.length ||
+      attempts.has(ordinal)
+    ) {
+      return false;
+    }
+    attempts.set(ordinal, value.attempt_id);
+  }
+  if (attempts.size !== plan.targets.length) return false;
+  for (let ordinal = 1; ordinal <= plan.targets.length; ordinal += 1) {
+    const attemptId = attempts.get(ordinal);
+    if (attemptId === undefined) return false;
+    const result = readActionPlanResult(database, attemptId);
+    if (result === undefined) return false;
+  }
+  return true;
+}
+
+function targetResultsAreDefinite(database: Database, plan: ExecutingActionPlan): boolean {
+  const rows: readonly unknown[] = database
+    .query("SELECT attempt_id, target_ordinal FROM action_attempts WHERE plan_id = ?;")
+    .all(plan.planId);
+  const attempts = new Map<number, string>();
+  for (const value of rows) {
+    if (!isRecord(value) || typeof value.attempt_id !== "string") return false;
+    const ordinal = safeInteger(value.target_ordinal);
+    if (
+      ordinal === undefined ||
+      ordinal < 1 ||
+      ordinal > plan.targets.length ||
+      attempts.has(ordinal)
+    )
+      return false;
+    attempts.set(ordinal, value.attempt_id);
+  }
+  if (attempts.size !== plan.targets.length) return false;
+  for (let ordinal = 1; ordinal <= plan.targets.length; ordinal += 1) {
+    const attemptId = attempts.get(ordinal);
+    if (attemptId === undefined) return false;
+    const result = readActionPlanResult(database, attemptId);
+    if (result === undefined || result.certainty !== "definite") return false;
+  }
+  return true;
+}
+
+function safeInteger(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : undefined;
+}
+
+function hasAuthorityTables(database: Database): boolean {
+  return (
+    database
+      .query(
+        "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_approval_consumptions';",
+      )
+      .get() !== null
+  );
+}
+
+function isExecutorIdentity(value: string | undefined): value is string {
+  return (
+    value !== undefined &&
+    value.startsWith("executor:") &&
+    value.length > "executor:".length &&
+    value.length <= 256 &&
+    !hasControlCharacters(value)
+  );
+}
+
+function hasControlCharacters(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if ((code >= 0 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) return true;
+  }
+  return false;
 }
 
 function countDurableResults(database: Database, plan: ExecutingActionPlan): number {

@@ -30,6 +30,9 @@ export * from "./thread-cursor";
 export * from "./thread-graph-repository";
 export * from "./thread-hydration-repository";
 export * from "./migrations/0008-thread-graph";
+export * from "./migrations/0009-action-approval-authority";
+export * from "./migrations/0010-action-plan-restore-quarantine";
+export * from "./migrations/0011-seal-key-administration";
 export * from "./thread-migration";
 
 export const packageMarker = true;

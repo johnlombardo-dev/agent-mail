@@ -7,6 +7,8 @@ export interface Migration {
   readonly version: number;
   readonly name: string;
   readonly sql: string;
+  /** A table-rebuild migration may need SQLite FK checks disabled before BEGIN. */
+  readonly requiresForeignKeysOff?: boolean;
 }
 
 export type MigrationRunnerErrorCode =
@@ -211,7 +213,9 @@ function reconcileHistory(
 
 function applyOne(database: Database, migration: Migration): void {
   let transactionStarted = false;
+  const foreignKeysOff = migration.requiresForeignKeysOff === true;
   try {
+    if (foreignKeysOff) database.exec("PRAGMA foreign_keys = OFF;");
     database.exec("BEGIN IMMEDIATE;");
     transactionStarted = true;
     database.exec(
@@ -226,7 +230,12 @@ function applyOne(database: Database, migration: Migration): void {
       .query("INSERT INTO schema_migrations (version, name, content_hash) VALUES (?, ?, ?);")
       .run(migration.version, migration.name, migrationContentHash(migration));
     database.exec(`PRAGMA user_version = ${migration.version};`);
+    if (foreignKeysOff) {
+      const violations = database.query("PRAGMA foreign_key_check;").all();
+      if (violations.length !== 0) throw new Error("migration produced foreign-key violations");
+    }
     database.exec("COMMIT;");
+    if (foreignKeysOff) database.exec("PRAGMA foreign_keys = ON;");
   } catch (error: unknown) {
     if (transactionStarted) {
       try {
@@ -242,6 +251,13 @@ function applyOne(database: Database, migration: Migration): void {
         );
       }
     }
+    if (foreignKeysOff) {
+      try {
+        database.exec("PRAGMA foreign_keys = ON;");
+      } catch {
+        // The original migration failure remains the useful diagnostic.
+      }
+    }
     if (error instanceof MigrationRunnerError) throw error;
     throw new MigrationRunnerError(
       "migration-failed",
@@ -251,8 +267,18 @@ function applyOne(database: Database, migration: Migration): void {
   }
 }
 
-export function migrationContentHash(migration: Pick<Migration, "sql">): string {
-  return createHash("sha256").update(migration.sql, "utf8").digest("hex");
+export function migrationContentHash(
+  migration: Pick<Migration, "sql"> & Partial<Pick<Migration, "requiresForeignKeysOff">>,
+): string {
+  // v1-v9 never set this flag, so their applied hashes remain byte-for-byte
+  // compatible. For FK-off rebuilds the execution mode is part of the
+  // immutable migration identity; changing it after application must fail
+  // history reconciliation even when the SQL text is unchanged.
+  const identity =
+    migration.requiresForeignKeysOff === true
+      ? `${migration.sql}\n/* migration-requires-foreign-keys-off:v1 */`
+      : migration.sql;
+  return createHash("sha256").update(identity, "utf8").digest("hex");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -3,7 +3,7 @@ import { chmod, lstat } from "node:fs/promises";
 import { dirname, isAbsolute, normalize, parse } from "node:path";
 
 /** The schema is intentionally empty until the first migration is delivered. */
-export const SUPPORTED_DATABASE_SCHEMA_VERSION = 0;
+export const SUPPORTED_DATABASE_SCHEMA_VERSION = 11;
 export const DATABASE_BUSY_TIMEOUT_MS = 5_000;
 
 const PRIVATE_DATABASE_MODE = 0o600;

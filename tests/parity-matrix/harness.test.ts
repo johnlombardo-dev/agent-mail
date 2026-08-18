@@ -24,16 +24,16 @@ describe("REST/CLI operation parity matrix", () => {
     expect(matrix.rows.map(({ operationKey }) => operationKey)).toEqual(
       publicCliOperations.map(({ key }) => key),
     );
-    expect(matrix.rows).toHaveLength(23);
+    expect(matrix.rows).toHaveLength(24);
     expect(matrix.complete).toBe(false);
     expect(matrix.diagnostics).toEqual([]);
     expect(matrix.rows.every(({ sharedContract }) => sharedContract.status === "pass")).toBe(true);
     expect(matrix.rows.every(({ restDirectSurface }) => restDirectSurface.status === "blocked")).toBe(true);
     expect(matrix.rows.every(({ cliComposedSurface }) => cliComposedSurface.status === "blocked")).toBe(true);
     expect(matrix.rows.every(({ productionAdapter }) => productionAdapter.status === "blocked")).toBe(true);
-    expect(matrix.rows.filter(({ streamMode }) => streamMode === "none")).toHaveLength(20);
-    expect(matrix.rows.filter(({ streamMode }) => streamMode === "bytes")).toHaveLength(2);
-    expect(matrix.rows.filter(({ streamMode }) => streamMode === "ndjson")).toHaveLength(1);
+    expect(matrix.rows.filter(({ streamMode }) => streamMode === "none")).toHaveLength(21);
+    expect(matrix.rows.filter(({ streamMode }) => streamMode === "bytes")).toHaveLength(3);
+    expect(matrix.rows.filter(({ streamMode }) => streamMode === "ndjson")).toHaveLength(0);
     expect(matrix.rows.find(({ operationKey }) => operationKey === "exports.selected")?.streamBehavior.status).toBe("blocked");
     expect(matrix.rows.find(({ operationKey }) => operationKey === "messages.raw")?.streamBehavior.status).toBe("blocked");
     expect(matrix.rows.find(({ operationKey }) => operationKey === "messages.search")?.streamBehavior.status).toBe("not-applicable");

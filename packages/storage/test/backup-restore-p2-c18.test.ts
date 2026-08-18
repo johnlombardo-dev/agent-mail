@@ -239,4 +239,54 @@ describe("verified backup restore P2-C18", () => {
     });
     await expect(lstat(linkedDestination)).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  test("rejects seal-key material from writer and restore manifest", async () => {
+    const value = await fixture();
+    await closeFixtureDatabase(value);
+    const secrets = join(value.root, "secrets");
+    await mkdir(secrets, { mode: 0o700 });
+    const keyringPath = join(secrets, "action-approval-seal-keyring.v1.json");
+    await writeFile(keyringPath, '{"version":1}\n', { mode: 0o600 });
+    await expect(
+      writeBackup({
+        privateRoot: value.root,
+        databasePath: value.databasePath,
+        blobDirectory: join(value.root, "blobs"),
+        journalDirectory: secrets,
+        configurationMetadataPaths: [value.metadataPath],
+        destination: join(value.root, "backups", "secret-source"),
+      }),
+    ).rejects.toMatchObject({ code: "secret-metadata" });
+
+    const manifestPath = join(value.backupPath, "manifest.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+      version: number;
+      hashAlgorithm: string;
+      entries: Array<Record<string, unknown>>;
+      manifestSha256: string;
+    };
+    manifest.entries.push({
+      path: "secrets/action-approval-seal-keyring.v1.json",
+      type: "file",
+      size: 1,
+      sha256: "0".repeat(64),
+      role: "operational-journal",
+      required: true,
+    });
+    manifest.entries.sort((left, right) => String(left.path).localeCompare(String(right.path)));
+    manifest.manifestSha256 = createHash("sha256")
+      .update(
+        JSON.stringify({
+          version: manifest.version,
+          hashAlgorithm: manifest.hashAlgorithm,
+          entries: manifest.entries,
+        }),
+        "utf8",
+      )
+      .digest("hex");
+    await writeFile(manifestPath, `${JSON.stringify(manifest)}\n`, { mode: 0o600 });
+    await expect(
+      restoreBackup({ backupPath: value.backupPath, destination: join(value.root, "restored-secret") }),
+    ).rejects.toMatchObject({ code: "invalid-manifest" });
+  });
 });

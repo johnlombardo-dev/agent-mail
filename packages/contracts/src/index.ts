@@ -1,4 +1,5 @@
 export * from "./action-operations";
+export * from "./action-authority";
 export * from "./error-envelope";
 export * from "./operation-registry";
 export * from "./report-admin-operations";

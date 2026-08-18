@@ -67,9 +67,9 @@ describe("SQLite database boundary", () => {
     });
     expect(opened.db.query("PRAGMA secure_delete;").get()).toEqual({ secure_delete: 1 });
     expect(opened.db.query("PRAGMA trusted_schema;").get()).toEqual({ trusted_schema: 0 });
-    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({
-      user_version: SUPPORTED_DATABASE_SCHEMA_VERSION,
-    });
+    // Opening is deliberately migration-free; a new file remains at SQLite's
+    // empty schema version until the application migration registry runs.
+    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 0 });
     expect(opened.db.query("PRAGMA integrity_check;").get()).toEqual({ integrity_check: "ok" });
 
     // Real WAL activity creates -wal and -shm companions. Close owns the

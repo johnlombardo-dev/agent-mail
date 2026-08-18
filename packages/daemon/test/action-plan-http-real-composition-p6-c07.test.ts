@@ -1,8 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
-  actionPlanAuthorizeResponseSchema,
-  actionPlanCommitResponseSchema,
   actionPlanInspectResponseSchema,
   actionPlanPreviewResponseSchema,
   type ActionPlanContract,
@@ -47,7 +45,7 @@ const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 const createdAt = "2026-08-18T00:00:00.000Z";
 const expiresAt = "2026-08-18T01:00:00.000Z";
 const commitAt = "2026-08-18T00:00:02.000Z";
-const authorizationScope = "mail:action.authorize";
+const authorizationScope = "mail:action.commit";
 
 const targetOne: ActionPlanTarget = {
   accountId: "account:http-real",
@@ -66,7 +64,6 @@ const action = { kind: "markSeen" as const };
 type Mode = "success" | "partial" | "stale" | "failed" | "uncertain" | "expired";
 type PlanRecord = Readonly<{
   readonly proposal: PendingActionPlanProposal;
-  readonly authorizationId: string;
   readonly mode: Mode;
 }>;
 
@@ -267,8 +264,7 @@ function servicesFor(
         authorizationScope,
         idempotencyKey: `http:${planId}`,
       });
-      const authorizationId = `authorization:${planId.slice("plan:".length)}`;
-      plans.set(planId, { proposal, authorizationId, mode });
+      plans.set(planId, { proposal, mode });
       return { plan: publicPlan(proposal), digest: proposal.previewDigest };
     },
     inspectPlan: (input) => {
@@ -279,159 +275,22 @@ function servicesFor(
       if (proposal === undefined) throw new Error("plan was not found");
       return { plan: publicPlan(proposal), results: [] };
     },
-    authorizePlan: (input) => {
-      const record = plans.get(input.planId);
-      if (record === undefined || input.digest !== record.proposal.previewDigest) throw new Error("preview authority rejected");
-      return {
-        plan: publicPlan(record.proposal),
-        authorizationId: record.authorizationId,
-        authorizedAt: createdAt,
-      };
+    approvePlan: () => {
+      throw new Error("retired scope-only fixture");
     },
-    commitPlan: async (input) => {
-      const record = plans.get(input.planId);
-      if (record === undefined || input.digest !== record.proposal.previewDigest || input.authorizationId !== record.authorizationId) {
-        throw new Error("authorization authority rejected");
-      }
-      if (record.mode === "expired") {
-        database.query("UPDATE action_plans SET state = 'expired', expired_at = ? WHERE plan_id = ?;").run(expiresAt, record.proposal.planId);
-        const result = { plan: terminalPlan(record.proposal, "expired", expiresAt), results: [] };
-        snapshots.set(record.proposal.planId, result);
-        return result;
-      }
-
-      const claim = claimPendingActionPlan(database, {
-        planId: record.proposal.planId,
-        claimId: `claim:${record.mode}-${record.proposal.planId.slice("plan:".length)}`,
-        startedAt: "2026-08-18T00:00:01.000Z",
-        now: "2026-08-18T00:00:01.000Z",
-        digest: input.digest,
-        authorizationScope,
-        expectedVersion: 1,
-      });
-      if (claim.kind !== "claimed") throw new Error(`plan claim failed: ${claim.kind}`);
-      const loop = await runActionPlanTargetLoop({
-        database,
-        claimedPlan: claim.plan,
-        now: "2026-08-18T00:00:01.000Z",
-        expectedPlanVersion: claim.version,
-        freshNow: () => "2026-08-18T00:00:01.000Z",
-        ...fakeRemoteOptions(record.mode, remoteCalls),
-      });
-      const finalized = finalizeActionPlan(database, {
-        planId: claim.plan.planId,
-        claimId: claim.plan.claimId,
-        expectedVersion: claim.version,
-        now: commitAt,
-      });
-      const results = finalized.targetResults.map(({ result }) => result);
-      const terminal = terminalPlan(
-        record.proposal,
-        finalized.state,
-        commitAt,
-        results.find((result) => result.certainty === "uncertain")?.attemptId,
-      );
-      const response = { plan: terminal, results };
-      snapshots.set(record.proposal.planId, response);
-      expect(loop.progress).toHaveLength(results.length);
-      expect(database.query("SELECT state FROM action_plans WHERE plan_id = ?;").get(record.proposal.planId)).toEqual({ state: finalized.state });
-      return response;
+    cancelApproval: () => {
+      throw new Error("retired scope-only fixture");
+    },
+    authorityCommitPlan: () => {
+      throw new Error("retired scope-only fixture");
     },
   };
 }
 
-describe("P6-C07 Hono action routes with real SQLite and fake remote composition", () => {
-  test("rejects wrong preview digest and authorization identity before remote work", async () => {
-    const database = openDatabase();
-    const remoteCalls: string[] = [];
-    const app = createHttpApp({
-      authenticate,
-      handlers: createActionPlanHandlers(servicesFor(database, "success", remoteCalls)),
-    });
-    const created = await app.request(
-      request("/v1/action-plans", "POST", "action-plans.create", { action, targets: [targetOne] }),
-    );
-    const preview = actionPlanPreviewResponseSchema.parse(await created.json());
-    const wrongAuthorization = await app.request(
-      request(`/v1/action-plans/${preview.plan.planId}/authorize`, "POST", "action-plans.authorize", {
-        planId: preview.plan.planId,
-        digest: "f".repeat(64),
-        intent: "Approve exact frozen targets",
-      }),
-    );
-    expect(wrongAuthorization.status).toBe(500);
-    expect(await wrongAuthorization.json()).toMatchObject({ code: "internal_error", details: {} });
-    const validAuthorization = await app.request(
-      request(`/v1/action-plans/${preview.plan.planId}/authorize`, "POST", "action-plans.authorize", {
-        planId: preview.plan.planId,
-        digest: preview.digest,
-        intent: "Approve exact frozen targets",
-      }),
-    );
-    const authorization = actionPlanAuthorizeResponseSchema.parse(await validAuthorization.json());
-    const wrongCommit = await app.request(
-      request(`/v1/action-plans/${preview.plan.planId}/commit`, "POST", "action-plans.commit", {
-        planId: preview.plan.planId,
-        digest: preview.digest,
-        authorizationId: "authorization:wrong",
-      }),
-    );
-    expect(wrongCommit.status).toBe(500);
-    expect(await wrongCommit.json()).toMatchObject({ code: "internal_error", details: {} });
-    expect(database.query("SELECT state FROM action_plans WHERE plan_id = ?;").get(preview.plan.planId)).toEqual({ state: "pending" });
-    expect(remoteCalls).toEqual([]);
-    expect(authorization.authorizationId).toContain("authorization:");
+// Retired scope-only composition fixture. Authority composition is covered by
+// action-authority-http.test.ts and action-approval-authority.test.ts.
+describe.skip("P6-C07 retired scope-only composition", () => {
+  test("is replaced by authority-v1 composition coverage", () => {
+    expect(publicOperationRegistry.get("action-plans.authorize")).toBeUndefined();
   });
-
-  test.each(["success", "partial", "stale", "failed", "uncertain", "expired"] as const)(
-    "persists and exposes the %s lifecycle through the public boundary",
-    async (mode) => {
-      const database = openDatabase();
-      const remoteCalls: string[] = [];
-      const app = createHttpApp({
-        authenticate,
-        handlers: createActionPlanHandlers(servicesFor(database, mode, remoteCalls)),
-      });
-      const targets = mode === "partial" ? [targetOne, targetTwo] : [targetOne];
-      const createResponse = await app.request(
-        request("/v1/action-plans", "POST", "action-plans.create", { action, targets }),
-      );
-      expect(createResponse.status).toBe(200);
-      const preview = actionPlanPreviewResponseSchema.parse(await createResponse.json());
-      expect(database.query("SELECT COUNT(*) AS count FROM action_plans;").get()).toEqual({ count: 1 });
-      expect(database.query("SELECT COUNT(*) AS count FROM action_plan_targets;").get()).toEqual({ count: targets.length });
-
-      const inspectResponse = await app.request(
-        request(`/v1/action-plans/${preview.plan.planId}`, "GET", "action-plans.inspect"),
-      );
-      expect(actionPlanInspectResponseSchema.parse(await inspectResponse.json())).toEqual({ plan: preview.plan, results: [] });
-
-      const authorizationResponse = await app.request(
-        request(`/v1/action-plans/${preview.plan.planId}/authorize`, "POST", "action-plans.authorize", {
-          planId: preview.plan.planId,
-          digest: preview.digest,
-          intent: "Approve exact frozen targets",
-        }),
-      );
-      const authorization = actionPlanAuthorizeResponseSchema.parse(await authorizationResponse.json());
-      const commitResponse = await app.request(
-        request(`/v1/action-plans/${preview.plan.planId}/commit`, "POST", "action-plans.commit", {
-          planId: preview.plan.planId,
-          digest: preview.digest,
-          authorizationId: authorization.authorizationId,
-        }),
-      );
-      const committed = actionPlanCommitResponseSchema.parse(await commitResponse.json());
-      expect(commitResponse.status).toBe(200);
-      expect(committed.plan.state).toBe(
-        mode === "success" ? "completed" : mode === "partial" ? "partial" : mode === "stale" ? "rejected" : mode,
-      );
-      expect(committed.results).toHaveLength(targets.length === 2 ? 2 : mode === "expired" ? 0 : 1);
-      expect(remoteCalls).toHaveLength(mode === "stale" || mode === "expired" ? 0 : mode === "partial" ? 1 : 1);
-      if (mode !== "expired") {
-        expect(database.query("SELECT COUNT(*) AS count FROM action_results;").get()).toEqual({ count: targets.length });
-        for (const result of committed.results) expect(readActionPlanResult(database, result.attemptId)).toEqual(result);
-      }
-    },
-  );
 });

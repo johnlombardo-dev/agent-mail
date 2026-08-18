@@ -178,4 +178,19 @@ describe("backup inventory manifest P2-C16", () => {
       code: "symlink",
     });
   });
+
+  test("excludes the seal keyring even when a caller aliases the secrets subtree as a journal", async () => {
+    const value = await fixture();
+    const secrets = join(value.root, "secrets");
+    await mkdir(secrets, { mode: 0o700 });
+    const keyringPath = join(secrets, "action-approval-seal-keyring.v1.json");
+    await file(keyringPath, '{"version":1,"activeKeyId":"seal:one"}\n');
+
+    await expect(
+      buildBackupManifest({ ...optionsFor(value), configurationMetadataPaths: [keyringPath] }),
+    ).rejects.toMatchObject<Partial<BackupManifestError>>({ code: "secret-metadata" });
+    await expect(
+      buildBackupManifest({ ...optionsFor(value), journalDirectory: secrets }),
+    ).rejects.toMatchObject<Partial<BackupManifestError>>({ code: "secret-metadata" });
+  });
 });

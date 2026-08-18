@@ -73,11 +73,12 @@ describe("action-plan algebra", () => {
       remoteAttemptId: "attempt:one",
       missingLocalResultAt: "2026-08-18T00:02:00.000Z",
     });
+    const restoreQuarantined = createActionPlan({ ...base, state: "restore-quarantined" });
     expect(
-      [pending, executing, completed, partial, failed, rejected, expired, uncertain].map(
+      [pending, executing, completed, partial, failed, rejected, expired, uncertain, restoreQuarantined].map(
         (item) => item.state,
       ),
-    ).toEqual(["pending", "executing", "completed", "partial", "failed", "rejected", "expired", "uncertain"]);
+    ).toEqual(["pending", "executing", "completed", "partial", "failed", "rejected", "expired", "uncertain", "restore-quarantined"]);
   });
 
   it("follows the complete allowed transition table", () => {
@@ -90,6 +91,7 @@ describe("action-plan algebra", () => {
       failed: [],
       rejected: [],
       expired: [],
+      "restore-quarantined": [],
     });
     const pending = createActionPlan({ state: "pending", ...base });
     const claim = createActionPlanEvent({

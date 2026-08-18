@@ -45,7 +45,6 @@ export const actionInstantSchema = text("action instant", 40).refine((value) => 
 export const actionPlanIdSchema = namespacedId("plan");
 export const actionAttemptIdSchema = namespacedId("attempt");
 export const actionClaimIdSchema = namespacedId("claim");
-export const actionAuthorizationIdSchema = namespacedId("authorization");
 export const actionAccountIdSchema = namespacedId("account");
 export const actionMailboxIdSchema = namespacedId("mailbox");
 export const actionDigestSchema = z
@@ -141,6 +140,10 @@ const uncertainActionPlanInputSchema = z.strictObject({
   remoteAttemptId: actionAttemptIdSchema,
   missingLocalResultAt: actionInstantSchema,
 });
+const restoreQuarantinedActionPlanInputSchema = z.strictObject({
+  state: z.literal("restore-quarantined"),
+  ...planBaseShape,
+});
 
 const actionPlanInputVariantsSchema = z.discriminatedUnion("state", [
   pendingActionPlanInputSchema,
@@ -151,6 +154,7 @@ const actionPlanInputVariantsSchema = z.discriminatedUnion("state", [
   rejectedActionPlanInputSchema,
   expiredActionPlanInputSchema,
   uncertainActionPlanInputSchema,
+  restoreQuarantinedActionPlanInputSchema,
 ]);
 
 const actionPlanInputSchema = actionPlanInputVariantsSchema.superRefine((plan, context) => {
@@ -391,12 +395,98 @@ export const actionPlanCreateRequestSchema = z.strictObject({
 });
 export type ActionPlanCreateRequest = z.input<typeof actionPlanCreateRequestSchema>;
 
+export const actionPlanInspectRequestSchema = z.strictObject({ planId: actionPlanIdSchema });
+
+const actionPlanAuthorityCreatorSchema = z.strictObject({
+  principalId: text("principal ID", 256),
+  profile: z.enum(["operator-interactive", "agent-unattended", "internal-action-executor"]),
+});
+const actionPlanAuthorityApprovalSchema = z.union([
+  z.literal("absent"),
+  z.strictObject({
+    state: z.literal("available"),
+    approvalId: namespacedId("approval"),
+    planId: actionPlanIdSchema,
+    planVersion: positiveSafeIntegerSchema,
+    previewDigest: actionDigestSchema,
+    targetDigest: actionDigestSchema,
+    normalizedIntent: text("normalized intent", 2_048),
+    issuedAt: actionInstantSchema,
+    expiresAt: actionInstantSchema,
+    authorizationScope: z.literal("mail:action.commit"),
+    approver: z.strictObject({
+      principalId: text("principal ID", 256),
+      profile: z.literal("operator-interactive"),
+    }),
+  }),
+  z.strictObject({
+    state: z.literal("consumed"),
+    approvalId: namespacedId("approval"),
+    planId: actionPlanIdSchema,
+    planVersion: positiveSafeIntegerSchema,
+    previewDigest: actionDigestSchema,
+    targetDigest: actionDigestSchema,
+    normalizedIntent: text("normalized intent", 2_048),
+    issuedAt: actionInstantSchema,
+    expiresAt: actionInstantSchema,
+    consumedAt: actionInstantSchema,
+    committer: z.strictObject({
+      principalId: text("principal ID", 256),
+      profile: z.literal("agent-unattended"),
+    }),
+    receiptId: namespacedId("approval-receipt"),
+  }),
+  z.strictObject({
+    state: z.literal("expired"),
+    approvalId: namespacedId("approval"),
+    planId: actionPlanIdSchema,
+    expiredAt: actionInstantSchema,
+  }),
+  z.strictObject({
+    state: z.literal("cancelled"),
+    approvalId: namespacedId("approval"),
+    planId: actionPlanIdSchema,
+    cancelledAt: actionInstantSchema,
+  }),
+  z.strictObject({
+    state: z.literal("invalidated"),
+    approvalId: namespacedId("approval"),
+    planId: actionPlanIdSchema,
+    invalidatedAt: actionInstantSchema,
+  }),
+]);
+const actionPlanTerminalAuditSchema = z.strictObject({
+  terminalState: z.enum([
+    "completed",
+    "partial",
+    "failed",
+    "rejected",
+    "expired",
+    "uncertain",
+    "restore-quarantined",
+  ]),
+  terminalAt: actionInstantSchema,
+  executorDisposition: z.enum(["started", "never-started-after-restore", "unknown-after-restore"]),
+  effectAttemptCount: nonNegativeSafeIntegerSchema,
+  effectAuthoritySetDigest: actionDigestSchema,
+  executorInstanceId: text("executor instance ID", 256),
+  finalizerKind: z.enum(["effect-executor", "ordinary-recovery", "restore-admission"]),
+  finalizerInstanceId: text("finalizer instance ID", 256),
+  reasonCode: z.enum(["normal-finalization", "explicit-database-restore"]),
+  restoreEventId: text("restore event ID", 256),
+  resultDigest: actionDigestSchema,
+});
+
 export const actionPlanPreviewResponseSchema = z.strictObject({
   plan: pendingActionPlanSchema,
   digest: actionDigestSchema,
+  planVersion: positiveSafeIntegerSchema,
+  previewDigest: actionDigestSchema,
+  targetDigest: actionDigestSchema,
+  normalizedIntent: text("normalized intent", 2_048),
+  creator: actionPlanAuthorityCreatorSchema,
+  approvalState: actionPlanAuthorityApprovalSchema,
 });
-
-export const actionPlanInspectRequestSchema = z.strictObject({ planId: actionPlanIdSchema });
 
 function validateResultsForPlan(
   plan: z.infer<typeof actionPlanSchema>,
@@ -447,36 +537,13 @@ export const actionPlanInspectResponseSchema = z
   .strictObject({
     plan: actionPlanSchema,
     results: perTargetResultsSchema,
-  })
-  .superRefine(({ plan, results }, context) => validateResultsForPlan(plan, results, context));
-
-export const actionPlanAuthorizeRequestSchema = z.strictObject({
-  planId: actionPlanIdSchema,
-  digest: actionDigestSchema,
-  intent: text("authorization intent", 2_048),
-});
-export const actionPlanAuthorizeResponseSchema = z.strictObject({
-  plan: pendingActionPlanSchema,
-  authorizationId: actionAuthorizationIdSchema,
-  authorizedAt: actionInstantSchema,
-});
-
-export const actionPlanCommitRequestSchema = z.strictObject({
-  planId: actionPlanIdSchema,
-  digest: actionDigestSchema,
-  authorizationId: actionAuthorizationIdSchema,
-});
-export const actionPlanCommitResponseSchema = z
-  .strictObject({
-    plan: z.union([
-      completedActionPlanInputSchema,
-      partialActionPlanInputSchema,
-      failedActionPlanSchema,
-      expiredActionPlanSchema,
-      rejectedActionPlanInputSchema,
-      uncertainActionPlanInputSchema,
-    ]),
-    results: perTargetResultsSchema,
+    planVersion: positiveSafeIntegerSchema,
+    previewDigest: actionDigestSchema,
+    targetDigest: actionDigestSchema,
+    normalizedIntent: text("normalized intent", 2_048),
+    creator: actionPlanAuthorityCreatorSchema,
+    approvalState: actionPlanAuthorityApprovalSchema,
+    terminalAudit: z.union([z.literal("absent"), actionPlanTerminalAuditSchema]),
   })
   .superRefine(({ plan, results }, context) => validateResultsForPlan(plan, results, context));
 
@@ -530,13 +597,88 @@ export const actionPlanInspectOperation = defineOperation({
   strictness: "strict",
 });
 
-export const actionPlanAuthorizeOperation = defineOperation({
-  key: "action-plans.authorize",
-  route: "/v1/action-plans/{planId}/authorize",
-  cliName: "action-plans-authorize",
-  scope: "mail:action.authorize",
-  request: actionPlanAuthorizeRequestSchema,
-  response: actionPlanAuthorizeResponseSchema,
+/** Authority-v1 request/response contracts. Identity and intent are server-bound. */
+export const actionPlanApproveRequestV1Schema = z.strictObject({
+  planId: actionPlanIdSchema,
+  planVersion: positiveSafeIntegerSchema,
+  previewDigest: actionDigestSchema,
+});
+export const actionPlanApproveResponseV1Schema = z.strictObject({
+  approval: z.strictObject({
+    state: z.literal("available"),
+    approvalId: namespacedId("approval"),
+    planId: actionPlanIdSchema,
+    planVersion: positiveSafeIntegerSchema,
+    previewDigest: actionDigestSchema,
+    targetDigest: actionDigestSchema,
+    normalizedIntent: text("normalized intent", 2048),
+    issuedAt: actionInstantSchema,
+    expiresAt: actionInstantSchema,
+    authorizationScope: z.literal("mail:action.commit"),
+    approver: z.strictObject({
+      principalId: text("principal ID", 256),
+      profile: z.literal("operator-interactive"),
+    }),
+  }),
+});
+export const actionPlanCancelApprovalRequestV1Schema = z.strictObject({
+  planId: actionPlanIdSchema,
+  approvalId: namespacedId("approval"),
+  planVersion: positiveSafeIntegerSchema,
+  previewDigest: actionDigestSchema,
+});
+export const actionPlanCancelApprovalResponseV1Schema = z.strictObject({
+  approval: z.strictObject({
+    state: z.literal("cancelled"),
+    approvalId: namespacedId("approval"),
+    planId: actionPlanIdSchema,
+    cancelledAt: actionInstantSchema,
+  }),
+  planVersion: positiveSafeIntegerSchema,
+});
+export const actionPlanCommitRequestV1Schema = z.strictObject({
+  planId: actionPlanIdSchema,
+  planVersion: positiveSafeIntegerSchema,
+  previewDigest: actionDigestSchema,
+  approvalId: namespacedId("approval"),
+});
+export const actionPlanCommitResponseV1Schema = z
+  .strictObject({
+    plan: actionPlanSchema,
+    results: perTargetResultsSchema,
+    consumptionReceipt: z.strictObject({
+      receiptId: namespacedId("approval-receipt"),
+      approvalId: namespacedId("approval"),
+      planId: actionPlanIdSchema,
+      claimId: actionClaimIdSchema,
+      consumedAt: actionInstantSchema,
+      committer: z.strictObject({
+        principalId: text("principal ID", 256),
+        profile: z.literal("agent-unattended"),
+      }),
+      executorProfile: z.literal("internal-action-executor"),
+    }),
+  })
+  .superRefine(({ plan, results }, context) => validateResultsForPlan(plan, results, context));
+
+export const actionPlanApproveOperation = defineOperation({
+  key: "action-plans.approve",
+  route: "/v1/action-plans/{planId}/approvals",
+  cliName: "action-plans-approve",
+  scope: "mail:action.approve",
+  request: actionPlanApproveRequestV1Schema,
+  response: actionPlanApproveResponseV1Schema,
+  streaming: "none",
+  strictness: "strict",
+});
+
+export const actionPlanCancelApprovalOperation = defineOperation({
+  key: "action-plans.cancel-approval",
+  route: "/v1/action-plans/{planId}/approvals/{approvalId}",
+  cliName: "action-plans-approval-cancel",
+  scope: "mail:action.approve",
+  request: actionPlanCancelApprovalRequestV1Schema,
+  response: actionPlanCancelApprovalResponseV1Schema,
   streaming: "none",
   strictness: "strict",
 });
@@ -546,8 +688,8 @@ export const actionPlanCommitOperation = defineOperation({
   route: "/v1/action-plans/{planId}/commit",
   cliName: "action-plans-commit",
   scope: "mail:action.commit",
-  request: actionPlanCommitRequestSchema,
-  response: actionPlanCommitResponseSchema,
+  request: actionPlanCommitRequestV1Schema,
+  response: actionPlanCommitResponseV1Schema,
   streaming: "none",
   strictness: "strict",
 });
@@ -555,7 +697,8 @@ export const actionPlanCommitOperation = defineOperation({
 export const actionPlanOperationDefinitions = [
   actionPlanCreateOperation,
   actionPlanInspectOperation,
-  actionPlanAuthorizeOperation,
+  actionPlanApproveOperation,
+  actionPlanCancelApprovalOperation,
   actionPlanCommitOperation,
 ] as const satisfies readonly OperationDefinition<OperationSchema, OperationSchema>[];
 
@@ -589,9 +732,8 @@ export function createActionOperationRegistry(
 
 actionPlanOperationDefinitions.forEach(assertPublicActionOperation);
 
-// Compatibility aliases keep the public vocabulary explicit for callers.
+// Stable aliases for the non-authority create/inspect/commit operation names.
 export const actionPreviewOperation = actionPlanCreateOperation;
 export const actionInspectOperation = actionPlanInspectOperation;
-export const actionAuthorizeOperation = actionPlanAuthorizeOperation;
 export const actionCommitOperation = actionPlanCommitOperation;
 export const actionOperations = actionPlanOperationDefinitions;

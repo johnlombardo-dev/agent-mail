@@ -146,6 +146,11 @@ export interface UncertainActionPlan extends ActionPlanBase {
   readonly missingLocalResultAt: UtcInstant;
 }
 
+/** A restored consumed plan that is inspectable but can never resume effects. */
+export interface RestoreQuarantinedActionPlan extends ActionPlanBase {
+  readonly state: "restore-quarantined";
+}
+
 export type ActionPlan =
   | PendingActionPlan
   | ExecutingActionPlan
@@ -154,7 +159,8 @@ export type ActionPlan =
   | FailedActionPlan
   | RejectedActionPlan
   | ExpiredActionPlan
-  | UncertainActionPlan;
+  | UncertainActionPlan
+  | RestoreQuarantinedActionPlan;
 
 export type ActionPlanState = ActionPlan["state"];
 
@@ -202,6 +208,7 @@ export const ACTION_PLAN_ALLOWED_TRANSITIONS = {
   failed: [],
   rejected: [],
   expired: [],
+  "restore-quarantined": [],
 } as const satisfies Readonly<Record<ActionPlanState, readonly ActionPlanEventType[]>>;
 
 export const actionPlanAllowedTransitions = ACTION_PLAN_ALLOWED_TRANSITIONS;
@@ -459,6 +466,17 @@ export function createUncertainActionPlan(value: unknown): UncertainActionPlan {
   };
 }
 
+export function createRestoreQuarantinedActionPlan(value: unknown): RestoreQuarantinedActionPlan {
+  return parseStateBase(value, "restore-quarantined", [
+    "state",
+    "planId",
+    "action",
+    "targets",
+    "createdAt",
+    "expiresAt",
+  ]);
+}
+
 export function createActionPlan(value: unknown): ActionPlan {
   const record = requireRecord(value, "action plan");
   switch (record.state) {
@@ -478,6 +496,8 @@ export function createActionPlan(value: unknown): ActionPlan {
       return createExpiredActionPlan(record);
     case "uncertain":
       return createUncertainActionPlan(record);
+    case "restore-quarantined":
+      return createRestoreQuarantinedActionPlan(record);
     default:
       throw new TypeError("action plan state is not recognized");
   }
@@ -511,6 +531,8 @@ export function serializeActionPlan(value: ActionPlan): ActionPlan {
     case "expired":
       return { ...value, targets: cloneTargets(value.targets) };
     case "uncertain":
+      return { ...value, targets: cloneTargets(value.targets) };
+    case "restore-quarantined":
       return { ...value, targets: cloneTargets(value.targets) };
     default: {
       const exhaustive: never = value;
@@ -728,7 +750,8 @@ export function transitionActionPlan(plan: ActionPlan, event: ActionPlanEvent): 
     case "partial":
     case "failed":
     case "rejected":
-    case "expired": {
+    case "expired":
+    case "restore-quarantined": {
       throw new ActionPlanTransitionError(`event ${event.type} is not valid for terminal plan`);
     }
     default: {

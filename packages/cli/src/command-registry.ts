@@ -41,13 +41,26 @@ export type CliCommandRegistry = Readonly<{
 }>;
 
 /** Every operation in these lists is a user-facing operation; executor capabilities are absent. */
-export const publicCliOperations = Object.freeze([
+const allPublicOperations = Object.freeze([
   ...retrievalOperationDefinitions,
   ...routingOperationDefinitions,
   ...actionPlanOperationDefinitions,
   ...reportAdminOperationDefinitions,
   ...syncOperationDefinitions,
-] as const);
+]);
+
+// Loopback-only operator-session issuance is a daemon provisioning surface,
+// not a remote CLI command. Keep the registry entry for HTTP composition but
+// never expose its null-scope operation in the CLI command table.
+export const publicCliOperations = Object.freeze(
+  allPublicOperations.filter((operation) => operation.scope !== null),
+);
+
+function requiredScope(operation: OperationDefinition): string {
+  if (operation.scope === null)
+    throw new TypeError(`operation ${operation.key} cannot be a CLI command`);
+  return operation.scope;
+}
 
 function commandPath(operation: OperationDefinition): [string, ...string[]] {
   const parts = operation.cliName.split("-");
@@ -61,7 +74,7 @@ export const cliCommandDefinitions = Object.freeze(
   publicCliOperations.map((operation) => ({
     path: commandPath(operation),
     operationKey: operation.key,
-    scope: operation.scope,
+    scope: requiredScope(operation),
     streaming: operation.streaming,
     operation,
   })) satisfies readonly CliCommandDefinition[],

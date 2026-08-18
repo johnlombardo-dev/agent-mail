@@ -1,10 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-  lstat,
-  open,
-  readdir,
-  type FileHandle,
-} from "node:fs/promises";
+import { lstat, open, readdir, type FileHandle } from "node:fs/promises";
 import type { Dirent, Stats } from "node:fs";
 import { isAbsolute, join, normalize, parse, relative, sep } from "node:path";
 
@@ -95,6 +90,24 @@ type ArtifactInput = Readonly<{
 
 type RootContext = Readonly<{ readonly root: string }>;
 
+/**
+ * Approval-seal material is excluded by its relative location and identity,
+ * rather than by the role a caller happens to assign to it.  In particular,
+ * a journal directory may not alias the private secrets subtree.
+ */
+export function isExcludedBackupPath(relativePath: string): boolean {
+  const segments = relativePath.toLowerCase().split("/");
+  return segments.includes("secrets") || segments.at(-1) === "action-approval-seal-keyring.v1.json";
+}
+
+function assertBackupPathAllowed(context: RootContext, absolutePath: string): string {
+  const path = relativeSafePath(context.root, absolutePath);
+  if (isExcludedBackupPath(path)) {
+    fail("secret-metadata", "secret material is excluded from backups", path);
+  }
+  return path;
+}
+
 function fail(code: BackupManifestErrorCode, message: string, path?: string): never {
   throw new BackupManifestError(code, message, path);
 }
@@ -125,7 +138,13 @@ function validateCanonicalAbsolutePath(path: string, code: "invalid-root" | "uns
     path === parse(path).root ||
     hasControlCharacters(path)
   ) {
-    fail(code, code === "invalid-root" ? "private root must be a canonical directory" : "path is not canonical", path);
+    fail(
+      code,
+      code === "invalid-root"
+        ? "private root must be a canonical directory"
+        : "path is not canonical",
+      path,
+    );
   }
 }
 
@@ -163,7 +182,7 @@ function relativeSafePath(root: string, absolutePath: string): string {
 
 async function assertPrivatePath(context: RootContext, absolutePath: string): Promise<string> {
   validateCanonicalAbsolutePath(absolutePath, "unsafe-path");
-  const path = relativeSafePath(context.root, absolutePath);
+  const path = assertBackupPathAllowed(context, absolutePath);
   const segments = path.split("/");
   let current = context.root;
   for (const segment of segments) {
@@ -175,7 +194,8 @@ async function assertPrivatePath(context: RootContext, absolutePath: string): Pr
       if (isMissing(error)) fail("missing-required-artifact", "required artifact is missing", path);
       fail("unsafe-path", "artifact path cannot be inspected", path);
     }
-    if (info.isSymbolicLink()) fail("symlink", "symbolic links are not allowed in the inventory", path);
+    if (info.isSymbolicLink())
+      fail("symlink", "symbolic links are not allowed in the inventory", path);
   }
   return path;
 }
@@ -183,8 +203,10 @@ async function assertPrivatePath(context: RootContext, absolutePath: string): Pr
 async function assertPrivateDirectory(context: RootContext, path: string): Promise<string> {
   const relativePath = await assertPrivatePath(context, path);
   const info = await lstat(path);
-  if (!info.isDirectory()) fail("not-regular-file", "artifact directory is not a directory", relativePath);
-  if ((info.mode & 0o077) !== 0) fail("unsafe-permissions", "artifact directory is not owner-only", relativePath);
+  if (!info.isDirectory())
+    fail("not-regular-file", "artifact directory is not a directory", relativePath);
+  if ((info.mode & 0o077) !== 0)
+    fail("unsafe-permissions", "artifact directory is not owner-only", relativePath);
   return relativePath;
 }
 
@@ -202,9 +224,11 @@ async function inspectRegularFile(
     }
     throw error;
   }
-  if (info.isSymbolicLink()) fail("symlink", "symbolic links are not allowed in the inventory", relativePath);
+  if (info.isSymbolicLink())
+    fail("symlink", "symbolic links are not allowed in the inventory", relativePath);
   if (!info.isFile()) fail("not-regular-file", "artifact is not a regular file", relativePath);
-  if ((info.mode & 0o077) !== 0) fail("unsafe-permissions", "artifact is not owner-only", relativePath);
+  if ((info.mode & 0o077) !== 0)
+    fail("unsafe-permissions", "artifact is not owner-only", relativePath);
 
   let handle: FileHandle | undefined;
   try {
@@ -244,7 +268,7 @@ function addUnique(
   input: ArtifactInput,
   context: RootContext,
 ): Promise<BackupManifestArtifact> {
-  const path = relativeSafePath(context.root, input.absolutePath);
+  const path = assertBackupPathAllowed(context, input.absolutePath);
   if (seen.has(path)) fail("duplicate-path", "manifest contains a duplicate path", path);
   seen.add(path);
   return inspectRegularFile(context, input);
@@ -286,28 +310,33 @@ async function readCanonicalBlobs(
   const artifacts: BackupManifestArtifact[] = [];
   for (const entry of entries) {
     const absolutePath = join(blobDirectory, entry.name);
-    const relativePath = relativeSafePath(context.root, absolutePath);
+    const relativePath = assertBackupPathAllowed(context, absolutePath);
     let info: Stats;
     try {
       info = await lstat(absolutePath);
     } catch {
       fail("unsafe-path", "blob entry cannot be inspected", relativePath);
     }
-    if (info.isSymbolicLink()) fail("symlink", "symbolic links are not allowed in the blob store", relativePath);
+    if (info.isSymbolicLink())
+      fail("symlink", "symbolic links are not allowed in the blob store", relativePath);
     if (isIgnoredBlobEvidence(entry.name)) continue;
     if (!isCanonicalBlobName(entry.name) || !info.isFile()) {
-      fail("unexpected-blob-artifact", "blob store contains an unclassified artifact", relativePath);
+      fail(
+        "unexpected-blob-artifact",
+        "blob store contains an unclassified artifact",
+        relativePath,
+      );
     }
     artifacts.push(
-      await addUnique(
-        seen,
-        { absolutePath, role: "canonical-blob", required: true },
-        context,
-      ),
+      await addUnique(seen, { absolutePath, role: "canonical-blob", required: true }, context),
     );
     const artifact = artifacts.at(-1);
     if (artifact === undefined || artifact.sha256 !== entry.name) {
-      fail("blob-integrity-mismatch", "canonical blob digest does not match its filename", relativePath);
+      fail(
+        "blob-integrity-mismatch",
+        "canonical blob digest does not match its filename",
+        relativePath,
+      );
     }
   }
 
@@ -339,15 +368,18 @@ async function readJournalFiles(
     }
     for (const entry of entries) {
       const absolutePath = join(currentDirectory, entry.name);
-      const relativePath = relativeSafePath(context.root, absolutePath);
+      const relativePath = assertBackupPathAllowed(context, absolutePath);
       const info = await lstat(absolutePath);
-      if (info.isSymbolicLink()) fail("symlink", "symbolic links are not allowed in the journal", relativePath);
+      if (info.isSymbolicLink())
+        fail("symlink", "symbolic links are not allowed in the journal", relativePath);
       if (info.isDirectory()) {
-        if ((info.mode & 0o077) !== 0) fail("unsafe-permissions", "journal directory is not owner-only", relativePath);
+        if ((info.mode & 0o077) !== 0)
+          fail("unsafe-permissions", "journal directory is not owner-only", relativePath);
         await visit(absolutePath);
         continue;
       }
-      if (!info.isFile()) fail("not-regular-file", "journal artifact is not a regular file", relativePath);
+      if (!info.isFile())
+        fail("not-regular-file", "journal artifact is not a regular file", relativePath);
       artifacts.push(
         await addUnique(
           seen,
@@ -362,9 +394,7 @@ async function readJournalFiles(
   return artifacts;
 }
 
-function canonicalManifestJson(
-  entries: readonly BackupManifestArtifact[],
-): string {
+function canonicalManifestJson(entries: readonly BackupManifestArtifact[]): string {
   return JSON.stringify({
     version: BACKUP_MANIFEST_VERSION,
     hashAlgorithm: BACKUP_MANIFEST_HASH_ALGORITHM,
@@ -386,7 +416,11 @@ export async function buildBackupManifest(options: BackupManifestOptions): Promi
   const walPath = options.databaseWalPath ?? `${databasePath}-wal`;
   const shmPath = options.databaseShmPath ?? `${databasePath}-shm`;
   entries.push(
-    await addUnique(seen, { absolutePath: databasePath, role: "sqlite-database", required: true }, context),
+    await addUnique(
+      seen,
+      { absolutePath: databasePath, role: "sqlite-database", required: true },
+      context,
+    ),
   );
 
   let walExists = false;
@@ -425,8 +459,9 @@ export async function buildBackupManifest(options: BackupManifestOptions): Promi
     fail("missing-required-artifact", "at least one configuration metadata artifact is required");
   }
   for (const path of options.configurationMetadataPaths) {
-    const relativePath = relativeSafePath(context.root, path);
-    if (isSensitiveMetadataPath(relativePath)) fail("secret-metadata", "secret material cannot be a metadata artifact", relativePath);
+    const relativePath = assertBackupPathAllowed(context, path);
+    if (isSensitiveMetadataPath(relativePath))
+      fail("secret-metadata", "secret material cannot be a metadata artifact", relativePath);
     entries.push(
       await addUnique(
         seen,
