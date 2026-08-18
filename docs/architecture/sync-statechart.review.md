@@ -1,5 +1,130 @@
 # P3-C15 independent sync-statechart review
 
+Status: **candidate.6 rejected; reviewer signature withheld for two high/consequential oracle defects**.
+
+Review mode: independent whole-artifact adversarial review of candidate.6, every retained R189-01 through R189-17 disposition, the accepted public and frozen-source contracts, installed XState 5.32.5 semantics, and the checked views. The reviewer independently reproduced the evidence at Sol/ultra. No designer conclusion is inherited as a disposition.
+
+Target:
+
+- Candidate provenance commit: `4bab74ec147dda30d918620b6a39dd5f0e411397`; the shared worktree HEAD advanced to `a59ec3a9eb0403c7924667f81e27f4d981235895` during review, but all four candidate artifacts remain byte-identical to the candidate commit
+- Normative model: `docs/architecture/sync-statechart.model.json`
+- Candidate version: `1.0.0-candidate.6`
+- Candidate digest: `58a60c0cd6cc5ba86db294a3eb24b14107a0369825cda199351eb6e779a67a9a`
+- Companion hashes: statechart `9dc9ef6fb4d4b68a74c2d416c64f1f7ad3779c25801130504c4fac0671e0f964`; decisions `002e251b46da2fe0842a81cc3f215faabb2e635a7c330126d7524f8b4e16eab8`; coverage `31c25ed3669a09ad9ebc1af7c83ed6684e575c0d3e901053b3b83f4049b9e7fb`
+- Retained candidate.5 ledger: commit `120d1c8`; SHA-256 `e4e0061fbb7be7d130861e897b3ed834eaa99d326b87e729fcf43e2a57d94ea8`
+- Accepted planning hashes: PLAN `a4b2c93d9ae47369e6893be0a7eace854fce9dccda14bd0d138d9c98b63a2afc`; EVIDENCE `544c1ee220e13b96dc88aa71096701a3887fb1adba22e9b8d60a244533f50cc9`
+- Accepted sync contract pin: `packages/contracts/src/sync-operations.ts` at `74a32d41a636ac2334d8245f1043fb6cf76e8bacd9f30895f5475e16dc0817a8`
+- Accepted error registry pin: `packages/contracts/src/error-envelope.ts` at `f02a6f25dfd884aa717f136e4024f550697a3d1a32b8cafd5bad84eaf27ae934`
+- Accepted P3-C10 pin: commit `b6d07bc56e775cc7aea4b9436b81532bba7c4e9a`, source SHA-256 `89b3eee13a5846be92b16d2e657c197f1d4ee0e5ee90fca0d0a2a542d57692e8`
+- Accepted P3-C11 pin: commit `d5107472ffae6f5eb4deb8b87365ffda40fe30d3`, source SHA-256 `506f9dc2dff6affc311f1143a1f5d901f53bc5157836338c497a43332ec5db7f`
+- Accepted P3-C07 pin: commit `e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae`; queue SHA-256 `b676dee263b51eaac88846d03a109e6a77ad428959cfbc54de491b076d4cdd67`; accepted-test SHA-256 `53146a3be9ddb66fa9374ad04ed59fca533601c0daa8f07e51925292c68f583f`; adapter SHA-256 `373be897143cac27423c4857db9f2f8d7a8b96239034a8ad72444d56d579b9a2`
+- Review contract: GitHub issue `#189`; accepted public-contract authority: issue `#196`; accepted queue authority: issue `#98`
+- Reviewer execution profile: Sol, `gpt-5.6-sol`, `ultra`
+
+## Result for candidate.6
+
+Candidate.6 is rejected for implementation and its exact digest is **not signed**. Both advertised repairs work at their stated boundaries. R189-16 now has one parent-owned workflow composite slot registered before exact P3-C07 queue construction; its idempotent trigger calls `queue.stop()` once, its terminal adopts that exact promise, queued work rejects, and active response/staging/listener cleanup completes before the terminal. The frozen queue and private job receive no registry capability. R189-17 now projects all seven global policies through the exact five checked fields and GEP05 rejects a wrong certificate or audit release-set identity and a nonzero unresolved count.
+
+The whole-oracle audit found two new contradictions outside those repaired rows. R189-18 makes the typed cleanup-success event narrower than the cleanup actor output and the only admission guard: it omits three certificate fields required to decide GEP05 safely. R189-19 leaves release-slot retirement unowned even though the registry lives for the actor incarnation and every sweep queue gets a unique parent-invoke slot ID. Literal retention grows without bound; ID reuse or early deletion changes cleanup safety unless phase snapshots and the retirement linearization point are frozen.
+
+Current unresolved totals are zero critical, two high, zero medium, and zero low. There are two unresolved consequential findings. No other consequential contradiction was reproduced.
+
+## Candidate.6 complete finding disposition
+
+| Finding | Candidate.6 severity/status | Mechanical disposition |
+| --- | --- | --- |
+| R189-01 | Critical resolved | All 13 cleanup states bind state minimum scope plus exact registry/context epoch, phase, lease, effective scope, release-set identity, terminal, and zero-audit admission. |
+| R189-02 | High resolved | T117/T118 retain the accepted P3-C10 four-field non-CAS completion save. |
+| R189-03 | High resolved | T150/T156 retain the accepted shared completion repository and atomic checkpoint/completion write; T157/T158 write nothing. |
+| R189-04 | High resolved | All 15 context fields have literal or validated constructor initials; strict empty and populated status projections remain complete. |
+| R189-05 | High resolved | Terminal diagnostic policy and reachability distinguish childless `stopped.clean` from `stopped.failed`. |
+| R189-06 | High consequential resolved | The model and issue-196 contract retain the same exhaustive 85-cell resolver, seven settlements, exact cache/waiter effects, and six strict registered errors. |
+| R189-07 | High consequential resolved | Every accepted status, success observation, and non-success last observation carries required incarnation identity; cross-incarnation observations are unordered. |
+| R189-08 | High resolved | Ordered credential revision and fault branches remain complete across bootstrap, backfill, IDLE cleanup, and sweep. |
+| R189-09 | High resolved | Accepted shutdown covers all nonterminal sources, starts no later child, and terminates through certified success or error in childless `stopped.shutdown`. |
+| R189-10 | Medium resolved | Both queue references and the frozen Git object match issue 98 exactly. |
+| R189-11 | Low resolved | The oracle contains 27 guards and 27 guard branches; references and generated counts agree. |
+| R189-12 | High consequential resolved | Current pending/cached, watch-to-workflow promotion, and equal-scope replacement preserve phase/set identity and settle once across success and error. |
+| R189-13 | Low resolved | PROP-08 constructs U01 through U16 and all 16 forbidden configurations are retained. |
+| R189-14 | Low resolved | GEP04 and GEP06 retain the accepted terminal-shutdown credential and stop policy. |
+| R189-15 | High consequential resolved | Acquisition-time registration, first-freeze revocation, trigger-only disposal/abort, all eight phase cases, zero-resource audits, and literal T097 reentry pass under installed XState 5.32.5. |
+| R189-16 | **High consequential, resolved** | Exact frozen P3-C07 composition passes: one parent composite terminal aliases one `queue.stop()` promise and transitively waits for the private queue subtree without changing its API. |
+| R189-17 | **Low non-consequential, resolved** | Global policies project 7/7 across ID, ordered events, literal condition, ordered actions, and literal result; GEP05 includes both missing certificate clauses. |
+| R189-18 | **High consequential, open** | The normative cleanup-success event omits `output.frozenReleaseSetId`, `output.authoritativeAudit.frozenReleaseSetId`, and `output.authoritativeAudit.unresolvedReleaseCount`, although the actor contract and admission predicate require all three. |
+| R189-19 | **High consequential, open** | One incarnation-wide registry receives unique parent-invoke queue slot IDs but defines no slot retirement or safe reuse rule; a conforming literal registry grows linearly across successful sweeps. |
+
+### R189-18: the typed cleanup-success event cannot express its admission contract
+
+- Lane: TypeScript/event contract, cleanup safety, and model completeness.
+- Normative contradiction: `events[xstate.done.actor.cleanupBarrier].payload` declares ten fields. `actors[cleanupBarrier].success`, `cleanupCertificateCoversState`, `cleanupProtocol.admission`, and repaired GEP05 require thirteen. The missing fields are exactly `output.frozenReleaseSetId`, `output.authoritativeAudit.frozenReleaseSetId`, and `output.authoritativeAudit.unresolvedReleaseCount`.
+- Direct counterexample: generate the success-event TypeScript shape from the normative payload list and implement the literal guard. The guard cannot read any of the three missing properties without a type error or an undocumented widening. Removing those clauses accepts the wrong release set or unresolved close that R189-17 was intended to reject.
+- Error-side risk: `xstate.error.actor.cleanupBarrier` names only `error:WorkflowFault` plus opaque `error.releaseCertificate`, while the actor requires the same certificate fields. A shared named certificate type is the smallest way to prevent success/error drift.
+- Consequence: downstream implementation must either contradict the typed-event oracle, weaken cleanup admission, or invent an unmodeled event type. The exact digest is not implementation-ready.
+
+Bounded repair packet:
+
+1. Define one exact `CleanupCertificate` schema/type in the normative oracle, including both release-set identities, both zero-audit counters, literal `released: true`, the audit digest, and diagnostics.
+2. Reference that same type from cleanupBarrier success, `WorkflowFault.releaseCertificate`, both typed terminal events, both admission guards, and GEP05. Do not duplicate partial field inventories.
+3. Add a structural closure check that every field read by either cleanup guard/global policy exists in both terminal-event contracts, then rerun the full exact-view and runtime review on the new digest.
+
+### R189-19: release-slot retirement is unowned and unbounded
+
+- Lane: lifecycle/resource ownership and performance/capacity.
+- Normative facts: `cleanupProtocol.owner` creates one registry per actor incarnation. `compositeQueueSlotProtocol.input` keys each queue slot as `rawDownloadQueue:<parentInvokeIdentity>:0`, so normal recurring sweeps create distinct identities. `releaseSlotProtocol` defines only register, capabilities, trigger, settle, descendants, and late-registration; the complete candidate has no retire, unregister, purge, or safe-reuse operation.
+- Direct counterexample: run 1,000 normal sweeps in one incarnation, register each unique composite slot, call the idempotent stop terminal, and settle it. A literal deduplicating registry reaches live 0 and unresolved 0 after each sweep but retains 1,000 entries, contradicting F17's bounded-count postcondition.
+- Boundary counterexample: reuse the same ID after settlement and a new queue can deduplicate onto the old terminal/release closure. Delete immediately instead and a frozen, promoted, or cached phase can lose the slot or audit evidence it still references. The current oracle chooses neither a retention boundary nor an immutable phase-snapshot rule.
+- Consequence: implementation must choose between incarnation-lifetime growth and an unmodeled deletion/reuse linearization point that affects cleanup certification. This is an unowned lifecycle effect, not a tuning choice.
+
+Bounded repair packet:
+
+1. Add one registry-owned slot-lifecycle rule: the exact safe retirement point for normal terminal/acquisition failure and for slots referenced by open, promoted, settled, or cached cleanup phases.
+2. Require immutable phase snapshots to retain terminal, release-set, diagnostic, and audit evidence independently of retired registry entries; prohibit a new resource from deduplicating onto a settled terminal.
+3. Add one long-incarnation churn proof covering thousands of normal sweeps and direct-resource replacements. Assert a fixed live registry-entry bound, no old release closure reuse, and unchanged current/cached/promotion/equal-scope certificates.
+
+## Candidate.6 manifest and acceptance audit
+
+Selected review lanes were domain/value, public contract, lifecycle/resource, security/trust, persistence/recovery, concurrency/workflow, performance/capacity, external protocol, and operations. Accessibility was not applicable because the artifact exposes no user interface.
+
+| Behavioral seam | Evidence status | Result |
+| --- | --- | --- |
+| Exact target and frozen inputs | Commit/object hashes, live issue reads, and worktree byte comparison | Exercised: candidate, prior ledger, planning, public contracts, P3-C10, P3-C11, P3-C07 queue/tests/adapter all match their pins despite unrelated shared-HEAD advancement. |
+| Structural graph and references | Independent schema/reference/reachability verifier | Exercised: 24 atomic states, 91 definitions, 204 expanded transitions, 24 events, 27 guards, 24 actions, 10 actors, 15 context fields, 21 invariants, 16 forbidden configurations, 15 properties, 24 state paths, 85 resolver cells, 17 responses, and 13 cleanup states; all atomic states reachable. |
+| Candidate/model/view parity | Exact transition, global-policy, state, guard, path, source-exit, response, and resolver projections | Exercised: transitions 91/91 across nine fields; global policies 7/7 across five fields; state rows 24/24; resolver 85/85. R189-17 is resolved. |
+| TypeScript terminal-event closure | Actor-output/guard/GEP field-set comparison | **Failed: R189-18.** Exactly three required cleanup certificate paths are absent from the typed success event. |
+| Public identity, errors, and resolver | Model-to-contract expansion, strict Zod fixtures, and focused tests | Exercised: all 24 status projections, 12 declared success shapes, same/cross-incarnation ordering, 85 cells at 18/21/25/21, seven settlements, and six exact errors pass. |
+| Durable facts and reconstruction | Frozen-source hashes plus transition/write projection | Exercised: P3-C10 already-complete and completed paths, P3-C11 completed and not-eligible paths, and initial empty/populated reconstruction remain exact. |
+| Installed XState ordering and T097 | Direct XState 5.32.5 callback/promise/self-target probes | Exercised: freeze/input precede disposal/abort and barrier start; literal T097 reentry stops and starts the child while default self-target does not. |
+| Release phase and queue composition | Eight-case registry matrix, exact P3-C07 tests, and production-adapter composite probe | Exercised: one composite trigger/terminal, queued cancellation, active abort, response destroy, staging cleanup, and queue stopped order pass. R189-16 is resolved. |
+| Registry lifetime/capacity | Protocol inventory plus 1,000-identity literal registry probe | **Failed: R189-19.** Live and unresolved reach zero, but retained slot count grows to 1,000 because no retirement contract exists. |
+| Credential, shutdown, diagnostics, and illegal events | Transition/guard/policy construction probes | Exercised: retained R189-05, R189-08, R189-09, R189-14, and PROP-08 obligations pass. |
+| Candidate formatting/planning integrity | Planning checker, candidate-only format check, JSON/whitespace/diff checks, final hashes | Exercised: protected candidate artifacts remain valid, formatted, clean, byte-identical, and pinned; only this retained review ledger changes. |
+
+## Candidate.6 checks and adversarial probes
+
+All commands ran from `/Users/john/.codex/worktrees/efa7/agent-mail`. No live iCloud access, remote mutation, launchd, Tailscale, production/candidate/public-contract edit, commit, push, issue edit, metrics edit, or other GitHub mutation was performed. Only this review ledger was changed.
+
+| Evidence | Exact command or probe | Exit | Result |
+| --- | --- | ---: | --- |
+| E70 | `gh issue view` reads for 189, 188, 196, 98, 57, 117, and 120; `git rev-parse`; SHA-256 over planning, candidate, contracts, frozen Git objects, and retained ledger; candidate-file byte comparison to `4bab74e` | 0 | Exact candidate.6, issue contract, prior history, and accepted authorities established; later shared HEAD did not alter candidate bytes. |
+| E71 | Independent Bun unique/reference/reachability, cleanup-input, generated-path, response-range, and T097 structural verifier | 0 | Counts and references match the manifest; 24/24 atomic states reachable, 13/13 cleanup inputs exact, R189-01 through R189-17 responses present, and unique T097 has literal `reenter: true`. |
+| E72 | Independent JSON-to-Markdown transition/global-policy/state/guard/path/source-exit/response/resolver parsers | 0 | 91/91 transitions across nine fields, 7/7 policies across the exact five-field checked-view rule, 24/24 states, 27/27 guards, 24/24 paths, 8/8 source-exit cases, 17/17 responses, and 85/85 resolver cells match. |
+| E73 | Model-to-accepted-contract schema/resolver expansion; `bun test packages/contracts/test/sync-operations.test.ts packages/contracts/test/error-envelope.test.ts` | 0 | 14 tests and 561 expectations pass; required identity, six errors, strict detail shapes, seven settlements, command counts 18/21/25/21, and ordering semantics agree. |
+| E74 | Frozen P3-C10/P3-C11 source inspection and model write projection | 0 | T117/T118 retain all four P3-C10 save fields; T150/T156 retain the shared atomic repository/write; T157/T158 write nothing. |
+| E75 | Installed-XState 5.32.5 callback/promise action-order probe and same-state default versus literal-reentry probe | 0 | Both actor kinds order source exit, transition freeze, target entry/input, source dispose/abort, then target start. Default starts/stops/entries/exits = 1/0/1/0; reentry = 2/1/2/1. |
+| E76 | Deterministic release registry: current pending, current cached, watch-to-workflow promotion, and equal-scope replacement crossed with success/error | 0 | All eight reject late registration, trigger each direct/composite slot once, preserve phase/set/lease identity, and settle at live 0/unresolved 0. |
+| E77 | Exact P3-C07 negative capability grep and source hashes; `bun test packages/imap/test/raw-download-queue-p3-c07.test.ts`; parent composite probe through `createRawMessageDownloadAdapter` | 0 | Frozen API exposes no registry capability; four tests and 14 expectations pass. Composite stop remains pending through response destroy and stage abort, then settles once only after stage cleanup and queue `stopped`. One setup-only root eval first exited 1 because the workspace alias was unavailable; the same probe with direct relative imports exited 0. |
+| E78 | Cleanup-certificate event field-set closure probe | 2 | Required 13 versus declared 10; missing exactly the three R189-18 paths. The nonzero exit is the reproduced finding. |
+| E79 | Incarnation-wide slot-lifetime inventory and 1,000 unique composite-slot literal registry probe | 2 | Protocol has six keys and no retirement operation; live 0/unresolved 0 with 1,000 retained entries. The nonzero exit is the reproduced R189-19 finding. |
+| E80 | `python3 .agents/skills/plan-agent-mail/scripts/check_plan.py`; candidate-only `bunx vp fmt --check`; `jq empty`; final-newline, whitespace, scoped `git diff --check`, protected-file comparisons, and final hashes | 0 | Planning and artifact integrity pass; review history is preserved. |
+
+## Candidate.6 signature
+
+Reviewer signature for digest `58a60c0cd6cc5ba86db294a3eb24b14107a0369825cda199351eb6e779a67a9a`: **WITHHELD**.
+
+Reason: R189-18 leaves the normative cleanup terminal event unable to carry the release-set and unresolved-count evidence its own guard requires. R189-19 leaves settled slot lifetime unowned across a long-lived actor incarnation. Both require a new candidate digest and a fresh whole-artifact review; no exact-digest consensus disposition is appended.
+
+## Retained candidate.5 and earlier review records
+
 Status: **candidate.5 rejected; reviewer signature withheld for one high/consequential ownership defect and one low checked-view defect**.
 
 Review mode: independent whole-artifact adversarial review of candidate.5 and the accepted public contracts. A corrected orchestration stopped four briefly started exploratory lanes; no child conclusion is used as a disposition below. The reviewer independently reran every retained structural, contract, installed-XState, release-phase, frozen-source, and checked-view probe at Sol/ultra.
