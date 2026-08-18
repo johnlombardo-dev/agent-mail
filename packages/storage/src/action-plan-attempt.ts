@@ -503,6 +503,7 @@ function parseState(value: unknown): ActionPlanState {
     value !== "executing" &&
     value !== "completed" &&
     value !== "partial" &&
+    value !== "failed" &&
     value !== "rejected" &&
     value !== "expired" &&
     value !== "uncertain"

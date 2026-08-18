@@ -50,7 +50,7 @@ export type ActionPlanClaimResult =
   | Readonly<{
       readonly kind: "terminal";
       readonly planId: string;
-      readonly state: "completed" | "partial" | "uncertain";
+      readonly state: "completed" | "partial" | "failed" | "uncertain";
       readonly version: number;
     }>;
 
@@ -116,7 +116,12 @@ export function claimPendingActionPlan(database: Database, input: unknown): Acti
         reason: "plan",
         version: row.version,
       });
-    if (row.state === "completed" || row.state === "partial" || row.state === "uncertain") {
+    if (
+      row.state === "completed" ||
+      row.state === "partial" ||
+      row.state === "failed" ||
+      row.state === "uncertain"
+    ) {
       return commitResult(database, {
         kind: "terminal",
         planId: row.plan_id,
@@ -289,6 +294,7 @@ function readClaimRow(database: Database, planId: string): ClaimRow | undefined 
               "executing",
               "completed",
               "partial",
+              "failed",
               "rejected",
               "expired",
               "uncertain",
@@ -313,6 +319,7 @@ function readClaimRow(database: Database, planId: string): ClaimRow | undefined 
         "executing",
         "completed",
         "partial",
+        "failed",
         "rejected",
         "expired",
         "uncertain",

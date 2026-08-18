@@ -284,6 +284,36 @@ describe("durable action attempt start", () => {
     expect(database.query("SELECT COUNT(*) AS count FROM action_attempts;").get()).toEqual({ count: 0 });
   });
 
+  test("reopens a retained attempt from a failed plan but never starts another one", () => {
+    const database = openActionDatabase();
+    claim(database);
+    const started = startActionPlanAttempt(database, startInput());
+    expect(started).toMatchObject({ kind: "started" });
+    if (started.kind !== "started") throw new Error("expected a started attempt");
+
+    database
+      .query(
+        "UPDATE action_plans SET state = 'failed', claim_id = NULL, started_at = NULL, failed_at = ? WHERE plan_id = ?;",
+      )
+      .run(resultAt, "plan:one");
+
+    expect(readActionPlanAttempt(database, "attempt:one")).toEqual(started.executorInput);
+    expect(startActionPlanAttempt(database, startInput({
+      attemptId: "attempt:two",
+      idempotencyKey: "idempotency:two",
+    }))).toEqual({
+      kind: "rejected",
+      planId: "plan:one",
+      reason: "plan",
+      state: "failed",
+    });
+    expect(database.query("SELECT COUNT(*) AS count FROM action_attempts;").get()).toEqual({ count: 1 });
+    expect(database.query("SELECT state, version FROM action_plans;").get()).toEqual({
+      state: "failed",
+      version: 2,
+    });
+  });
+
   test("accepts an exact target snapshot selector without iterating plan targets", () => {
     const database = openActionDatabase();
     claim(database);

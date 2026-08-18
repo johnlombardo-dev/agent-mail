@@ -82,7 +82,14 @@ function snapshot(database: Database, planId: string): Readonly<Record<string, u
   };
 }
 
-type NonPendingState = "executing" | "expired" | "rejected" | "completed" | "partial" | "uncertain";
+type NonPendingState =
+  | "executing"
+  | "expired"
+  | "rejected"
+  | "completed"
+  | "partial"
+  | "failed"
+  | "uncertain";
 
 function createNonPendingPlan(database: Database, planId: string, state: NonPendingState): number {
   createPendingActionPlan(database, proposal(planId));
@@ -113,6 +120,12 @@ function createNonPendingPlan(database: Database, planId: string, state: NonPend
         "UPDATE action_plans SET state = ?, claim_id = NULL, started_at = NULL, completed_at = ? WHERE plan_id = ?;",
       )
       .run(state, startedAt, planId);
+  } else if (state === "failed") {
+    database
+      .query(
+        "UPDATE action_plans SET state = 'failed', claim_id = NULL, started_at = NULL, failed_at = ? WHERE plan_id = ?;",
+      )
+      .run(startedAt, planId);
   } else {
     database
       .query(
@@ -204,6 +217,7 @@ describe("atomic pending action plan claim", () => {
         ["rejected", "rejected"],
         ["completed", "terminal"],
         ["partial", "terminal"],
+        ["failed", "terminal"],
         ["uncertain", "terminal"],
       ] as const;
       for (const [state, expectedKind] of stateExpectations) {
