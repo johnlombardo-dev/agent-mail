@@ -17,7 +17,9 @@ import {
 import type { PreconditionObservation } from "../../imap/src/precondition";
 import {
   readActionPlanAttempt,
+  readActionPlanAttemptAuthority,
   startActionPlanAttempt,
+  type ActionPlanAttemptAuthority,
   type ActionAttemptStartResult,
 } from "../../storage/src/action-plan-attempt";
 import {
@@ -27,6 +29,7 @@ import {
 } from "../../storage/src/action-plan-recovery";
 import {
   readActionPlanResult,
+  recordExpiredUndispatchedActionPlanResult,
   recordActionPlanReconciliationResult,
   recordDefiniteActionPlanResult,
   recordStaleActionPlanResult,
@@ -59,6 +62,10 @@ export type ActionPlanTargetLoopOptions = Readonly<{
   readonly uncertainObserver: UncertainAttemptReadOnlyObserver;
   /** A canonical instant supplied by the owning actor, not wall-clock state in this loop. */
   readonly now: UtcInstant;
+  /** The optimistic plan version captured by claim or restart discovery. */
+  readonly expectedPlanVersion: number;
+  /** Actor-owned clock sampled at every target/effect authority boundary. */
+  readonly freshNow: () => UtcInstant;
   readonly signal?: AbortSignal;
   /** Production adapters translate their result algebra into the core result algebra here. */
   readonly normalizeMutationResult?: (
@@ -81,6 +88,23 @@ type AttemptBoundary = Readonly<{
   readonly attempt: RemoteAttempt;
   readonly claimId: ExecutingActionPlan["claimId"];
 }>;
+
+class ExpiredUndispatchedAttempt extends Error {
+  readonly result: RemoteAttemptResult;
+
+  constructor(result: RemoteAttemptResult) {
+    super("action plan authority expired before remote dispatch");
+    this.name = "ExpiredUndispatchedAttempt";
+    this.result = result;
+  }
+}
+
+class DispatchAlreadyCrossed extends Error {
+  constructor() {
+    super("action attempt dispatch was crossed by another owner");
+    this.name = "DispatchAlreadyCrossed";
+  }
+}
 
 /**
  * Execute one claimed plan's frozen targets in order.
@@ -128,14 +152,15 @@ async function runTarget(
 
   let boundary = readActionPlanAttempt(options.database, attemptId);
   if (boundary === undefined) {
+    const attemptNow = currentNow(options);
     const started = startActionPlanAttempt(options.database, {
       planId: options.claimedPlan.planId,
       claimId: options.claimedPlan.claimId,
       targetOrdinal,
       attemptId,
       idempotencyKey,
-      startedAt: laterInstant(options.now, options.claimedPlan.startedAt),
-      now: options.now,
+      startedAt: laterInstant(attemptNow, options.claimedPlan.startedAt),
+      now: attemptNow,
     });
     boundary = startedBoundary(started);
   }
@@ -146,6 +171,11 @@ async function runTarget(
   if (recovered !== undefined) {
     const result = await resultAfterRecovery(options, recovered, durableAttempt.attempt);
     if (result !== undefined) return result;
+  }
+
+  const admission = freshAuthority(options, targetOrdinal, durableAttempt.attempt);
+  if (admission.kind !== "admitted") {
+    return await resolveDeniedAdmission(options, admission, durableAttempt.attempt);
   }
 
   try {
@@ -167,11 +197,25 @@ async function runTarget(
       markDispatched: async ({ attempt, observation }) => {
         const marked = markActionPlanAttemptDispatched(options.database, {
           attemptId: attempt.attemptId,
+          planId: options.claimedPlan.planId,
+          claimId: options.claimedPlan.claimId,
+          expectedVersion: options.expectedPlanVersion,
           dispatchedAt: resultInstant(options, attempt),
           observation,
         });
-        if (marked.kind !== "marked") {
-          throw new Error(`dispatch marker was not durable: ${marked.reason}`);
+        switch (marked.kind) {
+          case "marked":
+            return;
+          case "expired":
+            throw new ExpiredUndispatchedAttempt(classifyExpiredUndispatched(options, attempt));
+          case "dispatched":
+            throw new DispatchAlreadyCrossed();
+          case "rejected":
+            throw new Error(`dispatch marker was not admitted: ${marked.reason}`);
+          default: {
+            const exhaustive: never = marked;
+            return exhaustive;
+          }
         }
       },
       mutationAdapter: options.mutationAdapter,
@@ -179,8 +223,72 @@ async function runTarget(
     const result = await persistExecution(options, durableAttempt.attempt, execution);
     await options.onDurableTargetResult?.({ attempt: durableAttempt.attempt, result });
     return result;
-  } catch {
+  } catch (error: unknown) {
+    if (error instanceof ExpiredUndispatchedAttempt) return error.result;
+    if (error instanceof DispatchAlreadyCrossed) {
+      const recovered = recoverExistingDispatch(options, durableAttempt.attempt.attemptId);
+      if (recovered === undefined) throw error;
+      const result = await resultAfterRecovery(options, recovered, durableAttempt.attempt);
+      if (result !== undefined) return result;
+      throw error;
+    }
     return await recoverAfterInterruption(options, durableAttempt.attempt);
+  }
+}
+
+function freshAuthority(
+  options: ActionPlanTargetLoopOptions,
+  targetOrdinal: number,
+  attempt: RemoteAttempt,
+): ActionPlanAttemptAuthority {
+  return readActionPlanAttemptAuthority(options.database, {
+    planId: options.claimedPlan.planId,
+    claimId: options.claimedPlan.claimId,
+    attemptId: attempt.attemptId,
+    targetOrdinal,
+    target: attempt.target,
+    expectedVersion: options.expectedPlanVersion,
+    now: currentNow(options),
+  });
+}
+
+async function resolveDeniedAdmission(
+  options: ActionPlanTargetLoopOptions,
+  admission: Exclude<ActionPlanAttemptAuthority, { readonly kind: "admitted" }>,
+  attempt: RemoteAttempt,
+): Promise<RemoteAttemptResult> {
+  switch (admission.kind) {
+    case "expired-undispatched":
+      return classifyExpiredUndispatched(options, attempt);
+    case "dispatched":
+      return reconcileExistingUncertain(options, attempt);
+    case "rejected":
+      throw new Error(`remote effect authority rejected: ${admission.reason}`);
+    default: {
+      const exhaustive: never = admission;
+      return exhaustive;
+    }
+  }
+}
+
+function classifyExpiredUndispatched(
+  options: ActionPlanTargetLoopOptions,
+  attempt: RemoteAttempt,
+): RemoteAttemptResult {
+  const classified = recordExpiredUndispatchedActionPlanResult(options.database, {
+    attemptId: attempt.attemptId,
+    resultAt: resultInstant(options, attempt),
+  });
+  switch (classified.kind) {
+    case "recorded":
+    case "already-resolved":
+      return classified.result;
+    case "rejected":
+      throw new Error(`expired attempt classification was rejected: ${classified.reason}`);
+    default: {
+      const exhaustive: never = classified;
+      return exhaustive;
+    }
   }
 }
 
@@ -197,7 +305,7 @@ function recoverExistingDispatch(
 ): ActionAttemptRecoveryResult | undefined {
   const result = recoverUnresolvedActionPlanAttempt(options.database, {
     attemptId,
-    recoveredAt: options.now,
+    recoveredAt: currentNow(options),
   });
   return result.kind === "not-dispatched" ? undefined : result;
 }
@@ -413,7 +521,12 @@ function assertResultIdentity(result: RemoteAttemptResult, attempt: RemoteAttemp
 }
 
 function resultInstant(options: ActionPlanTargetLoopOptions, attempt: RemoteAttempt): UtcInstant {
-  return Date.parse(options.now) >= Date.parse(attempt.startedAt) ? options.now : attempt.startedAt;
+  const now = currentNow(options);
+  return Date.parse(now) >= Date.parse(attempt.startedAt) ? now : attempt.startedAt;
+}
+
+function currentNow(options: ActionPlanTargetLoopOptions): UtcInstant {
+  return options.freshNow();
 }
 
 function laterInstant(left: UtcInstant, right: UtcInstant): UtcInstant {

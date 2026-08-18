@@ -1,5 +1,7 @@
 import type { Database } from "bun:sqlite";
 import {
+  createActionPlanId,
+  createClaimId,
   createRemoteAttemptId,
   createRemoteAttemptUncertain,
   createRemoteUidValue,
@@ -18,9 +20,26 @@ import { actionAttemptDispatchMigrations } from "./migrations/0005-action-attemp
 export type ActionAttemptDispatchResult =
   | Readonly<{ readonly kind: "marked"; readonly attemptId: string; readonly dispatchedAt: string }>
   | Readonly<{
+      readonly kind: "dispatched";
+      readonly attemptId: string;
+      readonly dispatchedAt: string;
+    }>
+  | Readonly<{
+      readonly kind: "expired";
+      readonly attemptId: string;
+      readonly dispatchedAt: string;
+    }>
+  | Readonly<{
       readonly kind: "rejected";
       readonly attemptId: string;
-      readonly reason: "missing" | "inactive-claim" | "conflict";
+      readonly reason:
+        | "missing"
+        | "inactive-claim"
+        | "conflict"
+        | "version"
+        | "claim"
+        | "target"
+        | "attempt";
     }>;
 
 export type ActionAttemptRecoveryResult =
@@ -44,6 +63,9 @@ export type ActionAttemptDispatchEvidence = Readonly<{
 
 type PreparedDispatch = Readonly<{
   readonly attemptId: string;
+  readonly planId: string;
+  readonly claimId: string;
+  readonly expectedVersion: number;
   readonly dispatchedAt: string;
   readonly observationAt: string;
   readonly observationAccountId: string;
@@ -61,6 +83,15 @@ type DispatchEvidence = Readonly<{
   readonly observationUidValidity: number;
   readonly observationUid: number;
   readonly observationModseq: number;
+}>;
+
+type DispatchPlan = Readonly<{
+  readonly state: string;
+  readonly version: number;
+  readonly claimId: string | null;
+  readonly startedAt: string | null;
+  readonly expiresAt: string;
+  readonly actionKind: string;
 }>;
 
 /** Commit the dispatch-crossed marker before the adapter is called. */
@@ -82,11 +113,46 @@ export function markActionPlanAttemptDispatched(
         reason: "missing",
       });
     }
-    if (!isActiveAttempt(database, prepared.attemptId, attempt.claimId)) {
+    const plan = readDispatchPlan(database, prepared.planId);
+    if (plan === undefined) {
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "missing",
+      });
+    }
+    if (plan.state !== "executing") {
       return commit(database, {
         kind: "rejected",
         attemptId: prepared.attemptId,
         reason: "inactive-claim",
+      });
+    }
+    if (plan.version !== prepared.expectedVersion) {
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "version",
+      });
+    }
+    if (
+      plan.claimId !== prepared.claimId ||
+      attempt.claimId !== prepared.claimId ||
+      attempt.attempt.planId !== prepared.planId ||
+      plan.startedAt === null ||
+      !isActiveAttempt(database, prepared.attemptId, prepared.claimId)
+    ) {
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "claim",
+      });
+    }
+    if (plan.actionKind !== attempt.attempt.action.kind) {
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "attempt",
       });
     }
     if (
@@ -96,18 +162,42 @@ export function markActionPlanAttemptDispatched(
       prepared.observationUid !== attempt.attempt.target.uid ||
       prepared.observationModseq !== attempt.attempt.target.precondition.modseq
     ) {
-      throw new TypeError("dispatch observation does not match the attempt target");
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "target",
+      });
     }
     const existing = readDispatchEvidence(database, prepared.attemptId);
     if (existing !== undefined) {
       return commit(
         database,
         sameDispatch(existing, prepared)
-          ? { kind: "marked", attemptId: prepared.attemptId, dispatchedAt: existing.dispatchedAt }
+          ? {
+              kind: "dispatched",
+              attemptId: prepared.attemptId,
+              dispatchedAt: existing.dispatchedAt,
+            }
           : { kind: "rejected", attemptId: prepared.attemptId, reason: "conflict" },
       );
     }
     const targetOrdinal = readTargetOrdinal(database, prepared.attemptId);
+    if (
+      !hasCurrentTargetIdentity(database, prepared.planId, targetOrdinal, attempt.attempt.target)
+    ) {
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "target",
+      });
+    }
+    if (prepared.dispatchedAt >= plan.expiresAt) {
+      return commit(database, {
+        kind: "expired",
+        attemptId: prepared.attemptId,
+        dispatchedAt: prepared.dispatchedAt,
+      });
+    }
     database
       .query(
         "INSERT INTO action_attempt_dispatches " +
@@ -235,7 +325,14 @@ export { actionAttemptDispatchMigrations };
 
 function prepareDispatch(value: unknown): PreparedDispatch {
   const input = record(value, "action attempt dispatch input");
-  exactKeys(input, ["attemptId", "dispatchedAt", "observation"]);
+  exactKeys(input, [
+    "attemptId",
+    "planId",
+    "claimId",
+    "expectedVersion",
+    "dispatchedAt",
+    "observation",
+  ]);
   const observation = record(input.observation, "dispatch observation");
   exactKeys(observation, ["kind", "target", "observed"]);
   if (observation.kind !== "satisfied")
@@ -267,6 +364,9 @@ function prepareDispatch(value: unknown): PreparedDispatch {
   const dispatchedAt = parseUtcInstant(input.dispatchedAt);
   return {
     attemptId: parseAttemptId(input.attemptId),
+    planId: createActionPlanId(input.planId),
+    claimId: createClaimId(input.claimId),
+    expectedVersion: parsePositiveInteger(input.expectedVersion, "expected plan version"),
     dispatchedAt,
     observationAt: dispatchedAt,
     observationAccountId,
@@ -367,6 +467,56 @@ function readTargetOrdinal(database: Database, attemptId: string): number {
   return row.target_ordinal;
 }
 
+function readDispatchPlan(database: Database, planId: string): DispatchPlan | undefined {
+  const value: unknown = database
+    .query(
+      "SELECT state, version, claim_id, started_at, expires_at, action_kind " +
+        "FROM action_plans WHERE plan_id = ?;",
+    )
+    .get(planId);
+  if (value === null) return undefined;
+  const row = record(value, "action plan dispatch row");
+  return {
+    state: requireText(row.state, "action plan state"),
+    version: parsePositiveInteger(row.version, "action plan version"),
+    claimId: row.claim_id === null ? null : createClaimId(row.claim_id),
+    startedAt: row.started_at === null ? null : parseUtcInstant(row.started_at),
+    expiresAt: parseUtcInstant(row.expires_at),
+    actionKind: requireText(row.action_kind, "action plan action kind"),
+  };
+}
+
+function hasCurrentTargetIdentity(
+  database: Database,
+  planId: string,
+  targetOrdinal: number,
+  target: Readonly<{
+    readonly accountId: string;
+    readonly mailboxId: string;
+    readonly uidValidity: number;
+    readonly uid: number;
+    readonly precondition: Readonly<{ readonly modseq: number }>;
+  }>,
+): boolean {
+  return (
+    database
+      .query(
+        "SELECT 1 AS present FROM action_plan_targets " +
+          "WHERE plan_id = ? AND target_ordinal = ? AND account_id = ? AND mailbox_id = ? " +
+          "AND uid_validity = ? AND uid = ? AND precondition_modseq = ?;",
+      )
+      .get(
+        planId,
+        targetOrdinal,
+        target.accountId,
+        target.mailboxId,
+        target.uidValidity,
+        target.uid,
+        target.precondition.modseq,
+      ) !== null
+  );
+}
+
 function isActiveAttempt(database: Database, attemptId: string, claimId: string): boolean {
   return (
     database
@@ -446,6 +596,18 @@ function parseNonNegativeInteger(value: unknown, label: string): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new TypeError(`${label} must be a non-negative safe integer`);
   }
+  return value;
+}
+
+function parsePositiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`${label} must be a positive safe integer`);
+  }
+  return value;
+}
+
+function requireText(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0) throw new TypeError(`${label} is invalid`);
   return value;
 }
 

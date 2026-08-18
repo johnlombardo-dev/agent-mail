@@ -211,9 +211,14 @@ export type RestartRecoveryOptions = Readonly<{
   readonly database: Database;
   readonly ownerLeases: ActionPlanOwnerLeaseStore;
   readonly now: UtcInstant;
+  /** Actor-owned clock for fresh authority observations during recovery. */
+  readonly freshNow: () => UtcInstant;
   readonly targetLoopOptions: (
     candidate: ExecutingActionPlanRecoveryCandidate,
-  ) => Omit<ActionPlanTargetLoopOptions, "database" | "claimedPlan" | "now">;
+  ) => Omit<
+    ActionPlanTargetLoopOptions,
+    "database" | "claimedPlan" | "now" | "expectedPlanVersion" | "freshNow"
+  >;
   readonly signal?: AbortSignal;
   /** @internal Test-only process-crash seam; absent in production callers. */
   readonly onAllTargetsDurable?: (
@@ -259,6 +264,8 @@ export async function recoverExecutingActionPlans(
           database: options.database,
           claimedPlan: candidate.plan,
           now: options.now,
+          expectedPlanVersion: candidate.version,
+          freshNow: options.freshNow,
           signal: options.signal,
         });
       } catch {

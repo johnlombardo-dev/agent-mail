@@ -12,6 +12,7 @@ import {
   parseMailboxId,
   parseUtcInstant,
   type Action,
+  type ActionPlanTarget,
   type ActionPlanState,
   type ClaimId,
   type RemoteAttempt,
@@ -46,6 +47,78 @@ export type ActionAttemptStartRepository = Readonly<{
   readonly start: (input: unknown) => ActionAttemptStartResult;
   readonly read: (attemptId: unknown) => ActionAttemptExecutorInput | undefined;
 }>;
+
+/**
+ * A fresh, read-only admission snapshot for one possible remote effect.
+ *
+ * The target loop must obtain this immediately before opening the executor
+ * boundary.  `dispatched` is deliberately distinct from `expired`: once the
+ * dispatch marker exists, the only legal recovery is read-only reconciliation.
+ */
+export type ActionPlanAttemptAuthority =
+  | Readonly<{ readonly kind: "admitted"; readonly version: number }>
+  | Readonly<{ readonly kind: "expired-undispatched"; readonly version: number }>
+  | Readonly<{ readonly kind: "dispatched"; readonly version: number }>
+  | Readonly<{
+      readonly kind: "rejected";
+      readonly reason: "missing" | "plan" | "version" | "claim" | "target" | "attempt";
+    }>;
+
+/**
+ * Re-read the mutable authority and immutable target identity for one effect.
+ * This helper performs no writes and never calls a remote adapter.
+ */
+export function readActionPlanAttemptAuthority(
+  database: Database,
+  input: unknown,
+): ActionPlanAttemptAuthority {
+  const prepared = prepareAuthority(input);
+  requireAttemptStartSchema(database);
+  const plan = readPlan(database, prepared.planId);
+  if (plan === undefined) return { kind: "rejected", reason: "missing" };
+  if (plan.state !== "executing") return { kind: "rejected", reason: "plan" };
+  if (plan.version !== prepared.expectedVersion) {
+    return { kind: "rejected", reason: "version" };
+  }
+  if (
+    plan.claimId === null ||
+    plan.startedAt === null ||
+    plan.claimId !== prepared.claimId ||
+    !hasActiveClaim(database, prepared.planId, prepared.claimId, plan.startedAt)
+  ) {
+    return { kind: "rejected", reason: "claim" };
+  }
+  const selectedTarget = readTarget(database, prepared.planId, prepared.targetOrdinal);
+  if (selectedTarget === undefined || !sameTarget(selectedTarget.target, prepared.target)) {
+    return { kind: "rejected", reason: "target" };
+  }
+  const attempt = readActionPlanAttempt(database, prepared.attemptId);
+  const ordinalRow: unknown = database
+    .query("SELECT target_ordinal FROM action_attempts WHERE attempt_id = ?;")
+    .get(prepared.attemptId);
+  const attemptOrdinal =
+    ordinalRow === null
+      ? undefined
+      : requireOrdinal(record(ordinalRow, "action attempt ordinal row").target_ordinal);
+  if (
+    attempt === undefined ||
+    attemptOrdinal !== prepared.targetOrdinal ||
+    attempt.claimId !== prepared.claimId ||
+    attempt.attempt.planId !== prepared.planId ||
+    attempt.attempt.action.kind !== plan.action.kind ||
+    !sameTarget(attempt.attempt.target, prepared.target)
+  ) {
+    return { kind: "rejected", reason: "attempt" };
+  }
+  const dispatched = database
+    .query("SELECT 1 AS present FROM action_attempt_dispatches WHERE attempt_id = ?;")
+    .get(prepared.attemptId);
+  if (dispatched !== null) return { kind: "dispatched", version: plan.version };
+  if (prepared.now >= plan.expiresAt) {
+    return { kind: "expired-undispatched", version: plan.version };
+  }
+  return { kind: "admitted", version: plan.version };
+}
 
 /**
  * Start exactly one target attempt under the active claim.
@@ -259,14 +332,17 @@ type PlanRow = Readonly<{
   readonly claimId: string | null;
   readonly startedAt: string | null;
   readonly expiresAt: string;
+  readonly version: number;
 }>;
 
-type ActionPlanTarget = Readonly<{
-  readonly accountId: string;
-  readonly mailboxId: string;
-  readonly uidValidity: number;
-  readonly uid: number;
-  readonly precondition: Readonly<{ readonly modseq: number }>;
+type PreparedAuthority = Readonly<{
+  readonly planId: string;
+  readonly claimId: ClaimId;
+  readonly attemptId: string;
+  readonly targetOrdinal: number;
+  readonly target: ActionPlanTarget;
+  readonly expectedVersion: number;
+  readonly now: string;
 }>;
 
 function prepareStart(value: unknown): PreparedStart {
@@ -310,7 +386,7 @@ function prepareStart(value: unknown): PreparedStart {
 function readPlan(database: Database, planId: string): PlanRow | undefined {
   const value: unknown = database
     .query(
-      "SELECT plan_id, state, action_kind, claim_id, started_at, expires_at " +
+      "SELECT plan_id, state, action_kind, claim_id, started_at, expires_at, version " +
         "FROM action_plans WHERE plan_id = ?;",
     )
     .get(planId);
@@ -323,7 +399,47 @@ function readPlan(database: Database, planId: string): PlanRow | undefined {
     claimId: row.claim_id === null ? null : parseClaimId(row.claim_id),
     startedAt: row.started_at === null ? null : parseUtcInstant(row.started_at),
     expiresAt: parseUtcInstant(row.expires_at),
+    version: requirePositiveInteger(row.version, "action plan version"),
   };
+}
+
+function prepareAuthority(value: unknown): PreparedAuthority {
+  const input = record(value, "action attempt authority input");
+  exactKeys(input, [
+    "planId",
+    "claimId",
+    "attemptId",
+    "targetOrdinal",
+    "target",
+    "expectedVersion",
+    "now",
+  ]);
+  if (
+    typeof input.targetOrdinal !== "number" ||
+    !Number.isSafeInteger(input.targetOrdinal) ||
+    input.targetOrdinal < 1
+  ) {
+    throw new TypeError("action attempt authority target ordinal is invalid");
+  }
+  return {
+    planId: parsePlanId(input.planId),
+    claimId: parseClaimId(input.claimId),
+    attemptId: parseAttemptId(input.attemptId),
+    targetOrdinal: input.targetOrdinal,
+    target: parseTarget(input.target),
+    expectedVersion: requirePositiveInteger(input.expectedVersion, "expected plan version"),
+    now: parseUtcInstant(input.now),
+  };
+}
+
+function sameTarget(left: ActionPlanTarget, right: ActionPlanTarget): boolean {
+  return (
+    left.accountId === right.accountId &&
+    left.mailboxId === right.mailboxId &&
+    left.uidValidity === right.uidValidity &&
+    left.uid === right.uid &&
+    left.precondition.modseq === right.precondition.modseq
+  );
 }
 
 function readTarget(
@@ -540,6 +656,13 @@ function parseTarget(value: unknown): ActionPlanTarget {
 function requireOrdinal(value: unknown): number {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
     throw new TypeError("action plan target ordinal is invalid");
+  }
+  return value;
+}
+
+function requirePositiveInteger(value: unknown, label: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`${label} is invalid`);
   }
   return value;
 }

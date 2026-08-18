@@ -19,6 +19,7 @@ import {
   type RemoteAttemptResult,
   type RemoteAttemptStale,
 } from "@agent-mail/core";
+import { readActionPlanAttempt } from "./action-plan-attempt";
 
 /** The read-only precondition observations accepted from the IMAP adapter. */
 export type StalePreconditionObservation =
@@ -83,6 +84,69 @@ export type ActionPlanDefiniteResultInput = Readonly<{
   /** A normalized adapter result. The boundary still parses it as unknown. */
   readonly result: unknown;
 }>;
+
+export type ExpiredUndispatchedActionPlanResult =
+  | Readonly<{
+      readonly kind: "recorded";
+      readonly result: Exclude<RemoteAttemptResult, { readonly certainty: "uncertain" }>;
+    }>
+  | Readonly<{
+      readonly kind: "already-resolved";
+      readonly result: RemoteAttemptResult;
+    }>
+  | Readonly<{
+      readonly kind: "rejected";
+      readonly attemptId: string;
+      readonly reason: "missing" | "already-dispatched" | "inactive-claim" | "result-conflict";
+    }>;
+
+/**
+ * Durably classify an expired attempt that has not crossed dispatch. This is
+ * intentionally a non-executing result and reuses the existing result
+ * transaction, journal, and identity checks.
+ */
+export function recordExpiredUndispatchedActionPlanResult(
+  database: Database,
+  input: unknown,
+): ExpiredUndispatchedActionPlanResult {
+  const prepared = prepareExpiredUndispatchedResult(input);
+  const attempt = readActionPlanAttempt(database, prepared.attemptId);
+  if (attempt === undefined) {
+    return { kind: "rejected", attemptId: prepared.attemptId, reason: "missing" };
+  }
+  const existing = readActionPlanResult(database, prepared.attemptId);
+  if (existing !== undefined) return { kind: "already-resolved", result: existing };
+  if (
+    database
+      .query("SELECT 1 AS present FROM action_attempt_dispatches WHERE attempt_id = ?;")
+      .get(prepared.attemptId) !== null
+  ) {
+    return { kind: "rejected", attemptId: prepared.attemptId, reason: "already-dispatched" };
+  }
+  const result = createRemoteAttemptRejected({
+    kind: "rejected",
+    planId: attempt.attempt.planId,
+    action: attempt.attempt.action,
+    target: attempt.attempt.target,
+    attemptId: attempt.attempt.attemptId,
+    idempotencyKey: attempt.attempt.idempotencyKey,
+    startedAt: attempt.attempt.startedAt,
+    resultAt: prepared.resultAt,
+    certainty: "definite",
+    detail: "plan authority expired before remote dispatch",
+  });
+  const recorded = recordDefiniteActionPlanResult(database, { result });
+  if (recorded.kind === "recorded") return { kind: "recorded", result: recorded.result };
+  if (recorded.reason === "result-exists") {
+    const current = readActionPlanResult(database, prepared.attemptId);
+    if (current !== undefined) return { kind: "already-resolved", result: current };
+  }
+  return {
+    kind: "rejected",
+    attemptId: prepared.attemptId,
+    reason: recorded.reason === "inactive-claim" ? "inactive-claim" : "result-conflict",
+  };
+}
 
 const DETAIL_VERSION = 1;
 const MAX_DETAIL_LENGTH = 512;
@@ -462,6 +526,20 @@ type PreparedInput = Readonly<{
   readonly resultAt: string;
   readonly observation: StalePreconditionObservation;
 }>;
+
+type PreparedExpiredUndispatchedResult = Readonly<{
+  readonly attemptId: string;
+  readonly resultAt: string;
+}>;
+
+function prepareExpiredUndispatchedResult(value: unknown): PreparedExpiredUndispatchedResult {
+  const input = record(value, "expired undispatched action result input");
+  exactKeys(input, ["attemptId", "resultAt"]);
+  return {
+    attemptId: parseAttemptId(input.attemptId),
+    resultAt: parseUtcInstant(input.resultAt),
+  };
+}
 
 type AttemptRow = Readonly<{
   readonly attemptId: ReturnType<typeof createRemoteAttemptId>;

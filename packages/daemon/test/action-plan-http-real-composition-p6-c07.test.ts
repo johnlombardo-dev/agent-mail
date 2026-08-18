@@ -314,6 +314,8 @@ function servicesFor(
         database,
         claimedPlan: claim.plan,
         now: "2026-08-18T00:00:01.000Z",
+        expectedPlanVersion: claim.version,
+        freshNow: () => "2026-08-18T00:00:01.000Z",
         ...fakeRemoteOptions(record.mode, remoteCalls),
       });
       const finalized = finalizeActionPlan(database, {

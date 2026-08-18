@@ -158,6 +158,8 @@ function options(
     database,
     claimedPlan: plan,
     now,
+    expectedPlanVersion: 2,
+    freshNow: () => now,
     signal,
     readPrecondition,
     mutationAdapter: { execute: async ({ attempt }) => mutation(attempt) },
@@ -166,6 +168,216 @@ function options(
 }
 
 describe("serial action-plan target loop P5-C15", () => {
+  test("classifies an undispatched attempt at the exact expiry boundary without remote reads or effects", async () => {
+    const { database, plan } = setup(targets(1));
+    expect(
+      startActionPlanAttempt(database, {
+        planId: plan.planId,
+        claimId: plan.claimId,
+        targetOrdinal: 1,
+        attemptId: "attempt:plan:serial:1",
+        idempotencyKey: "action:plan:serial:1",
+        startedAt: now,
+        now,
+      }),
+    ).toMatchObject({ kind: "started" });
+    const expiredAt = createUtcInstant("2026-08-19T00:00:00.000Z");
+    let preconditionReads = 0;
+    let mutationCalls = 0;
+    const result = await runActionPlanTargetLoop({
+      ...options(
+        database,
+        plan,
+        async () => {
+          preconditionReads += 1;
+          throw new Error("expired undispatched attempt must not read preconditions");
+        },
+        async () => {
+          mutationCalls += 1;
+          throw new Error("expired undispatched attempt must not mutate");
+        },
+      ),
+      freshNow: () => expiredAt,
+    });
+    expect(result.progress[0]?.result).toMatchObject({
+      kind: "rejected",
+      certainty: "definite",
+      detail: "plan authority expired before remote dispatch",
+    });
+    expect(preconditionReads).toBe(0);
+    expect(mutationCalls).toBe(0);
+    expect(database.query("SELECT result_kind, certainty, detail FROM action_results;").get()).toEqual({
+      result_kind: "rejected",
+      certainty: "definite",
+      detail: "plan authority expired before remote dispatch",
+    });
+    const replay = await runActionPlanTargetLoop({
+      ...options(
+        database,
+        plan,
+        async () => {
+          preconditionReads += 1;
+          throw new Error("expired replay must not read preconditions");
+        },
+        async () => {
+          mutationCalls += 1;
+          throw new Error("expired replay must not mutate");
+        },
+      ),
+      freshNow: () => expiredAt,
+    });
+    expect(replay.progress[0]?.result).toMatchObject({
+      kind: "rejected",
+      certainty: "definite",
+      detail: "plan authority expired before remote dispatch",
+    });
+    expect(preconditionReads).toBe(0);
+    expect(mutationCalls).toBe(0);
+  });
+
+  test("rechecks expiry in the marker transaction when the clock advances after precondition read", async () => {
+    const { database, plan } = setup(targets(1));
+    expect(
+      startActionPlanAttempt(database, {
+        planId: plan.planId,
+        claimId: plan.claimId,
+        targetOrdinal: 1,
+        attemptId: "attempt:plan:serial:1",
+        idempotencyKey: "action:plan:serial:1",
+        startedAt: now,
+        now,
+      }),
+    ).toMatchObject({ kind: "started" });
+    const expiredAt = createUtcInstant("2026-08-19T00:00:00.000Z");
+    let samples = 0;
+    const clock = () => (samples++ < 2 ? now : expiredAt);
+    const calls: string[] = [];
+    const result = await runActionPlanTargetLoop({
+      ...options(
+        database,
+        plan,
+        async (target) => {
+          calls.push(`precondition:${target.uid}`);
+          return satisfied(target);
+        },
+        async (attempt) => {
+          calls.push(`mutation:${attempt.target.uid}`);
+          throw new Error("marker transaction must reject before mutation");
+        },
+      ),
+      freshNow: clock,
+    });
+    expect(result.progress[0]?.result).toMatchObject({
+      kind: "rejected",
+      certainty: "definite",
+      detail: "plan authority expired before remote dispatch",
+    });
+    expect(calls).toEqual(["precondition:1"]);
+    expect(samples).toBe(4);
+    expect(database.query("SELECT COUNT(*) AS count FROM action_attempt_dispatches;").get()).toEqual({ count: 0 });
+    expect(database.query("SELECT result_kind, certainty, detail FROM action_results;").get()).toEqual({
+      result_kind: "rejected",
+      certainty: "definite",
+      detail: "plan authority expired before remote dispatch",
+    });
+  });
+
+  test("reconciles a dispatched uncertain attempt after expiry without resending", async () => {
+    const { database, plan } = setup(targets(1));
+    let mutationCalls = 0;
+    const first = await runActionPlanTargetLoop({
+      ...options(
+        database,
+        plan,
+        async (target) => satisfied(target),
+        async () => {
+          mutationCalls += 1;
+          throw new Error("uncertain remote effect");
+        },
+      ),
+    });
+    expect(first.progress[0]?.result.certainty).toBe("uncertain");
+    const expiredAt = createUtcInstant("2026-08-19T00:00:00.000Z");
+    const resumed = await runActionPlanTargetLoop({
+      ...options(
+        database,
+        plan,
+        async () => {
+          throw new Error("dispatched uncertainty must not reread preconditions");
+        },
+        async () => {
+          throw new Error("dispatched uncertainty must not resend");
+        },
+        undefined,
+        {
+          read: async ({ attempt, resultAt: observationAt }) => success(attempt, observationAt),
+        },
+      ),
+      freshNow: () => expiredAt,
+    });
+    expect(resumed.progress[0]?.result).toMatchObject({ kind: "success", certainty: "definite" });
+    expect(mutationCalls).toBe(1);
+    expect(database.query("SELECT COUNT(*) AS count FROM action_attempt_dispatches;").get()).toEqual({ count: 1 });
+  });
+
+  test("does not begin a later target after authority expires between targets", async () => {
+    const { database, plan } = setup(targets(2));
+    let expired = false;
+    let postExpirySamples = 0;
+    const reads: number[] = [];
+    const writes: number[] = [];
+    const result = await runActionPlanTargetLoop({
+      ...options(
+        database,
+        plan,
+        async (target) => {
+          reads.push(target.uid);
+          return satisfied(target);
+        },
+        async (attempt) => {
+          writes.push(attempt.target.uid);
+          expired = true;
+          return success(attempt);
+        },
+      ),
+      freshNow: () =>
+        !expired
+          ? now
+          : postExpirySamples++ === 0
+            ? now
+            : createUtcInstant("2026-08-19T00:00:00.000Z"),
+    });
+    expect(result.progress.map((entry) => entry.result.kind)).toEqual(["success", "rejected"]);
+    expect(reads).toEqual([1]);
+    expect(writes).toEqual([1]);
+    expect(database.query("SELECT COUNT(*) AS count FROM action_attempts;").get()).toEqual({ count: 2 });
+  });
+
+  test("rejects a stale plan version before any precondition or mutation adapter path", async () => {
+    const { database, plan } = setup(targets(1));
+    let preconditionReads = 0;
+    let mutationCalls = 0;
+    await expect(
+      runActionPlanTargetLoop({
+        ...options(
+          database,
+          plan,
+          async () => {
+            preconditionReads += 1;
+            throw new Error("stale version must not read preconditions");
+          },
+          async () => {
+            mutationCalls += 1;
+            throw new Error("stale version must not mutate");
+          },
+        ),
+        expectedPlanVersion: 1,
+      }),
+    ).rejects.toThrow("remote effect authority rejected: version");
+    expect(preconditionReads).toBe(0);
+    expect(mutationCalls).toBe(0);
+  });
+
   test("persists ordered success, stale, rejected, failed, and uncertain siblings", async () => {
     const targetList = targets(5);
     const { database, plan } = setup(targetList);

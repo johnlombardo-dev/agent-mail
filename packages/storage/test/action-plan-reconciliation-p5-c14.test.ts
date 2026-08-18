@@ -201,6 +201,9 @@ function uncertainResult() {
 async function persistDispatchMarker(database: Database, recover = true): Promise<void> {
   const result = markActionPlanAttemptDispatched(database, {
     attemptId: "attempt:one",
+    planId: "plan:one",
+    claimId: "claim:one",
+    expectedVersion: 2,
     dispatchedAt: "2026-08-18T01:00:02.500Z",
     observation: {
       kind: "satisfied",

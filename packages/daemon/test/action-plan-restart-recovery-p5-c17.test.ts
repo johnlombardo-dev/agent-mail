@@ -14,6 +14,7 @@ import {
 import type { PreconditionObservation } from "../../imap/src/precondition";
 import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
 import { claimPendingActionPlan } from "../../storage/src/action-plan-claim";
+import { readActionPlanAttempt, startActionPlanAttempt } from "../../storage/src/action-plan-attempt";
 import { createPendingActionPlan } from "../../storage/src/action-plan-repository";
 import { actionAttemptDispatchMigrations } from "../../storage/src/action-plan-recovery";
 import { actionResultReconciliationMigrations } from "../../storage/src/action-plan-result";
@@ -131,7 +132,7 @@ function loopOptions(trace: string[], writes: { value: number }): (
   ) => unknown
     ? Candidate
     : never,
-) => Omit<import("../src/action-plan-target-loop").ActionPlanTargetLoopOptions, "database" | "claimedPlan" | "now"> {
+) => Omit<import("../src/action-plan-target-loop").ActionPlanTargetLoopOptions, "database" | "claimedPlan" | "now" | "expectedPlanVersion" | "freshNow"> {
   return () => ({
     readPrecondition: async (candidate) => {
       trace.push(`read:${candidate.uid}`);
@@ -224,6 +225,7 @@ function crashChildScript(fixture: CrashFixture, cutPoint: CrashCutPoint | "none
       database,
       ownerLeases: recovery.createFileActionPlanOwnerLeaseStore({ directory: config.leaseDirectory }),
       now,
+      freshNow: () => now,
       targetLoopOptions: () => ({
         readPrecondition: async (candidate) => { crash("before-dispatch"); return satisfied(candidate); },
         mutationAdapter: { execute: async ({ attempt }) => { crash("after-dispatch-before-effect"); await writeFile(config.remoteStatePath, JSON.stringify({ command: "MOVE", uid: attempt.target.uid, mailboxId: "mailbox:archive" })); await appendFile(config.tracePath, JSON.stringify({ command: "MOVE", uid: attempt.target.uid }) + "\\n"); crash("after-effect-before-result"); return success(attempt, resultAt); } },
@@ -269,6 +271,54 @@ async function traceLines(path: string): Promise<readonly unknown[]> {
 }
 
 describe("executing action-plan restart recovery P5-C17", () => {
+  test("recovers a pre-expiry persisted undispatched attempt after expiry with no remote calls", async () => {
+    const database = openDatabase();
+    expect(
+      startActionPlanAttempt(database, {
+        planId: "plan:restart",
+        claimId: "claim:restart",
+        targetOrdinal: 1,
+        attemptId: "attempt:plan:restart:1",
+        idempotencyKey: "action:plan:restart:1",
+        startedAt: now,
+        now,
+      }),
+    ).toMatchObject({ kind: "started" });
+    expect(readActionPlanAttempt(database, "attempt:plan:restart:1")).toBeDefined();
+    const trace: string[] = [];
+    const expiredAt = createUtcInstant("2026-08-19T00:00:00.000Z");
+    const recovered = await recoverExecutingActionPlans({
+      database,
+      ownerLeases: ownerLeases(),
+      now: expiredAt,
+      freshNow: () => expiredAt,
+      targetLoopOptions: () => ({
+        readPrecondition: async () => {
+          trace.push("read");
+          throw new Error("expired recovery must not read preconditions");
+        },
+        mutationAdapter: {
+          execute: async () => {
+            trace.push("write");
+            throw new Error("expired recovery must not mutate");
+          },
+        },
+        uncertainObserver: { read: async () => { throw new Error("no reconciliation expected"); } },
+      }),
+    });
+    expect(recovered.outcomes[0]).toMatchObject({
+      planId: "plan:restart",
+      kind: "recovered",
+      finalized: { state: "expired" },
+    });
+    expect(trace).toEqual([]);
+    expect(database.query("SELECT result_kind, certainty, detail FROM action_results;").get()).toEqual({
+      result_kind: "rejected",
+      certainty: "definite",
+      detail: "plan authority expired before remote dispatch",
+    });
+  });
+
   test("skips a demonstrably live owner and does not enter the remote loop", async () => {
     const database = openDatabase();
     let called = false;
@@ -279,6 +329,7 @@ describe("executing action-plan restart recovery P5-C17", () => {
         release: async () => "not-owner",
       },
       now,
+      freshNow: () => now,
       targetLoopOptions: () => {
         called = true;
         throw new Error("live owner must not be entered");
@@ -296,6 +347,7 @@ describe("executing action-plan restart recovery P5-C17", () => {
       database,
       ownerLeases: ownerLeases(),
       now,
+      freshNow: () => now,
       targetLoopOptions: loopOptions(trace, writes),
     });
     expect(result.outcomes[0]).toMatchObject({ planId: "plan:restart", kind: "recovered", finalized: { state: "completed" } });
@@ -325,7 +377,7 @@ describe("executing action-plan restart recovery P5-C17", () => {
     const options = loopOptions(trace, writes)(candidate);
     const result = await runOwnedActionPlanTargetLoop({
       ownerLeases: ownerLease,
-      targetLoop: { ...options, database, claimedPlan: candidate.plan, now },
+      targetLoop: { ...options, database, claimedPlan: candidate.plan, now, expectedPlanVersion: candidate.version, freshNow: () => now },
     });
     expect(result.kind).toBe("ran");
     expect(acquired).toBe(1);
@@ -340,6 +392,7 @@ describe("executing action-plan restart recovery P5-C17", () => {
       database,
       ownerLeases: ownerLeases(),
       now,
+      freshNow: () => now,
       signal: crashed.signal,
       targetLoopOptions: () => ({
         readPrecondition: async () => { throw new Error("must not read"); },
@@ -355,6 +408,7 @@ describe("executing action-plan restart recovery P5-C17", () => {
       database,
       ownerLeases: ownerLeases(),
       now,
+      freshNow: () => now,
       targetLoopOptions: loopOptions(trace, writes),
     });
     expect(resumed.outcomes[0]).toMatchObject({ planId: "plan:restart", kind: "recovered" });
@@ -368,6 +422,7 @@ describe("executing action-plan restart recovery P5-C17", () => {
       database,
       ownerLeases: ownerLeases(),
       now,
+      freshNow: () => now,
       targetLoopOptions: () => ({
         readPrecondition: async (candidate) => {
           trace.push(`read:${candidate.uid}`);
@@ -387,6 +442,7 @@ describe("executing action-plan restart recovery P5-C17", () => {
       database,
       ownerLeases: ownerLeases(),
       now,
+      freshNow: () => now,
       targetLoopOptions: () => ({
         readPrecondition: async () => { throw new Error("reconciled target must not reread precondition"); },
         mutationAdapter: { execute: async () => { throw new Error("resend MOVE is forbidden"); } },

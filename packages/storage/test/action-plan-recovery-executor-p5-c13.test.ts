@@ -128,6 +128,9 @@ async function durableMarker(database: Database, observation: PreconditionObserv
   if (observation.kind !== "satisfied") throw new Error("expected satisfied observation");
   const result = markActionPlanAttemptDispatched(database, {
     attemptId: "attempt:one",
+    planId: "plan:one",
+    claimId: "claim:one",
+    expectedVersion: 2,
     dispatchedAt: markerAt,
     observation,
   });
@@ -211,6 +214,53 @@ describe("executor dispatch/recovery matrix P5-C13", () => {
     expect(adapterCalls).toBe(0);
     const recovered = recoverUnresolvedActionPlanAttempt(database, { attemptId: "attempt:one", recoveredAt });
     expect(recovered.kind).toBe("uncertain");
+  });
+
+  test("marker transaction rejects an expired final instant and converges duplicate admission", async () => {
+    const database = openDatabase();
+    const observation: PreconditionObservation = {
+      kind: "satisfied",
+      target,
+      observed: {
+        uidValidity: createUidValidity(9),
+        uid: createRemoteUidValue(7),
+        modseq: createMonotonicSequence(101),
+      },
+    };
+    const expired = markActionPlanAttemptDispatched(database, {
+      attemptId: "attempt:one",
+      planId: "plan:one",
+      claimId: "claim:one",
+      expectedVersion: 2,
+      dispatchedAt: "2026-08-19T00:00:00.000Z",
+      observation,
+    });
+    expect(expired).toEqual({
+      kind: "expired",
+      attemptId: "attempt:one",
+      dispatchedAt: "2026-08-19T00:00:00.000Z",
+    });
+    expect(database.query("SELECT COUNT(*) AS count FROM action_attempt_dispatches;").get()).toEqual({ count: 0 });
+
+    const admitted = markActionPlanAttemptDispatched(database, {
+      attemptId: "attempt:one",
+      planId: "plan:one",
+      claimId: "claim:one",
+      expectedVersion: 2,
+      dispatchedAt: markerAt,
+      observation,
+    });
+    expect(admitted).toMatchObject({ kind: "marked", attemptId: "attempt:one" });
+    const duplicate = markActionPlanAttemptDispatched(database, {
+      attemptId: "attempt:one",
+      planId: "plan:one",
+      claimId: "claim:one",
+      expectedVersion: 2,
+      dispatchedAt: markerAt,
+      observation,
+    });
+    expect(duplicate).toMatchObject({ kind: "dispatched", attemptId: "attempt:one" });
+    expect(database.query("SELECT COUNT(*) AS count FROM action_attempt_dispatches;").get()).toEqual({ count: 1 });
   });
 
   test("adapter ambiguity and result-write failure both recover uncertain", async () => {
