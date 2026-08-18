@@ -361,16 +361,22 @@ function readStoredPlacementObservation(
   });
   const result = decodedObservation(decoded);
   if (result.observationOrder === 0) {
-    if (result.internalDate !== null || result.flags.length !== 0 || result.observedAt !== null || result.sourceCheckpoint !== null) {
+    // Canonical promotion owns the immutable INTERNALDATE before the first
+    // server metadata observation. Every other observation fact must remain
+    // absent until the first observation and its journal commit together.
+    if (result.flags.length !== 0 || result.observedAt !== null || result.sourceCheckpoint !== null) {
       throw new RemotePlacementObservationError("write-failed", "unobserved placement has observation state");
     }
     if (result.modseq.kind !== "unknown") {
       throw new RemotePlacementObservationError("write-failed", "unobserved placement has MODSEQ state");
     }
+    if (hasObservationJournal(database, result.identity)) {
+      throw new RemotePlacementObservationError("write-failed", "unobserved placement has journal provenance");
+    }
     return {
       identity: result.identity,
       messageId: result.messageId,
-      internalDate: null,
+      internalDate: result.internalDate,
       flags: [],
       modseq: { kind: "unknown" },
       observationOrder: 0,
@@ -407,6 +413,14 @@ function readStoredPlacementObservation(
   } satisfies RemotePlacementObservation;
   assertCurrentJournal(database, observation);
   return observation;
+}
+
+function hasObservationJournal(database: Database, identity: RemotePlacementObservationIdentity): boolean {
+  return (
+    database
+      .query("SELECT 1 AS present FROM operational_journal WHERE subject_id = ? LIMIT 1;")
+      .get(observationSubjectId(identity)) !== null
+  );
 }
 
 type DecodedObservation = Readonly<{
