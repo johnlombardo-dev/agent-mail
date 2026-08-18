@@ -1,6 +1,6 @@
 # Sync lifecycle statechart
 
-Status: design candidate `1.0.0-candidate.4`. Issue #196 freezes the required public `(incarnationId, version)` identity, six fixed-message sync-control errors, and the constructive 85-cell resolver. R189-01 through R189-14 are dispositioned as resolved in the oracle; independent exact-digest review remains required.
+Status: design candidate `1.0.0-candidate.5`. Issue #196 freezes the required public `(incarnationId, version)` identity, six fixed-message sync-control errors, and the constructive 85-cell resolver. R189-01 through R189-15 are dispositioned as resolved in the oracle; independent exact-digest review remains required.
 
 `sync-statechart.model.json` is the single normative oracle. This document, the decisions ledger, and the coverage ledger are checked views. If prose conflicts with JSON, JSON wins.
 
@@ -35,7 +35,7 @@ The active atomic XState configuration is the only lifecycle truth. Context carr
 |                | `stopping.forShutdown`         | `cleanupBarrier`                     | stopping / stop        | workflow; terminal target              |
 |                | `stopping.afterFailure`        | `cleanupBarrier`                     | stopping / stop        | workflow                               |
 
-`paused`, all stopped states, and `authBlocked` own no actors or external resources. Closing states continue to report the work they are actively releasing. This is what rejects the adjacent paused-with-live-child counterexample.
+`paused`, all stopped states, and `authBlocked` own no actors, external resources, unresolved release slots, or unresolved close terminals. Closing states continue to report the work they are actively releasing. This rejects both the adjacent paused-with-live-child counterexample and the R189-15 source-close counterexample.
 
 ## Complete context and configuration
 
@@ -77,16 +77,16 @@ The coverage ledger expands all 91 transition definitions into 204 source-specif
 
 | Actor                 | XState logic                  | Owner                                | Terminal/cancellation contract                                                                           |
 | --------------------- | ----------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------- |
-| `bootstrapSession`    | `fromPromise`                 | `starting.active`                    | One startup decision; actor releases owned handles before done/error; exit aborts and registers release  |
+| `bootstrapSession`    | `fromPromise`                 | `starting.active`                    | One startup decision; acquisition pre-registers release slots; abort only triggers them                  |
 | `initialBackfill`     | `fromPromise`                 | `backfilling.active`                 | One loop result; parent awaits nested queue stop; interruption may leave only repository-committed facts |
-| `idleSession`         | `fromCallback`                | `watching.idling`                    | Multiple IDLE protocol messages; disposer owns listener removal and close promise                        |
+| `idleSession`         | `fromCallback`                | `watching.idling`                    | Multiple IDLE messages; acquisition pre-registers slots; disposer only triggers their releases           |
 | `periodicStatusTimer` | `fromCallback`                | both watching active states          | Exactly one timer/listener; disposer clears exact handles                                                |
 | `recurringSweep`      | `fromPromise`                 | `sweeping.active`                    | One sweep result; parent awaits nested queue stop                                                        |
 | `retryTimer`          | `fromCallback`                | `retryWaiting.active`                | One virtualizable timer; exact clear on every exit                                                       |
 | `cleanupBarrier`      | `fromPromise`                 | every closing/pausing/stopping state | One bounded phase/invoke adapter; the registry session is the sole release owner                         |
 | `controlWaiter`       | `fromCallback`                | control service outside child graph  | Observes decision plus snapshot; removes two listeners and deadline on every settle                      |
-| `rawDownloadQueue`    | accepted XState child machine | one active backfill or sweep         | Serial FIFO; parent calls and awaits `queue.stop()`                                                      |
-| `rawDownloadJob`      | `fromPromise`                 | queue active state                   | One raw request; abort listener, response stream, and staging handles close before settle                |
+| `rawDownloadQueue`    | accepted XState child machine | one active backfill or sweep         | Parent pre-registers child slot; queue/job descendants pre-register every handle before acquisition      |
+| `rawDownloadJob`      | `fromPromise`                 | queue active state                   | Abort triggers pre-registered listener/stream/staging slots; every terminal settles before job settle    |
 
 The queue contract is pinned to P3-C07, issue #98, commit `e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae`, `packages/imap/src/raw-download-queue.ts`, SHA-256 `b676dee263b51eaac88846d03a109e6a77ad428959cfbc54de491b076d4cdd67`.
 
@@ -94,9 +94,15 @@ Timers are actor-owned. `watching.idling` owns one status timer beside IDLE; `wa
 
 ## Authoritative cleanup and cancellation
 
-Each cleanup state declares `minimumScope`. The resource registry owns one cleanup session and all idempotent release handles. The session contains one current versioned phase. `cleanupBarrier` remains a bounded `fromPromise`, but it only awaits one selected phase terminal and binds that terminal to one immutable invoke lease; it does not own or restart cleanup.
+Each cleanup state declares `minimumScope`. The resource registry owns one cleanup session and all idempotent release slots. Before an actor or descendant acquires or starts any resource that could survive exit, it synchronously registers one slot keyed by owner scope and stable resource identity. Registration creates the one awaited terminal immediately. The resource becomes live only after registration completes; acquisition failure settles the existing slot. Descendants apply the same rule before queue, job, abort-listener, response-stream, or staging acquisition.
 
-`beginOrPromoteCleanup` calls the registry's atomic `requestPhase` before a replacement invoke starts. A new session allocates a new epoch, phase, lease, scope, and pending terminal. An equal/narrower request retains the current phase, increments the lease, and gives the replacement a new promise over the current pending or cached immutable terminal. A `watch`-to-`workflow` request always increments the phase and installs a fresh pending workflow terminal before returning, whether the watch phase is still open or already settled. Release handles remain deduplicated; scope never downgrades.
+Acquisition code holds a registration capability only while its scope is open. A `fromCallback` disposer or `fromPromise` abort handler receives only `triggerRelease(slotId)`. That trigger is idempotent and addresses the same slot and terminal whether cleanup, normal completion, disposal, abort, or descendant shutdown calls it. No disposer or abort handler can create a close promise or register late work.
+
+Installed XState 5.32.5 processes the relevant external transition in this order: source exit actions; transition actions; target entry actions; target invoke input evaluation; source `fromCallback` disposal or `fromPromise` abort notification; target invoke start. `beginOrPromoteCleanup` therefore revokes every acquisition capability in the exiting source ownership tree and freezes the complete eligible pre-registered slot set in the transition action, before disposal or abort. Target input captures that frozen release-set identity and terminal. JavaScript cannot interleave phase selection with synchronous registration, and no later promotion can reopen registration; it can only select a broader subset of the same pre-registered tree. Late registration after the first freeze is impossible by construction.
+
+The session contains one current versioned phase. `cleanupBarrier` remains a bounded `fromPromise`, but it only awaits one selected phase terminal plus every terminal in the frozen release set and binds the result to one immutable invoke lease; it does not own or restart cleanup.
+
+`beginOrPromoteCleanup` calls the registry's atomic `requestPhase` before a replacement invoke starts. The first request revokes acquisition for the entire exiting source tree, freezes the eligible slot subset, and idempotently triggers every selected release. A new session allocates a new epoch, phase, lease, scope, release-set identity, and pending terminal. An equal/narrower request retains the current phase and frozen set, increments the lease, and gives the replacement a new promise over the current pending or cached immutable terminal. A `watch`-to-`workflow` request selects the broader subset of those same pre-registered source-tree slots, increments the phase, and installs a fresh pending workflow terminal over that union before returning, whether the watch phase is still open or already settled. It never reopens registration. Release slots remain deduplicated; scope never downgrades.
 
 A cleanup done or error transition is admitted only when all conditions hold:
 
@@ -105,10 +111,13 @@ A cleanup done or error transition is admitted only when all conditions hold:
 3. Certificate epoch and phase equal both context and the registry's current epoch/phase.
 4. Certificate effective scope equals both `context.effectiveCleanupScope` and registry effective scope.
 5. That exact scope dominates the active state's minimum scope.
-6. The certificate audit scope equals the certificate scope and its live-resource count is zero.
-7. Certificate ID and audit digest equal the registry's current phase terminal and current audit.
+6. Certificate frozen release-set identity equals the registry current phase and audit release-set identity.
+7. The certificate audit scope equals the certificate scope; live-resource and unresolved-release counts are both zero.
+8. Certificate ID and audit digest equal the registry's current phase terminal and current audit.
 
-Event-supplied scope never selects the audit. A pre-promotion watch terminal has the old phase and cannot release a workflow-required state. If watch settles and queues its done event before pause wins mailbox processing, promotion creates a fresh workflow phase; the old invoke event is ignored and the replacement settles only from the new workflow audit. If watch done wins first, `T140` finishes that session and the later pause creates a new workflow epoch. If an equal-scope redirect replaces an already-settled wrapper, the registry resolves a new per-invoke promise from the cached current-phase terminal and binds the new lease. No path waits for an impossible replay or second terminal from an old promise. Error settlement requires the same literal certificate clauses plus a fatal `WorkflowFault`. `finishCleanupScope` alone closes the registry session.
+Event-supplied scope never selects the audit or release set. A phase collects every frozen slot terminal even when one release rejects, then emits success or error only after the audit reaches zero live and zero unresolved resources. Current pending, current cached, watch-to-workflow promotion, and equal-scope replacement each cover release success and error. In all eight orders, release triggers and terminals remain exact-once and `paused`, `stopped.clean`, `stopped.failed`, and `stopped.shutdown` cannot publish with an unresolved source close.
+
+A pre-promotion watch terminal has the old phase and cannot release a workflow-required state. If watch settles and queues its done event before pause wins mailbox processing, promotion creates a fresh workflow phase; the old invoke event is ignored and the replacement settles only from the new workflow audit. If watch done wins first, `T140` finishes that session and the later pause creates a new workflow epoch. If an equal-scope redirect replaces an already-settled wrapper, the registry resolves a new per-invoke promise from the cached current-phase terminal and binds the new lease. No path waits for an impossible replay or second terminal from an old promise. Error settlement requires the same literal certificate clauses plus a fatal `WorkflowFault`. `finishCleanupScope` alone closes the registry session.
 
 ## Durable restart facts and exact writes
 
@@ -125,7 +134,7 @@ Interruption before non-CAS save preserves the prior row; interruption after sav
 
 ## Credential revision protocol
 
-Every strictly newer `credentials.changed` latches in all non-shutdown states. It advances observation but never restarts otherwise healthy work. Each bootstrap, backfill, IDLE, and sweep attempt captures `latestCredentialRevision` as immutable input.
+Every strictly newer `credentials.changed` latches in all non-shutdown states. It advances observation but never restarts otherwise healthy work. Each bootstrap, backfill, IDLE, and sweep attempt captures `latestCredentialRevision` as immutable input. T097's same-state stale-bootstrap repair is an explicit external self-transition with literal XState `reenter: true`; the default non-reentering same-state behavior is forbidden because it would not stop and restart `bootstrapSession`.
 
 For bounded actors, an auth fault older than the latch restarts startup only after the actor terminal release; an equal revision enters `authBlocked`; a future revision is an invariant terminal failure. IDLE first enters workflow cleanup. If a newer revision arrived before or during that cleanup, `T139` restarts with it after certified release; otherwise `T142` enters `authBlocked`. Duplicate/older revisions are no-ops. These rules cover both event orderings without automatic repair of healthy work.
 

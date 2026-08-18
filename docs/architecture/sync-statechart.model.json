@@ -1,17 +1,17 @@
 {
   "format": "agent-mail.sync-statechart/v1",
   "schemaVersion": 1,
-  "modelVersion": "1.0.0-candidate.4",
+  "modelVersion": "1.0.0-candidate.5",
   "status": "candidate-awaiting-independent-review",
   "oracle": {
     "normative": true,
     "description": "This file is the single normative lifecycle oracle. The accompanying Markdown files are checked views and rationale, not a second model.",
     "transitionExpansion": "A transition whose source is an array expands to one identical transition per listed atomic source configuration. @source in stoppedActors expands to the invokedActors of that source. @target in startedActors expands to the invokedActors of the target.",
     "eventSelection": "For one dequeued event, evaluate transitions from the active atomic state in listed priority order. Take the first transition whose guards all pass. If no state transition passes, apply globalEventPolicy.",
-    "actionOrder": "Actions execute in listed order. Actor exit cancellation occurs after source exit begins and before target invokes start; cleanupBarrier observes the same resource-registry release promises.",
+    "actionOrder": "Installed XState 5.32.5 orders a selected external transition as source exit actions, transition actions, target entry actions, target invoke input evaluation, source fromCallback disposal or fromPromise abort notification, then target invoke start. Every possibly surviving resource therefore has a deduplicated release slot and awaited terminal registered synchronously before acquisition/start. beginOrPromoteCleanup freezes that already-complete slot set in its transition action; a disposer or abort handler can only trigger an existing idempotent release.",
     "versionRule": "Only advanceVersion changes context.version. Ignored, stale, duplicate, rejected, and idempotent no-op events leave it unchanged. Public observations are ordered by version only when their required incarnationId values match; different incarnations are unordered.",
-    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release. cleanupBarrier is a per-invoke bounded fromPromise over a registry phase terminal. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity and zero live count. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation.",
-    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-06, R189-07, and R189-14 are resolved in this candidate; independent exact-digest review remains required."
+    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release and every acquisition-time release-slot terminal settles. cleanupBarrier is a per-invoke bounded fromPromise over a frozen registry phase terminal. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity, the frozen release-set identity, and zero live or unresolved resources. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation.",
+    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-01 through R189-15 are dispositioned as resolved in this candidate; independent exact-digest review remains required."
   },
   "frozenInputs": [
     {
@@ -505,7 +505,7 @@
     },
     {
       "id": "cleanupCertificateCoversState",
-      "predicate": "Literal conjunction: XState terminal is from the current cleanupBarrier invoke; certificate.invokeLease === context.cleanupInvokeLease; certificate.cleanupEpoch === context.cleanupEpoch === registry.currentEpoch; certificate.cleanupPhase === context.cleanupPhase === registry.currentPhase; certificate.effectiveScope === context.effectiveCleanupScope === registry.effectiveScope; scopeDominates(certificate.effectiveScope, activeState.cleanupRequirement.minimumScope); certificate.authoritativeAudit.scope === certificate.effectiveScope; certificate.authoritativeAudit.liveResourceCount === 0; certificate.certificateId and audit digest equal registry.currentPhaseTerminal/currentAudit. No event field selects the registry audit."
+      "predicate": "Literal conjunction: XState terminal is from the current cleanupBarrier invoke; certificate.invokeLease === context.cleanupInvokeLease; certificate.cleanupEpoch === context.cleanupEpoch === registry.currentEpoch; certificate.cleanupPhase === context.cleanupPhase === registry.currentPhase; certificate.effectiveScope === context.effectiveCleanupScope === registry.effectiveScope; certificate.frozenReleaseSetId === registry.currentPhase.frozenReleaseSetId === certificate.authoritativeAudit.frozenReleaseSetId; scopeDominates(certificate.effectiveScope, activeState.cleanupRequirement.minimumScope); certificate.authoritativeAudit.scope === certificate.effectiveScope; certificate.authoritativeAudit.liveResourceCount === 0; certificate.authoritativeAudit.unresolvedReleaseCount === 0; certificate.certificateId and audit digest equal registry.currentPhaseTerminal/currentAudit. No event field selects the registry audit or release set."
     },
     {
       "id": "cleanupFailureCertificateCoversState",
@@ -627,7 +627,7 @@
     },
     {
       "id": "beginOrPromoteCleanup",
-      "effect": "Atomically call resourceRegistry.requestPhase(targetState.minimumScope): if no session, increment cleanupEpoch and cleanupPhase and create it; on every cleanup-state entry increment cleanupInvokeLease; on watch-to-workflow promotion increment cleanupPhase and install a fresh workflow terminal before returning even if the watch phase already settled; on equal/broader existing scope retain the phase and expose its pending/cached terminal through a new per-invoke promise. Copy returned epoch/phase/lease/effectiveScope to context. Never downgrade or trust event material."
+      "effect": "Atomically call resourceRegistry.requestPhase(targetState.minimumScope) during the transition action. First revoke every acquisition capability in the exiting source ownership tree, freeze the complete eligible set of release slots that were synchronously registered before resource acquisition/start, and capture its identity. Registration after this first freeze is structurally unavailable. Then: if no session, increment cleanupEpoch and cleanupPhase and create it; on every cleanup-state entry increment cleanupInvokeLease; on watch-to-workflow promotion increment cleanupPhase and install a fresh workflow terminal over the broader subset of the same pre-registered source-tree slots before returning even if the watch phase already settled; on equal/broader existing scope retain the phase and expose its pending/cached terminal through a new per-invoke promise. Trigger every frozen idempotent release and copy returned epoch/phase/lease/effectiveScope to context. Never downgrade or trust event material."
     },
     {
       "id": "finishCleanupScope",
@@ -643,11 +643,13 @@
         "AbortSignal",
         "validated configuration",
         "durable checkpoint identities",
-        "credentialRevision"
+        "credentialRevision",
+        "resource registry acquisition capability"
       ],
       "success": "One result selecting backfill, IDLE watch, or polling watch plus a committed checkpoint summary.",
       "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
-      "cancellation": "XState exits starting.active, aborts the signal, and cleanupBarrier awaits registered release promises.",
+      "cancellation": "Before any external acquisition, the actor synchronously registers one deduplicated slot and awaited terminal per resource. XState abort only triggers those existing idempotent releases; cleanupBarrier awaits the frozen terminals.",
+      "resourceRegistration": "fromPromise start registers release slots before opening any socket, stream, listener, queue, or descendant; acquisition failure settles its pre-existing slot.",
       "retryOwner": "syncLifecycle"
     },
     {
@@ -660,11 +662,13 @@
         "bounded batch configuration",
         "credentialRevision",
         "MailboxCheckpointRepository",
-        "InitialBackfillCompletionRepository"
+        "InitialBackfillCompletionRepository",
+        "resource registry acquisition capability"
       ],
       "success": "InitialBackfillLoopResult with completed or already-complete, committed completion facts, and the next validated watch strategy.",
       "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
-      "cancellation": "Exit aborts the signal; a cancelled result delivered after exit is late and ignored.",
+      "cancellation": "The fromPromise abort handler only triggers acquisition-time registered release slots, including the rawDownloadQueue descendant slot; the actor awaits every slot terminal before its cancelled result, which remains late and ignored after exit.",
+      "resourceRegistration": "Before each external handle or rawDownloadQueue is acquired, synchronously register its deduplicated release slot and awaited terminal; no registration capability remains after cleanup freeze.",
       "retryOwner": "syncLifecycle",
       "durableTerminal": {
         "completed": "completions.complete transaction: checkpoint uidNext/modseq/sweepCursor/backfillCompleted/observedVersion plus all InitialBackfillCompletion fields",
@@ -678,7 +682,8 @@
       "input": ["scopeEpoch", "validated IDLE adapter", "resource registry", "credentialRevision"],
       "messages": ["idle.ready", "idle.mailboxChanged", "idle.completed", "idle.failed"],
       "normalCompletion": "Emits idle.completed only after leaving IDLE and removing owned listeners.",
-      "cancellation": "The disposer initiates adapter cancellation, removes listeners in the same lexical owner, and registers the close promise with cleanupBarrier.",
+      "cancellation": "The fromCallback disposer has no registration capability. It only triggers the IDLE adapter and listener release slots registered synchronously before acquisition and settles their existing awaited terminals.",
+      "resourceRegistration": "Before entering IDLE or installing a listener, synchronously register one deduplicated slot and terminal for that resource. The callback actor retains only idempotent trigger capabilities for disposal.",
       "retryOwner": "syncLifecycle"
     },
     {
@@ -694,7 +699,8 @@
       "messages": ["watchTimer.elapsed", "watchTimer.failed"],
       "errorCategories": ["transient", "permanent", "invariant"],
       "normalCompletion": "Clears its one timer and abort listener before emitting watchTimer.elapsed.",
-      "cancellation": "The disposer clears the timer and removes the exact registered listener synchronously.",
+      "cancellation": "The fromCallback disposer only triggers the timer and listener slots registered before handle acquisition; synchronous clear/remove settles their existing terminals.",
+      "resourceRegistration": "Register timer and listener release slots synchronously before scheduling or subscribing; retain no late-registration capability.",
       "timerOwner": "periodicStatusTimer"
     },
     {
@@ -706,11 +712,13 @@
         "actor identity",
         "MailboxCheckpointRepository plus shared InitialBackfillCompletionRepository",
         "bounded work configuration",
-        "credentialRevision"
+        "credentialRevision",
+        "resource registry acquisition capability"
       ],
       "success": "RecurringMailboxSweepResult with completed or not-eligible, committed progress, and the next validated watch strategy.",
       "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
-      "cancellation": "Exit aborts the signal; a cancelled result delivered after exit is late and ignored.",
+      "cancellation": "The fromPromise abort handler only triggers acquisition-time registered release slots, including the rawDownloadQueue descendant slot; the actor awaits every slot terminal before its cancelled result, which remains late and ignored after exit.",
+      "resourceRegistration": "Before each external handle or rawDownloadQueue is acquired, synchronously register its deduplicated release slot and awaited terminal; no registration capability remains after cleanup freeze.",
       "retryOwner": "syncLifecycle",
       "durableTerminal": {
         "completed": "completions.complete transaction using InitialBackfillCompletionRepository: checkpoint uidNext/modseq/sweepCursor/backfillCompleted/observedVersion plus all completion fields",
@@ -728,12 +736,14 @@
         "retryCapMs",
         "retryJitterRatio",
         "injected random source",
-        "virtualizable clock"
+        "virtualizable clock",
+        "resource registry acquisition capability"
       ],
       "messages": ["retryTimer.elapsed", "retryTimer.failed"],
       "errorCategories": ["invariant"],
       "normalCompletion": "Clears its one timer before emitting retryTimer.elapsed.",
-      "cancellation": "The disposer clears the timer and removes its exact listener synchronously.",
+      "cancellation": "The fromCallback disposer only triggers the timer/listener slots registered before handle acquisition; synchronous clear/remove settles their existing terminals.",
+      "resourceRegistration": "Register timer and listener release slots synchronously before scheduling or subscribing; retain no late-registration capability.",
       "timerOwner": "retryTimer"
     },
     {
@@ -746,11 +756,12 @@
         "cleanupPhase from context",
         "invokeLease from context",
         "authoritative effectiveCleanupScope from resource registry",
+        "frozenReleaseSetId from resourceRegistry.requestPhase",
         "phaseTerminal: a fresh per-invoke promise returned by resourceRegistry.awaitPhase(epoch, phase)",
         "resource registry"
       ],
-      "success": "One invocation-scoped CleanupCertificate {certificateId, cleanupEpoch, cleanupPhase, invokeLease, effectiveScope, released:true, authoritativeAudit, diagnostics}. The wrapper awaits the selected registry phase terminal, then binds it to its immutable invokeLease. A cached equal-scope terminal resolves the new wrapper promise; a promotion selects a fresh phase terminal.",
-      "error": "One invocation-scoped invariant WorkflowFault plus the same certificate fields. The registry can create an error terminal only after the selected phase has a zero authoritative audit. Synthetic wrong scope/phase/lease/epoch/audit material fails the literal guard; an exited invoke terminal is ignored by XState identity.",
+      "success": "One invocation-scoped CleanupCertificate {certificateId, cleanupEpoch, cleanupPhase, invokeLease, effectiveScope, frozenReleaseSetId, released:true, authoritativeAudit, diagnostics}. The wrapper awaits the selected registry phase terminal and every frozen slot terminal, then binds it to its immutable invokeLease. A cached equal-scope terminal resolves the new wrapper promise; a promotion selects a fresh phase terminal.",
+      "error": "One invocation-scoped invariant WorkflowFault plus the same certificate fields. The registry can create an error terminal only after every frozen slot terminal settled and the selected phase has a zero authoritative audit. Synthetic wrong scope/phase/lease/epoch/release-set/audit material fails the literal guard; an exited invoke terminal is ignored by XState identity.",
       "scopePromotion": "resourceRegistry.requestPhase is the linearization point. A watch-to-workflow request atomically updates effective scope, increments cleanupPhase, installs a fresh pending workflow phase terminal, and only then returns replacement invoke input. It does this whether the watch phase is open or settled. Old watch terminals can settle only old-phase wrappers and cannot satisfy the new phase.",
       "cancellation": "A cleanup-state replacement exits the old wrapper and increments cleanupInvokeLease. Equal-scope replacement receives a new wrapper promise over the current phase, resolving from its cached immutable terminal when already settled. Promotion receives the newly created workflow phase. Release handles remain owned and deduplicated by the one registry session; no wrapper starts a second close job.",
       "cleanupOwner": "resourceRegistry.cleanupSession is the sole release owner; cleanupBarrier is an awaited phase adapter",
@@ -760,9 +771,10 @@
         "certificate.cleanupEpoch equals context.cleanupEpoch and registry current epoch",
         "certificate.cleanupPhase equals context.cleanupPhase and registry current phase",
         "certificate.effectiveScope equals context.effectiveCleanupScope and registry current effective scope",
+        "certificate.frozenReleaseSetId equals the registry current phase frozen release-set identity",
         "certificate effective scope dominates active state minimumScope",
         "certificate authoritativeAudit.scope equals certificate.effectiveScope",
-        "certificate authoritativeAudit.liveResourceCount is zero",
+        "certificate authoritativeAudit.liveResourceCount and unresolvedReleaseCount are zero",
         "certificateId and audit digest equal the registry current-phase terminal and current audit"
       ],
       "phaseOwner": "The resource registry owns one cleanup session and versioned phases; cleanupBarrier remains a bounded fromPromise adapter for exactly one phase/invoke result."
@@ -814,7 +826,8 @@
       ],
       "success": "Serial FIFO job results with typed overflow; at most one rawDownloadJob is active.",
       "error": "A job error rejects only that job and leaves the queue able to process or stop according to its accepted machine.",
-      "cancellation": "Parent cancellation calls and awaits queue.stop(); queued jobs reject, the active job aborts, and stop acknowledges only after adapter response stream and stage cleanup close.",
+      "cancellation": "The parent abort handler only triggers the queue release slot registered before child start. queue.stop triggers pre-registered queued-job/active-job slots and acknowledges only after every existing adapter, response-stream, and staging terminal settles.",
+      "resourceRegistration": "The parent registers the queue descendant slot before start. The queue registers each job slot before admission; the active job registers every response/staging handle slot before acquisition.",
       "children": ["rawDownloadJob"],
       "note": "Exactly one instance may exist because backfill and sweep are mutually exclusive. It cannot survive its owning bounded actor.",
       "acceptedArtifact": {
@@ -836,7 +849,8 @@
       ],
       "success": "One raw download result after response and staging resources settle.",
       "error": "One typed download/cancellation error after the exact caller abort listener is removed.",
-      "cancellation": "Queue stop or job cancel aborts the job; the queue cannot acknowledge stopped before the promise finally removes its listener and closes resources."
+      "cancellation": "Queue stop or job cancel only triggers the job's existing idempotent release slots; the queue cannot acknowledge stopped before the abort-listener, response-stream, and staging terminals settle.",
+      "resourceRegistration": "fromPromise start registers the abort-listener slot, and registers response/staging slots synchronously before each acquisition. Failure before acquisition settles the already-registered slot without a live handle."
     }
   ],
   "states": [
@@ -924,7 +938,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "starting",
@@ -967,7 +982,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "backfilling",
@@ -1022,7 +1038,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "watching",
@@ -1045,7 +1062,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "watching",
@@ -1068,7 +1086,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "watching",
@@ -1091,7 +1110,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "watching",
@@ -1114,7 +1134,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "watching",
@@ -1157,7 +1178,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "sweeping",
@@ -1197,7 +1219,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "retrying",
@@ -1247,7 +1270,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "stopping",
@@ -1270,7 +1294,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "stopping",
@@ -1297,7 +1322,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "stopping",
@@ -1317,7 +1343,8 @@
         "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
         "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
         "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
-        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease",
+        "cleanupBarrier.frozenReleaseSetId": "resourceRegistry.currentPhase.frozenReleaseSetId"
       },
       "public": {
         "actorState": "stopping",
@@ -1883,11 +1910,12 @@
       "event": "xstate.error.actor.bootstrapSession",
       "guards": ["authFaultUsesSupersededRevision"],
       "target": "starting.active",
+      "reenter": true,
       "actions": ["bindCredentialRevision", "beginEffectScope", "advanceVersion"],
       "stoppedActors": ["bootstrapSession"],
       "startedActors": ["bootstrapSession"],
       "durableWrites": [],
-      "observation": "A stale authentication failure cannot block the newer credential revision; the closed actor restarts bound to latestCredentialRevision."
+      "observation": "A stale authentication failure cannot block the newer credential revision; literal XState `reenter: true` exits the old invoke and starts a replacement bound to latestCredentialRevision."
     },
     {
       "id": "T098",
@@ -3262,7 +3290,7 @@
     },
     {
       "id": "I03",
-      "statement": "stopped.clean, stopped.failed, stopped.shutdown, paused, and authBlocked own zero child actors, timers, listeners, streams, sockets, and subscriptions."
+      "statement": "stopped.clean, stopped.failed, stopped.shutdown, paused, and authBlocked own zero child actors, timers, listeners, streams, sockets, subscriptions, unresolved release slots, and unresolved close terminals."
     },
     {
       "id": "I04",
@@ -3274,11 +3302,11 @@
     },
     {
       "id": "I06",
-      "statement": "One registry cleanup session owns all release handles. It has exactly one current versioned phase; watch-to-workflow promotion is linearizable, always creates a fresh workflow phase/terminal, and never duplicates release ownership. Every cleanup-state replacement gets a new invoke lease."
+      "statement": "One registry cleanup session owns all acquisition-time release slots and handles. It has exactly one current versioned phase over a frozen release set; watch-to-workflow promotion is linearizable, always creates a fresh workflow phase/terminal over the promoted frozen set, and never duplicates release ownership. Every cleanup-state replacement gets a new invoke lease."
     },
     {
       "id": "I07",
-      "statement": "Cleanup done/error requires the current XState invoke and exact certificate/context/registry epoch, phase, lease, and effective-scope equality, scope dominance, audit-scope equality, current terminal/digest identity, and zero live resources. Old or wrong terminals cannot settle; every current phase has a pending or cached terminal source."
+      "statement": "Cleanup done/error requires the current XState invoke and exact certificate/context/registry epoch, phase, lease, effective-scope, and frozen-release-set equality, scope dominance, audit-scope equality, current terminal/digest identity, and zero live or unresolved resources. Old or wrong terminals cannot settle; every current phase has a pending or cached terminal source."
     },
     {
       "id": "I08",
@@ -3331,6 +3359,10 @@
     {
       "id": "I20",
       "statement": "After process.shutdown.requested is accepted, no transition in that incarnation can enter starting, backfilling, watching, sweeping, retryWaiting, authBlocked, or paused."
+    },
+    {
+      "id": "I21",
+      "statement": "Every external or descendant resource that may survive source exit has exactly one deduplicated release slot and awaited terminal registered synchronously before acquisition/start. requestPhase freezes that complete slot set before XState disposal/abort; disposers and abort handlers can only trigger existing idempotent releases, and no registration capability exists after freeze."
     }
   ],
   "unreachableStateAccount": {
@@ -3433,7 +3465,7 @@
         "excludedBy": [
           "state cleanupRequirement",
           "exact certificate/context/registry epoch+phase+invokeLease+effectiveScope equality",
-          "audit scope/current terminal/digest equality and zero live count",
+          "audit scope/frozen release set/current terminal/digest equality and zero live/unresolved counts",
           "fresh workflow phase on open or settled promotion"
         ]
       },
@@ -3464,6 +3496,16 @@
           "clearTerminalFailure",
           "strict public projection fixtures"
         ]
+      },
+      {
+        "id": "U16",
+        "configuration": "paused, stopped.clean, stopped.failed, or stopped.shutdown with an unresolved source close or release-slot terminal",
+        "excludedBy": [
+          "resource slots and terminals are registered synchronously before acquisition/start",
+          "requestPhase freezes the complete eligible release set before source disposer or abort notification",
+          "cleanup phase settlement requires every frozen terminal settled and zero unresolved/live resources",
+          "fromCallback disposal and fromPromise abort can trigger but cannot register release work"
+        ]
       }
     ]
   },
@@ -3489,13 +3531,14 @@
       },
       {
         "id": "PATH-ACTOR",
-        "generator": "each actor success, normal completion, error category, cancellation, late terminal event, literal cleanup certificate mismatch, open/settled promotion, both terminal/promotion orders, and same-scope replacement settlement",
+        "generator": "each actor success, normal completion, error category, cancellation, late terminal event, literal cleanup certificate mismatch, fromCallback disposal, fromPromise abort, acquisition-time slot registration, open/settled promotion, both terminal/promotion orders, and same-scope replacement settlement",
         "obligations": [
           "all workflow/nested actors",
           "all control outcomes",
           "authoritative versioned cleanup certificates",
           "CLEANUP-RACE-01 through CLEANUP-RACE-03",
-          "CLEANUP-REPLACE-01"
+          "CLEANUP-REPLACE-01",
+          "SOURCE-EXIT-01 through SOURCE-EXIT-08"
         ]
       },
       {
@@ -3514,7 +3557,7 @@
       },
       {
         "id": "PATH-ORDER",
-        "generator": "pairwise permutations of IDLE, timer, cleanup phase settlement/promotion/replacement, controls, credential revisions, auth faults, restart, and shutdown around every exit",
+        "generator": "pairwise permutations of IDLE, timer, source disposal/abort trigger, release success/error, cleanup phase settlement/promotion/replacement, controls, credential revisions, auth faults, restart, and shutdown around every exit",
         "obligations": [
           "late",
           "duplicate",
@@ -3523,7 +3566,8 @@
           "both credential/fault orders",
           "shutdown terminality",
           "watch-terminal-before-promotion and promotion-before-terminal",
-          "equal-scope settled replacement"
+          "equal-scope settled replacement",
+          "current/cached/promotion/equal-scope/replacement release success/error"
         ]
       },
       {
@@ -3644,7 +3688,7 @@
       },
       {
         "id": "PROP-02",
-        "statement": "I03 through I07 hold under virtual time, delayed release, open/settled watch promotion, old terminal delivery, same-scope replacement, and cached current-phase settlement."
+        "statement": "I03 through I07 and I21 hold under virtual time, delayed release, fromCallback disposal, fromPromise abort, open/settled watch promotion, old terminal delivery, same-scope replacement, cached current-phase settlement, and every release success/error ordering."
       },
       {
         "id": "PROP-03",
@@ -3668,7 +3712,7 @@
       },
       {
         "id": "PROP-08",
-        "statement": "Every U01-U15 forbidden configuration remains unreachable; the generator invokes the construction attempt recorded for each U01 through U15 row."
+        "statement": "Every U01-U16 forbidden configuration remains unreachable; the generator invokes the construction attempt recorded for each U01 through U16 row."
       },
       {
         "id": "PROP-09",
@@ -3693,6 +3737,10 @@
       {
         "id": "PROP-14",
         "statement": "The constructive 85-cell command/ordering resolver is complete and non-overlapping; listener registration, synchronous send, pre/post snapshots, fixed-expiry cache retention/eviction, replay, conflict, capacity, supersession, failure, timeout, and reconstruction satisfy exact-once settlement and public (incarnationId, version) ordering."
+      },
+      {
+        "id": "PROP-15",
+        "statement": "Under installed XState 5.32.5 ordering, every source fromCallback disposer and fromPromise abort observes a release set frozen from acquisition-time slots; no late registration is possible, every current/cached/promotion/equal-scope/replacement success/error ordering settles exactly once, T097 reenters, and paused/stopped.clean/stopped.failed/stopped.shutdown have no unresolved close."
       }
     ],
     "requiredFailureArtifacts": [
@@ -3740,9 +3788,9 @@
     {
       "id": "F17",
       "transitions": ["T022", "T024", "T121", "T122", "T140", "T141", "T143", "T160"],
-      "invariants": ["I04", "I05", "I16"],
-      "failureInjection": "Run thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners and timers.",
-      "postcondition": "Every settled callback actor owns zero listeners and timers; counts remain bounded."
+      "invariants": ["I04", "I05", "I16", "I21"],
+      "failureInjection": "Run thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners, timers, acquisition-time slots, and unresolved terminals; exercise installed fromCallback disposal ordering.",
+      "postcondition": "Every settled callback actor owns zero listeners, timers, or unresolved release terminals; disposal only triggers pre-registered slots and counts remain bounded."
     },
     {
       "id": "F18",
@@ -3763,9 +3811,9 @@
         "T184",
         "T185"
       ],
-      "invariants": ["I06", "I07", "I15"],
-      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while child closes are delayed; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
-      "postcondition": "One registry session owns release; promotion installs a fresh versioned workflow terminal; equal-scope replacement settles from a new wrapper over the current phase; exact scope/audit identity gates terminal state; shutdown never restarts its incarnation."
+      "invariants": ["I06", "I07", "I15", "I21"],
+      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while callback disposal/promise abort and child closes are delayed; permute release success/error with current/cached/promotion/equal-scope/replacement settlement; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
+      "postcondition": "One registry session owns acquisition-time release slots; phase freeze precedes source disposal/abort; promotion installs a fresh versioned workflow terminal; equal-scope replacement settles from a new wrapper over the current phase; exact scope/release-set/audit identity and zero unresolved closes gate paused/stopped; shutdown never restarts its incarnation."
     },
     {
       "id": "F19",
@@ -3831,9 +3879,10 @@
         "I17",
         "I18",
         "I19",
-        "I20"
+        "I20",
+        "I21"
       ],
-      "failureInjection": "Generate controls and actor outcomes at every state, guard branch, cancellation edge, timer edge, cleanup epoch/phase/lease race, and restart boundary.",
+      "failureInjection": "Generate controls and actor outcomes at every state, guard branch, callback-disposal/promise-abort cancellation edge, timer edge, cleanup epoch/phase/lease/release-set race, and restart boundary.",
       "postcondition": "The active state names current work, owns every effect, and controls report only observed transitions."
     }
   ],
@@ -3889,16 +3938,83 @@
       "open": "one current {epoch, phase, effectiveScope} owns a pending terminal and continues release/audit",
       "settled": "the current phase owns one immutable terminal/certificate and cached audit; the session remains promotable until finishCleanupScope"
     },
+    "releaseSlotProtocol": {
+      "register": "Before an actor or descendant acquires/starts each external resource, it synchronously calls registerReleaseSlot(ownerScope, stableResourceId, release). The registry deduplicates by ownerScope plus stableResourceId and immediately creates one pending terminal. Registration completes before the resource becomes live or externally reachable; a failed acquisition settles that same slot.",
+      "capabilities": "Acquisition code receives a register capability only while its owner source tree is active. A disposer or AbortSignal handler receives only triggerRelease(slotId). The first requestPhase synchronously revokes every register capability in the exiting source ownership tree and freezes the eligible slot subset; later promotion can select a broader subset only from that same already-registered tree. The type/state boundary exposes no register operation after the first freeze.",
+      "trigger": "triggerRelease is idempotent and may run from requestPhase, fromCallback disposal, fromPromise abort, normal completion, or descendant shutdown. Every caller addresses the same slot and same terminal; no caller creates a close promise.",
+      "settle": "A slot terminal settles success or error exactly once after the owned handle is closed/removed. Release error is diagnostic material, not permission to skip the remaining slots. A phase terminal cannot settle until all frozen slot terminals have settled and the authoritative audit reports zero live and zero unresolved resources.",
+      "descendants": "initialBackfill and recurringSweep register rawDownloadQueue before child start; the queue registers each rawDownloadJob before admission; the job registers abort-listener, response-stream, and staging slots before acquisition. Parent terminal output awaits descendant slot terminals.",
+      "lateRegistration": "Impossible by construction: JavaScript cannot interleave requestPhase with synchronous registration, requestPhase revokes the only register capability before freezing, and source disposer/abort closures never possess it. An implementation exposing registration to disposal/abort violates I21 before runtime."
+    },
+    "xstateExitOrder": [
+      "source exit actions",
+      "selected transition actions; beginOrPromoteCleanup freezes the pre-registered slot set here",
+      "target entry actions",
+      "target cleanupBarrier invoke input captures epoch, phase, lease, effective scope, frozenReleaseSetId, and phase terminal",
+      "source fromCallback disposer or fromPromise AbortSignal handler only triggers existing slots",
+      "target cleanupBarrier fromPromise starts and awaits those frozen slot terminals"
+    ],
     "requestPhaseLinearization": [
-      "No session: allocate epoch+1, phase+1, lease+1, effective minimum scope, pending phase terminal, and idempotently request releases.",
-      "Equal or narrower request: keep epoch/phase/effective scope, allocate lease+1, and return a new per-invoke promise over the current pending or cached immutable terminal.",
-      "Broader watch-to-workflow request: before replacement invoke creation, atomically set workflow, allocate phase+1 and lease+1, install a fresh pending workflow terminal, reuse/deduplicate releases, and run a fresh workflow audit. This rule is identical for open and settled watch phases.",
+      "The first request revokes every acquisition capability in the exiting source ownership tree, freezes the complete eligible subset of its pre-registered slots, assigns frozenReleaseSetId, and triggers each selected slot idempotently before source disposal/abort can run. Later requests cannot register anything.",
+      "No session: allocate epoch+1, phase+1, lease+1, effective minimum scope, pending phase terminal over the frozen set, and idempotently request releases.",
+      "Equal or narrower request: keep epoch/phase/effective scope and its frozen set, allocate lease+1, and return a new per-invoke promise over the current pending or cached immutable terminal.",
+      "Broader watch-to-workflow request: before replacement invoke creation, atomically select/freeze the broader subset of the same pre-registered source-tree slots, set workflow, allocate phase+1 and lease+1, install a fresh pending workflow terminal over that union, reuse/deduplicate releases, and run a fresh workflow audit. No acquisition capability is reopened. This rule is identical for open and settled watch phases.",
       "finishCleanupScope: only after literal certificate admission, close the session; later cleanup allocates a new epoch."
     ],
-    "phaseSettlement": "Only the registry may settle a phase. It snapshots the phase effective scope, performs the audit for exactly that scope, and creates a certificate only at liveResourceCount zero. A superseded phase may finish for its old wrapper, but cannot mutate or settle the current phase.",
+    "phaseSettlement": "Only the registry may settle a phase. It snapshots the phase effective scope and frozen release-set identity, awaits every slot terminal even when one rejects, performs the audit for exactly that scope/set, and creates a success or error certificate only at liveResourceCount zero and unresolvedReleaseCount zero. A superseded phase may finish for its old wrapper, but cannot mutate or settle the current phase.",
     "invokeAdapter": "Each cleanupBarrier fromPromise awaits resourceRegistry.awaitPhase(epoch, phase), which always returns a new promise for that invocation. If the same phase is already settled, the registry resolves the new promise from the cached immutable phase terminal and the wrapper binds the current lease. It never reuses an old invocation output. If scope promoted, the wrapper awaits the fresh workflow phase, never the old settled watch promise.",
-    "admission": "Current XState invoke plus exact certificate/context/registry epoch, phase, invoke lease, and effective-scope equality; scope dominance; audit scope equality; zero live count; current certificate/audit digest equality.",
-    "invalidMaterial": "Wrong scope, stale phase/epoch/lease, replaced invoke, wrong certificate ID/digest, or nonzero audit cannot transition. Old-invoke events are ignored; synthetic current-invoke invalid material leaves the current phase pending/settled and observable as an invariant fault at the adapter boundary.",
+    "admission": "Current XState invoke plus exact certificate/context/registry epoch, phase, invoke lease, effective-scope, and frozenReleaseSetId equality; scope dominance; audit scope and release-set equality; zero live and unresolved counts; current certificate/audit digest equality.",
+    "invalidMaterial": "Wrong scope, stale phase/epoch/lease, replaced invoke, wrong frozen release set, wrong certificate ID/digest, or nonzero live/unresolved audit cannot transition. Old-invoke events are ignored; synthetic current-invoke invalid material leaves the current phase pending/settled and observable as an invariant fault at the adapter boundary.",
+    "sourceExitTraces": [
+      {
+        "id": "SOURCE-EXIT-01",
+        "phase": "current pending",
+        "release": "success",
+        "postcondition": "callback disposal or promise abort triggers the frozen slot; the current phase settles once after its terminal."
+      },
+      {
+        "id": "SOURCE-EXIT-02",
+        "phase": "current pending",
+        "release": "error",
+        "postcondition": "all frozen terminals settle, zero-resource error certificate settles once, and stopped.failed/shutdown has no unresolved close."
+      },
+      {
+        "id": "SOURCE-EXIT-03",
+        "phase": "current cached",
+        "release": "success",
+        "postcondition": "replacement wrapper receives a new lease over the cached terminal; no release or terminal is duplicated."
+      },
+      {
+        "id": "SOURCE-EXIT-04",
+        "phase": "current cached",
+        "release": "error",
+        "postcondition": "replacement wrapper receives the cached zero-resource error terminal; no unresolved close remains."
+      },
+      {
+        "id": "SOURCE-EXIT-05",
+        "phase": "watch-to-workflow promotion",
+        "release": "success",
+        "postcondition": "the fresh workflow phase freezes the union of pre-registered slots and reaches paused only after all settle."
+      },
+      {
+        "id": "SOURCE-EXIT-06",
+        "phase": "watch-to-workflow promotion",
+        "release": "error",
+        "postcondition": "the fresh workflow phase reports a zero-resource error only after all union terminals settle."
+      },
+      {
+        "id": "SOURCE-EXIT-07",
+        "phase": "equal-scope replacement",
+        "release": "success",
+        "postcondition": "idempotent trigger and a new wrapper lease settle once from the same frozen set."
+      },
+      {
+        "id": "SOURCE-EXIT-08",
+        "phase": "equal-scope replacement",
+        "release": "error",
+        "postcondition": "the new wrapper observes the same settled error after all closes; no late registration or hang is possible."
+      }
+    ],
     "raceTraces": [
       {
         "id": "CLEANUP-RACE-01",
@@ -4120,7 +4236,7 @@
     {
       "id": "R189-13",
       "disposition": "resolved",
-      "oracle": ["PROP-08 covers U01-U15"]
+      "oracle": ["PROP-08 covers U01-U16"]
     },
     {
       "id": "R189-14",
@@ -4129,6 +4245,24 @@
         "GEP04 explicitly ignores every credential revision in stopping.forShutdown and stopped.shutdown",
         "GEP06 includes control.stop.requested and returns stale-version on expectedVersion mismatch",
         "PROP-09 construction corpus"
+      ]
+    },
+    {
+      "id": "R189-15",
+      "disposition": "resolved",
+      "oracle": [
+        "oracle.actionOrder",
+        "cleanupProtocol.releaseSlotProtocol",
+        "cleanupProtocol.xstateExitOrder",
+        "cleanupProtocol.sourceExitTraces",
+        "actors[*].resourceRegistration",
+        "T097.reenter:true",
+        "I03",
+        "I21",
+        "U16",
+        "PROP-15",
+        "F17",
+        "F18"
       ]
     }
   ]
