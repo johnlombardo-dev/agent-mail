@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { createOperationRegistry, defineOperation } from "../src/operation-registry";
 import { assertOpenApi31, assertOpenApiCompleteness, generateOpenApiDocument, stableJson } from "../src/openapi";
-import { httpErrorRegistry, publicOperationRegistry } from "../../daemon/src/http";
+import { publicOperationRegistry } from "../../daemon/src/http";
+import { httpErrorRegistry } from "../src/index";
 
 describe("OpenAPI registry projection", () => {
   it("is OpenAPI 3.1, complete, and byte deterministic", () => {

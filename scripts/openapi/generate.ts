@@ -1,4 +1,5 @@
-import { httpErrorRegistry, publicOperationRegistry } from "../../packages/daemon/src/http";
+import { publicOperationRegistry } from "../../packages/daemon/src/http";
+import { httpErrorRegistry } from "../../packages/contracts/src/index";
 import { resolve } from "node:path";
 import {
   assertOpenApi31,

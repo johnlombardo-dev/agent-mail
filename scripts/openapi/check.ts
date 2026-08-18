@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { httpErrorRegistry, publicOperationRegistry } from "../../packages/daemon/src/http";
+import { publicOperationRegistry } from "../../packages/daemon/src/http";
+import { httpErrorRegistry } from "../../packages/contracts/src/index";
 import {
   assertOpenApi31,
   assertOpenApiCompleteness,

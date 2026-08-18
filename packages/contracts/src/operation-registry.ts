@@ -4,6 +4,7 @@ import {
   publicErrorStatusSchema,
   safeErrorMessageSchema,
   type ErrorDefinition,
+  type ErrorRegistry,
 } from "./error-envelope";
 
 /** The only stream modes understood by a public operation. */
@@ -178,6 +179,21 @@ export type OperationRegistry = Readonly<{
   readonly parseRequest: (key: string, input: unknown) => unknown;
   readonly parseResponse: (key: string, input: unknown) => unknown;
 }>;
+
+/** Ensure operation-scoped errors agree with the shared public authority. */
+export function assertPublicErrorStatusConsistency(
+  errorRegistry: Pick<ErrorRegistry, "get">,
+  definitions: readonly OperationDefinition[],
+): void {
+  for (const definition of definitions)
+    for (const error of definition.errors) {
+      const shared = errorRegistry.get(error.code);
+      if (shared !== undefined && shared.status !== error.status)
+        throw new Error(
+          `conflicting public error status for ${error.code}: ${shared.status} and ${error.status}`,
+        );
+    }
+}
 
 /**
  * Build the single source of operation metadata used by REST and CLI layers.

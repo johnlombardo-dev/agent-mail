@@ -1,6 +1,7 @@
 export * from "./action-operations";
 export * from "./action-authority";
 export * from "./error-envelope";
+export * from "./http-error-authority";
 export * from "./operation-registry";
 export * from "./openapi";
 export * from "./report-admin-operations";
