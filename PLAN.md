@@ -1,6 +1,6 @@
 # Agent Mail implementation plan
 
-Status: evidence-backed planning baseline; implementation not started.
+Status: evidence-backed planning baseline; implementation not started. Daybreak access is approved, but the complete applicable security lane is unverified and release-blocking. Planning is blocked by the unresolved consequential authority decision in #203.
 
 ## Evidence baseline
 
@@ -104,7 +104,7 @@ Success means an operator can install, diagnose, back up, restore, and use the s
 | S07 | required | Existing/future, API/CLI, storage/route, and actor/API paths previously drifted. |
 | S08 | required | Provider-shaped fakes masked UIDNEXT, IDLE, auth, and storage-return behavior. |
 | S09 | required | FTS, MIME RSS, sparse UIDs, selected export, journals, streaming, and timeouts grow differently. |
-| S10 | required | The product indexes private email and exposes identity, bearer, report, filesystem, and mutation boundaries. ChatGPT cybersecurity access is pending; the complete applicable security lane remains a release blocker until run. |
+| S10 | required | The product indexes private email and exposes identity, bearer, report, filesystem, and mutation boundaries. Daybreak access is approved; the complete applicable security lane remains unverified and release-blocking until run. |
 | S11 | required | README truth, Git history, doctor, restore, launchd, Tailscale, and rollback determine operability. |
 | S12 | required | Local, live, security, deployed, and delivery evidence were previously easy to conflate. |
 
@@ -122,6 +122,24 @@ Success means an operator can install, diagnose, back up, restore, and use the s
 10. **Bounded operation:** sync, parsing, search, streaming, journals, and selected export have explicit resource ceilings and backpressure behavior.
 11. **Private by default:** sensitive directories and files fail closed on unsafe permissions; secrets and untrusted message data do not enter routine logs.
 12. **Truthful evidence:** every acceptance claim names the exact static, isolated, composed, capacity, live, security, deployed, or delivery evidence that supports it.
+
+## Daybreak security intervention gates
+
+The rows below are synchronized with the project failure-shield registry and the evidence ledger. They are structural planning authority, not security-review results. `specified; release-blocking` means the proof is defined but has not passed. The #203 row is additionally blocked by an unresolved consequential product decision; no approval policy is invented here.
+
+| ID | Demonstrated counterexample | Invariant | Planned control | Faithful executable proof | Owner issue | Intervention timing | Evidence status |
+|---|---|---|---|---|---|---|---|
+| F09-P | Historical F09 bundled bearer executor impersonation with expired-plan recovery; public bearer routes could reach executor capabilities. | Public credentials cannot invoke claim, resume, or finalize capabilities reserved for the internal actor. | Keep executor capability internal, enumerate every route/scope, and reject every bearer path before any effect. | Enumerate registered routes and scopes, exercise each bearer profile against executor calls, and assert zero executor effects and stable denial. | #183, #185 | Stage 2 planning gate; before action CLI, live mutation, and final security qualification. | specified; release-blocking |
+| F09-R | Historical F09 bundled public reachability with a persisted undispatched attempt recovered after plan expiry; creation-time expiry did not protect recovery dispatch. | After authority expiry, no new remote effect begins; only an already-dispatched uncertain attempt may reconcile read-only. | Revalidate plan state, claim/version, target identity, and expiry immediately before every new effect, including recovered attempts and later targets; classify expired undispatched attempts durably. | Persist an undispatched attempt before expiry, recover after expiry, and assert zero precondition reads that mutate, zero mutation-adapter calls, and a durable non-executing result; repeat between targets. | #202, #183, #185 | Stage 2, before action CLI/live mutation; Stage 4 reruns the original reproduction and adjacent counterexample. | specified; release-blocking |
+| SEC-R01 | Same expired-undispatched recovery counterexample as F09-R. | No fresh external effect is admitted after plan authority expiry. | Use one explicit per-effect authority guard with constructive expired-versus-dispatched states and read-only reconciliation for uncertainty. | Crash after persisting an undispatched attempt, advance past expiry, restart, and retain remote-call traces plus durable terminal snapshots. | #202 | Stage 2 before any dependent action work; Stage 4 closure. | specified; release-blocking |
+| SEC-R02 | A bearer with authorize and commit scopes can self-mint approval; durable evidence stores only a scope and accepts caller-spoofed principal data. | An unattended acting credential cannot mint the independent approval it consumes, and authenticated principal/profile provenance survives restart and restore. | Freeze #203's independent authority decision before #204; persist trusted principal/profile, exact digest/targets/intent/version, expiry, nonce, and one-use consumption; fail closed for legacy scope-only rows. | Reject same-token approval, spoofed principal, changed digest/targets/intent/version, replay, concurrent consume, and restart-around-consume with zero unauthorized effects; run direct and composed paths. | #203, #204 | Stage 2: #203 must resolve before #204, action CLI, or live mutation; Stage 4 closure. | blocked by unresolved #203 consequential decision; release-blocking |
+| SEC-R03 | A valid wrong-scope bearer can send an unlimited chunked JSON body; current ingress materializes JSON before exact-scope and byte admission. | Authenticate, authorize exact scope, and enforce received-byte/item/time budgets before parsing, decoding, decompression, or large retention, including streaming input. | Route every request through one bounded streaming admission helper; reject wrong scope and oversize before materialization and keep stable errors. | Exercise honest, absent, malformed, exact, and oversized Content-Length plus chunked/slow/aborted bodies with correct and wrong-scope credentials; assert zero body-reader/handler calls on wrong scope and bounded retained RSS. | #205, #176 | Stage 2 before OpenAPI/route integration; Stage 4 reruns request-admission resource bounds. | specified; release-blocking |
+| SEC-R04 | Untrusted subject text containing OSC 52 or carriage return can forge terminal output; input schemas do not protect human rendering. | Human output cannot emit terminal controls or overwrite trusted chrome, while structured output remains schema-valid and raw bytes remain exact. | Centralize typed output contexts for human terminal, JSON/JSONL, reports, logs, and raw binary; use a hostile corpus and explicit TTY policy. | Run ESC/CSI/OSC, CR/backspace, C0/C1, bidi, links, and filenames through each context; assert inert human bytes, faithful structured bytes, and byte-exact permitted raw streams. | #206, #183, #185 | Stage 2 before human CLI renderers; Stage 4 final CLI/security closure. | specified; release-blocking |
+| SEC-R05 | A direct client can supply Tailscale/proxy identity headers over a backend path and appear to be the trusted owner; loopback binding alone does not prove provenance. | Intermediary identity is trusted only across a verified hop; direct copies of trusted headers are stripped or overwritten before authorization. | Define the exact intermediary topology, direct-backend policy, owner mapping, and header allowlist; strip direct-client identity headers and verify owned Serve state. | Exercise direct loopback/LAN/tailnet requests with spoofed, missing, stale, and wrong-owner headers versus a verified intermediary/Serve-mediated request; retain topology/config evidence without secrets. | #180, #183 | Stage 2 planning/deployment prerequisite; Stage 4 deployed security qualification. | specified; release-blocking |
+| SEC-R06 | A client or stored record can tamper with or replay keyed previews, content digests, nonces, versions, or target summaries when the consumer trusts the supplied commitment. | Every commitment is recomputed from canonical current inputs at each consume/reuse boundary and mismatch or replay cannot authorize an effect. | Bind canonical intent, target set, plan/version, nonce, and content digest to a server-authoritative commitment; recompute at consume/reuse and retain uncertainty. | Tamper and replay each commitment field with attacker-known algorithms, changed targets, and restored state; assert rejection before effect and matching durable audit evidence. | #183, #185 | Stage 1 planning rule; Stage 2 implementation seams; Stage 4 complete security/finding closure. | specified; release-blocking |
+| SEC-R07 | An advisory scan can be green while a vulnerable transitive dependency is reachable, or an old exception persists without an owner/removal condition. | Dependency security decisions combine advisory results with installed-version reachability, affected-surface proof, named exception owner, removal condition, and release recheck. | Require an exact dependency inventory, reachability/affected-version proof, explicit exception record, and bootstrap/release recheck; stale exceptions fail qualification. | Pair advisory output with installed graph/runtime reachability, exercise the affected boundary where feasible, and assert every exception has owner, removal condition, and current recheck. | #183, #185 | Stage 1 planning/dependency policy; Stage 4 release qualification. | specified; release-blocking |
+
+Coordination is inherited from #208: hold action CLI/live mutation, OpenAPI route integration, ad hoc human renderers, and final security closure at Stage 0; close #202, #203, #205, and #206 before dependent implementation, then implement #204 only against an accepted #203 digest; reopen downstream work only after the corresponding repair and original regression pass; #183 and #185 remain final gates. #202 and #204 may not overlap action contract/service mutation. #205 owns the shared HTTP boundary, and #206 owns the shared CLI output foundation. Historical #151/#152 contracts and the #202–#208 issue bodies remain frozen inputs; this update does not rewrite their hashes or dispositions.
 
 ## Architecture decisions
 
@@ -249,6 +267,8 @@ Entry: read-only and local-action paths pass.
 Work:
 
 - Implement server-authoritative action plans, exact frozen targets, actual requested MODSEQ preconditions, explicit commit, atomic claim, internal executor capability, per-target durable results, stale rejection, partial results, and uncertain-outcome reconciliation.
+- Revalidate current authority immediately before every new external effect, including recovered undispatched attempts and later targets; an expired undispatched attempt becomes a durable non-executing result, while an already-dispatched uncertain attempt may only reconcile read-only. This work is blocked until #202 closes.
+- Implement independent approval and durable authenticated-principal/profile provenance only after #203 has an accepted exact digest; #204 must not invent or retain a scope-only compatibility path.
 - Discover Archive/Trash via special-use mailboxes. Never implement delete-and-expunge.
 - Restrict public token scopes to user operations; do not expose executor resume/finalize endpoints.
 
@@ -266,7 +286,9 @@ Entry: use cases close through storage and workflow.
 Work:
 
 - Wire every supported API route and generate OpenAPI from the shared registry. Make the CLI schema-driven and validate success and error responses.
+- Gate every HTTP body through authentication, exact-scope authorization, and bounded streaming byte admission before JSON materialization; this work is blocked on #205.
 - Implement search-first skill behavior, explicit body/raw/attachment retrieval, untrusted-email markers, source citations, sanitized Markdown reports, strict CSP, and text-only source views.
+- Route all human terminal rendering through the shared output-context policy, preserving structured and raw-byte semantics; command renderers wait for #206.
 - Stream raw, attachments, selected JSONL export, and report output with backpressure and explicit connect/control/stream-idle timeout policies.
 
 Exit evidence:
@@ -300,7 +322,7 @@ Entry: Phases 0-7 have their required local evidence.
 Work:
 
 - Close every row in `docs/planning/EVIDENCE.md` with a test/probe path and retained result.
-- Run a bounded system-mode `evidence-first-review` on the release candidate. Route lanes from the actual manifest. Once ChatGPT cybersecurity access is granted, run the complete applicable security lane without the earlier permission-driven truncation and record any residual gaps.
+- Run a bounded system-mode `evidence-first-review` on the release candidate. Route lanes from the actual manifest. Daybreak access is approved, so run the complete applicable security lane without the earlier permission-driven truncation and record any residual gaps; access approval is not security evidence.
 - Run check-only static gates, the full local suite, composed matrices, capacity gates, live read smoke, explicit live mutation smoke if Phase 1 claims mutation readiness, deployed operations, README command walkthrough, and backup restore.
 - Commit intentionally, verify the exact branch/HEAD and clean scope, then record remote delivery separately if requested and available.
 
@@ -308,6 +330,7 @@ Exit evidence:
 
 - No release-blocking traceability row is open. Review reports `no confirmed findings` for the frozen candidate or all findings have a separately verified repair seam.
 - Evidence states distinguish locally verified, live verified, deployed verified, security reviewed, and delivered. Missing external proof keeps only the affected promotion gate closed.
+- The complete applicable security lane remains unverified and release-blocking until #183 runs; #203's unresolved authority decision blocks implementation qualification even though Daybreak access is approved.
 
 ## Acceptance matrices
 
@@ -351,6 +374,7 @@ Promotion rules:
 - No implementation or runtime evidence exists yet. The local workspace is not initialized as Git, but the empty canonical remote `johnlombardo-dev/agent-mail` is available.
 - Hermes slug `agent-mail` and range `6110–6119` are allocated. Its display name and base path still reference the prior Sol-Luna prototype and need an in-place metadata correction without reallocation.
 - Live iCloud, live mutation, launchd, Tailscale, target-host restart, and full restore have not been exercised for this implementation.
-- The source audit's security work was partial. ChatGPT cybersecurity access is pending; applying for access is not security evidence, and release qualification remains blocked until the complete applicable lane is run.
+- The source audit's security work was partial. Daybreak access is approved, but the complete applicable security lane is unverified; access approval is not security evidence, and release qualification remains blocked until #183 runs.
+- #203 has not accepted the consequential single-user authority decision about who may approve, who may commit, and what independently verifiable authority means. Preserve this as a blocker; do not invent a principal/profile/interactivity rule.
 - Remote IMAP effects cannot be atomically committed with SQLite. `uncertain` plus reconciliation is an explicit design obligation, not a solved exactly-once guarantee.
 - The package snapshot was current on 2026-08-17, but bootstrap and release must recheck latest stable releases, peer and engine compatibility, advisories, and installed behavior. Current Apple, ImapFlow, SQLite, and Tailscale behavior still requires primary-documentation and installed-version verification during implementation.

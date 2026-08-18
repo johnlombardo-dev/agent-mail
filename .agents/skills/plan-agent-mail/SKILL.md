@@ -12,9 +12,10 @@ Complement this repository's rigorous plan with Agent Mail-specific conformance 
 1. Read `PLAN.md` and `docs/planning/EVIDENCE.md`; freeze their source session IDs, audited fingerprint, current repository boundary, Hermes allocation, dependency policy, security-review prerequisite, status, and explicit gaps.
 2. Confirm the plan still uses prototype evidence selectively: Sol's shared-contract skeleton and Sol-Luna's boundary parsing, per-target durability, and cleanup discipline, without inheriting either implementation wholesale.
 3. Read [references/failure-shields.md](references/failure-shields.md). Check that F01-F30 still have an invariant, planned control, faithful proof, owner, and honest status.
-4. Check the four composed seams, four parity matrices, production-shaped fake contracts, capacity inventory, trust boundaries, outcome-based operations, canonical remote, `6110–6119` role map, latest-stable dependency policy, complete security-lane gate, and evidence-tier promotion rules.
-5. Run `python3 .agents/skills/plan-agent-mail/scripts/check_plan.py` from the repository root.
-6. Report missing, weakened, contradicted, or unverified gates. Do not rewrite the plan merely to make the checker pass.
+4. Check the SEC-R05 Daybreak registry for the split F09-P/F09-R rows and distinct authority freshness, independent approval/principal durability, admission-before-allocation (including streaming), output-context safety, trusted intermediary provenance, integrity commitments, and dependency reachability/exception removal controls. Each row must have a demonstrated counterexample, invariant, planned control, faithful proof, owner issue, intervention timing, and honest evidence status.
+5. Check the #208 coordination order: hold dependent action/OpenAPI/human-output/final-security work; close #202, #203, #205, and #206 before dependent implementation; implement #204 only from an accepted #203 digest; then rerun #176, #180, #183, and #185. Preserve unresolved #203 product authority decisions as blockers.
+6. Run `python3 .agents/skills/plan-agent-mail/scripts/check_plan.py` from the repository root and run the negative expired-undispatched-recovery fixture/probe.
+7. Report missing, weakened, contradicted, or unverified gates. Do not rewrite the plan merely to make the checker pass.
 
 ## Planning rules
 
@@ -27,8 +28,9 @@ Complement this repository's rigorous plan with Agent Mail-specific conformance 
 - Make XState states describe work that is actually active. Actors own cancellation, retry, cleanup, and status. Await one idempotent cleanup barrier.
 - Test performance at the public boundary, including sparse UID mailboxes, selected export, slow consumers, and whole-response behavior.
 - Define operational success as a postcondition: restored archive, absent plist, correct doctor diagnosis, exact Tailscale configuration, or equivalent observable outcome.
-- Keep live mail, launchd, Tailscale, and complete security-lane evidence marked unverified until actually exercised with authorization. Applying for access is not passing evidence.
+- Keep live mail, launchd, Tailscale, and complete security-lane evidence marked unverified until actually exercised with authorization. Approved Daybreak access enables the complete lane but is not passing evidence.
 - Do not claim release readiness while any required traceability row lacks passing evidence.
+- Treat #203's unresolved approval/principal authority decision as a consequential planning blocker; do not invent policy to satisfy a structural check.
 
 ## Required output
 

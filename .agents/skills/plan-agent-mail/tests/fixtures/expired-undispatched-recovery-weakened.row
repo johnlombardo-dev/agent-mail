@@ -1,0 +1,1 @@
+| SEC-R01 | An expired attempt may resume after restart. | Expiry is checked at attempt creation only. | Check authority when the plan starts. | Restart the worker and assert completion. | #202 | Stage 2 before action work. | specified; release-blocking |
