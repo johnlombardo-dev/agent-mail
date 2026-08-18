@@ -1,0 +1,12 @@
+{
+  "provider": "imapflow",
+  "version": "1.7.1",
+  "idle": {
+    "start": "idle(): Promise<boolean>",
+    "normalCompletion": "promise resolves after IDLE is terminated",
+    "mailboxChangeEvents": ["exists", "expunge", "flags"],
+    "errorEvent": "error",
+    "cancellation": "noop() then await idle()"
+  },
+  "resourceBarrier": ["remove exact listeners", "close owned connection socket"]
+}
