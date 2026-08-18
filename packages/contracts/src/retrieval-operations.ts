@@ -4,9 +4,11 @@ import {
   type OperationDefinition,
   type OperationSchema,
 } from "./operation-registry";
+import { correlationIdSchema, createErrorRegistry, defineError } from "./error-envelope";
 import { localLabelSchema } from "./routing-operations";
 
 const BASE64URL = /^[A-Za-z0-9_-]+$/u;
+const SHA256_HEX = /^[a-f0-9]{64}$/u;
 
 function hasControlCharacters(value: string): boolean {
   for (const character of value) {
@@ -35,7 +37,10 @@ function namespacedId(namespace: string): z.ZodString {
 
 const mailboxIdSchema = namespacedId("mailbox");
 const messageIdSchema = namespacedId("message");
-const threadIdSchema = namespacedId("thread");
+const threadIdSchema = text("thread ID").regex(
+  /^thread:[a-f0-9]{64}$/u,
+  "thread ID must be thread:<64 lowercase hex>",
+);
 const attachmentIdSchema = namespacedId("attachment");
 
 export const retrievalMailboxIdSchema = mailboxIdSchema;
@@ -75,6 +80,75 @@ export const opaqueSearchCursorSchema = text("search cursor", 1, 8_192).refine((
     return false;
   }
 }, "cursor must be a versioned opaque search cursor");
+
+export const threadCursorPayloadSchema = z.strictObject({
+  registryVersion: z.literal(1),
+  cursorKeyId: text("cursor key ID", 1, 200).regex(
+    /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u,
+    "cursor key ID must be an ASCII identifier",
+  ),
+  accountScopeDigest: z.string().regex(SHA256_HEX, "account scope digest must be SHA-256 hex"),
+  requestedThreadHandle: threadIdSchema,
+  lastSentAtMissingRank: z.union([z.literal(0), z.literal(1)]),
+  lastSentAt: retrievalInstantSchema.nullable(),
+  lastMessageId: z
+    .string()
+    .regex(/^message:[a-f0-9]{64}$/u, "cursor message ID must be message:<64 lowercase hex>"),
+});
+export type ThreadCursorPayload = z.infer<typeof threadCursorPayloadSchema>;
+
+function encodeBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+}
+
+function decodeBase64Url(value: string): string | undefined {
+  if (!BASE64URL.test(value) || value.length % 4 === 1) return undefined;
+  try {
+    const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
+    const binary = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return encodeBase64Url(decoded) === value ? decoded : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function isThreadCursor(value: string): boolean {
+  if (new TextEncoder().encode(value).byteLength > 8_192) return false;
+  const decoded = decodeBase64Url(value);
+  if (decoded === undefined) return false;
+  try {
+    const envelope: unknown = JSON.parse(decoded);
+    if (
+      !Array.isArray(envelope) ||
+      envelope.length !== 3 ||
+      envelope[0] !== "thread-cursor-v1" ||
+      typeof envelope[1] !== "string" ||
+      !SHA256_HEX.test(typeof envelope[2] === "string" ? envelope[2] : "")
+    )
+      return false;
+    if (JSON.stringify(envelope) !== decoded) return false;
+    const payloadValue: unknown = JSON.parse(envelope[1]);
+    const payload = threadCursorPayloadSchema.safeParse(payloadValue);
+    return payload.success && JSON.stringify(payload.data) === envelope[1];
+  } catch {
+    return false;
+  }
+}
+
+/** A structurally valid, opaque thread cursor. HMAC verification belongs to storage. */
+export const opaqueThreadCursorSchema = z
+  .string()
+  .min(1)
+  .max(8_192)
+  .refine((value) => value.trim() === value, "thread cursor must be trimmed")
+  .refine((value) => !hasControlCharacters(value), "thread cursor has control characters")
+  .refine(isThreadCursor, "cursor must be a versioned opaque thread cursor");
+export const threadCursorSchema = opaqueThreadCursorSchema;
 
 export const emailAddressSchema = z.strictObject({
   name: text("address name", 1, 512).optional(),
@@ -159,15 +233,62 @@ export const hydratedMessageSchema = z.strictObject({
 });
 export type HydratedMessage = z.infer<typeof hydratedMessageSchema>;
 
-export const threadSchema = z.strictObject({
-  threadId: threadIdSchema,
-  subject: text("subject", 1, 998).nullable(),
-  participants: z.array(emailAddressSchema),
-  messageIds: z.array(messageIdSchema).min(1),
-  messages: z.array(hydratedMessageSchema).min(1),
-  firstReceivedAt: retrievalInstantSchema,
-  lastReceivedAt: retrievalInstantSchema,
-});
+const safeNonnegativeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+
+export const threadSchema = z
+  .strictObject({
+    threadId: threadIdSchema,
+    resolvedFromThreadId: threadIdSchema.nullable(),
+    subject: text("subject", 1, 998).nullable(),
+    participants: z.array(emailAddressSchema).max(256),
+    participantsTruncated: z.boolean(),
+    messageCount: safeNonnegativeInteger,
+    messageIds: z.array(messageIdSchema).min(1).max(100),
+    messages: z.array(hydratedMessageSchema).min(1).max(100),
+    firstReceivedAt: retrievalInstantSchema,
+    lastReceivedAt: retrievalInstantSchema,
+    nextCursor: opaqueThreadCursorSchema.nullable(),
+  })
+  .superRefine((thread, context) => {
+    if (thread.resolvedFromThreadId === thread.threadId)
+      context.addIssue({
+        code: "custom",
+        path: ["resolvedFromThreadId"],
+        message: "resolvedFromThreadId must be a distinct alias",
+      });
+    if (thread.messageIds.length !== thread.messages.length)
+      context.addIssue({
+        code: "custom",
+        path: ["messages"],
+        message: "messageIds and messages must have the same length",
+      });
+    if (thread.messageCount < thread.messageIds.length)
+      context.addIssue({
+        code: "custom",
+        path: ["messageCount"],
+        message: "messageCount must include the returned page",
+      });
+    if (Date.parse(thread.firstReceivedAt) > Date.parse(thread.lastReceivedAt))
+      context.addIssue({
+        code: "custom",
+        path: ["firstReceivedAt"],
+        message: "firstReceivedAt must not be later than lastReceivedAt",
+      });
+    thread.messages.forEach((message, index) => {
+      if (thread.messageIds[index] !== message.messageId)
+        context.addIssue({
+          code: "custom",
+          path: ["messages", index, "messageId"],
+          message: "message order must match messageIds",
+        });
+      if (message.threadId !== thread.threadId)
+        context.addIssue({
+          code: "custom",
+          path: ["messages", index, "threadId"],
+          message: "hydrated message must carry the canonical thread ID",
+        });
+    });
+  });
 export type RetrievedThread = z.infer<typeof threadSchema>;
 
 const notFoundDetailsSchema = z.discriminatedUnion("resource", [
@@ -203,6 +324,27 @@ export const threadNotFoundErrorSchema = notFoundFor("thread", threadIdSchema);
 export const rawMessageNotFoundErrorSchema = notFoundFor("raw-message", messageIdSchema);
 export const attachmentNotFoundErrorSchema = notFoundFor("attachment", attachmentIdSchema);
 
+const threadInvalidCursorMessage = "thread cursor is invalid";
+export const threadInvalidCursorDetailsSchema = z.strictObject({
+  resource: z.literal("thread"),
+});
+export const threadInvalidCursorErrorDefinition = defineError({
+  code: "invalid_cursor",
+  message: threadInvalidCursorMessage,
+  details: threadInvalidCursorDetailsSchema,
+});
+export const threadRetrievalErrorDefinitions = Object.freeze([threadInvalidCursorErrorDefinition]);
+export const threadRetrievalErrorRegistry = createErrorRegistry(threadRetrievalErrorDefinitions);
+export const threadErrorDefinitions = threadRetrievalErrorDefinitions;
+export const threadErrorRegistry = threadRetrievalErrorRegistry;
+export const threadInvalidCursorErrorSchema = z.strictObject({
+  code: z.literal("invalid_cursor"),
+  message: z.literal(threadInvalidCursorMessage),
+  correlationId: correlationIdSchema,
+  details: threadInvalidCursorDetailsSchema,
+});
+export type ThreadInvalidCursorError = z.infer<typeof threadInvalidCursorErrorSchema>;
+
 export const messageResponseSchema = z.union([
   z.strictObject({ message: hydratedMessageSchema }),
   messageNotFoundErrorSchema,
@@ -212,6 +354,7 @@ export type MessageResponse = z.infer<typeof messageResponseSchema>;
 export const threadResponseSchema = z.union([
   z.strictObject({ thread: threadSchema }),
   threadNotFoundErrorSchema,
+  threadInvalidCursorErrorSchema,
 ]);
 export type ThreadResponse = z.infer<typeof threadResponseSchema>;
 
@@ -241,7 +384,12 @@ export const attachmentResponseSchema = z.union([
 export type AttachmentResponse = z.infer<typeof attachmentResponseSchema>;
 
 export const messageRequestSchema = z.strictObject({ messageId: messageIdSchema });
-export const threadRequestSchema = z.strictObject({ threadId: threadIdSchema });
+export const threadRequestSchema = z.strictObject({
+  threadId: threadIdSchema,
+  limit: z.number().int().min(1).max(100).default(50),
+  cursor: opaqueThreadCursorSchema.optional(),
+});
+export type ThreadRequest = z.infer<typeof threadRequestSchema>;
 export const rawMessageRequestSchema = z.strictObject({ messageId: messageIdSchema });
 export const attachmentRequestSchema = z.strictObject({ attachmentId: attachmentIdSchema });
 

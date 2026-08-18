@@ -1,16 +1,17 @@
 {
   "format": "agent-mail.sync-statechart/v1",
   "schemaVersion": 1,
-  "modelVersion": "1.0.0-candidate.1",
-  "status": "candidate-for-independent-review",
+  "modelVersion": "1.0.0-candidate.4",
+  "status": "candidate-awaiting-independent-review",
   "oracle": {
     "normative": true,
     "description": "This file is the single normative lifecycle oracle. The accompanying Markdown files are checked views and rationale, not a second model.",
     "transitionExpansion": "A transition whose source is an array expands to one identical transition per listed atomic source configuration. @source in stoppedActors expands to the invokedActors of that source. @target in startedActors expands to the invokedActors of the target.",
     "eventSelection": "For one dequeued event, evaluate transitions from the active atomic state in listed priority order. Take the first transition whose guards all pass. If no state transition passes, apply globalEventPolicy.",
     "actionOrder": "Actions execute in listed order. Actor exit cancellation occurs after source exit begins and before target invokes start; cleanupBarrier observes the same resource-registry release promises.",
-    "versionRule": "Only advanceVersion changes context.version. Ignored, stale, duplicate, rejected, and idempotent no-op events leave version and durable facts unchanged. A new process incarnation may begin at version zero.",
-    "terminalActorRule": "Every actor terminal event is emitted only after that actor has released its own listener, timer, stream, socket, and subscription handles. cleanupBarrier settles only after the ownership registry reports zero resources in its scope."
+    "versionRule": "Only advanceVersion changes context.version. Ignored, stale, duplicate, rejected, and idempotent no-op events leave it unchanged. Public observations are ordered by version only when their required incarnationId values match; different incarnations are unordered.",
+    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release. cleanupBarrier is a per-invoke bounded fromPromise over a registry phase terminal. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity and zero live count. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation.",
+    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-06, R189-07, and R189-14 are resolved in this candidate; independent exact-digest review remains required."
   },
   "frozenInputs": [
     {
@@ -24,10 +25,16 @@
       "sha256": "544c1ee220e13b96dc88aa71096701a3887fb1adba22e9b8d60a244533f50cc9"
     },
     {
-      "id": "P1-C08",
+      "id": "P1-C08-R",
+      "issue": 196,
       "path": "packages/contracts/src/sync-operations.ts",
-      "gitCommit": "13e036049099241d68b724639c467d9ae8e4424a",
-      "sha256": "8a111237bdb7796f00e775cdd1e07c65cce4d30fd2b984ed1278b2efaeceb3c8"
+      "sha256": "74a32d41a636ac2334d8245f1043fb6cf76e8bacd9f30895f5475e16dc0817a8"
+    },
+    {
+      "id": "P1-ERROR-REGISTRY-R",
+      "issue": 196,
+      "path": "packages/contracts/src/error-envelope.ts",
+      "sha256": "f02a6f25dfd884aa717f136e4024f550697a3d1a32b8cafd5bad84eaf27ae934"
     },
     {
       "id": "P3-C10",
@@ -40,6 +47,13 @@
       "path": "packages/daemon/src/recurring-mailbox-sweep.ts",
       "gitCommit": "d5107472ffae6f5eb4deb8b87365ffda40fe30d3",
       "sha256": "506f9dc2dff6affc311f1143a1f5d901f53bc5157836338c497a43332ec5db7f"
+    },
+    {
+      "id": "P3-C07",
+      "issue": 98,
+      "path": "packages/imap/src/raw-download-queue.ts",
+      "gitCommit": "e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae",
+      "sha256": "b676dee263b51eaac88846d03a109e6a77ad428959cfbc54de491b076d4cdd67"
     }
   ],
   "machine": {
@@ -48,7 +62,7 @@
     "kind": "xstate-v5-hierarchical",
     "oneLifecycleTruth": "The active atomic state configuration is the only lifecycle mode. Context contains no mode, paused, stopped, watching, retrying, or failed boolean.",
     "snapshotPersistence": "none",
-    "restartRule": "A reconstructed actor starts at stopped.clean, reads validated durable facts only when explicitly started, and never hydrates an old XState snapshot or resurrects an old child actor."
+    "restartRule": "Before createActor, the daemon synchronously constructs and validates initialCheckpoint and initialCredentialRevision from durable owners. A reconstructed actor starts at stopped.clean, never hydrates an XState snapshot, and never resurrects an old child actor."
   },
   "configuration": [
     {
@@ -78,6 +92,24 @@
       "type": "positive-safe-integer",
       "required": true,
       "constraint": "periodicStatusIntervalMs <= 900000"
+    },
+    {
+      "id": "controlDeadlineMs",
+      "type": "positive-safe-integer",
+      "required": true,
+      "constraint": "controlDeadlineMs <= 300000"
+    },
+    {
+      "id": "controlResultRetentionMs",
+      "type": "positive-safe-integer",
+      "required": true,
+      "constraint": "controlResultRetentionMs <= 86400000"
+    },
+    {
+      "id": "maxControlIdempotencyEntries",
+      "type": "positive-safe-integer",
+      "required": true,
+      "constraint": "maxControlIdempotencyEntries <= 10000"
     }
   ],
   "context": [
@@ -86,56 +118,120 @@
       "type": "opaque-nonempty-string",
       "persistence": "ephemeral",
       "writer": "actor-constructor",
-      "purpose": "Disambiguates inspection and control waiters across process reconstruction; it is not in the accepted public response schema."
+      "purpose": "Required public observation identity; disambiguates status and control results across process reconstruction.",
+      "initial": "constructor-generated opaque nonempty ID"
     },
     {
       "id": "version",
       "type": "nonnegative-safe-integer",
       "persistence": "ephemeral",
       "writer": "advanceVersion",
-      "purpose": "Monotonic observed snapshot version within one incarnation."
+      "purpose": "Monotonic observed snapshot version within one incarnation.",
+      "initial": 0
     },
     {
       "id": "scopeEpoch",
       "type": "nonnegative-safe-integer",
       "persistence": "ephemeral",
       "writer": "beginEffectScope",
-      "purpose": "Correlates callback-actor events and rejects late events from exited scopes."
+      "purpose": "Correlates callback-actor events and rejects late events from exited scopes.",
+      "initial": 0
     },
     {
       "id": "idleReadyEpoch",
       "type": "nonnegative-safe-integer|null",
       "persistence": "ephemeral",
       "writer": "markIdleReadyObserved",
-      "purpose": "Records that idle.ready was admitted once in the current effect scope; it is event-deduplication metadata, not lifecycle mode."
+      "purpose": "Records that idle.ready was admitted once in the current effect scope; it is event-deduplication metadata, not lifecycle mode.",
+      "initial": null
     },
     {
       "id": "retryAttempt",
       "type": "nonnegative-safe-integer",
       "persistence": "ephemeral",
       "writer": "recordTransientFault|resetRetryHistory",
-      "purpose": "Input to the bounded retry-delay calculation; never duplicates retryWaiting mode."
+      "purpose": "Input to the bounded retry-delay calculation; never duplicates retryWaiting mode.",
+      "initial": 0
     },
     {
       "id": "checkpoint",
       "type": "SyncCheckpointSummary",
       "persistence": "durable-projection-cache",
       "writer": "adoptCommittedCheckpoint",
-      "purpose": "Validated projection of committed mailbox facts for status; the repositories remain authoritative."
+      "purpose": "A complete SyncCheckpointSummary validated from the durable status projector before createActor; repositories remain authoritative and no actor snapshot is hydrated.",
+      "initial": "constructor.initialCheckpoint"
     },
     {
       "id": "authBlockedDetail",
       "type": "SyncAuthBlockedDetail|null",
       "persistence": "ephemeral",
       "writer": "recordAuthBlock|clearAuthBlock",
-      "purpose": "Safe detail retained only while authBlocked is the active or pending target; the public projection exposes it only in authBlocked."
+      "purpose": "Safe detail retained only while authBlocked is the active or pending target; the public projection exposes it only in authBlocked.",
+      "initial": null
     },
     {
       "id": "diagnostics",
       "type": "SyncDiagnostic[0..32]",
       "persistence": "ephemeral",
-      "writer": "recordTransientFault|recordFatalFault|appendCleanupDiagnostics",
-      "purpose": "Bounded safe diagnostics; raw provider errors and credentials are forbidden."
+      "writer": "recordTransientFault|recordTerminalFailure|appendCleanupDiagnostics|clearTerminalFailure",
+      "purpose": "Bounded safe diagnostics; raw provider errors and credentials are forbidden.",
+      "initial": []
+    },
+    {
+      "id": "latestCredentialRevision",
+      "type": "nonnegative-safe-integer",
+      "persistence": "constructor-seed-and-ephemeral-latch",
+      "writer": "actor-constructor|latchCredentialRevision",
+      "initial": "constructor.initialCredentialRevision",
+      "purpose": "Latest validated revision observed from the trusted credential owner; changes never restart otherwise healthy work."
+    },
+    {
+      "id": "activeCredentialRevision",
+      "type": "nonnegative-safe-integer|null",
+      "persistence": "ephemeral",
+      "writer": "bindCredentialRevision",
+      "initial": null,
+      "purpose": "Immutable revision captured into each credential-using actor input; retained only as attempt correlation metadata."
+    },
+    {
+      "id": "authFaultCredentialRevision",
+      "type": "nonnegative-safe-integer|null",
+      "persistence": "ephemeral",
+      "writer": "recordAuthBlock|clearAuthBlock",
+      "initial": null,
+      "purpose": "Revision used by the authentication fault awaiting cleanup or repair admission."
+    },
+    {
+      "id": "cleanupEpoch",
+      "type": "nonnegative-safe-integer",
+      "persistence": "ephemeral",
+      "writer": "beginOrPromoteCleanup",
+      "initial": 0,
+      "purpose": "Identity of the authoritative resource-registry cleanup session; later sessions cannot accept earlier phase terminals."
+    },
+    {
+      "id": "cleanupPhase",
+      "type": "nonnegative-safe-integer",
+      "persistence": "ephemeral",
+      "writer": "beginOrPromoteCleanup",
+      "initial": 0,
+      "purpose": "Version of the current cleanup session phase. Every watch-to-workflow promotion creates a fresh phase and terminal source, even when the prior watch phase already settled."
+    },
+    {
+      "id": "cleanupInvokeLease",
+      "type": "nonnegative-safe-integer",
+      "persistence": "ephemeral",
+      "writer": "beginOrPromoteCleanup",
+      "initial": 0,
+      "purpose": "Identity bound to one cleanupBarrier invocation. Every cleanup-state entry/replacement increments it; the wrapper binds a phase terminal to that lease."
+    },
+    {
+      "id": "effectiveCleanupScope",
+      "type": "watch|workflow|null",
+      "persistence": "ephemeral",
+      "writer": "beginOrPromoteCleanup|finishCleanupScope",
+      "initial": null,
+      "purpose": "Authoritative cleanup scope owned by the registry; promotion is monotonic and event output cannot select it."
     }
   ],
   "durableFacts": [
@@ -145,53 +241,27 @@
         "accountId",
         "mailboxId",
         "uidValidity",
-        "uidNextKnown",
         "uidNext",
-        "highestModseqKnown",
-        "highestModseq",
+        "modseq",
         "sweepCursor",
         "backfillCompleted",
-        "observedVersion"
+        "observedVersion",
+        "storageVersion"
       ],
-      "owner": "checkpoint repository",
-      "restartUse": "starting reads it to choose bounded backfill or watch work"
+      "owner": "MailboxCheckpointRepository",
+      "restartUse": "bootstrap and both loop actors read it; completed backfill/sweep commits update uidNext, modseq, sweepCursor, backfillCompleted, and observedVersion in the completion transaction"
     },
     {
       "id": "initialBackfillCompletion",
-      "fields": [
-        "observedUidCeiling",
-        "observedUidNext",
-        "observedAt",
-        "nextSweepEligibleAt"
-      ],
-      "owner": "initial-backfill completion repository",
-      "restartUse": "proves initial completion without suppressing recurring sweeps"
-    },
-    {
-      "id": "recurringSweepCompletion",
-      "fields": [
-        "sweepCursor",
-        "nextSweepEligibleAt",
-        "observedAt"
-      ],
-      "owner": "recurring-sweep completion repository",
-      "restartUse": "resumes only committed discovery and reconciliation progress"
+      "fields": ["observedUidCeiling", "observedUidNext", "observedAt", "nextSweepEligibleAt"],
+      "owner": "InitialBackfillCompletionRepository",
+      "restartUse": "P3-C10 and P3-C11 share this row. P3-C10 already-complete uses non-CAS save; completed backfill and completed recurring sweep use completions.complete with the checkpoint transaction."
     }
   ],
   "faultType": {
     "id": "WorkflowFault",
-    "categories": [
-      "authentication",
-      "transient",
-      "permanent",
-      "invariant"
-    ],
-    "safeFields": [
-      "category",
-      "code",
-      "safeMessage",
-      "authReason"
-    ],
+    "categories": ["authentication", "transient", "permanent", "invariant"],
+    "safeFields": ["category", "code", "safeMessage", "authReason"],
     "forbiddenFields": [
       "cause",
       "providerPayload",
@@ -209,74 +279,49 @@
     {
       "id": "control.start.requested",
       "origin": "control-service",
-      "payload": [
-        "commandId",
-        "expectedVersion?"
-      ]
+      "payload": ["commandId", "expectedVersion?"]
     },
     {
       "id": "control.pause.requested",
       "origin": "control-service",
-      "payload": [
-        "commandId",
-        "idempotencyKey",
-        "expectedVersion?"
-      ]
+      "payload": ["commandId", "idempotencyKey", "expectedVersion?"]
     },
     {
       "id": "control.resume.requested",
       "origin": "control-service",
-      "payload": [
-        "commandId",
-        "idempotencyKey",
-        "expectedVersion?"
-      ]
+      "payload": ["commandId", "idempotencyKey", "expectedVersion?"]
     },
     {
       "id": "control.stop.requested",
       "origin": "control-service",
-      "payload": [
-        "commandId",
-        "idempotencyKey",
-        "expectedVersion?"
-      ]
+      "payload": ["commandId", "idempotencyKey", "expectedVersion?"]
     },
     {
       "id": "lifecycle.restart.requested",
       "origin": "daemon-supervisor",
-      "payload": [
-        "requestId (correlation only, not an idempotency key)",
-        "reason"
-      ]
+      "payload": ["requestId (correlation only, not an idempotency key)", "reason"]
     },
     {
       "id": "process.shutdown.requested",
       "origin": "daemon-supervisor",
-      "payload": [
-        "requestId (correlation only, not an idempotency key)",
-        "signal"
-      ]
+      "payload": ["requestId (correlation only, not an idempotency key)", "signal"]
     },
     {
       "id": "credentials.changed",
       "origin": "credential-owner",
-      "payload": [
-        "revision"
-      ]
+      "payload": ["revision:nonnegative-safe-integer"]
     },
     {
       "id": "xstate.done.actor.bootstrapSession",
       "origin": "bootstrapSession",
-      "payload": [
-        "output.next:backfill|idle|poll",
-        "output.checkpoint"
-      ]
+      "payload": ["output.next:backfill|idle|poll", "output.checkpoint"]
     },
     {
       "id": "xstate.error.actor.bootstrapSession",
       "origin": "bootstrapSession",
       "payload": [
-        "error:WorkflowFault"
+        "error:WorkflowFault",
+        "error.attemptedCredentialRevision for authentication faults"
       ]
     },
     {
@@ -293,52 +338,43 @@
       "id": "xstate.error.actor.initialBackfill",
       "origin": "initialBackfill",
       "payload": [
-        "error:WorkflowFault"
+        "error:WorkflowFault",
+        "error.attemptedCredentialRevision for authentication faults"
       ]
     },
     {
       "id": "idle.ready",
       "origin": "idleSession",
-      "payload": [
-        "scopeEpoch"
-      ]
+      "payload": ["scopeEpoch"]
     },
     {
       "id": "idle.mailboxChanged",
       "origin": "idleSession",
-      "payload": [
-        "scopeEpoch"
-      ]
+      "payload": ["scopeEpoch"]
     },
     {
       "id": "idle.completed",
       "origin": "idleSession",
-      "payload": [
-        "scopeEpoch"
-      ]
+      "payload": ["scopeEpoch"]
     },
     {
       "id": "idle.failed",
       "origin": "idleSession",
       "payload": [
         "scopeEpoch",
-        "fault:WorkflowFault"
+        "fault:WorkflowFault",
+        "fault.attemptedCredentialRevision for authentication faults"
       ]
     },
     {
       "id": "watchTimer.elapsed",
       "origin": "periodicStatusTimer",
-      "payload": [
-        "scopeEpoch"
-      ]
+      "payload": ["scopeEpoch"]
     },
     {
       "id": "watchTimer.failed",
       "origin": "periodicStatusTimer",
-      "payload": [
-        "scopeEpoch",
-        "fault:WorkflowFault"
-      ]
+      "payload": ["scopeEpoch", "fault:WorkflowFault"]
     },
     {
       "id": "xstate.done.actor.recurringSweep",
@@ -354,39 +390,40 @@
       "id": "xstate.error.actor.recurringSweep",
       "origin": "recurringSweep",
       "payload": [
-        "error:WorkflowFault"
+        "error:WorkflowFault",
+        "error.attemptedCredentialRevision for authentication faults"
       ]
     },
     {
       "id": "retryTimer.elapsed",
       "origin": "retryTimer",
-      "payload": [
-        "scopeEpoch"
-      ]
+      "payload": ["scopeEpoch"]
     },
     {
       "id": "retryTimer.failed",
       "origin": "retryTimer",
-      "payload": [
-        "scopeEpoch",
-        "fault:WorkflowFault"
-      ]
+      "payload": ["scopeEpoch", "fault:WorkflowFault"]
     },
     {
       "id": "xstate.done.actor.cleanupBarrier",
       "origin": "cleanupBarrier",
       "payload": [
-        "output.scope",
+        "output.certificateId",
+        "output.cleanupEpoch",
+        "output.cleanupPhase",
+        "output.invokeLease",
+        "output.effectiveScope",
         "output.released",
+        "output.authoritativeAudit.scope",
+        "output.authoritativeAudit.liveResourceCount",
+        "output.authoritativeAudit.digest",
         "output.diagnostics"
       ]
     },
     {
       "id": "xstate.error.actor.cleanupBarrier",
       "origin": "cleanupBarrier",
-      "payload": [
-        "error:WorkflowFault"
-      ]
+      "payload": ["error:WorkflowFault", "error.releaseCertificate"]
     }
   ],
   "guards": [
@@ -467,8 +504,36 @@
       "predicate": "context.retryAttempt + 1 is greater than configuration.maxRetryAttempts"
     },
     {
-      "id": "cleanupReleasedScope",
-      "predicate": "event.output.released is true and the ownership audit reports zero resources for event.output.scope"
+      "id": "cleanupCertificateCoversState",
+      "predicate": "Literal conjunction: XState terminal is from the current cleanupBarrier invoke; certificate.invokeLease === context.cleanupInvokeLease; certificate.cleanupEpoch === context.cleanupEpoch === registry.currentEpoch; certificate.cleanupPhase === context.cleanupPhase === registry.currentPhase; certificate.effectiveScope === context.effectiveCleanupScope === registry.effectiveScope; scopeDominates(certificate.effectiveScope, activeState.cleanupRequirement.minimumScope); certificate.authoritativeAudit.scope === certificate.effectiveScope; certificate.authoritativeAudit.liveResourceCount === 0; certificate.certificateId and audit digest equal registry.currentPhaseTerminal/currentAudit. No event field selects the registry audit."
+    },
+    {
+      "id": "cleanupFailureCertificateCoversState",
+      "predicate": "The current-invoke error carries a release certificate satisfying every literal equality and zero-audit clause in cleanupCertificateCoversState; fault.category is then evaluated separately. Otherwise no cleanup error transition is enabled."
+    },
+    {
+      "id": "credentialRevisionIsNewer",
+      "predicate": "event.revision is a validated safe integer greater than context.latestCredentialRevision"
+    },
+    {
+      "id": "authFaultUsesSupersededRevision",
+      "predicate": "fault.category is authentication and fault.attemptedCredentialRevision is less than context.latestCredentialRevision"
+    },
+    {
+      "id": "authFaultUsesCurrentRevision",
+      "predicate": "fault.category is authentication and fault.attemptedCredentialRevision equals context.latestCredentialRevision"
+    },
+    {
+      "id": "authFaultUsesFutureRevision",
+      "predicate": "fault.category is authentication and fault.attemptedCredentialRevision is greater than context.latestCredentialRevision; this is an invariant violation"
+    },
+    {
+      "id": "pendingAuthFaultWasSuperseded",
+      "predicate": "context.authFaultCredentialRevision is less than context.latestCredentialRevision"
+    },
+    {
+      "id": "pendingAuthFaultIsCurrent",
+      "predicate": "context.authFaultCredentialRevision equals context.latestCredentialRevision"
     }
   ],
   "actions": [
@@ -498,19 +563,19 @@
     },
     {
       "id": "recordAuthBlock",
-      "effect": "Set the constructive safe authBlockedDetail and append no raw provider material."
+      "effect": "Set authFaultCredentialRevision from the actor-bound attempted revision, construct safe authBlockedDetail, and append no raw provider material."
     },
     {
       "id": "clearAuthBlock",
-      "effect": "Set authBlockedDetail to null before leaving authBlocked."
+      "effect": "Set authBlockedDetail and authFaultCredentialRevision to null before leaving or superseding authBlocked."
     },
     {
-      "id": "recordFatalFault",
-      "effect": "Append one redacted fatal diagnostic; retain at most 32 diagnostics."
+      "id": "recordTerminalFailure",
+      "effect": "Upsert one bounded redacted diagnostic with exact code sync.terminal-failure and safe message; retain at most 32 diagnostics. No provider payload or credential material is admitted."
     },
     {
       "id": "appendCleanupDiagnostics",
-      "effect": "Append bounded cleanup diagnostics only after cleanupReleasedScope passes."
+      "effect": "Append bounded cleanup diagnostics only after cleanupCertificateCoversState or cleanupFailureCertificateCoversState passes; audit scope comes from the registry certificate."
     },
     {
       "id": "emitControlAccepted",
@@ -522,11 +587,51 @@
     },
     {
       "id": "emitControlRejected",
-      "effect": "Emit commandId, accepted=false, stable reason, last observed state/version, and incarnationId; do not change context or durable facts."
+      "effect": "Emit the fixed sync.control-rejected envelope with commandId, exact reason, and the last real actorState/incarnationId/version; do not change context or durable facts."
+    },
+    {
+      "id": "emitControlFailed",
+      "effect": "Emit the fixed sync.control-failed envelope with terminal-failure or auth-blocked and the last real observation. Cleanup failure always selects terminal-failure."
+    },
+    {
+      "id": "emitControlCancelled",
+      "effect": "Emit the fixed sync.control-cancelled envelope with the exact stop, restart, shutdown, or incompatible-command supersession reason and the last real observation."
+    },
+    {
+      "id": "emitControlTimeout",
+      "effect": "Emit the fixed sync.control-timeout envelope with deadline-elapsed, the bounded deadline, and the last real observation; lifecycle work continues."
+    },
+    {
+      "id": "emitControlConflict",
+      "effect": "Before actor.send, emit sync.control-idempotency-conflict and preserve the existing entry byte-for-byte; no waiter or deadline is installed."
+    },
+    {
+      "id": "emitControlCapacity",
+      "effect": "Before actor.send, emit sync.control-capacity when every retained entry is in flight; create no entry, waiter, or deadline."
     },
     {
       "id": "emitControlPending",
       "effect": "Emit command acceptance and the stable target predicate; the control service owns the bounded subscription and must not fabricate completion."
+    },
+    {
+      "id": "clearTerminalFailure",
+      "effect": "Remove every sync.terminal-failure diagnostic when a pending failure is explicitly superseded by pause, stop, restart, or fresh start. It is forbidden before entering stopped.clean."
+    },
+    {
+      "id": "latchCredentialRevision",
+      "effect": "Set latestCredentialRevision to the strictly newer validated event.revision; never restarts current healthy work."
+    },
+    {
+      "id": "bindCredentialRevision",
+      "effect": "Set activeCredentialRevision to latestCredentialRevision and pass that immutable value into the newly entered credential-using actor."
+    },
+    {
+      "id": "beginOrPromoteCleanup",
+      "effect": "Atomically call resourceRegistry.requestPhase(targetState.minimumScope): if no session, increment cleanupEpoch and cleanupPhase and create it; on every cleanup-state entry increment cleanupInvokeLease; on watch-to-workflow promotion increment cleanupPhase and install a fresh workflow terminal before returning even if the watch phase already settled; on equal/broader existing scope retain the phase and expose its pending/cached terminal through a new per-invoke promise. Copy returned epoch/phase/lease/effectiveScope to context. Never downgrade or trust event material."
+    },
+    {
+      "id": "finishCleanupScope",
+      "effect": "After the current certificate passes every epoch/phase/lease/scope/audit equality, close the registry cleanup session and set effectiveCleanupScope to null. Retain epoch/phase/lease counters so later terminals are stale. This is the only final cleanup owner."
     }
   ],
   "actors": [
@@ -537,10 +642,11 @@
       "input": [
         "AbortSignal",
         "validated configuration",
-        "durable checkpoint identities"
+        "durable checkpoint identities",
+        "credentialRevision"
       ],
       "success": "One result selecting backfill, IDLE watch, or polling watch plus a committed checkpoint summary.",
-      "error": "WorkflowFault after all actor-owned resources close.",
+      "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
       "cancellation": "XState exits starting.active, aborts the signal, and cleanupBarrier awaits registered release promises.",
       "retryOwner": "syncLifecycle"
     },
@@ -551,28 +657,26 @@
       "input": [
         "AbortSignal",
         "validated mailbox work set",
-        "bounded batch configuration"
+        "bounded batch configuration",
+        "credentialRevision",
+        "MailboxCheckpointRepository",
+        "InitialBackfillCompletionRepository"
       ],
       "success": "InitialBackfillLoopResult with completed or already-complete, committed completion facts, and the next validated watch strategy.",
-      "error": "WorkflowFault after all actor-owned resources close.",
+      "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
       "cancellation": "Exit aborts the signal; a cancelled result delivered after exit is late and ignored.",
-      "retryOwner": "syncLifecycle"
+      "retryOwner": "syncLifecycle",
+      "durableTerminal": {
+        "completed": "completions.complete transaction: checkpoint uidNext/modseq/sweepCursor/backfillCompleted/observedVersion plus all InitialBackfillCompletion fields",
+        "already-complete": "completions.save: all InitialBackfillCompletion fields, non-CAS overwrite"
+      }
     },
     {
       "id": "idleSession",
       "kind": "fromCallback",
       "owner": "watching.idling",
-      "input": [
-        "scopeEpoch",
-        "validated IDLE adapter",
-        "resource registry"
-      ],
-      "messages": [
-        "idle.ready",
-        "idle.mailboxChanged",
-        "idle.completed",
-        "idle.failed"
-      ],
+      "input": ["scopeEpoch", "validated IDLE adapter", "resource registry", "credentialRevision"],
+      "messages": ["idle.ready", "idle.mailboxChanged", "idle.completed", "idle.failed"],
       "normalCompletion": "Emits idle.completed only after leaving IDLE and removing owned listeners.",
       "cancellation": "The disposer initiates adapter cancellation, removes listeners in the same lexical owner, and registers the close promise with cleanupBarrier.",
       "retryOwner": "syncLifecycle"
@@ -587,15 +691,8 @@
         "virtualizable clock",
         "resource registry"
       ],
-      "messages": [
-        "watchTimer.elapsed",
-        "watchTimer.failed"
-      ],
-      "errorCategories": [
-        "transient",
-        "permanent",
-        "invariant"
-      ],
+      "messages": ["watchTimer.elapsed", "watchTimer.failed"],
+      "errorCategories": ["transient", "permanent", "invariant"],
       "normalCompletion": "Clears its one timer and abort listener before emitting watchTimer.elapsed.",
       "cancellation": "The disposer clears the timer and removes the exact registered listener synchronously.",
       "timerOwner": "periodicStatusTimer"
@@ -607,13 +704,18 @@
       "input": [
         "AbortSignal",
         "actor identity",
-        "durable sweep completion",
-        "bounded work configuration"
+        "MailboxCheckpointRepository plus shared InitialBackfillCompletionRepository",
+        "bounded work configuration",
+        "credentialRevision"
       ],
       "success": "RecurringMailboxSweepResult with completed or not-eligible, committed progress, and the next validated watch strategy.",
-      "error": "WorkflowFault after all actor-owned resources close.",
+      "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
       "cancellation": "Exit aborts the signal; a cancelled result delivered after exit is late and ignored.",
-      "retryOwner": "syncLifecycle"
+      "retryOwner": "syncLifecycle",
+      "durableTerminal": {
+        "completed": "completions.complete transaction using InitialBackfillCompletionRepository: checkpoint uidNext/modseq/sweepCursor/backfillCompleted/observedVersion plus all completion fields",
+        "not-eligible": "no durable write"
+      }
     },
     {
       "id": "retryTimer",
@@ -628,13 +730,8 @@
         "injected random source",
         "virtualizable clock"
       ],
-      "messages": [
-        "retryTimer.elapsed",
-        "retryTimer.failed"
-      ],
-      "errorCategories": [
-        "invariant"
-      ],
+      "messages": ["retryTimer.elapsed", "retryTimer.failed"],
+      "errorCategories": ["invariant"],
       "normalCompletion": "Clears its one timer before emitting retryTimer.elapsed.",
       "cancellation": "The disposer clears the timer and removes its exact listener synchronously.",
       "timerOwner": "retryTimer"
@@ -644,14 +741,31 @@
       "kind": "fromPromise",
       "owner": "every quiescing or stopping state",
       "input": [
-        "scope:watch|workflow",
+        "minimumScope from active cleanup state metadata",
+        "cleanupEpoch from context",
+        "cleanupPhase from context",
+        "invokeLease from context",
+        "authoritative effectiveCleanupScope from resource registry",
+        "phaseTerminal: a fresh per-invoke promise returned by resourceRegistry.awaitPhase(epoch, phase)",
         "resource registry"
       ],
-      "success": "released=true plus bounded diagnostics after every selected owner reports closed.",
-      "error": "Invariant WorkflowFault only after the ownership audit confirms zero selected live resources; an unreleased resource keeps the promise pending and public controls may time out.",
-      "scopePromotion": "watch is narrower than workflow. A broader request atomically promotes the one in-flight job to the union of requested resources; a narrower request can never downgrade it. If the earlier job already settled, the broader job starts only afterward.",
-      "cancellation": "A replacement cleanup invocation awaits the same memoized in-flight barrier job; it never starts a second concurrent cleanup job.",
-      "cleanupOwner": "cleanupBarrier"
+      "success": "One invocation-scoped CleanupCertificate {certificateId, cleanupEpoch, cleanupPhase, invokeLease, effectiveScope, released:true, authoritativeAudit, diagnostics}. The wrapper awaits the selected registry phase terminal, then binds it to its immutable invokeLease. A cached equal-scope terminal resolves the new wrapper promise; a promotion selects a fresh phase terminal.",
+      "error": "One invocation-scoped invariant WorkflowFault plus the same certificate fields. The registry can create an error terminal only after the selected phase has a zero authoritative audit. Synthetic wrong scope/phase/lease/epoch/audit material fails the literal guard; an exited invoke terminal is ignored by XState identity.",
+      "scopePromotion": "resourceRegistry.requestPhase is the linearization point. A watch-to-workflow request atomically updates effective scope, increments cleanupPhase, installs a fresh pending workflow phase terminal, and only then returns replacement invoke input. It does this whether the watch phase is open or settled. Old watch terminals can settle only old-phase wrappers and cannot satisfy the new phase.",
+      "cancellation": "A cleanup-state replacement exits the old wrapper and increments cleanupInvokeLease. Equal-scope replacement receives a new wrapper promise over the current phase, resolving from its cached immutable terminal when already settled. Promotion receives the newly created workflow phase. Release handles remain owned and deduplicated by the one registry session; no wrapper starts a second close job.",
+      "cleanupOwner": "resourceRegistry.cleanupSession is the sole release owner; cleanupBarrier is an awaited phase adapter",
+      "certificateAdmission": [
+        "XState terminal belongs to the current cleanupBarrier invoke",
+        "certificate.invokeLease equals context.cleanupInvokeLease",
+        "certificate.cleanupEpoch equals context.cleanupEpoch and registry current epoch",
+        "certificate.cleanupPhase equals context.cleanupPhase and registry current phase",
+        "certificate.effectiveScope equals context.effectiveCleanupScope and registry current effective scope",
+        "certificate effective scope dominates active state minimumScope",
+        "certificate authoritativeAudit.scope equals certificate.effectiveScope",
+        "certificate authoritativeAudit.liveResourceCount is zero",
+        "certificateId and audit digest equal the registry current-phase terminal and current audit"
+      ],
+      "phaseOwner": "The resource registry owns one cleanup session and versioned phases; cleanupBarrier remains a bounded fromPromise adapter for exactly one phase/invoke result."
     },
     {
       "id": "controlWaiter",
@@ -659,20 +773,35 @@
       "owner": "in-process control service, outside the lifecycle child graph",
       "input": [
         "commandId",
-        "incarnationId",
+        "idempotencyKey?",
+        "command fingerprint",
+        "internal incarnationId",
         "target predicate",
-        "deadline"
+        "controlDeadlineMs",
+        "controlResultRetentionMs",
+        "maxControlIdempotencyEntries",
+        "injected monotonic clock"
       ],
-      "messages": [
-        "accepted",
-        "rejected",
-        "completed",
-        "failed",
-        "cancelled",
-        "timeout"
+      "messages": ["accepted", "rejected", "completed", "failed", "cancelled", "timeout"],
+      "cancellation": "Every settle path removes both decision and snapshot listeners and clears its exact deadline timer.",
+      "note": "It observes but cannot mutate lifecycle state; it is not a second lifecycle authority.",
+      "handshake": [
+        "Register the machine decision listener and actor snapshot subscription before actor.send.",
+        "Capture preSend = actor.getSnapshot() after registration.",
+        "Send synchronously, then capture postSend = actor.getSnapshot().",
+        "Buffer decision and snapshot in either order; resolve only when both identify the same internal incarnation and compatible version.",
+        "For an idempotent no-op that emits no snapshot notification, test preSend and postSend against the emitted decision.",
+        "On settle, atomically mark the idempotency entry settled before removing listeners and timer."
       ],
-      "cancellation": "Every settle path unsubscribes from snapshots and clears its deadline timer.",
-      "note": "It observes but cannot mutate lifecycle state; it is not a second lifecycle authority."
+      "idempotency": {
+        "scope": "one internal actor incarnation; only pause/resume/stop use public idempotency keys",
+        "fingerprint": "command name plus canonical validated request",
+        "same": "same key/fingerprint joins one in-flight waiter or returns the byte-identical cached success/non-success result",
+        "conflict": "same key with a different fingerprint returns sync.control-idempotency-conflict without send",
+        "retention": "all settled outcomes, including timeout, are retained until controlResultRetentionMs on the injected monotonic clock",
+        "capacity": "evict expired entries, then oldest settled LRU entries; never evict in-flight. If the cap is all in-flight, return sync.control-capacity without send.",
+        "reconstruction": "a new actor incarnation starts with an empty map; replay is a new lifecycle-idempotent command and must be distinguishable publicly by the required upstream incarnation field"
+      }
     },
     {
       "id": "rawDownloadQueue",
@@ -686,10 +815,15 @@
       "success": "Serial FIFO job results with typed overflow; at most one rawDownloadJob is active.",
       "error": "A job error rejects only that job and leaves the queue able to process or stop according to its accepted machine.",
       "cancellation": "Parent cancellation calls and awaits queue.stop(); queued jobs reject, the active job aborts, and stop acknowledges only after adapter response stream and stage cleanup close.",
-      "children": [
-        "rawDownloadJob"
-      ],
-      "note": "Exactly one instance may exist because backfill and sweep are mutually exclusive. It cannot survive its owning bounded actor."
+      "children": ["rawDownloadJob"],
+      "note": "Exactly one instance may exist because backfill and sweep are mutually exclusive. It cannot survive its owning bounded actor.",
+      "acceptedArtifact": {
+        "issue": 98,
+        "planItem": "P3-C07",
+        "gitCommit": "e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae",
+        "path": "packages/imap/src/raw-download-queue.ts",
+        "sha256": "b676dee263b51eaac88846d03a109e6a77ad428959cfbc54de491b076d4cdd67"
+      }
     },
     {
       "id": "rawDownloadJob",
@@ -721,6 +855,9 @@
         "actorState": "stopped",
         "activeOperation": null,
         "authBlocked": null
+      },
+      "diagnosticPolicy": {
+        "forbiddenCode": "sync.terminal-failure"
       }
     },
     {
@@ -732,8 +869,27 @@
       "public": {
         "actorState": "stopped",
         "activeOperation": null,
-        "authBlocked": null,
-        "diagnosticRequirement": "at least one fatal or cleanup diagnostic"
+        "authBlocked": null
+      },
+      "diagnosticPolicy": {
+        "requiredCode": "sync.terminal-failure",
+        "minimumCount": 1
+      }
+    },
+    {
+      "id": "stopped.shutdown",
+      "kind": "atomic",
+      "parent": "stopped",
+      "reachable": true,
+      "invokedActors": [],
+      "terminalForIncarnation": true,
+      "diagnosticPolicy": {
+        "mode": "preserve prior terminal marker; shutdown itself does not create one"
+      },
+      "public": {
+        "actorState": "stopped",
+        "activeOperation": null,
+        "authBlocked": null
       }
     },
     {
@@ -746,13 +902,14 @@
       "kind": "atomic",
       "parent": "starting",
       "reachable": true,
-      "invokedActors": [
-        "bootstrapSession"
-      ],
+      "invokedActors": ["bootstrapSession"],
       "public": {
         "actorState": "starting",
         "activeOperation": "start",
         "authBlocked": null
+      },
+      "actorInput": {
+        "credentialRevision": "context.activeCredentialRevision captured by bindCredentialRevision on entry"
       }
     },
     {
@@ -760,16 +917,22 @@
       "kind": "atomic",
       "parent": "starting",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "starting",
         "activeOperation": "start",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -782,13 +945,14 @@
       "kind": "atomic",
       "parent": "backfilling",
       "reachable": true,
-      "invokedActors": [
-        "initialBackfill"
-      ],
+      "invokedActors": ["initialBackfill"],
       "public": {
         "actorState": "backfilling",
         "activeOperation": "backfill",
         "authBlocked": null
+      },
+      "actorInput": {
+        "credentialRevision": "context.activeCredentialRevision captured by bindCredentialRevision on entry"
       }
     },
     {
@@ -796,16 +960,22 @@
       "kind": "atomic",
       "parent": "backfilling",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "backfilling",
         "activeOperation": "backfill",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -818,14 +988,14 @@
       "kind": "atomic",
       "parent": "watching",
       "reachable": true,
-      "invokedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
+      "invokedActors": ["idleSession", "periodicStatusTimer"],
       "public": {
         "actorState": "watching",
         "activeOperation": "watch",
         "authBlocked": null
+      },
+      "actorInput": {
+        "credentialRevision": "context.activeCredentialRevision captured by bindCredentialRevision on entry"
       }
     },
     {
@@ -833,9 +1003,7 @@
       "kind": "atomic",
       "parent": "watching",
       "reachable": true,
-      "invokedActors": [
-        "periodicStatusTimer"
-      ],
+      "invokedActors": ["periodicStatusTimer"],
       "public": {
         "actorState": "watching",
         "activeOperation": "watch",
@@ -847,16 +1015,22 @@
       "kind": "atomic",
       "parent": "watching",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "watch"
+        "cleanupBarrier.minimumScope": "watch",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "watching",
         "activeOperation": "watch",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "watch"
       }
     },
     {
@@ -864,16 +1038,22 @@
       "kind": "atomic",
       "parent": "watching",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "watching",
         "activeOperation": "watch",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -881,16 +1061,22 @@
       "kind": "atomic",
       "parent": "watching",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "watching",
         "activeOperation": "watch",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -898,16 +1084,22 @@
       "kind": "atomic",
       "parent": "watching",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "watching",
         "activeOperation": "watch",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -915,16 +1107,22 @@
       "kind": "atomic",
       "parent": "watching",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "watching",
         "activeOperation": "watch",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -937,13 +1135,14 @@
       "kind": "atomic",
       "parent": "sweeping",
       "reachable": true,
-      "invokedActors": [
-        "recurringSweep"
-      ],
+      "invokedActors": ["recurringSweep"],
       "public": {
         "actorState": "sweeping",
         "activeOperation": "sweep",
         "authBlocked": null
+      },
+      "actorInput": {
+        "credentialRevision": "context.activeCredentialRevision captured by bindCredentialRevision on entry"
       }
     },
     {
@@ -951,16 +1150,22 @@
       "kind": "atomic",
       "parent": "sweeping",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "sweeping",
         "activeOperation": "sweep",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -973,9 +1178,7 @@
       "kind": "atomic",
       "parent": "retryWaiting",
       "reachable": true,
-      "invokedActors": [
-        "retryTimer"
-      ],
+      "invokedActors": ["retryTimer"],
       "public": {
         "actorState": "retrying",
         "activeOperation": "retry",
@@ -987,16 +1190,22 @@
       "kind": "atomic",
       "parent": "retryWaiting",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "retrying",
         "activeOperation": "retry",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -1031,16 +1240,22 @@
       "kind": "atomic",
       "parent": "stopping",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "stopping",
         "activeOperation": "stop",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     },
     {
@@ -1048,11 +1263,41 @@
       "kind": "atomic",
       "parent": "stopping",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
+      },
+      "public": {
+        "actorState": "stopping",
+        "activeOperation": "stop",
+        "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
+      }
+    },
+    {
+      "id": "stopping.forShutdown",
+      "kind": "atomic",
+      "parent": "stopping",
+      "reachable": true,
+      "invokedActors": ["cleanupBarrier"],
+      "cleanupRequirement": {
+        "minimumScope": "workflow",
+        "terminalTarget": "stopped.shutdown"
+      },
+      "actorInput": {
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "stopping",
@@ -1065,16 +1310,22 @@
       "kind": "atomic",
       "parent": "stopping",
       "reachable": true,
-      "invokedActors": [
-        "cleanupBarrier"
-      ],
+      "invokedActors": ["cleanupBarrier"],
       "actorInput": {
-        "cleanupBarrier.scope": "workflow"
+        "cleanupBarrier.minimumScope": "workflow",
+        "cleanupBarrier.cleanupEpoch": "context.cleanupEpoch",
+        "cleanupBarrier.effectiveScope": "context.effectiveCleanupScope",
+        "cleanupBarrier.cleanupPhase": "context.cleanupPhase",
+        "cleanupBarrier.invokeLease": "context.cleanupInvokeLease",
+        "cleanupBarrier.phaseTerminal": "resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase), a new per-invoke promise that maps a cached/current phase terminal to context.cleanupInvokeLease"
       },
       "public": {
         "actorState": "stopping",
         "activeOperation": "stop",
         "authBlocked": null
+      },
+      "cleanupRequirement": {
+        "minimumScope": "workflow"
       }
     }
   ],
@@ -1093,44 +1344,30 @@
     },
     {
       "id": "T010",
-      "source": [
-        "stopped.clean",
-        "stopped.failed"
-      ],
+      "source": ["stopped.clean", "stopped.failed"],
       "event": "control.start.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "starting.active",
       "actions": [
+        "clearTerminalFailure",
         "clearAuthBlock",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion",
         "emitControlAccepted"
       ],
       "stoppedActors": [],
-      "startedActors": [
-        "bootstrapSession"
-      ],
+      "startedActors": ["bootstrapSession"],
       "durableWrites": [],
       "observation": "Accepted start observes starting and the new version."
     },
     {
       "id": "T011",
-      "source": [
-        "starting.active",
-        "backfilling.active",
-        "sweeping.active",
-        "retryWaiting.active"
-      ],
+      "source": ["starting.active", "backfilling.active", "sweeping.active", "retryWaiting.active"],
       "event": "control.start.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlAccepted"
-      ],
+      "actions": ["emitControlAccepted"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1138,18 +1375,11 @@
     },
     {
       "id": "T012",
-      "source": [
-        "watching.idling",
-        "watching.polling"
-      ],
+      "source": ["watching.idling", "watching.polling"],
       "event": "control.start.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlCompleted"
-      ],
+      "actions": ["emitControlCompleted"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1159,20 +1389,11 @@
       "id": "T020",
       "source": "starting.active",
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "starting.pausing",
-      "actions": [
-        "advanceVersion",
-        "emitControlPending"
-      ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "advanceVersion", "emitControlPending"],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "The public state remains starting until cleanup reaches paused; the pause waiter remains pending."
     },
@@ -1180,44 +1401,23 @@
       "id": "T021",
       "source": "backfilling.active",
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "backfilling.pausing",
-      "actions": [
-        "advanceVersion",
-        "emitControlPending"
-      ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "advanceVersion", "emitControlPending"],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Backfill remains the reported active operation until its resources close."
     },
     {
       "id": "T022",
-      "source": [
-        "watching.idling",
-        "watching.polling"
-      ],
+      "source": ["watching.idling", "watching.polling"],
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "watching.closingForPause",
-      "actions": [
-        "advanceVersion",
-        "emitControlPending"
-      ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "advanceVersion", "emitControlPending"],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Watching remains reported while the awaited barrier closes IDLE and its timer."
     },
@@ -1225,20 +1425,11 @@
       "id": "T023",
       "source": "sweeping.active",
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "sweeping.pausing",
-      "actions": [
-        "advanceVersion",
-        "emitControlPending"
-      ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "advanceVersion", "emitControlPending"],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Sweep cancellation is awaited before paused can be observed."
     },
@@ -1246,20 +1437,11 @@
       "id": "T024",
       "source": "retryWaiting.active",
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "retryWaiting.pausing",
-      "actions": [
-        "advanceVersion",
-        "emitControlPending"
-      ],
-      "stoppedActors": [
-        "retryTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "advanceVersion", "emitControlPending"],
+      "stoppedActors": ["retryTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Retrying remains reported until the timer has been removed and paused is reached."
     },
@@ -1271,44 +1453,35 @@
         "watching.closingForFailure"
       ],
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "watching.closingForPause",
       "actions": [
+        "beginOrPromoteCleanup",
+        "clearTerminalFailure",
         "advanceVersion",
         "emitControlPending"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
-      "observation": "The target intent changes to pause; the replacement invocation awaits the same cleanup job."
+      "observation": "The target intent changes to pause; requestPhase creates a fresh workflow phase when promoting watch or retains the current workflow phase, then the replacement wrapper receives a new invoke lease and promise."
     },
     {
       "id": "T029",
       "source": "watching.closingForAuthBlock",
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "watching.closingForPause",
       "actions": [
+        "beginOrPromoteCleanup",
         "clearAuthBlock",
         "advanceVersion",
         "emitControlPending"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
-      "observation": "Explicit pause supersedes the pending auth block, clears its detail, and promotes the same cleanup job to workflow scope."
+      "observation": "Explicit pause supersedes the pending auth block and clears its detail; the equal-workflow replacement retains the registry phase but receives a new invoke lease and per-invoke promise."
     },
     {
       "id": "T026",
@@ -1320,13 +1493,9 @@
         "retryWaiting.pausing"
       ],
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlPending"
-      ],
+      "actions": ["emitControlPending"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1336,15 +1505,9 @@
       "id": "T027",
       "source": "authBlocked",
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "paused",
-      "actions": [
-        "clearAuthBlock",
-        "advanceVersion",
-        "emitControlPending"
-      ],
+      "actions": ["clearAuthBlock", "advanceVersion", "emitControlPending"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1354,13 +1517,9 @@
       "id": "T028",
       "source": "paused",
       "event": "control.pause.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlCompleted"
-      ],
+      "actions": ["emitControlCompleted"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1370,19 +1529,16 @@
       "id": "T030",
       "source": "paused",
       "event": "control.resume.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "starting.active",
       "actions": [
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion",
         "emitControlAccepted"
       ],
       "stoppedActors": [],
-      "startedActors": [
-        "bootstrapSession"
-      ],
+      "startedActors": ["bootstrapSession"],
       "durableWrites": [],
       "observation": "Resume is accepted only after starting is observed at the new version."
     },
@@ -1390,13 +1546,9 @@
       "id": "T031",
       "source": "starting.active",
       "event": "control.resume.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlAccepted"
-      ],
+      "actions": ["emitControlAccepted"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1412,13 +1564,9 @@
         "retryWaiting.active"
       ],
       "event": "control.resume.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlCompleted"
-      ],
+      "actions": ["emitControlCompleted"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1426,18 +1574,11 @@
     },
     {
       "id": "T040",
-      "source": [
-        "stopped.clean",
-        "stopped.failed"
-      ],
+      "source": ["stopped.clean", "stopped.failed", "stopped.shutdown"],
       "event": "control.stop.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlCompleted"
-      ],
+      "actions": ["emitControlCompleted"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -1445,43 +1586,32 @@
     },
     {
       "id": "T041",
-      "source": "stopping.forStop",
+      "source": ["stopping.forStop", "stopping.forShutdown"],
       "event": "control.stop.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": null,
-      "actions": [
-        "emitControlPending"
-      ],
+      "actions": ["emitControlPending"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
-      "observation": "Duplicate stop joins the same cleanup and waits for stopped; it cannot fabricate completion."
+      "observation": "Duplicate stop joins the current registry session/phase and waits for stopped; it cannot fabricate completion or replace the cleanup actor."
     },
     {
       "id": "T042",
-      "source": [
-        "stopping.forRestart",
-        "stopping.afterFailure"
-      ],
+      "source": ["stopping.forRestart", "stopping.afterFailure"],
       "event": "control.stop.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "stopping.forStop",
       "actions": [
+        "beginOrPromoteCleanup",
+        "clearTerminalFailure",
         "advanceVersion",
         "emitControlPending"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
-      "observation": "Stop wins over restart/failure disposition and awaits the same cleanup job."
+      "observation": "Stop wins over restart/failure disposition; the equal-workflow replacement retains the current registry phase and gets a new invoke lease/promise."
     },
     {
       "id": "T043",
@@ -1505,21 +1635,17 @@
         "paused"
       ],
       "event": "control.stop.requested",
-      "guards": [
-        "expectedVersionMatches"
-      ],
+      "guards": ["expectedVersionMatches"],
       "target": "stopping.forStop",
       "actions": [
+        "beginOrPromoteCleanup",
+        "clearTerminalFailure",
         "clearAuthBlock",
         "advanceVersion",
         "emitControlPending"
       ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Stopping is observed immediately, but completed stop is withheld until cleanup reaches stopped."
     },
@@ -1550,38 +1676,27 @@
       "guards": [],
       "target": "stopping.forRestart",
       "actions": [
+        "beginOrPromoteCleanup",
+        "clearTerminalFailure",
         "clearAuthBlock",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Every live-process restart first observes stopping and awaits the shared workflow cleanup barrier."
     },
     {
       "id": "T051",
-      "source": [
-        "stopping.forStop",
-        "stopping.afterFailure"
-      ],
+      "source": ["stopping.forStop", "stopping.afterFailure"],
       "event": "lifecycle.restart.requested",
       "guards": [],
       "target": "stopping.forRestart",
-      "actions": [
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "clearTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
-      "observation": "Restart changes only the post-cleanup destination and reuses the one in-flight cleanup job."
+      "observation": "Restart changes only the post-cleanup destination; the equal-workflow replacement retains the registry session/phase and gets a new invoke lease/promise."
     },
     {
       "id": "T052",
@@ -1593,7 +1708,7 @@
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
-      "observation": "Duplicate restart is ignored and leaves the cleanup job and version unchanged."
+      "observation": "Duplicate restart is ignored and leaves the cleanup session, phase, invoke, and version unchanged."
     },
     {
       "id": "T053",
@@ -1615,32 +1730,68 @@
         "retryWaiting.pausing",
         "authBlocked",
         "paused",
+        "stopping.forStop",
         "stopping.forRestart",
         "stopping.afterFailure"
       ],
       "event": "process.shutdown.requested",
       "guards": [],
-      "target": "stopping.forStop",
-      "actions": [
-        "clearAuthBlock",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "target": "stopping.forShutdown",
+      "actions": ["clearAuthBlock", "beginOrPromoteCleanup", "advanceVersion"],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
-      "observation": "All shutdown triggers converge on the same stop cleanup disposition."
+      "observation": "Once shutdown is accepted, the incarnation can only finish authoritative cleanup and enter stopped.shutdown."
     },
     {
       "id": "T054",
+      "source": ["stopped.clean", "stopped.failed"],
+      "event": "process.shutdown.requested",
+      "guards": [],
+      "target": "stopped.shutdown",
+      "actions": ["advanceVersion"],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "A childless stopped state enters the terminal per-incarnation shutdown state without constructing cleanup work."
+    },
+    {
+      "id": "T059",
       "source": [
         "stopped.clean",
         "stopped.failed",
-        "stopping.forStop"
+        "starting.active",
+        "starting.pausing",
+        "backfilling.active",
+        "backfilling.pausing",
+        "watching.idling",
+        "watching.polling",
+        "watching.closingForSweep",
+        "watching.closingForRetry",
+        "watching.closingForAuthBlock",
+        "watching.closingForPause",
+        "watching.closingForFailure",
+        "sweeping.active",
+        "sweeping.pausing",
+        "retryWaiting.active",
+        "retryWaiting.pausing",
+        "paused",
+        "stopping.forStop",
+        "stopping.forRestart",
+        "stopping.afterFailure"
       ],
+      "event": "credentials.changed",
+      "guards": ["credentialRevisionIsNewer"],
+      "target": null,
+      "actions": ["latchCredentialRevision", "advanceVersion"],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Latch the strictly newer credential revision without restarting healthy, paused, stopped, retry, or cleanup work; any later auth failure is compared with the latch."
+    },
+    {
+      "id": "T055",
+      "source": ["stopping.forShutdown", "stopped.shutdown"],
       "event": "process.shutdown.requested",
       "guards": [],
       "target": null,
@@ -1648,45 +1799,52 @@
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
-      "observation": "Duplicate shutdown is an unchanged no-op."
+      "observation": "Duplicate shutdown is an unchanged no-op for this incarnation."
+    },
+    {
+      "id": "T056",
+      "source": ["stopping.forShutdown", "stopped.shutdown"],
+      "event": "lifecycle.restart.requested",
+      "guards": [],
+      "target": null,
+      "actions": [],
+      "stoppedActors": [],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Restart is ignored after shutdown acceptance; only constructing a new incarnation can start again."
     },
     {
       "id": "T060",
       "source": "authBlocked",
       "event": "credentials.changed",
-      "guards": [],
+      "guards": ["credentialRevisionIsNewer"],
       "target": "starting.active",
       "actions": [
+        "latchCredentialRevision",
         "clearAuthBlock",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
       "stoppedActors": [],
-      "startedActors": [
-        "bootstrapSession"
-      ],
+      "startedActors": ["bootstrapSession"],
       "durableWrites": [],
-      "observation": "Only an observed credential revision or explicit stop/pause leaves authBlocked automatically."
+      "observation": "A strictly newer revision leaves stable authBlocked and starts one actor attempt bound to that revision."
     },
     {
       "id": "T100",
       "source": "starting.active",
       "event": "xstate.done.actor.bootstrapSession",
-      "guards": [
-        "bootstrapNeedsBackfill"
-      ],
+      "guards": ["bootstrapNeedsBackfill"],
       "target": "backfilling.active",
       "actions": [
         "adoptCommittedCheckpoint",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
-      "startedActors": [
-        "initialBackfill"
-      ],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["initialBackfill"],
       "durableWrites": [],
       "observation": "Committed restart facts select bounded backfill; no snapshot mode is restored."
     },
@@ -1694,22 +1852,16 @@
       "id": "T101",
       "source": "starting.active",
       "event": "xstate.done.actor.bootstrapSession",
-      "guards": [
-        "bootstrapUsesIdle"
-      ],
+      "guards": ["bootstrapUsesIdle"],
       "target": "watching.idling",
       "actions": [
         "adoptCommittedCheckpoint",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
-      "startedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["idleSession", "periodicStatusTimer"],
       "durableWrites": [],
       "observation": "An IDLE-capable provider enters truthful idling with one IDLE actor and one timer."
     },
@@ -1717,39 +1869,46 @@
       "id": "T106",
       "source": "starting.active",
       "event": "xstate.done.actor.bootstrapSession",
-      "guards": [
-        "bootstrapUsesPolling"
-      ],
+      "guards": ["bootstrapUsesPolling"],
       "target": "watching.polling",
-      "actions": [
-        "adoptCommittedCheckpoint",
-        "beginEffectScope",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
-      "startedActors": [
-        "periodicStatusTimer"
-      ],
+      "actions": ["adoptCommittedCheckpoint", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["periodicStatusTimer"],
       "durableWrites": [],
       "observation": "A provider without usable IDLE enters truthful polling with one timer and no nominal IDLE actor."
+    },
+    {
+      "id": "T097",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "guards": ["authFaultUsesSupersededRevision"],
+      "target": "starting.active",
+      "actions": ["bindCredentialRevision", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["bootstrapSession"],
+      "durableWrites": [],
+      "observation": "A stale authentication failure cannot block the newer credential revision; the closed actor restarts bound to latestCredentialRevision."
+    },
+    {
+      "id": "T098",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "guards": ["authFaultUsesFutureRevision"],
+      "target": "stopping.afterFailure",
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["cleanupBarrier"],
+      "durableWrites": [],
+      "observation": "An actor claiming a credential revision newer than the trusted latch is an invariant terminal failure."
     },
     {
       "id": "T102",
       "source": "starting.active",
       "event": "xstate.error.actor.bootstrapSession",
-      "guards": [
-        "faultIsAuthentication"
-      ],
+      "guards": ["authFaultUsesCurrentRevision"],
       "target": "authBlocked",
-      "actions": [
-        "recordAuthBlock",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
+      "actions": ["recordAuthBlock", "advanceVersion"],
+      "stoppedActors": ["bootstrapSession"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Authentication failure bypasses retry and exposes safe authBlocked detail."
@@ -1758,22 +1917,11 @@
       "id": "T103",
       "source": "starting.active",
       "event": "xstate.error.actor.bootstrapSession",
-      "guards": [
-        "faultIsTransient",
-        "retryBudgetAvailable"
-      ],
+      "guards": ["faultIsTransient", "retryBudgetAvailable"],
       "target": "retryWaiting.active",
-      "actions": [
-        "recordTransientFault",
-        "beginEffectScope",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
-      "startedActors": [
-        "retryTimer"
-      ],
+      "actions": ["recordTransientFault", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["retryTimer"],
       "durableWrites": [],
       "observation": "One bounded retry timer owns the delay."
     },
@@ -1781,21 +1929,11 @@
       "id": "T104",
       "source": "starting.active",
       "event": "xstate.error.actor.bootstrapSession",
-      "guards": [
-        "faultIsTransient",
-        "retryBudgetExhausted"
-      ],
+      "guards": ["faultIsTransient", "retryBudgetExhausted"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Exhausted retry budget enters awaited failure cleanup."
     },
@@ -1803,20 +1941,11 @@
       "id": "T105",
       "source": "starting.active",
       "event": "xstate.error.actor.bootstrapSession",
-      "guards": [
-        "faultIsFatal"
-      ],
+      "guards": ["faultIsFatal"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "bootstrapSession"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["bootstrapSession"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Permanent or invariant bootstrap failure is cleaned before stopped.failed."
     },
@@ -1824,26 +1953,26 @@
       "id": "T110",
       "source": "backfilling.active",
       "event": "xstate.done.actor.initialBackfill",
-      "guards": [
-        "backfillCompletedNow",
-        "actorResultUsesIdle"
-      ],
+      "guards": ["backfillCompletedNow", "actorResultUsesIdle"],
       "target": "watching.idling",
       "actions": [
         "adoptCommittedCheckpoint",
         "resetRetryHistory",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
-      "startedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["idleSession", "periodicStatusTimer"],
       "durableWrites": [
+        "mailboxCheckpoint.uidNext",
+        "mailboxCheckpoint.modseq",
+        "mailboxCheckpoint.sweepCursor",
         "mailboxCheckpoint.backfillCompleted",
+        "mailboxCheckpoint.observedVersion",
+        "initialBackfillCompletion.observedUidCeiling",
+        "initialBackfillCompletion.observedUidNext",
+        "initialBackfillCompletion.observedAt",
         "initialBackfillCompletion.nextSweepEligibleAt"
       ],
       "observation": "Initial completion is observed without disabling recurring sweeps."
@@ -1852,10 +1981,7 @@
       "id": "T116",
       "source": "backfilling.active",
       "event": "xstate.done.actor.initialBackfill",
-      "guards": [
-        "backfillCompletedNow",
-        "actorResultUsesPolling"
-      ],
+      "guards": ["backfillCompletedNow", "actorResultUsesPolling"],
       "target": "watching.polling",
       "actions": [
         "adoptCommittedCheckpoint",
@@ -1863,14 +1989,17 @@
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
-      "startedActors": [
-        "periodicStatusTimer"
-      ],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["periodicStatusTimer"],
       "durableWrites": [
+        "mailboxCheckpoint.uidNext",
+        "mailboxCheckpoint.modseq",
+        "mailboxCheckpoint.sweepCursor",
         "mailboxCheckpoint.backfillCompleted",
+        "mailboxCheckpoint.observedVersion",
+        "initialBackfillCompletion.observedUidCeiling",
+        "initialBackfillCompletion.observedUidNext",
+        "initialBackfillCompletion.observedAt",
         "initialBackfillCompletion.nextSweepEligibleAt"
       ],
       "observation": "Initial completion remains recurring-sweep eligible when the validated watch strategy is polling."
@@ -1879,35 +2008,30 @@
       "id": "T117",
       "source": "backfilling.active",
       "event": "xstate.done.actor.initialBackfill",
-      "guards": [
-        "backfillAlreadyComplete",
-        "actorResultUsesIdle"
-      ],
+      "guards": ["backfillAlreadyComplete", "actorResultUsesIdle"],
       "target": "watching.idling",
       "actions": [
         "adoptCommittedCheckpoint",
         "resetRetryHistory",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "initialBackfill"
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["idleSession", "periodicStatusTimer"],
+      "durableWrites": [
+        "initialBackfillCompletion.observedUidCeiling",
+        "initialBackfillCompletion.observedUidNext",
+        "initialBackfillCompletion.observedAt",
+        "initialBackfillCompletion.nextSweepEligibleAt"
       ],
-      "startedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
-      "durableWrites": [],
-      "observation": "A previously committed initial completion enters IDLE watch without claiming a new durable write."
+      "observation": "The accepted non-CAS completions.save overwrites all four completion fields before this current-invoke result enters IDLE watch."
     },
     {
       "id": "T118",
       "source": "backfilling.active",
       "event": "xstate.done.actor.initialBackfill",
-      "guards": [
-        "backfillAlreadyComplete",
-        "actorResultUsesPolling"
-      ],
+      "guards": ["backfillAlreadyComplete", "actorResultUsesPolling"],
       "target": "watching.polling",
       "actions": [
         "adoptCommittedCheckpoint",
@@ -1915,51 +2039,60 @@
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "initialBackfill"
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["periodicStatusTimer"],
+      "durableWrites": [
+        "initialBackfillCompletion.observedUidCeiling",
+        "initialBackfillCompletion.observedUidNext",
+        "initialBackfillCompletion.observedAt",
+        "initialBackfillCompletion.nextSweepEligibleAt"
       ],
-      "startedActors": [
-        "periodicStatusTimer"
-      ],
-      "durableWrites": [],
-      "observation": "A previously committed initial completion enters polling without claiming a new durable write."
+      "observation": "The accepted non-CAS completions.save overwrites all four completion fields before this current-invoke result enters polling."
     },
     {
       "id": "T111",
       "source": "backfilling.active",
       "event": "xstate.done.actor.initialBackfill",
-      "guards": [
-        "backfillReturnedUnexpectedCancellation"
-      ],
+      "guards": ["backfillReturnedUnexpectedCancellation"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "A cancellation outcome while the invoke is still active is an invariant failure, not false success."
+    },
+    {
+      "id": "T107",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "guards": ["authFaultUsesSupersededRevision"],
+      "target": "starting.active",
+      "actions": ["bindCredentialRevision", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["bootstrapSession"],
+      "durableWrites": [],
+      "observation": "A stale authentication failure restarts startup with the newest latched credential revision after the bounded actor has released."
+    },
+    {
+      "id": "T108",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "guards": ["authFaultUsesFutureRevision"],
+      "target": "stopping.afterFailure",
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["cleanupBarrier"],
+      "durableWrites": [],
+      "observation": "A future credential revision in an actor fault violates the trusted revision order and fails terminally after cleanup."
     },
     {
       "id": "T112",
       "source": "backfilling.active",
       "event": "xstate.error.actor.initialBackfill",
-      "guards": [
-        "faultIsAuthentication"
-      ],
+      "guards": ["authFaultUsesCurrentRevision"],
       "target": "authBlocked",
-      "actions": [
-        "recordAuthBlock",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
+      "actions": ["recordAuthBlock", "advanceVersion"],
+      "stoppedActors": ["initialBackfill"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Backfill authentication rejection cannot enter retry."
@@ -1968,22 +2101,11 @@
       "id": "T113",
       "source": "backfilling.active",
       "event": "xstate.error.actor.initialBackfill",
-      "guards": [
-        "faultIsTransient",
-        "retryBudgetAvailable"
-      ],
+      "guards": ["faultIsTransient", "retryBudgetAvailable"],
       "target": "retryWaiting.active",
-      "actions": [
-        "recordTransientFault",
-        "beginEffectScope",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
-      "startedActors": [
-        "retryTimer"
-      ],
+      "actions": ["recordTransientFault", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["retryTimer"],
       "durableWrites": [],
       "observation": "Transient backfill failure schedules exactly one bounded retry timer."
     },
@@ -1991,21 +2113,11 @@
       "id": "T114",
       "source": "backfilling.active",
       "event": "xstate.error.actor.initialBackfill",
-      "guards": [
-        "faultIsTransient",
-        "retryBudgetExhausted"
-      ],
+      "guards": ["faultIsTransient", "retryBudgetExhausted"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Backfill retry exhaustion is a cleaned terminal failure."
     },
@@ -2013,20 +2125,11 @@
       "id": "T115",
       "source": "backfilling.active",
       "event": "xstate.error.actor.initialBackfill",
-      "guards": [
-        "faultIsFatal"
-      ],
+      "guards": ["faultIsFatal"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "initialBackfill"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["initialBackfill"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Fatal backfill failure cannot leave the chart nominally backfilling."
     },
@@ -2034,16 +2137,9 @@
       "id": "T120",
       "source": "watching.idling",
       "event": "idle.ready",
-      "guards": [
-        "scopeIsCurrent",
-        "idleReadyUnseenForScope"
-      ],
+      "guards": ["scopeIsCurrent", "idleReadyUnseenForScope"],
       "target": null,
-      "actions": [
-        "resetRetryHistory",
-        "markIdleReadyObserved",
-        "advanceVersion"
-      ],
+      "actions": ["resetRetryHistory", "markIdleReadyObserved", "advanceVersion"],
       "stoppedActors": [],
       "startedActors": [],
       "durableWrites": [],
@@ -2053,42 +2149,23 @@
       "id": "T121",
       "source": "watching.idling",
       "event": "idle.mailboxChanged",
-      "guards": [
-        "scopeIsCurrent"
-      ],
+      "guards": ["scopeIsCurrent"],
       "target": "watching.closingForSweep",
-      "actions": [
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "advanceVersion"],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Mailbox notification closes both watch actors before sweep starts."
     },
     {
       "id": "T122",
-      "source": [
-        "watching.idling",
-        "watching.polling"
-      ],
+      "source": ["watching.idling", "watching.polling"],
       "event": "watchTimer.elapsed",
-      "guards": [
-        "scopeIsCurrent"
-      ],
+      "guards": ["scopeIsCurrent"],
       "target": "watching.closingForSweep",
-      "actions": [
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "advanceVersion"],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "The bounded periodic trigger closes IDLE and its timer before sweep."
     },
@@ -2096,22 +2173,11 @@
       "id": "T123",
       "source": "watching.idling",
       "event": "idle.completed",
-      "guards": [
-        "scopeIsCurrent",
-        "retryBudgetAvailable"
-      ],
+      "guards": ["scopeIsCurrent", "retryBudgetAvailable"],
       "target": "watching.closingForRetry",
-      "actions": [
-        "recordTransientFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTransientFault", "advanceVersion"],
+      "stoppedActors": ["idleSession", "periodicStatusTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Normal IDLE completion explicitly leaves watching.idling and restarts under retry policy."
     },
@@ -2119,45 +2185,35 @@
       "id": "T124",
       "source": "watching.idling",
       "event": "idle.completed",
-      "guards": [
-        "scopeIsCurrent",
-        "retryBudgetExhausted"
-      ],
+      "guards": ["scopeIsCurrent", "retryBudgetExhausted"],
       "target": "watching.closingForFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["idleSession", "periodicStatusTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Repeated normal IDLE completion cannot livelock forever."
+    },
+    {
+      "id": "T124F",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "guards": ["scopeIsCurrent", "authFaultUsesFutureRevision"],
+      "target": "watching.closingForFailure",
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["idleSession", "periodicStatusTimer"],
+      "startedActors": ["cleanupBarrier"],
+      "durableWrites": [],
+      "observation": "A future credential revision is an invariant fault; watch resources close before terminal failure."
     },
     {
       "id": "T125",
       "source": "watching.idling",
       "event": "idle.failed",
-      "guards": [
-        "scopeIsCurrent",
-        "faultIsAuthentication"
-      ],
+      "guards": ["scopeIsCurrent", "faultIsAuthentication"],
       "target": "watching.closingForAuthBlock",
-      "actions": [
-        "recordAuthBlock",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordAuthBlock", "advanceVersion"],
+      "stoppedActors": ["idleSession", "periodicStatusTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Authentication failure closes the timer and session before authBlocked."
     },
@@ -2165,23 +2221,11 @@
       "id": "T126",
       "source": "watching.idling",
       "event": "idle.failed",
-      "guards": [
-        "scopeIsCurrent",
-        "faultIsTransient",
-        "retryBudgetAvailable"
-      ],
+      "guards": ["scopeIsCurrent", "faultIsTransient", "retryBudgetAvailable"],
       "target": "watching.closingForRetry",
-      "actions": [
-        "recordTransientFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTransientFault", "advanceVersion"],
+      "stoppedActors": ["idleSession", "periodicStatusTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Transient IDLE failure closes all watch resources before retry."
     },
@@ -2189,23 +2233,11 @@
       "id": "T127",
       "source": "watching.idling",
       "event": "idle.failed",
-      "guards": [
-        "scopeIsCurrent",
-        "faultIsTransient",
-        "retryBudgetExhausted"
-      ],
+      "guards": ["scopeIsCurrent", "faultIsTransient", "retryBudgetExhausted"],
       "target": "watching.closingForFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["idleSession", "periodicStatusTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "IDLE retry exhaustion closes resources before failure."
     },
@@ -2213,99 +2245,47 @@
       "id": "T128",
       "source": "watching.idling",
       "event": "idle.failed",
-      "guards": [
-        "scopeIsCurrent",
-        "faultIsFatal"
-      ],
+      "guards": ["scopeIsCurrent", "faultIsFatal"],
       "target": "watching.closingForFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["idleSession", "periodicStatusTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Fatal IDLE failure cannot leave a nominal watching snapshot."
     },
     {
       "id": "T129",
-      "source": [
-        "watching.idling",
-        "watching.polling"
-      ],
+      "source": ["watching.idling", "watching.polling"],
       "event": "watchTimer.failed",
-      "guards": [
-        "scopeIsCurrent",
-        "faultIsTransient",
-        "retryBudgetAvailable"
-      ],
+      "guards": ["scopeIsCurrent", "faultIsTransient", "retryBudgetAvailable"],
       "target": "watching.closingForRetry",
-      "actions": [
-        "recordTransientFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTransientFault", "advanceVersion"],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Timer failure uses the same owned cleanup and retry path."
     },
     {
       "id": "T130",
-      "source": [
-        "watching.idling",
-        "watching.polling"
-      ],
+      "source": ["watching.idling", "watching.polling"],
       "event": "watchTimer.failed",
-      "guards": [
-        "scopeIsCurrent",
-        "faultIsTransient",
-        "retryBudgetExhausted"
-      ],
+      "guards": ["scopeIsCurrent", "faultIsTransient", "retryBudgetExhausted"],
       "target": "watching.closingForFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Timer retry exhaustion closes every watch resource before failure."
     },
     {
       "id": "T131",
-      "source": [
-        "watching.idling",
-        "watching.polling"
-      ],
+      "source": ["watching.idling", "watching.polling"],
       "event": "watchTimer.failed",
-      "guards": [
-        "scopeIsCurrent",
-        "faultIsFatal"
-      ],
+      "guards": ["scopeIsCurrent", "faultIsFatal"],
       "target": "watching.closingForFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "@source"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["@source"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "A timer invariant fault is terminal after awaited cleanup."
     },
@@ -2313,21 +2293,17 @@
       "id": "T140",
       "source": "watching.closingForSweep",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "sweeping.active",
       "actions": [
+        "finishCleanupScope",
         "appendCleanupDiagnostics",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
-      "startedActors": [
-        "recurringSweep"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["recurringSweep"],
       "durableWrites": [],
       "observation": "Sweep starts only after IDLE, timer, listeners, and watch streams are absent."
     },
@@ -2335,58 +2311,58 @@
       "id": "T141",
       "source": "watching.closingForRetry",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "retryWaiting.active",
       "actions": [
+        "finishCleanupScope",
         "appendCleanupDiagnostics",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
-      "startedActors": [
-        "retryTimer"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["retryTimer"],
       "durableWrites": [],
       "observation": "Retry timer cannot overlap the watch timer or IDLE session."
+    },
+    {
+      "id": "T139",
+      "source": "watching.closingForAuthBlock",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": ["cleanupCertificateCoversState", "pendingAuthFaultWasSuperseded"],
+      "target": "starting.active",
+      "actions": [
+        "finishCleanupScope",
+        "appendCleanupDiagnostics",
+        "clearAuthBlock",
+        "bindCredentialRevision",
+        "beginEffectScope",
+        "advanceVersion"
+      ],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["bootstrapSession"],
+      "durableWrites": [],
+      "observation": "A credential revision latched before or during auth cleanup suppresses authBlocked and restarts only after the watch scope is authoritatively empty."
     },
     {
       "id": "T142",
       "source": "watching.closingForAuthBlock",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState", "pendingAuthFaultIsCurrent"],
       "target": "authBlocked",
-      "actions": [
-        "appendCleanupDiagnostics",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["finishCleanupScope", "appendCleanupDiagnostics", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
-      "observation": "authBlocked is stable and has no live child."
+      "observation": "authBlocked is entered only when the failed attempt still equals the latest credential revision."
     },
     {
       "id": "T143",
       "source": "watching.closingForPause",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "paused",
-      "actions": [
-        "appendCleanupDiagnostics",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["finishCleanupScope", "appendCleanupDiagnostics", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Paused becomes observable only after the adjacent live-IDLE/timer counterexample is impossible."
@@ -2395,17 +2371,10 @@
       "id": "T144",
       "source": "watching.closingForFailure",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "stopped.failed",
-      "actions": [
-        "appendCleanupDiagnostics",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["finishCleanupScope", "appendCleanupDiagnostics", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Terminal failure projects stopped plus bounded diagnostics after zero live resources."
@@ -2420,18 +2389,15 @@
         "watching.closingForFailure"
       ],
       "event": "xstate.error.actor.cleanupBarrier",
-      "guards": [
-        "faultIsFatal"
-      ],
+      "guards": ["cleanupFailureCertificateCoversState", "faultIsFatal"],
       "target": "stopped.failed",
       "actions": [
+        "finishCleanupScope",
         "clearAuthBlock",
-        "recordFatalFault",
+        "recordTerminalFailure",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "The cleanup actor may reject only after its zero-resource terminal contract holds."
@@ -2440,27 +2406,27 @@
       "id": "T150",
       "source": "sweeping.active",
       "event": "xstate.done.actor.recurringSweep",
-      "guards": [
-        "sweepCompletedNow",
-        "actorResultUsesIdle"
-      ],
+      "guards": ["sweepCompletedNow", "actorResultUsesIdle"],
       "target": "watching.idling",
       "actions": [
         "adoptCommittedCheckpoint",
         "resetRetryHistory",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["idleSession", "periodicStatusTimer"],
       "durableWrites": [
+        "mailboxCheckpoint.uidNext",
+        "mailboxCheckpoint.modseq",
         "mailboxCheckpoint.sweepCursor",
-        "recurringSweepCompletion.nextSweepEligibleAt"
+        "mailboxCheckpoint.backfillCompleted",
+        "mailboxCheckpoint.observedVersion",
+        "initialBackfillCompletion.observedUidCeiling",
+        "initialBackfillCompletion.observedUidNext",
+        "initialBackfillCompletion.observedAt",
+        "initialBackfillCompletion.nextSweepEligibleAt"
       ],
       "observation": "A completed initial backfill can discover later mail and re-enter watching."
     },
@@ -2468,10 +2434,7 @@
       "id": "T156",
       "source": "sweeping.active",
       "event": "xstate.done.actor.recurringSweep",
-      "guards": [
-        "sweepCompletedNow",
-        "actorResultUsesPolling"
-      ],
+      "guards": ["sweepCompletedNow", "actorResultUsesPolling"],
       "target": "watching.polling",
       "actions": [
         "adoptCommittedCheckpoint",
@@ -2479,15 +2442,18 @@
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "periodicStatusTimer"
-      ],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["periodicStatusTimer"],
       "durableWrites": [
+        "mailboxCheckpoint.uidNext",
+        "mailboxCheckpoint.modseq",
         "mailboxCheckpoint.sweepCursor",
-        "recurringSweepCompletion.nextSweepEligibleAt"
+        "mailboxCheckpoint.backfillCompleted",
+        "mailboxCheckpoint.observedVersion",
+        "initialBackfillCompletion.observedUidCeiling",
+        "initialBackfillCompletion.observedUidNext",
+        "initialBackfillCompletion.observedAt",
+        "initialBackfillCompletion.nextSweepEligibleAt"
       ],
       "observation": "A completed sweep re-enters polling when IDLE is not the validated strategy."
     },
@@ -2495,24 +2461,17 @@
       "id": "T157",
       "source": "sweeping.active",
       "event": "xstate.done.actor.recurringSweep",
-      "guards": [
-        "sweepNotEligible",
-        "actorResultUsesIdle"
-      ],
+      "guards": ["sweepNotEligible", "actorResultUsesIdle"],
       "target": "watching.idling",
       "actions": [
         "adoptCommittedCheckpoint",
         "resetRetryHistory",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "idleSession",
-        "periodicStatusTimer"
-      ],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["idleSession", "periodicStatusTimer"],
       "durableWrites": [],
       "observation": "A not-yet-eligible sweep returns to IDLE watch without claiming durable progress."
     },
@@ -2520,10 +2479,7 @@
       "id": "T158",
       "source": "sweeping.active",
       "event": "xstate.done.actor.recurringSweep",
-      "guards": [
-        "sweepNotEligible",
-        "actorResultUsesPolling"
-      ],
+      "guards": ["sweepNotEligible", "actorResultUsesPolling"],
       "target": "watching.polling",
       "actions": [
         "adoptCommittedCheckpoint",
@@ -2531,12 +2487,8 @@
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "periodicStatusTimer"
-      ],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["periodicStatusTimer"],
       "durableWrites": [],
       "observation": "A not-yet-eligible sweep returns to polling without claiming durable progress."
     },
@@ -2544,38 +2496,46 @@
       "id": "T151",
       "source": "sweeping.active",
       "event": "xstate.done.actor.recurringSweep",
-      "guards": [
-        "sweepViolatedOwnership"
-      ],
+      "guards": ["sweepViolatedOwnership"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "not-owner or unexpected cancellation is an invariant failure, never a false completed sweep."
+    },
+    {
+      "id": "T146",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "guards": ["authFaultUsesSupersededRevision"],
+      "target": "starting.active",
+      "actions": ["bindCredentialRevision", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["bootstrapSession"],
+      "durableWrites": [],
+      "observation": "A stale sweep authentication failure restarts against the latest credential revision after release."
+    },
+    {
+      "id": "T147",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "guards": ["authFaultUsesFutureRevision"],
+      "target": "stopping.afterFailure",
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["cleanupBarrier"],
+      "durableWrites": [],
+      "observation": "A future credential revision in a sweep fault is an invariant terminal failure."
     },
     {
       "id": "T152",
       "source": "sweeping.active",
       "event": "xstate.error.actor.recurringSweep",
-      "guards": [
-        "faultIsAuthentication"
-      ],
+      "guards": ["authFaultUsesCurrentRevision"],
       "target": "authBlocked",
-      "actions": [
-        "recordAuthBlock",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
+      "actions": ["recordAuthBlock", "advanceVersion"],
+      "stoppedActors": ["recurringSweep"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Sweep authentication failure blocks automatic retry."
@@ -2584,22 +2544,11 @@
       "id": "T153",
       "source": "sweeping.active",
       "event": "xstate.error.actor.recurringSweep",
-      "guards": [
-        "faultIsTransient",
-        "retryBudgetAvailable"
-      ],
+      "guards": ["faultIsTransient", "retryBudgetAvailable"],
       "target": "retryWaiting.active",
-      "actions": [
-        "recordTransientFault",
-        "beginEffectScope",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "retryTimer"
-      ],
+      "actions": ["recordTransientFault", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["retryTimer"],
       "durableWrites": [],
       "observation": "Transient sweep failure schedules one retry timer after the sweep actor releases."
     },
@@ -2607,21 +2556,11 @@
       "id": "T154",
       "source": "sweeping.active",
       "event": "xstate.error.actor.recurringSweep",
-      "guards": [
-        "faultIsTransient",
-        "retryBudgetExhausted"
-      ],
+      "guards": ["faultIsTransient", "retryBudgetExhausted"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Sweep retry exhaustion enters awaited failure cleanup."
     },
@@ -2629,20 +2568,11 @@
       "id": "T155",
       "source": "sweeping.active",
       "event": "xstate.error.actor.recurringSweep",
-      "guards": [
-        "faultIsFatal"
-      ],
+      "guards": ["faultIsFatal"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "recurringSweep"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["recurringSweep"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Fatal sweep failure is cleaned and then exposed as stopped with diagnostics."
     },
@@ -2650,20 +2580,11 @@
       "id": "T160",
       "source": "retryWaiting.active",
       "event": "retryTimer.elapsed",
-      "guards": [
-        "scopeIsCurrent"
-      ],
+      "guards": ["scopeIsCurrent"],
       "target": "starting.active",
-      "actions": [
-        "beginEffectScope",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "retryTimer"
-      ],
-      "startedActors": [
-        "bootstrapSession"
-      ],
+      "actions": ["bindCredentialRevision", "beginEffectScope", "advanceVersion"],
+      "stoppedActors": ["retryTimer"],
+      "startedActors": ["bootstrapSession"],
       "durableWrites": [],
       "observation": "The one-shot retry timer clears before startup begins."
     },
@@ -2671,20 +2592,11 @@
       "id": "T161",
       "source": "retryWaiting.active",
       "event": "retryTimer.failed",
-      "guards": [
-        "scopeIsCurrent"
-      ],
+      "guards": ["scopeIsCurrent"],
       "target": "stopping.afterFailure",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "retryTimer"
-      ],
-      "startedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["beginOrPromoteCleanup", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["retryTimer"],
+      "startedActors": ["cleanupBarrier"],
       "durableWrites": [],
       "observation": "Timer failure is an invariant failure and cannot create a second timer."
     },
@@ -2697,17 +2609,10 @@
         "retryWaiting.pausing"
       ],
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "paused",
-      "actions": [
-        "appendCleanupDiagnostics",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["finishCleanupScope", "appendCleanupDiagnostics", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Paused is reached only after the source actor and all workflow resources close."
@@ -2721,17 +2626,10 @@
         "retryWaiting.pausing"
       ],
       "event": "xstate.error.actor.cleanupBarrier",
-      "guards": [
-        "faultIsFatal"
-      ],
+      "guards": ["cleanupFailureCertificateCoversState", "faultIsFatal"],
       "target": "stopped.failed",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["finishCleanupScope", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Cleanup failure can settle only after zero ownership; failure is then safe to expose."
@@ -2740,17 +2638,15 @@
       "id": "T180",
       "source": "stopping.forStop",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "stopped.clean",
       "actions": [
+        "finishCleanupScope",
+        "clearTerminalFailure",
         "appendCleanupDiagnostics",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Completed stop is observable only now, with zero workflow resources."
@@ -2759,21 +2655,17 @@
       "id": "T181",
       "source": "stopping.forRestart",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "starting.active",
       "actions": [
+        "finishCleanupScope",
         "appendCleanupDiagnostics",
+        "bindCredentialRevision",
         "beginEffectScope",
         "advanceVersion"
       ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
-      "startedActors": [
-        "bootstrapSession"
-      ],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": ["bootstrapSession"],
       "durableWrites": [],
       "observation": "Restart cannot overlap old children; startup reads durable facts afresh."
     },
@@ -2781,40 +2673,46 @@
       "id": "T182",
       "source": "stopping.afterFailure",
       "event": "xstate.done.actor.cleanupBarrier",
-      "guards": [
-        "cleanupReleasedScope"
-      ],
+      "guards": ["cleanupCertificateCoversState"],
       "target": "stopped.failed",
-      "actions": [
-        "appendCleanupDiagnostics",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["finishCleanupScope", "appendCleanupDiagnostics", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "Failure is terminal only after cleanup; public status is stopped plus diagnostics."
     },
     {
-      "id": "T183",
-      "source": [
-        "stopping.forStop",
-        "stopping.forRestart",
-        "stopping.afterFailure"
-      ],
+      "id": "T184",
+      "source": "stopping.forShutdown",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "guards": ["cleanupCertificateCoversState"],
+      "target": "stopped.shutdown",
+      "actions": ["finishCleanupScope", "appendCleanupDiagnostics", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "Shutdown cleanup reaches a terminal childless state and never redirects to starting."
+    },
+    {
+      "id": "T185",
+      "source": "stopping.forShutdown",
       "event": "xstate.error.actor.cleanupBarrier",
-      "guards": [
-        "faultIsFatal"
-      ],
+      "guards": ["cleanupFailureCertificateCoversState", "faultIsFatal"],
+      "target": "stopped.shutdown",
+      "actions": ["finishCleanupScope", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
+      "startedActors": [],
+      "durableWrites": [],
+      "observation": "A certified zero-resource cleanup fault is retained as sync.terminal-failure, but shutdown remains terminal for the incarnation."
+    },
+    {
+      "id": "T183",
+      "source": ["stopping.forStop", "stopping.forRestart", "stopping.afterFailure"],
+      "event": "xstate.error.actor.cleanupBarrier",
+      "guards": ["cleanupFailureCertificateCoversState", "faultIsFatal"],
       "target": "stopped.failed",
-      "actions": [
-        "recordFatalFault",
-        "advanceVersion"
-      ],
-      "stoppedActors": [
-        "cleanupBarrier"
-      ],
+      "actions": ["finishCleanupScope", "recordTerminalFailure", "advanceVersion"],
+      "stoppedActors": ["cleanupBarrier"],
       "startedActors": [],
       "durableWrites": [],
       "observation": "A rejected barrier is terminal only under its zero-resource error contract."
@@ -2829,10 +2727,8 @@
         "control.resume.requested",
         "control.stop.requested"
       ],
-      "when": "No local transition with expectedVersionMatches is enabled.",
-      "actions": [
-        "emitControlRejected"
-      ],
+      "when": "No local transition with expectedVersionMatches is enabled and the state is not stopping.forShutdown or stopped.shutdown.",
+      "actions": ["emitControlRejected"],
       "result": "emitControlRejected with stale-version, incompatible-state, or busy; state, context, actors, timers, and durable facts are unchanged."
     },
     {
@@ -2869,89 +2765,491 @@
     },
     {
       "id": "GEP04",
-      "events": [
-        "credentials.changed"
-      ],
-      "when": "The state is not authBlocked.",
+      "events": ["credentials.changed"],
+      "when": "event.revision is duplicate/older, or the incarnation is stopping.forShutdown or stopped.shutdown",
       "actions": [],
-      "result": "Ignore. Credential storage is owned outside this chart; the lifecycle does not auto-restart from paused or stopped."
+      "result": "Ignore. Strictly newer revisions take T059 or T060 in every nonterminal state; terminal shutdown deliberately ignores every credential revision and never restarts work."
     },
     {
       "id": "GEP05",
+      "events": ["xstate.done.actor.cleanupBarrier", "xstate.error.actor.cleanupBarrier"],
+      "when": "Terminal is from an exited invoke, or certificate scope/epoch/phase/invokeLease/certificateId/audit digest differs from current registry/context, or audit scope differs, or liveResourceCount is nonzero.",
+      "actions": [],
+      "result": "Exited-invoke terminals are ignored by XState. Synthetic invalid current-invoke material cannot pass a transition. The current registry phase remains authoritative; promotion has its own fresh terminal and equal-scope replacement has a new wrapper promise over the cached/current phase."
+    },
+    {
+      "id": "GEP06",
       "events": [
-        "any unknown event"
+        "control.start.requested",
+        "control.pause.requested",
+        "control.resume.requested",
+        "control.stop.requested",
+        "lifecycle.restart.requested"
       ],
-      "when": "Always.",
+      "when": "The incarnation is stopping.forShutdown or stopped.shutdown and no explicit local no-op transition applies",
+      "actions": ["emitControlRejected"],
+      "result": "A control with a mismatched expectedVersion returns stale-version; every other nonlocal control returns shutdown-terminal. A matching stop may still join T041. No case starts a child in this incarnation."
+    },
+    {
+      "id": "GEP07",
+      "events": ["any unknown event"],
+      "when": "Always",
       "actions": [],
       "result": "Reject at the typed event boundary before actor.send; no machine observation changes."
     }
   ],
   "controlProjection": {
-    "serviceOwner": "in-process workflow control service",
-    "idempotency": "For pause, resume, and stop, the service stores one in-flight/completed result per idempotencyKey. Same key and same command joins the original waiter; same key with different command shape returns conflict without sending a second event.",
-    "expectedVersion": "When supplied internally, a mismatch is atomically rejected by the machine guard. The current public request schemas do not expose expectedVersion.",
-    "start": {
-      "accepted": [
-        "starting",
-        "backfilling",
-        "sweeping",
-        "retrying"
-      ],
-      "completed": [
-        "watching"
-      ]
+    "serviceOwner": "in-process workflow control service consuming the frozen P1-C08-R schemas, syncControlErrorRegistry, and syncPendingControlResolverTable",
+    "handshake": [
+      "Register the machine decision listener and actor snapshot subscription before actor.send.",
+      "Capture preSend = actor.getSnapshot() after registration.",
+      "Send synchronously, then capture postSend = actor.getSnapshot().",
+      "Buffer decision and snapshot in either order; resolve only when both identify the same incarnationId and compatible version.",
+      "For an idempotent no-op that emits no snapshot notification, test preSend and postSend against the emitted decision.",
+      "On settle, atomically mark a keyed idempotency entry settled before removing the decision listener, snapshot subscription, and deadline. Conflict, capacity, and replay install none."
+    ],
+    "deadline": "One injected monotonic deadline of controlDeadlineMs begins before listener registration. Expiry returns sync.control-timeout with the last actual observation; lifecycle work is not cancelled.",
+    "idempotency": {
+      "scope": "one public actor incarnationId; only pause/resume/stop use public idempotency keys",
+      "fingerprint": "command name plus canonical validated request",
+      "same": "same key/fingerprint joins one in-flight waiter or returns the byte-identical cached success/non-success result; replay does not extend fixed expiry and only touches settled LRU recency",
+      "conflict": "same key with a different fingerprint returns sync.control-idempotency-conflict without send",
+      "retention": "completed, rejected, failed, cancelled, and timeout outcomes are retained byte-for-byte until the fixed settlement-time expiry; conflict preserves the existing entry and capacity creates none",
+      "capacity": "evict expired entries, then oldest settled LRU entries; never evict in-flight. If the cap is all in-flight, return sync.control-capacity without send.",
+      "reconstruction": "a new actor incarnation starts with an empty map. An old pending waiter that observes reconstruction settles cancelled/superseded-by-restart from the first real new-incarnation observation; process teardown removes its listeners/deadline and destroys the old map. Later replay is a new lifecycle-idempotent command distinguished by incarnationId."
     },
-    "pause": {
-      "accepted": [],
-      "completed": [
-        "paused"
-      ],
-      "rule": "The service withholds success while a quiescing state still projects starting, backfilling, watching, sweeping, or retrying."
-    },
-    "resume": {
-      "accepted": [
-        "starting"
-      ],
-      "completed": [
-        "backfilling",
-        "watching",
-        "sweeping",
-        "retrying"
-      ]
-    },
-    "stop": {
-      "accepted": [],
-      "completed": [
-        "stopped"
-      ],
-      "rule": "The service withholds success while stopping; timeout returns the shared non-success error envelope with the last observation."
-    },
-    "outcomes": [
-      {
-        "id": "accepted",
-        "postcondition": "Machine emitted acceptance and the waiter observed a response-schema-compatible state/version in the same incarnation."
+    "expectedVersion": "When supplied internally, mismatch returns sync.control-rejected/stale-version without state change. In stopping.forShutdown, a stale stop is rejected by GEP06 instead of falling through to implicit ignore.",
+    "commands": {
+      "start": {
+        "key": "none in accepted schema",
+        "accepted": ["starting", "backfilling", "sweeping", "retrying"],
+        "completed": ["watching"]
       },
-      {
-        "id": "completed",
-        "postcondition": "The waiter observed the command's stable completion state/version; for stopped or paused, the ownership audit is empty."
+      "pause": {
+        "key": "required accepted idempotencyKey",
+        "completed": ["paused"],
+        "rule": "never succeeds from a cleanup state"
       },
-      {
-        "id": "rejected",
-        "postcondition": "No transition occurred; stable reason and unchanged state/version are returned through the error envelope."
+      "resume": {
+        "key": "required accepted idempotencyKey",
+        "accepted": ["starting"],
+        "completed": ["backfilling", "watching", "sweeping", "retrying"]
       },
-      {
-        "id": "failed",
-        "postcondition": "Before the target predicate, the chart reached stopped.failed or authBlocked incompatibly; the waiter returns non-success with the exact last observed version."
-      },
-      {
-        "id": "cancelled",
-        "postcondition": "A later accepted stop, restart, or incompatible command superseded the target predicate; the waiter unsubscribed and returned non-success."
-      },
-      {
-        "id": "timeout",
-        "postcondition": "The deadline elapsed before the target predicate; the waiter unsubscribed, cleared its timer, and returned non-success with the last observation. The lifecycle continues unchanged."
+      "stop": {
+        "key": "required accepted idempotencyKey",
+        "completed": ["stopped"],
+        "rule": "never succeeds from stopping; stopped.shutdown is compatible"
       }
-    ]
+    },
+    "nonSuccess": [
+      {
+        "code": "sync.control-rejected",
+        "message": "Sync control was rejected.",
+        "detailsSchema": {
+          "commandId": "trimmed nonempty string, max 256",
+          "command": "start|pause|resume|stop",
+          "actorState": "syncActorStateSchema",
+          "version": "nonnegative safe integer",
+          "incarnationId": "trimmed nonempty opaque string, max 256",
+          "reason": "stale-version|incompatible-state|busy|shutdown-terminal"
+        }
+      },
+      {
+        "code": "sync.control-failed",
+        "message": "Sync control failed before completion.",
+        "detailsSchema": {
+          "commandId": "trimmed nonempty string, max 256",
+          "command": "start|pause|resume|stop",
+          "actorState": "syncActorStateSchema",
+          "version": "nonnegative safe integer",
+          "incarnationId": "trimmed nonempty opaque string, max 256",
+          "reason": "terminal-failure|auth-blocked"
+        }
+      },
+      {
+        "code": "sync.control-cancelled",
+        "message": "Sync control was superseded.",
+        "detailsSchema": {
+          "commandId": "trimmed nonempty string, max 256",
+          "command": "start|pause|resume|stop",
+          "actorState": "syncActorStateSchema",
+          "version": "nonnegative safe integer",
+          "incarnationId": "trimmed nonempty opaque string, max 256",
+          "reason": "superseded-by-stop|superseded-by-restart|superseded-by-shutdown|superseded-by-incompatible-command"
+        }
+      },
+      {
+        "code": "sync.control-timeout",
+        "message": "Sync control did not complete before the deadline.",
+        "detailsSchema": {
+          "commandId": "trimmed nonempty string, max 256",
+          "command": "start|pause|resume|stop",
+          "actorState": "syncActorStateSchema",
+          "version": "nonnegative safe integer",
+          "incarnationId": "trimmed nonempty opaque string, max 256",
+          "reason": "deadline-elapsed",
+          "deadlineMs": "positive safe integer, max 300000"
+        }
+      },
+      {
+        "code": "sync.control-idempotency-conflict",
+        "message": "Sync control idempotency key conflicts with an earlier request.",
+        "detailsSchema": {
+          "commandId": "trimmed nonempty string, max 256",
+          "command": "pause|resume|stop",
+          "actorState": "syncActorStateSchema",
+          "version": "nonnegative safe integer",
+          "incarnationId": "trimmed nonempty opaque string, max 256",
+          "reason": "key-reused-with-different-fingerprint",
+          "idempotencyKey": "trimmed nonempty string, max 256"
+        }
+      },
+      {
+        "code": "sync.control-capacity",
+        "message": "Sync control idempotency capacity is exhausted.",
+        "detailsSchema": {
+          "commandId": "trimmed nonempty string, max 256",
+          "command": "pause|resume|stop",
+          "actorState": "syncActorStateSchema",
+          "version": "nonnegative safe integer",
+          "incarnationId": "trimmed nonempty opaque string, max 256",
+          "reason": "all-retained-entries-in-flight",
+          "capacity": "positive safe integer, max 10000"
+        }
+      }
+    ],
+    "resolver": {
+      "implementation": "packages/contracts/src/sync-operations.ts exports syncPendingControlResolverTable and resolvePendingSyncControl as a constructive discriminated command/ordering union",
+      "precedence": [
+        "Validate the command and canonical fingerprint. For pause/resume/stop, an existing same-key different fingerprint selects idempotency-conflict; an existing same fingerprint joins in-flight or selects one replay cell from the cached settlement discriminant.",
+        "Evict expired entries and then settled LRU entries without extending fixed expiry. If all capacity is in flight, select capacity-exhausted; otherwise create one in-flight entry for pause/resume/stop.",
+        "Register the decision listener and snapshot subscription, start the monotonic deadline, capture preSend, synchronously send, and capture postSend.",
+        "The first discriminated success, rejection, failure, supersession, reconstruction, or deadline ordering wins one atomic unsettled-to-settled compare-and-set. Later observations are ignored for this waiter.",
+        "For keyed commands, cache canonical result bytes before removing the decision listener, snapshot subscription, and deadline. Conflict, capacity, and replay never install them."
+      ],
+      "settlementFields": [
+        "settlement: completed|rejected|failed|cancelled|timeout|conflict|capacity",
+        "response: accepted|completed|error|cached-byte-identical",
+        "exact registered code and reason, or null for success",
+        "lastObservation: current-real|cached-real|first-real-new-incarnation",
+        "idempotency effect",
+        "decision-listener/snapshot-subscription/deadline cleanup"
+      ],
+      "expansion": {
+        "rule": "Expand each success cell once, each common cell once for every start/pause/resume/stop command, and each idempotency cell once for pause/resume/stop. The command plus ordering discriminant is the unique cell key.",
+        "cellCountByCommand": {
+          "start": 18,
+          "pause": 21,
+          "resume": 25,
+          "stop": 21
+        },
+        "totalCells": 85,
+        "overlap": "impossible by the exported discriminated input union and unique object keys",
+        "settlement": "exactly one compare-and-set per non-replay waiter; replay returns the already-settled canonical bytes and does not settle again"
+      },
+      "emissionBySettlement": {
+        "completed.accepted": "emitControlAccepted",
+        "completed.completed": "emitControlCompleted",
+        "rejected": "emitControlRejected",
+        "failed": "emitControlFailed",
+        "cancelled": "emitControlCancelled",
+        "timeout": "emitControlTimeout",
+        "conflict": "emitControlConflict",
+        "capacity": "emitControlCapacity"
+      },
+      "successCells": [
+        {
+          "command": "start",
+          "ordering": "success-starting",
+          "settlement": "completed",
+          "response": "accepted",
+          "lastObservation": "current-real-observation",
+          "idempotency": "not-applicable",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "start",
+          "ordering": "success-backfilling",
+          "settlement": "completed",
+          "response": "accepted",
+          "lastObservation": "current-real-observation",
+          "idempotency": "not-applicable",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "start",
+          "ordering": "success-watching",
+          "settlement": "completed",
+          "response": "completed",
+          "lastObservation": "current-real-observation",
+          "idempotency": "not-applicable",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "start",
+          "ordering": "success-sweeping",
+          "settlement": "completed",
+          "response": "accepted",
+          "lastObservation": "current-real-observation",
+          "idempotency": "not-applicable",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "start",
+          "ordering": "success-retrying",
+          "settlement": "completed",
+          "response": "accepted",
+          "lastObservation": "current-real-observation",
+          "idempotency": "not-applicable",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "pause",
+          "ordering": "success-paused",
+          "settlement": "completed",
+          "response": "completed",
+          "lastObservation": "current-real-observation",
+          "idempotency": "retain-byte-identical-result-until-fixed-expiry",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "resume",
+          "ordering": "success-starting",
+          "settlement": "completed",
+          "response": "accepted",
+          "lastObservation": "current-real-observation",
+          "idempotency": "retain-byte-identical-result-until-fixed-expiry",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "resume",
+          "ordering": "success-backfilling",
+          "settlement": "completed",
+          "response": "completed",
+          "lastObservation": "current-real-observation",
+          "idempotency": "retain-byte-identical-result-until-fixed-expiry",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "resume",
+          "ordering": "success-watching",
+          "settlement": "completed",
+          "response": "completed",
+          "lastObservation": "current-real-observation",
+          "idempotency": "retain-byte-identical-result-until-fixed-expiry",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "resume",
+          "ordering": "success-sweeping",
+          "settlement": "completed",
+          "response": "completed",
+          "lastObservation": "current-real-observation",
+          "idempotency": "retain-byte-identical-result-until-fixed-expiry",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "resume",
+          "ordering": "success-retrying",
+          "settlement": "completed",
+          "response": "completed",
+          "lastObservation": "current-real-observation",
+          "idempotency": "retain-byte-identical-result-until-fixed-expiry",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        },
+        {
+          "command": "stop",
+          "ordering": "success-stopped",
+          "settlement": "completed",
+          "response": "completed",
+          "lastObservation": "current-real-observation",
+          "idempotency": "retain-byte-identical-result-until-fixed-expiry",
+          "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline"
+        }
+      ],
+      "commonCells": [
+        {
+          "ordering": "auth-blocked",
+          "settlement": "failed",
+          "code": "sync.control-failed",
+          "reason": "auth-blocked",
+          "action": "emitControlFailed"
+        },
+        {
+          "ordering": "terminal-failure",
+          "settlement": "failed",
+          "code": "sync.control-failed",
+          "reason": "terminal-failure",
+          "action": "emitControlFailed"
+        },
+        {
+          "ordering": "cleanup-failure",
+          "settlement": "failed",
+          "code": "sync.control-failed",
+          "reason": "terminal-failure",
+          "action": "emitControlFailed"
+        },
+        {
+          "ordering": "superseded-by-stop",
+          "settlement": "cancelled",
+          "code": "sync.control-cancelled",
+          "reason": "superseded-by-stop",
+          "action": "emitControlCancelled"
+        },
+        {
+          "ordering": "superseded-by-restart",
+          "settlement": "cancelled",
+          "code": "sync.control-cancelled",
+          "reason": "superseded-by-restart",
+          "action": "emitControlCancelled"
+        },
+        {
+          "ordering": "superseded-by-shutdown",
+          "settlement": "cancelled",
+          "code": "sync.control-cancelled",
+          "reason": "superseded-by-shutdown",
+          "action": "emitControlCancelled"
+        },
+        {
+          "ordering": "superseded-by-incompatible-command",
+          "settlement": "cancelled",
+          "code": "sync.control-cancelled",
+          "reason": "superseded-by-incompatible-command",
+          "action": "emitControlCancelled"
+        },
+        {
+          "ordering": "stale-version",
+          "settlement": "rejected",
+          "code": "sync.control-rejected",
+          "reason": "stale-version",
+          "action": "emitControlRejected"
+        },
+        {
+          "ordering": "incompatible-state",
+          "settlement": "rejected",
+          "code": "sync.control-rejected",
+          "reason": "incompatible-state",
+          "action": "emitControlRejected"
+        },
+        {
+          "ordering": "busy",
+          "settlement": "rejected",
+          "code": "sync.control-rejected",
+          "reason": "busy",
+          "action": "emitControlRejected"
+        },
+        {
+          "ordering": "shutdown-terminal",
+          "settlement": "rejected",
+          "code": "sync.control-rejected",
+          "reason": "shutdown-terminal",
+          "action": "emitControlRejected"
+        },
+        {
+          "ordering": "deadline-elapsed",
+          "settlement": "timeout",
+          "code": "sync.control-timeout",
+          "reason": "deadline-elapsed",
+          "action": "emitControlTimeout"
+        },
+        {
+          "ordering": "process-reconstruction",
+          "settlement": "cancelled",
+          "code": "sync.control-cancelled",
+          "reason": "superseded-by-restart",
+          "action": "emitControlCancelled",
+          "lastObservation": "first-real-observation-from-new-incarnation",
+          "idempotencyByCommand": {
+            "start": "discard-old-incarnation-map",
+            "pause": "discard-old-incarnation-map",
+            "resume": "discard-old-incarnation-map",
+            "stop": "discard-old-incarnation-map"
+          },
+          "waiter": "process-teardown-removes-listeners-subscription-and-deadline"
+        }
+      ],
+      "commonDefaults": {
+        "commands": ["start", "pause", "resume", "stop"],
+        "response": "error",
+        "lastObservation": "current-real-observation",
+        "idempotencyByCommand": {
+          "start": "not-applicable",
+          "pause": "retain-byte-identical-result-until-fixed-expiry",
+          "resume": "retain-byte-identical-result-until-fixed-expiry",
+          "stop": "retain-byte-identical-result-until-fixed-expiry"
+        },
+        "waiter": "remove-decision-listener-and-snapshot-subscription-and-clear-deadline",
+        "override": "process-reconstruction carries the explicit lastObservation, idempotencyByCommand, and waiter fields on its row"
+      },
+      "idempotencyCells": [
+        {
+          "ordering": "idempotency-replay-completed",
+          "settlement": "completed",
+          "response": "cached-byte-identical-success",
+          "code": null,
+          "reason": null
+        },
+        {
+          "ordering": "idempotency-replay-rejected",
+          "settlement": "rejected",
+          "response": "cached-byte-identical-error",
+          "code": "sync.control-rejected",
+          "reason": "preserve-cached-registered-reason"
+        },
+        {
+          "ordering": "idempotency-replay-failed",
+          "settlement": "failed",
+          "response": "cached-byte-identical-error",
+          "code": "sync.control-failed",
+          "reason": "preserve-cached-registered-reason"
+        },
+        {
+          "ordering": "idempotency-replay-cancelled",
+          "settlement": "cancelled",
+          "response": "cached-byte-identical-error",
+          "code": "sync.control-cancelled",
+          "reason": "preserve-cached-registered-reason"
+        },
+        {
+          "ordering": "idempotency-replay-timeout",
+          "settlement": "timeout",
+          "response": "cached-byte-identical-error",
+          "code": "sync.control-timeout",
+          "reason": "deadline-elapsed"
+        },
+        {
+          "ordering": "idempotency-conflict",
+          "settlement": "conflict",
+          "response": "error",
+          "code": "sync.control-idempotency-conflict",
+          "reason": "key-reused-with-different-fingerprint",
+          "action": "emitControlConflict",
+          "idempotency": "preserve-existing-entry"
+        },
+        {
+          "ordering": "capacity-exhausted",
+          "settlement": "capacity",
+          "response": "error",
+          "code": "sync.control-capacity",
+          "reason": "all-retained-entries-in-flight",
+          "action": "emitControlCapacity",
+          "idempotency": "no-entry-created"
+        }
+      ],
+      "idempotencyDefaults": {
+        "commands": ["pause", "resume", "stop"],
+        "lastObservation": "cached-real-observation for replay; current-real-observation for conflict/capacity",
+        "idempotency": "return-byte-identical-cached-result-without-extending-expiry for replay",
+        "waiter": "no-waiter-or-deadline-created",
+        "replayAction": "return cached canonical bytes without a second emission or settlement"
+      },
+      "consequentialSelections": [
+        "A pending stop superseded by shutdown settles cancelled/superseded-by-shutdown even if shutdown later reaches public stopped.",
+        "Any certified cleanup failure, including one ending at public stopped, settles failed/terminal-failure rather than success.",
+        "Process reconstruction settles an observed old pending waiter cancelled/superseded-by-restart from the first real new-incarnation observation and destroys the old idempotency map.",
+        "A matching stop newly issued during stopping.forShutdown may join T041 and complete at stopped.shutdown; a stale-version stop is rejected by GEP06."
+      ]
+    }
   },
   "invariants": [
     {
@@ -2964,7 +3262,7 @@
     },
     {
       "id": "I03",
-      "statement": "stopped.clean, stopped.failed, paused, and authBlocked own zero child actors, timers, listeners, streams, sockets, and subscriptions."
+      "statement": "stopped.clean, stopped.failed, stopped.shutdown, paused, and authBlocked own zero child actors, timers, listeners, streams, sockets, and subscriptions."
     },
     {
       "id": "I04",
@@ -2976,11 +3274,11 @@
     },
     {
       "id": "I06",
-      "statement": "At most one memoized cleanup job exists; scope promotion is monotonic from watch to workflow; a cleanup state owns only cleanupBarrier, never the work actor it is closing."
+      "statement": "One registry cleanup session owns all release handles. It has exactly one current versioned phase; watch-to-workflow promotion is linearizable, always creates a fresh workflow phase/terminal, and never duplicates release ownership. Every cleanup-state replacement gets a new invoke lease."
     },
     {
       "id": "I07",
-      "statement": "cleanupBarrier completion or error implies zero resources in its selected scope. An unreleased resource keeps stopping or quiescing active."
+      "statement": "Cleanup done/error requires the current XState invoke and exact certificate/context/registry epoch, phase, lease, and effective-scope equality, scope dominance, audit-scope equality, current terminal/digest identity, and zero live resources. Old or wrong terminals cannot settle; every current phase has a pending or cached terminal source."
     },
     {
       "id": "I08",
@@ -2992,19 +3290,19 @@
     },
     {
       "id": "I10",
-      "statement": "Authentication faults never schedule retryTimer and authBlocked exposes only safe constructive detail."
+      "statement": "Each credential actor attempt is bound to one revision. A stale auth fault cleans/restarts latest; only a fault at latest enters authBlocked; credential changes never restart healthy work."
     },
     {
       "id": "I11",
-      "statement": "context.version strictly increases on modeled observable transitions and is unchanged on ignored, rejected, or idempotent no-op events."
+      "statement": "context.version strictly increases on modeled observable transitions and is unchanged on ignored, rejected, or idempotent no-op events within one incarnationId; public comparison is ordered only for equal IDs and explicitly unordered across different IDs."
     },
     {
       "id": "I12",
-      "statement": "Public actorState, activeOperation, authBlocked, checkpoint, diagnostics, and version are the exact projection of the active state and context."
+      "statement": "Public actorState, activeOperation, authBlocked, checkpoint, diagnostics, incarnationId, and version are the exact strict projection of the active state and context."
     },
     {
       "id": "I13",
-      "statement": "No successful control result exists without a compatible observed state/version from the owning actor incarnation."
+      "statement": "Every control waiter settles exactly once through one of the 85 unique resolver cells. Success has a compatible observed actorState/incarnationId/version; every non-success has one fixed registered code/reason and the last real observation."
     },
     {
       "id": "I14",
@@ -3012,35 +3310,52 @@
     },
     {
       "id": "I15",
-      "statement": "A live-process restart traverses cleanup before starting; a process reconstruction starts with no hydrated child or ephemeral snapshot."
+      "statement": "Live restart traverses certified cleanup before starting; accepted shutdown is terminal for its incarnation; reconstruction uses only validated durable seeds and no actor snapshot."
     },
     {
       "id": "I16",
-      "statement": "Every actor and control waiter removes its exact abort listener, timer, subscription, stream, and socket handle on every settle or cancellation path."
+      "statement": "Every actor and control waiter removes its exact abort listener, decision listener, snapshot subscription, deadline timer, stream, and socket handle on every settle or cancellation path; conflict, capacity, and replay install no waiter handles."
     },
     {
       "id": "I17",
       "statement": "The direct child multiset equals states[active].invokedActors; only initialBackfill or recurringSweep may own one rawDownloadQueue descendant, and that queue may own at most one rawDownloadJob. No nested actor survives its parent terminal event."
+    },
+    {
+      "id": "I18",
+      "statement": "stopped.failed contains sync.terminal-failure; stopped.clean forbids it. Pending failure superseded by stop clears it before stopped.clean; shutdown preserves any prior marker but never fabricates one."
+    },
+    {
+      "id": "I19",
+      "statement": "Every context field has a complete constructor literal or validated constructor input before createActor; status is schema-valid before start for empty and populated repositories."
+    },
+    {
+      "id": "I20",
+      "statement": "After process.shutdown.requested is accepted, no transition in that incarnation can enter starting, backfilling, watching, sweeping, retryWaiting, authBlocked, or paused."
     }
   ],
   "unreachableStateAccount": {
     "declaredUnreachableNodes": [],
-    "reason": "All 22 atomic nodes are intentionally reachable under injected actor outcomes and controls.",
+    "reason": "All 24 atomic nodes are intentionally reachable under injected actor outcomes, controls, and shutdown.",
     "forbiddenConfigurations": [
       {
         "id": "U01",
         "configuration": "paused with any live workflow child",
         "excludedBy": [
           "states.paused.invokedActors is empty",
-          "T143 and T170 require cleanupReleasedScope"
+          "T143/T170 require cleanupCertificateCoversState",
+          "active state minimum scope and registry effective scope must match",
+          "wrong/stale/pre-promotion certificates are rejected before terminal emission",
+          "versioned promotion always creates a fresh workflow phase/terminal before replacement invoke creation"
         ]
       },
       {
         "id": "U02",
-        "configuration": "stopped.clean or stopped.failed with any live workflow child",
+        "configuration": "stopped.clean, stopped.failed, or stopped.shutdown with any live workflow child",
         "excludedBy": [
-          "stopped leaves invoke no actor",
-          "all incoming cleanup paths require cleanupReleasedScope or the cleanup zero-resource error contract"
+          "stopped states invoke no actor",
+          "all cleanup arrivals require a current authoritative certificate/audit or already begin childless",
+          "shutdown cleanup never redirects to start",
+          "settled-watch promotion cannot reuse its certificate; current workflow phase must settle"
         ]
       },
       {
@@ -3054,9 +3369,7 @@
       {
         "id": "U04",
         "configuration": "watching.idling without exactly idleSession plus periodicStatusTimer, or watching.polling with any actor other than periodicStatusTimer",
-        "excludedBy": [
-          "state invocation is declarative and atomic"
-        ]
+        "excludedBy": ["state invocation is declarative and atomic"]
       },
       {
         "id": "U05",
@@ -3069,15 +3382,15 @@
       {
         "id": "U06",
         "configuration": "cleanupBarrier live with a work actor in the same state",
-        "excludedBy": [
-          "every cleanup state invokes cleanupBarrier only"
-        ]
+        "excludedBy": ["every cleanup state invokes cleanupBarrier only"]
       },
       {
         "id": "U07",
         "configuration": "two cleanup jobs",
         "excludedBy": [
-          "cleanup owner memoizes one in-flight job and replacement invokes await it"
+          "one resource-registry cleanup session owns deduplicated handles",
+          "versioned phase promises are observation terminals, not independent cleanup owners",
+          "every replacement increments invoke lease"
         ]
       },
       {
@@ -3089,10 +3402,11 @@
       },
       {
         "id": "U09",
-        "configuration": "completed control response without compatible observed version",
+        "configuration": "completed control response without compatible observed incarnation/version",
         "excludedBy": [
-          "control waiter target predicates",
-          "accepted P1-C08 response schemas"
+          "control waiter registers before send and buffers decision/snapshot in either order",
+          "preSend/postSend cover no-op notifications",
+          "strict public schemas require incarnationId and compare versions only when IDs match"
         ]
       },
       {
@@ -3112,6 +3426,44 @@
           "each owns exactly one queue and awaits queue.stop before terminal output",
           "the accepted queue actor serializes at most one rawDownloadJob"
         ]
+      },
+      {
+        "id": "U12",
+        "configuration": "Cleanup state released by event-selected, narrower, stale-epoch, pre-promotion, or replaced-invoke scope",
+        "excludedBy": [
+          "state cleanupRequirement",
+          "exact certificate/context/registry epoch+phase+invokeLease+effectiveScope equality",
+          "audit scope/current terminal/digest equality and zero live count",
+          "fresh workflow phase on open or settled promotion"
+        ]
+      },
+      {
+        "id": "U13",
+        "configuration": "authBlocked from an attempt older than latestCredentialRevision, or healthy work restarted merely because credentials changed",
+        "excludedBy": [
+          "T059 latches only",
+          "stale/current/future auth guards",
+          "T139 cleanup-before-restart"
+        ]
+      },
+      {
+        "id": "U14",
+        "configuration": "Any child actor started after shutdown acceptance in the same incarnation",
+        "excludedBy": [
+          "stopping.forShutdown and stopped.shutdown terminal transitions",
+          "T056 restart no-op",
+          "GEP06 control rejection"
+        ]
+      },
+      {
+        "id": "U15",
+        "configuration": "stopped.failed without sync.terminal-failure or stopped.clean with it",
+        "excludedBy": [
+          "diagnosticPolicy metadata",
+          "recordTerminalFailure",
+          "clearTerminalFailure",
+          "strict public projection fixtures"
+        ]
       }
     ]
   },
@@ -3121,9 +3473,10 @@
         "id": "PATH-STATE",
         "generator": "shortest path from xstate.init to every reachable atomic state",
         "obligations": [
-          "22 of 22 atomic states",
+          "every atomic state",
           "exact public projection",
-          "exact actor multiset"
+          "exact direct/nested actor multiset",
+          "terminal diagnostic policy"
         ]
       },
       {
@@ -3136,229 +3489,152 @@
       },
       {
         "id": "PATH-ACTOR",
-        "generator": "each actor success, normal completion, error category, cancellation, and late terminal event",
+        "generator": "each actor success, normal completion, error category, cancellation, late terminal event, literal cleanup certificate mismatch, open/settled promotion, both terminal/promotion orders, and same-scope replacement settlement",
         "obligations": [
-          "all nine workflow actor types, including nested rawDownloadQueue and rawDownloadJob",
-          "all controlWaiter outcomes"
+          "all workflow/nested actors",
+          "all control outcomes",
+          "authoritative versioned cleanup certificates",
+          "CLEANUP-RACE-01 through CLEANUP-RACE-03",
+          "CLEANUP-REPLACE-01"
         ]
       },
       {
         "id": "PATH-CONTROL",
-        "generator": "start, pause, resume, and stop from every atomic state with matching, stale, duplicate, and conflicting identities",
+        "generator": "all controls from every atomic state with matching/stale observations, synchronous/no-op snapshots, identity conflicts, retention expiry, capacity, and reconstruction",
         "obligations": [
           "accepted",
           "completed",
           "rejected",
           "failed",
           "cancelled",
-          "timeout"
+          "timeout",
+          "idempotency conflict",
+          "capacity"
         ]
       },
       {
         "id": "PATH-ORDER",
-        "generator": "pairwise permutations of IDLE, timer, cleanup, control, and shutdown events around every exit",
+        "generator": "pairwise permutations of IDLE, timer, cleanup phase settlement/promotion/replacement, controls, credential revisions, auth faults, restart, and shutdown around every exit",
         "obligations": [
           "late",
           "duplicate",
           "reordered",
-          "stale scopeEpoch"
+          "stale scopeEpoch",
+          "both credential/fault orders",
+          "shutdown terminality",
+          "watch-terminal-before-promotion and promotion-before-terminal",
+          "equal-scope settled replacement"
         ]
       },
       {
         "id": "PATH-RESTART",
-        "generator": "restart from every atomic state and at every durable commit/cancellation boundary",
+        "generator": "restart/reconstruction at every durable commit/cancellation boundary",
         "obligations": [
-          "cleanup before new start",
-          "durable oracle convergence",
-          "no snapshot hydration"
+          "certified cleanup before live restart",
+          "before/after non-CAS save",
+          "before/after CAS complete",
+          "constructor seed projection",
+          "no snapshot hydration",
+          "new idempotency map"
         ]
       }
     ],
     "generatedStatePaths": [
       {
         "state": "stopped.clean",
-        "transitionIds": [
-          "T001"
-        ]
+        "transitionIds": ["T001"]
       },
       {
         "state": "stopped.failed",
-        "transitionIds": [
-          "T001",
-          "T050",
-          "T183"
-        ]
+        "transitionIds": ["T001", "T050", "T183"]
       },
       {
         "state": "starting.active",
-        "transitionIds": [
-          "T001",
-          "T010"
-        ]
+        "transitionIds": ["T001", "T010"]
       },
       {
         "state": "starting.pausing",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T020"
-        ]
+        "transitionIds": ["T001", "T010", "T020"]
       },
       {
         "state": "backfilling.active",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T100"
-        ]
+        "transitionIds": ["T001", "T010", "T100"]
       },
       {
         "state": "backfilling.pausing",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T100",
-          "T021"
-        ]
+        "transitionIds": ["T001", "T010", "T100", "T021"]
       },
       {
         "state": "watching.idling",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101"
-        ]
+        "transitionIds": ["T001", "T010", "T101"]
       },
       {
         "state": "watching.polling",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T106"
-        ]
+        "transitionIds": ["T001", "T010", "T106"]
       },
       {
         "state": "watching.closingForSweep",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101",
-          "T121"
-        ]
+        "transitionIds": ["T001", "T010", "T101", "T121"]
       },
       {
         "state": "watching.closingForRetry",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101",
-          "T123"
-        ]
+        "transitionIds": ["T001", "T010", "T101", "T123"]
       },
       {
         "state": "watching.closingForAuthBlock",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101",
-          "T125"
-        ]
+        "transitionIds": ["T001", "T010", "T101", "T125"]
       },
       {
         "state": "watching.closingForPause",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101",
-          "T022"
-        ]
+        "transitionIds": ["T001", "T010", "T101", "T022"]
       },
       {
         "state": "watching.closingForFailure",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101",
-          "T124"
-        ]
+        "transitionIds": ["T001", "T010", "T101", "T124"]
       },
       {
         "state": "sweeping.active",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101",
-          "T121",
-          "T140"
-        ]
+        "transitionIds": ["T001", "T010", "T101", "T121", "T140"]
       },
       {
         "state": "sweeping.pausing",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T101",
-          "T121",
-          "T140",
-          "T023"
-        ]
+        "transitionIds": ["T001", "T010", "T101", "T121", "T140", "T023"]
       },
       {
         "state": "retryWaiting.active",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T103"
-        ]
+        "transitionIds": ["T001", "T010", "T103"]
       },
       {
         "state": "retryWaiting.pausing",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T103",
-          "T024"
-        ]
+        "transitionIds": ["T001", "T010", "T103", "T024"]
       },
       {
         "state": "authBlocked",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T102"
-        ]
+        "transitionIds": ["T001", "T010", "T102"]
       },
       {
         "state": "paused",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T020",
-          "T170"
-        ]
+        "transitionIds": ["T001", "T010", "T020", "T170"]
       },
       {
         "state": "stopping.forStop",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T043"
-        ]
+        "transitionIds": ["T001", "T010", "T043"]
       },
       {
         "state": "stopping.forRestart",
-        "transitionIds": [
-          "T001",
-          "T050"
-        ]
+        "transitionIds": ["T001", "T050"]
       },
       {
         "state": "stopping.afterFailure",
-        "transitionIds": [
-          "T001",
-          "T010",
-          "T104"
-        ]
+        "transitionIds": ["T001", "T010", "T104"]
+      },
+      {
+        "state": "stopped.shutdown",
+        "transitionIds": ["T001", "T054"]
+      },
+      {
+        "state": "stopping.forShutdown",
+        "transitionIds": ["T001", "T010", "T053"]
       }
     ],
     "properties": [
@@ -3368,7 +3644,7 @@
       },
       {
         "id": "PROP-02",
-        "statement": "I03 through I07 hold under virtual time and delayed cleanup release."
+        "statement": "I03 through I07 hold under virtual time, delayed release, open/settled watch promotion, old terminal delivery, same-scope replacement, and cached current-phase settlement."
       },
       {
         "id": "PROP-03",
@@ -3388,15 +3664,35 @@
       },
       {
         "id": "PROP-07",
-        "statement": "No trace deadlocks outside an actor with active work, and no retry/watch cycle livelocks beyond maxRetryAttempts without a successful reset."
+        "statement": "No trace deadlocks outside an actor/registry phase with active work: every promoted phase owns a fresh workflow terminal source and every equal-scope replacement owns a new wrapper over the current pending/cached terminal; retry/watch cycles remain bounded."
       },
       {
         "id": "PROP-08",
-        "statement": "Every U01-U11 forbidden configuration remains unreachable."
+        "statement": "Every U01-U15 forbidden configuration remains unreachable; the generator invokes the construction attempt recorded for each U01 through U15 row."
       },
       {
         "id": "PROP-09",
-        "statement": "At every atomic state, malformed or unknown input is rejected before actor.send, and every known but locally illegal event follows globalEventPolicy without changing state, context, durable facts, or actor ownership; a rejected control may emit only its typed rejection decision."
+        "statement": "At every atomic state, malformed or unknown input is rejected before actor.send, and every known but locally illegal event follows globalEventPolicy without changing state, context, durable facts, or actor ownership. The construction corpus includes newer credentials.changed and stale-version control.stop.requested in stopping.forShutdown."
+      },
+      {
+        "id": "PROP-10",
+        "statement": "Wrong-scope, stale-epoch, stale-phase, stale-lease, pre-promotion, replaced-invoke, wrong-certificate/digest, and nonzero-audit terminals never reach paused, stopped, authBlocked, or new work; both resolve/promote event orders and equal-scope replacement settle through a current phase source."
+      },
+      {
+        "id": "PROP-11",
+        "statement": "Empty and populated constructor fixtures yield strict syncStatusResponseSchema success before start; stopped.failed alone requires sync.terminal-failure and stopped.clean forbids it."
+      },
+      {
+        "id": "PROP-12",
+        "statement": "For credential revision/fault permutations, only latest faults block, stale faults restart after cleanup, duplicate revisions are no-ops, future actor revisions fail terminally, and healthy work is not restarted."
+      },
+      {
+        "id": "PROP-13",
+        "statement": "Once shutdown is accepted, arbitrary restart/shutdown/control duplicates never start a child in that incarnation."
+      },
+      {
+        "id": "PROP-14",
+        "statement": "The constructive 85-cell command/ordering resolver is complete and non-overlapping; listener registration, synchronous send, pre/post snapshots, fixed-expiry cache retention/eviction, replay, conflict, capacity, supersession, failure, timeout, and reconstruction satisfy exact-once settlement and public (incarnationId, version) ordering."
       }
     ],
     "requiredFailureArtifacts": [
@@ -3406,7 +3702,12 @@
       "context version and scopeEpoch",
       "active actor/timer/listener inventory",
       "durable checkpoint digest",
-      "public status and control observation"
+      "public status and control observation",
+      "cleanup epoch/effective-scope certificate and authoritative audit",
+      "credential latest/attempt/fault revisions",
+      "control cache fingerprint/retention/capacity state",
+      "process incarnation identity",
+      "cleanup phase and invoke lease plus phase-terminal identity"
     ]
   },
   "traceability": [
@@ -3425,51 +3726,21 @@
         "T157",
         "T158"
       ],
-      "invariants": [
-        "I08",
-        "I09"
-      ],
+      "invariants": ["I08", "I09"],
       "failureInjection": "Complete initial backfill, add a higher server UID, trigger a sweep, interrupt each substep, restart, and observe one committed ingestion plus advanced sweep eligibility.",
-      "postcondition": "backfillCompleted remains true and later mail is discovered; no early return suppresses sweep."
+      "postcondition": "backfillCompleted remains true and later mail is discovered; P3-C10 already-complete saves the four completion fields, and completed P3-C10/P3-C11 paths atomically update checkpoint plus the same completion row."
     },
     {
       "id": "F03",
-      "transitions": [
-        "T123",
-        "T124",
-        "T125",
-        "T126",
-        "T127",
-        "T128",
-        "T141",
-        "T142",
-        "T144"
-      ],
-      "invariants": [
-        "I02",
-        "I04",
-        "I14"
-      ],
+      "transitions": ["T123", "T124", "T125", "T126", "T127", "T128", "T141", "T142", "T144"],
+      "invariants": ["I02", "I04", "I14"],
       "failureInjection": "Make a production-shaped IDLE adapter complete normally and fail in each fault category.",
       "postcondition": "watching.idling is left immediately; retry, auth block, or terminal failure is observed after owned cleanup."
     },
     {
       "id": "F17",
-      "transitions": [
-        "T022",
-        "T024",
-        "T121",
-        "T122",
-        "T140",
-        "T141",
-        "T143",
-        "T160"
-      ],
-      "invariants": [
-        "I04",
-        "I05",
-        "I16"
-      ],
+      "transitions": ["T022", "T024", "T121", "T122", "T140", "T141", "T143", "T160"],
+      "invariants": ["I04", "I05", "I16"],
       "failureInjection": "Run thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners and timers.",
       "postcondition": "Every settled callback actor owns zero listeners and timers; counts remain bounded."
     },
@@ -3482,18 +3753,19 @@
         "T050",
         "T051",
         "T053",
+        "T054",
+        "T055",
+        "T056",
         "T180",
         "T181",
         "T182",
-        "T183"
+        "T183",
+        "T184",
+        "T185"
       ],
-      "invariants": [
-        "I06",
-        "I07",
-        "I15"
-      ],
-      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while child closes are delayed.",
-      "postcondition": "One cleanup job cancels each resource once; all callers observe the same barrier and no terminal/restart state arrives early."
+      "invariants": ["I06", "I07", "I15"],
+      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while child closes are delayed; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
+      "postcondition": "One registry session owns release; promotion installs a fresh versioned workflow terminal; equal-scope replacement settles from a new wrapper over the current phase; exact scope/audit identity gates terminal state; shutdown never restarts its incarnation."
     },
     {
       "id": "F19",
@@ -3513,49 +3785,55 @@
         "T170",
         "T180"
       ],
-      "invariants": [
-        "I11",
-        "I12",
-        "I13"
-      ],
-      "failureInjection": "Delay target transitions and cleanup past the control deadline; inject stale versions, duplicate keys, failure, and superseding controls.",
-      "postcondition": "Every success contains a compatible observed state/version; all other outcomes are typed non-success with the last real observation."
+      "invariants": ["I11", "I12", "I13", "I19"],
+      "failureInjection": "Register listeners before send; force every one of the 85 command/ordering cells, synchronous/no-op transitions, snapshot/decision reorder, deadline, replay, conflict, capacity, eviction, reconstruction, same/cross-incarnation comparison, and late post-settlement observations.",
+      "postcondition": "Every waiter settles once with the exact accepted/completed success or fixed registered non-success envelope, last real observation, cache effect, and listener/subscription/deadline cleanup; cross-incarnation comparison is unordered."
     },
     {
       "id": "F20",
       "transitions": [
+        "T059",
+        "T060",
+        "T097",
         "T102",
+        "T107",
         "T112",
         "T125",
+        "T139",
         "T142",
+        "T146",
         "T152"
       ],
-      "invariants": [
-        "I03",
-        "I10"
-      ],
-      "failureInjection": "Feed captured credential rejection and authentication server responses through the production-shaped adapter boundary.",
-      "postcondition": "authBlocked is observed with no retry timer and no credential or raw-command material."
+      "invariants": ["I03", "I10"],
+      "failureInjection": "Permute credential revision before/after auth faults and cleanup, include duplicate/older/future revisions, and retain healthy-work traces.",
+      "postcondition": "Latest revision is latched; stale faults clean/restart; only current faults block; healthy work is not restarted; no secrets appear."
     },
     {
       "id": "S05",
-      "transitions": [
-        "all"
-      ],
+      "transitions": ["all"],
       "invariants": [
         "I01",
         "I02",
+        "I03",
+        "I04",
+        "I05",
         "I06",
         "I07",
+        "I08",
+        "I09",
+        "I10",
         "I11",
         "I12",
         "I13",
         "I14",
         "I15",
         "I16",
-        "I17"
+        "I17",
+        "I18",
+        "I19",
+        "I20"
       ],
-      "failureInjection": "Generate controls and actor outcomes at every state, guard branch, cancellation edge, timer edge, cleanup edge, and restart boundary.",
+      "failureInjection": "Generate controls and actor outcomes at every state, guard branch, cancellation edge, timer edge, cleanup epoch/phase/lease race, and restart boundary.",
       "postcondition": "The active state names current work, owns every effect, and controls report only observed transitions."
     }
   ],
@@ -3580,6 +3858,278 @@
       "effect": "HTTP/CLI adapters may omit it; adding it publicly requires a separate P1-C08 contract revision.",
       "blocking": false,
       "reason": "The accepted schema remains authoritative and unmodified."
+    },
+    {
+      "id": "R04",
+      "decision": "Issue #196 selects required public (incarnationId, version) rather than a durable global counter.",
+      "effect": "Every status, success observation, and non-success last observation carries the bounded identity; different IDs are explicitly unordered.",
+      "blocking": false,
+      "reason": "P1-C08-R and its strict fixtures freeze the public contract without a new durable owner or migration."
+    },
+    {
+      "id": "R05",
+      "decision": "Issue #196 freezes the constructive 85-cell resolver and exactly six fixed-message public non-success definitions.",
+      "effect": "No downstream implementation selects an outcome, reason, observation source, idempotency effect, or waiter cleanup policy.",
+      "blocking": false,
+      "reason": "syncPendingControlResolverTable and syncControlErrorRegistry are the checked P1 implementation contract."
+    }
+  ],
+  "durableWriteProtocol": {
+    "p3c10AlreadyComplete": "InitialBackfillCompletionRepository.save overwrites all four completion fields without CAS; interruption before save leaves the prior row, interruption after save observes the replacement row.",
+    "p3c10Completed": "InitialBackfillCompletionRepository.complete atomically updates mailbox checkpoint uidNext/modseq/sweepCursor/backfillCompleted/observedVersion and upserts all four completion fields.",
+    "p3c11Completed": "The same InitialBackfillCompletionRepository.complete transaction atomically updates those checkpoint fields and the same four-field completion row.",
+    "notEligible": "Recurring sweep not-eligible writes neither repository.",
+    "adoption": "The statechart adopts only a validated current-invoke terminal projection. Actor-internal commits are durable even if the process is interrupted before the terminal event; reconstruction re-reads them."
+  },
+  "cleanupProtocol": {
+    "scopeOrder": ["watch", "workflow"],
+    "owner": "one resource-registry cleanup session per actor incarnation; release handles are deduplicated and idempotent across versioned phases",
+    "state": {
+      "absent": "effectiveCleanupScope is null; no phase terminal is current",
+      "open": "one current {epoch, phase, effectiveScope} owns a pending terminal and continues release/audit",
+      "settled": "the current phase owns one immutable terminal/certificate and cached audit; the session remains promotable until finishCleanupScope"
+    },
+    "requestPhaseLinearization": [
+      "No session: allocate epoch+1, phase+1, lease+1, effective minimum scope, pending phase terminal, and idempotently request releases.",
+      "Equal or narrower request: keep epoch/phase/effective scope, allocate lease+1, and return a new per-invoke promise over the current pending or cached immutable terminal.",
+      "Broader watch-to-workflow request: before replacement invoke creation, atomically set workflow, allocate phase+1 and lease+1, install a fresh pending workflow terminal, reuse/deduplicate releases, and run a fresh workflow audit. This rule is identical for open and settled watch phases.",
+      "finishCleanupScope: only after literal certificate admission, close the session; later cleanup allocates a new epoch."
+    ],
+    "phaseSettlement": "Only the registry may settle a phase. It snapshots the phase effective scope, performs the audit for exactly that scope, and creates a certificate only at liveResourceCount zero. A superseded phase may finish for its old wrapper, but cannot mutate or settle the current phase.",
+    "invokeAdapter": "Each cleanupBarrier fromPromise awaits resourceRegistry.awaitPhase(epoch, phase), which always returns a new promise for that invocation. If the same phase is already settled, the registry resolves the new promise from the cached immutable phase terminal and the wrapper binds the current lease. It never reuses an old invocation output. If scope promoted, the wrapper awaits the fresh workflow phase, never the old settled watch promise.",
+    "admission": "Current XState invoke plus exact certificate/context/registry epoch, phase, invoke lease, and effective-scope equality; scope dominance; audit scope equality; zero live count; current certificate/audit digest equality.",
+    "invalidMaterial": "Wrong scope, stale phase/epoch/lease, replaced invoke, wrong certificate ID/digest, or nonzero audit cannot transition. Old-invoke events are ignored; synthetic current-invoke invalid material leaves the current phase pending/settled and observable as an invariant fault at the adapter boundary.",
+    "raceTraces": [
+      {
+        "id": "CLEANUP-RACE-01",
+        "order": [
+          "watch phase settles and queues old done",
+          "pause is processed before old done",
+          "requestPhase promotes to workflow phase+1 and creates replacement wrapper",
+          "old invoke done is ignored",
+          "fresh workflow audit settles phase+1",
+          "current wrapper done reaches paused"
+        ],
+        "postcondition": "No pre-promotion certificate is admitted and pause does not deadlock."
+      },
+      {
+        "id": "CLEANUP-RACE-02",
+        "order": [
+          "watch phase settles",
+          "watch done is processed first and T140 finishes the session",
+          "pause is processed in sweeping.active",
+          "T023 allocates a new workflow epoch/phase",
+          "workflow terminal reaches paused"
+        ],
+        "postcondition": "Opposite mailbox order also reaches paused with no overlapping cleanup owner."
+      },
+      {
+        "id": "CLEANUP-RACE-03",
+        "order": [
+          "pause promotes an open watch phase",
+          "old watch phase later settles",
+          "old invoke done is ignored",
+          "fresh workflow phase settles",
+          "current wrapper done reaches paused"
+        ],
+        "postcondition": "Promotion-before-watch-settlement cannot replay or admit the old terminal."
+      },
+      {
+        "id": "CLEANUP-REPLACE-01",
+        "order": [
+          "workflow phase settles and queues done",
+          "same-scope stop/restart/shutdown redirect replaces invoke",
+          "new per-invoke promise resolves from cached current phase terminal and binds new lease",
+          "current wrapper done reaches selected target"
+        ],
+        "postcondition": "Equal-scope replacement settles without waiting for an impossible second cleanup terminal."
+      }
+    ]
+  },
+  "initializationProtocol": {
+    "owner": "daemon composition root before createActor",
+    "initialCheckpoint": "One complete SyncCheckpointSummary parsed by syncCheckpointSummarySchema from the current durable status projector. Empty repositories/configuration yield all zero counters and null lastMailbox/lastUid; populated repositories yield that projector's six exact fields. No field is omitted or inferred by the chart.",
+    "initialCredentialRevision": "Validated nonnegative safe integer from the trusted credential owner.",
+    "publicBeforeStart": "stopped.clean at the required constructor-supplied incarnationId and version 0, no children, exact constructor checkpoint, diagnostics [], authBlocked null.",
+    "fixtures": [
+      {
+        "id": "INIT-EMPTY",
+        "constructorIncarnationId": "incarnation:init-empty",
+        "constructorCheckpoint": {
+          "completedMailboxes": 0,
+          "totalMailboxes": 0,
+          "completedMessages": 0,
+          "pendingMessages": 0,
+          "lastMailbox": null,
+          "lastUid": null
+        },
+        "expectedActorState": "stopped",
+        "expectedIncarnationId": "incarnation:init-empty"
+      },
+      {
+        "id": "INIT-POPULATED",
+        "constructorIncarnationId": "incarnation:init-populated",
+        "constructorCheckpoint": {
+          "completedMailboxes": 2,
+          "totalMailboxes": 3,
+          "completedMessages": 481,
+          "pendingMessages": 19,
+          "lastMailbox": "Archive",
+          "lastUid": 887
+        },
+        "expectedActorState": "stopped",
+        "expectedIncarnationId": "incarnation:init-populated"
+      }
+    ],
+    "forbidden": [
+      "hydrating an XState snapshot",
+      "defaulting a missing populated projection to zeros",
+      "reading an actor child before explicit start"
+    ]
+  },
+  "resolvedUpstreamContracts": [
+    {
+      "id": "UC01",
+      "owner": "P1-C08-R sync operation schemas",
+      "issue": 196,
+      "blocking": false,
+      "resolution": "Required bounded incarnationId is present in every sync status, every operation-specific observed success, and every non-success last observation. compareSyncObservations returns unordered across different IDs.",
+      "evidence": "frozenInputs.P1-C08-R plus strict positive/negative contract fixtures"
+    },
+    {
+      "id": "UC02",
+      "owner": "P1 shared error registry and sync operation contracts",
+      "issue": 196,
+      "blocking": false,
+      "resolution": "The exact 85-cell command/ordering table selects completed/rejected/failed/cancelled/timeout/conflict/capacity, exact response/code/reason, last real observation source, idempotency effect, and waiter cleanup. Six fixed-message strict errors are registered once.",
+      "evidence": "controlProjection.resolver, frozenInputs.P1-C08-R, frozenInputs.P1-ERROR-REGISTRY-R, and focused resolver/registry fixtures"
+    }
+  ],
+  "reviewResponses": [
+    {
+      "id": "R189-01",
+      "disposition": "resolved",
+      "oracle": [
+        "cleanupProtocol",
+        "cleanupCertificateCoversState",
+        "cleanupFailureCertificateCoversState",
+        "beginOrPromoteCleanup",
+        "finishCleanupScope"
+      ]
+    },
+    {
+      "id": "R189-02",
+      "disposition": "resolved",
+      "oracle": ["durableWriteProtocol.p3c10AlreadyComplete", "T117", "T118"]
+    },
+    {
+      "id": "R189-03",
+      "disposition": "resolved",
+      "oracle": ["durableFacts", "durableWriteProtocol.p3c11Completed", "T150", "T156"]
+    },
+    {
+      "id": "R189-04",
+      "disposition": "resolved",
+      "oracle": ["context[*].initial", "initializationProtocol"]
+    },
+    {
+      "id": "R189-05",
+      "disposition": "resolved",
+      "oracle": ["stopped.failed.diagnosticPolicy", "recordTerminalFailure", "clearTerminalFailure"]
+    },
+    {
+      "id": "R189-06",
+      "disposition": "resolved-by-issue-196",
+      "oracle": [
+        "controlProjection.resolver",
+        "controlProjection.handshake",
+        "controlProjection.idempotency",
+        "resolvedUpstreamContracts.UC02",
+        "syncPendingControlResolverTable",
+        "syncControlErrorRegistry"
+      ]
+    },
+    {
+      "id": "R189-07",
+      "disposition": "resolved-by-issue-196",
+      "oracle": [
+        "resolvedUpstreamContracts.UC01",
+        "frozenInputs.P1-C08-R",
+        "compareSyncObservations"
+      ]
+    },
+    {
+      "id": "R189-08",
+      "disposition": "resolved",
+      "oracle": [
+        "latestCredentialRevision",
+        "activeCredentialRevision",
+        "authFaultCredentialRevision",
+        "T059",
+        "T060",
+        "T097",
+        "T107",
+        "T139",
+        "T146"
+      ]
+    },
+    {
+      "id": "R189-09",
+      "disposition": "resolved",
+      "oracle": [
+        "stopping.forShutdown",
+        "stopped.shutdown",
+        "T053",
+        "T054",
+        "T055",
+        "T056",
+        "T184",
+        "T185"
+      ]
+    },
+    {
+      "id": "R189-10",
+      "disposition": "resolved",
+      "oracle": ["frozenInputs.P3-C07", "rawDownloadQueue.acceptedArtifact"]
+    },
+    {
+      "id": "R189-11",
+      "disposition": "resolved",
+      "oracle": ["coverage generated inventory"]
+    },
+    {
+      "id": "R189-12",
+      "disposition": "resolved",
+      "oracle": [
+        "cleanupProtocol.requestPhaseLinearization",
+        "cleanupProtocol.raceTraces",
+        "cleanupPhase",
+        "cleanupInvokeLease",
+        "cleanupCertificateCoversState",
+        "I06",
+        "I07",
+        "PROP-02",
+        "PROP-07",
+        "PROP-10",
+        "U01",
+        "U02",
+        "U07",
+        "U12"
+      ]
+    },
+    {
+      "id": "R189-13",
+      "disposition": "resolved",
+      "oracle": ["PROP-08 covers U01-U15"]
+    },
+    {
+      "id": "R189-14",
+      "disposition": "resolved-by-issue-196",
+      "oracle": [
+        "GEP04 explicitly ignores every credential revision in stopping.forShutdown and stopped.shutdown",
+        "GEP06 includes control.stop.requested and returns stale-version on expectedVersion mismatch",
+        "PROP-09 construction corpus"
+      ]
     }
   ]
 }

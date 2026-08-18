@@ -79,15 +79,25 @@ export const publicErrorEnvelopeSchema = z.strictObject({
   details: detailsSchema,
 });
 
-export type ErrorDefinition<TDetails extends z.ZodType = z.ZodType> = Readonly<{
-  readonly code: string;
+export type ErrorDefinition<
+  TDetails extends z.ZodType = z.ZodType,
+  TCode extends string = string,
+  TMessage extends string | undefined = string | undefined,
+> = Readonly<{
+  readonly code: TCode;
+  readonly message?: TMessage;
   readonly details: TDetails;
 }>;
 
-export function defineError<TDetails extends z.ZodType>(
-  definition: ErrorDefinition<TDetails>,
-): ErrorDefinition<TDetails> {
+export function defineError<
+  const TCode extends string,
+  TDetails extends z.ZodType,
+  const TMessage extends string | undefined = undefined,
+>(
+  definition: ErrorDefinition<TDetails, TCode, TMessage>,
+): ErrorDefinition<TDetails, TCode, TMessage> {
   errorCodeSchema.parse(definition.code);
+  if (definition.message !== undefined) safeErrorMessageSchema.parse(definition.message);
   if (typeof definition.details?.parse !== "function")
     throw new TypeError(`error ${definition.code} has no details schema`);
   return Object.freeze({ ...definition });
@@ -117,6 +127,7 @@ export type ErrorParseResult =
 export function createErrorRegistry(definitions: readonly ErrorDefinition[]): ErrorRegistry {
   definitions.forEach((definition) => {
     errorCodeSchema.parse(definition.code);
+    if (definition.message !== undefined) safeErrorMessageSchema.parse(definition.message);
     if (typeof definition.details?.parse !== "function")
       throw new TypeError(`error ${definition.code} has no details schema`);
   });
@@ -130,6 +141,8 @@ export function createErrorRegistry(definitions: readonly ErrorDefinition[]): Er
     const envelope = publicErrorEnvelopeSchema.parse(input);
     const definition = get(envelope.code);
     if (definition === undefined) throw new Error(`unregistered error code: ${envelope.code}`);
+    if (definition.message !== undefined && envelope.message !== definition.message)
+      throw new Error(`error ${envelope.code} message does not match its registry definition`);
     const details = parseStrictDetails(definition.details, envelope.details);
     if (!isSafeErrorDetails(details))
       throw new Error(`error ${envelope.code} details must be an object`);

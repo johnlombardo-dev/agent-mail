@@ -15,14 +15,19 @@ import {
   searchPageSchema,
   searchRequestSchema,
   streamMetadataSchema,
+  threadInvalidCursorErrorSchema,
+  threadErrorRegistry,
+  threadRequestSchema,
+  opaqueThreadCursorSchema,
   threadOperation,
   threadResponseSchema,
 } from "../src/retrieval-operations";
 
 const instant = "2026-01-01T00:00:00Z";
+const threadId = `thread:${"a".repeat(64)}`;
 const message = {
   messageId: "message:msg-1",
-  threadId: "thread:thread-1",
+  threadId,
   subject: "Quarterly report",
   from: { name: "Alice", address: "alice@example.com" },
   to: [{ name: "Bob", address: "bob@example.com" }],
@@ -48,6 +53,26 @@ function cursor(payload = "receivedAt=2026-01-01T00:00:00Z"): string {
   const envelope = JSON.stringify(["search-cursor-v1", payload, "test-integrity"]);
   let binary = "";
   for (const byte of new TextEncoder().encode(envelope)) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+}
+
+function threadCursor(): string {
+  const payload = JSON.stringify({
+    registryVersion: 1,
+    cursorKeyId: "active-key",
+    accountScopeDigest: "b".repeat(64),
+    requestedThreadHandle: threadId,
+    lastSentAtMissingRank: 0,
+    lastSentAt: instant,
+    lastMessageId: `message:${"c".repeat(64)}`,
+  });
+  return encodeBase64Url(JSON.stringify(["thread-cursor-v1", payload, "d".repeat(64)]));
+}
+
+function encodeBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
@@ -100,14 +125,62 @@ describe("retrieval operation contracts", () => {
     expect(messageResponseSchema.parse({ message })).toEqual({ message });
     const thread = {
       threadId: message.threadId,
+      resolvedFromThreadId: null,
       subject: message.subject,
       participants: [message.from, ...message.to],
+      participantsTruncated: false,
+      messageCount: 1,
       messageIds: [message.messageId],
       messages: [message],
       firstReceivedAt: instant,
       lastReceivedAt: instant,
+      nextCursor: null,
     };
     expect(threadResponseSchema.parse({ thread })).toEqual({ thread });
+  });
+
+  it("round-trips alias provenance and a bounded multi-message page", () => {
+    const secondMessage = { ...message, messageId: "message:msg-2", receivedAt: "2026-01-02T00:00:00Z" };
+    const alias = `thread:${"f".repeat(64)}`;
+    const thread = {
+      threadId,
+      resolvedFromThreadId: alias,
+      subject: null,
+      participants: [message.from, ...message.to],
+      participantsTruncated: true,
+      messageCount: 3,
+      messageIds: [message.messageId, secondMessage.messageId],
+      messages: [message, secondMessage],
+      firstReceivedAt: instant,
+      lastReceivedAt: secondMessage.receivedAt,
+      nextCursor: threadCursor(),
+    };
+    expect(threadResponseSchema.parse({ thread })).toEqual({ thread });
+    expect(
+      threadResponseSchema.safeParse({
+        thread: {
+          ...thread,
+          messageIds: Array.from({ length: 101 }, () => message.messageId),
+          messages: Array.from({ length: 101 }, () => message),
+        },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("applies bounded thread request and cursor contracts", () => {
+    expect(threadRequestSchema.parse({ threadId })).toEqual({ threadId, limit: 50 });
+    expect(threadRequestSchema.parse({ threadId, limit: 100, cursor: threadCursor() })).toEqual({
+      threadId,
+      limit: 100,
+      cursor: threadCursor(),
+    });
+    expect(opaqueThreadCursorSchema.parse(threadCursor())).toBe(threadCursor());
+    for (const limit of [0, 101, 1.5, Number.NaN])
+      expect(threadRequestSchema.safeParse({ threadId, limit }).success).toBe(false);
+    expect(threadRequestSchema.safeParse({ threadId, cursor: cursor() }).success).toBe(false);
+    expect(
+      opaqueThreadCursorSchema.safeParse(`${threadCursor()}x`).success,
+    ).toBe(false);
   });
 
   it("keeps raw and attachment bytes outside strict stream metadata", () => {
@@ -135,7 +208,7 @@ describe("retrieval operation contracts", () => {
     expect(
       threadResponseSchema.parse({
         ...notFound,
-        details: { resource: "thread", id: "thread:missing" },
+        details: { resource: "thread", id: threadId },
       }),
     ).toMatchObject({ code: "not_found" });
     expect(() =>
@@ -144,6 +217,17 @@ describe("retrieval operation contracts", () => {
         details: { resource: "message", id: "thread:wrong-namespace" },
       }),
     ).toThrow();
+
+    const invalidCursor = {
+      code: "invalid_cursor",
+      message: "thread cursor is invalid",
+      correlationId: "request-1",
+      details: { resource: "thread" },
+    };
+    expect(threadInvalidCursorErrorSchema.parse(invalidCursor)).toEqual(invalidCursor);
+    expect(threadResponseSchema.parse(invalidCursor)).toEqual(invalidCursor);
+    expect(threadErrorRegistry.codes).toEqual(["invalid_cursor"]);
+    expect(() => threadErrorRegistry.parse({ ...invalidCursor, details: { resource: "thread", sql: "hidden" } })).toThrow();
 
     for (const value of [null, {}, { message: null }, { thread: null }]) {
       expect(messageResponseSchema.safeParse(value).success).toBe(false);
@@ -169,6 +253,50 @@ describe("retrieval operation contracts", () => {
         filename: null,
         bytes: "not-a-stream",
       }).success,
+    ).toBe(false);
+  });
+
+  it("rejects invalid thread handles, cursor tampering, extras, and page mismatches", () => {
+    for (const invalidId of [
+      "thread:missing",
+      `thread:${"A".repeat(64)}`,
+      `thread:${"a".repeat(63)}`,
+      `thread:${"a".repeat(64)}\n`,
+      `thread:${"a".repeat(64)}-例`,
+    ]) {
+      expect(threadRequestSchema.safeParse({ threadId: invalidId }).success).toBe(false);
+      expect(searchRequestSchema.safeParse({ query: "x", filters: { threadId: invalidId } }).success).toBe(false);
+    }
+    const validThread = {
+      threadId,
+      resolvedFromThreadId: null,
+      subject: null,
+      participants: [],
+      participantsTruncated: false,
+      messageCount: 1,
+      messageIds: [message.messageId],
+      messages: [message],
+      firstReceivedAt: instant,
+      lastReceivedAt: instant,
+      nextCursor: null,
+    };
+    expect(threadResponseSchema.parse({ thread: validThread })).toEqual({ thread: validThread });
+    expect(threadResponseSchema.safeParse({ thread: { ...validThread, unknown: true } }).success).toBe(false);
+    expect(threadResponseSchema.safeParse({ thread: { ...validThread, messageIds: [] } }).success).toBe(false);
+    expect(
+      threadResponseSchema.safeParse({ thread: { ...validThread, messages: [{ ...message, messageId: "message:other" }] } }).success,
+    ).toBe(false);
+    expect(
+      threadResponseSchema.safeParse({ thread: { ...validThread, messages: [{ ...message, threadId: `thread:${"e".repeat(64)}` }] } }).success,
+    ).toBe(false);
+    expect(
+      threadResponseSchema.safeParse({ thread: { ...validThread, messageCount: 0 } }).success,
+    ).toBe(false);
+    expect(
+      threadResponseSchema.safeParse({ thread: { ...validThread, participants: Array.from({ length: 257 }, () => message.from) } }).success,
+    ).toBe(false);
+    expect(
+      threadResponseSchema.safeParse({ thread: { ...validThread, resolvedFromThreadId: threadId } }).success,
     ).toBe(false);
   });
 

@@ -39,9 +39,10 @@ const retrievalBefore = "2024-02-29T23:59:59.999+14:00";
 const instant = "2024-03-01T00:00:00.000Z";
 const laterInstant = "2024-03-01T00:00:01.000Z";
 const maximumSafeInteger = Number.MAX_SAFE_INTEGER;
+const syncIncarnationId = "incarnation:corpus-例";
 
 const messageId = `message:réunion-${longSuffix}`;
-const threadId = "thread:thread-例";
+const threadId = `thread:${digest}`;
 const attachmentId = "attachment:attachment-例";
 const mailboxId = "mailbox:archive-例";
 const placementId = "placement:archive-copy";
@@ -84,6 +85,87 @@ const notFound = (resource: "message" | "thread" | "raw-message" | "attachment",
   correlationId: `correlation:${resource}-例`,
   details: { resource, id },
 });
+
+const invalidThreadCursor = {
+  code: "invalid_cursor",
+  message: "thread cursor is invalid",
+  correlationId: "correlation:thread-cursor-例",
+  details: { resource: "thread" },
+};
+
+const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
+  const details = {
+    commandId: `command:${command}-error-例`,
+    command,
+    actorState: "watching",
+    version: maximumSafeInteger,
+    incarnationId: syncIncarnationId,
+  };
+  const common = [
+    {
+      code: "sync.control-rejected",
+      response: {
+        code: "sync.control-rejected",
+        message: "Sync control was rejected.",
+        correlationId: `correlation:${command}-rejected-例`,
+        details: { ...details, reason: "stale-version" },
+      },
+    },
+    {
+      code: "sync.control-failed",
+      response: {
+        code: "sync.control-failed",
+        message: "Sync control failed before completion.",
+        correlationId: `correlation:${command}-failed-例`,
+        details: { ...details, reason: "terminal-failure" },
+      },
+    },
+    {
+      code: "sync.control-cancelled",
+      response: {
+        code: "sync.control-cancelled",
+        message: "Sync control was superseded.",
+        correlationId: `correlation:${command}-cancelled-例`,
+        details: { ...details, reason: "superseded-by-stop" },
+      },
+    },
+    {
+      code: "sync.control-timeout",
+      response: {
+        code: "sync.control-timeout",
+        message: "Sync control did not complete before the deadline.",
+        correlationId: `correlation:${command}-timeout-例`,
+        details: { ...details, reason: "deadline-elapsed", deadlineMs: 300_000 },
+      },
+    },
+  ];
+  if (command === "start") return common;
+  return [
+    ...common,
+    {
+      code: "sync.control-idempotency-conflict",
+      response: {
+        code: "sync.control-idempotency-conflict",
+        message: "Sync control idempotency key conflicts with an earlier request.",
+        correlationId: `correlation:${command}-conflict-例`,
+        details: {
+          ...details,
+          reason: "key-reused-with-different-fingerprint",
+          idempotencyKey: `idempotency:${command}-例`,
+        },
+      },
+    },
+    {
+      code: "sync.control-capacity",
+      response: {
+        code: "sync.control-capacity",
+        message: "Sync control idempotency capacity is exhausted.",
+        correlationId: `correlation:${command}-capacity-例`,
+        details: { ...details, reason: "all-retained-entries-in-flight", capacity: 10_000 },
+      },
+    },
+  ];
+};
 
 const actionTarget = {
   accountId: "account:icloud-example",
@@ -200,15 +282,22 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
     success: {
       thread: {
         threadId,
+        resolvedFromThreadId: null,
         subject: "Réunion — résumé 例",
         participants: [sender],
+        participantsTruncated: false,
+        messageCount: 1,
         messageIds: [messageId],
         messages: [hydratedMessage],
         firstReceivedAt: retrievalBefore,
         lastReceivedAt: retrievalBefore,
+        nextCursor: null,
       },
     },
-    errors: [{ code: "not_found", response: notFound("thread", threadId) }],
+    errors: [
+      { code: "invalid_cursor", response: invalidThreadCursor },
+      { code: "not_found", response: notFound("thread", threadId) },
+    ],
   },
   "messages.raw": {
     request: { messageId },
@@ -355,6 +444,7 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
       actorState: "watching" as const,
       activeOperation: "watch" as const,
       authBlocked: null,
+      incarnationId: syncIncarnationId,
       version: maximumSafeInteger,
       checkpoint: {
         completedMailboxes: maximumSafeInteger,
@@ -370,23 +460,23 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
   },
   "sync.start": {
     request: {},
-    success: { accepted: true, commandId: "command:start-例", observed: { actorState: "starting" as const, version: maximumSafeInteger } },
-    errors: [],
+    success: { accepted: true, commandId: "command:start-例", observed: { actorState: "starting" as const, incarnationId: syncIncarnationId, version: maximumSafeInteger } },
+    errors: syncControlErrors("start"),
   },
   "sync.pause": {
     request: { idempotencyKey: "idempotency:pause-例" },
-    success: { accepted: true, commandId: "command:pause-例", observed: { actorState: "paused" as const, version: maximumSafeInteger } },
-    errors: [],
+    success: { accepted: true, commandId: "command:pause-例", completed: true, observed: { actorState: "paused" as const, incarnationId: syncIncarnationId, version: maximumSafeInteger } },
+    errors: syncControlErrors("pause"),
   },
   "sync.resume": {
     request: { idempotencyKey: "idempotency:resume-例" },
-    success: { accepted: true, commandId: "command:resume-例", completed: true, observed: { actorState: "watching" as const, version: maximumSafeInteger } },
-    errors: [],
+    success: { accepted: true, commandId: "command:resume-例", completed: true, observed: { actorState: "watching" as const, incarnationId: syncIncarnationId, version: maximumSafeInteger } },
+    errors: syncControlErrors("resume"),
   },
   "sync.stop": {
     request: { idempotencyKey: "idempotency:stop-例" },
-    success: { accepted: true, commandId: "command:stop-例", observed: { actorState: "stopped" as const, version: maximumSafeInteger } },
-    errors: [],
+    success: { accepted: true, commandId: "command:stop-例", completed: true, observed: { actorState: "stopped" as const, incarnationId: syncIncarnationId, version: maximumSafeInteger } },
+    errors: syncControlErrors("stop"),
   },
 };
 
@@ -399,12 +489,32 @@ export const registeredPublicErrorApplicability: Readonly<Record<string, readonl
     Object.fromEntries(
       publicCliOperations.map((operation) => [
         operation.key,
-        operation.key === "messages.get" ||
-          operation.key === "threads.get" ||
-          operation.key === "messages.raw" ||
-          operation.key === "attachments.get"
-          ? ["not_found"]
-          : [],
+        operation.key === "sync.start"
+          ? [
+              "sync.control-rejected",
+              "sync.control-failed",
+              "sync.control-cancelled",
+              "sync.control-timeout",
+            ]
+          : operation.key === "sync.pause" ||
+              operation.key === "sync.resume" ||
+              operation.key === "sync.stop"
+            ? [
+                "sync.control-rejected",
+                "sync.control-failed",
+                "sync.control-cancelled",
+                "sync.control-timeout",
+                "sync.control-idempotency-conflict",
+                "sync.control-capacity",
+              ]
+            : operation.key === "messages.get" ||
+                operation.key === "threads.get" ||
+                operation.key === "messages.raw" ||
+                operation.key === "attachments.get"
+              ? operation.key === "threads.get"
+                ? ["invalid_cursor", "not_found"]
+                : ["not_found"]
+              : [],
       ]),
     ),
   );

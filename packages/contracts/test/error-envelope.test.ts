@@ -25,6 +25,26 @@ describe("public error envelope", () => {
     expect(empty.get("future-error")).toBeUndefined();
   });
 
+  it("enforces a fixed message when the registry definition supplies one", () => {
+    const fixed = createErrorRegistry([
+      defineError({
+        code: "fixed-message",
+        message: "The stable public message.",
+        details: z.strictObject({}),
+      }),
+    ]);
+    const envelope = {
+      code: "fixed-message",
+      message: "The stable public message.",
+      correlationId: "corr-fixed",
+      details: {},
+    };
+    expect(fixed.parse(envelope)).toEqual(envelope);
+    expect(() => fixed.parse({ ...envelope, message: "A different message." })).toThrow(
+      /does not match/,
+    );
+  });
+
   it("parses only registered, strict, safe envelopes", () => {
     const envelope = registry.parse({
       code: "not-found",
