@@ -18,8 +18,10 @@ import {
   type SyncAuthBlockedDetail,
   type SyncCheckpointSummary,
   type SyncDiagnostic,
+  type SyncActorState,
   type SyncStatusResponse,
 } from "@agent-mail/contracts";
+import type { SyncControlDecision } from "./sync-control-service";
 import {
   SIGNED_ATOMIC_STATES,
   SIGNED_EXTERNAL_EVENT_IDS,
@@ -208,6 +210,8 @@ export interface SyncResourceRegistryAuthority {
 
 export interface SyncLifecycleDependencies {
   readonly resourceRegistry: SyncResourceRegistryAuthority;
+  /** Optional in-process sink for the machine's typed control decisions. */
+  readonly controlDecisionSink?: (decision: SyncControlDecision) => void;
 }
 
 export interface BootstrapOutput {
@@ -1124,8 +1128,16 @@ function applyAction(
   event: SyncLifecycleEvent,
   source: string | readonly string[],
   dependencies?: SyncLifecycleDependencies,
+  target?: string | null,
 ): Partial<SyncLifecycleContext> {
   switch (name) {
+    case "emitControlAccepted":
+    case "emitControlCompleted":
+    case "emitControlPending":
+    case "emitControlRejected": {
+      emitControlDecision(name, context, event, source, target, dependencies?.controlDecisionSink);
+      return {};
+    }
     case "advanceVersion":
       return { version: context.version + 1 };
     case "beginEffectScope":
@@ -1235,6 +1247,109 @@ function applyAction(
     default:
       return {};
   }
+}
+
+function controlCommand(
+  event: SyncLifecycleEvent,
+): "start" | "pause" | "resume" | "stop" | undefined {
+  switch (event.type) {
+    case "control.start.requested":
+      return "start";
+    case "control.pause.requested":
+      return "pause";
+    case "control.resume.requested":
+      return "resume";
+    case "control.stop.requested":
+      return "stop";
+    default:
+      return undefined;
+  }
+}
+
+function actorStateForState(stateId: string): SyncActorState {
+  const state = SIGNED_SYNC_STATECHART.states.find((candidate) => candidate.id === stateId);
+  return syncActorStateSchema.parse(
+    state && "public" in state ? state.public.actorState : "stopped",
+  );
+}
+
+function emitControlDecision(
+  action:
+    | "emitControlAccepted"
+    | "emitControlCompleted"
+    | "emitControlPending"
+    | "emitControlRejected",
+  context: SyncLifecycleContext,
+  event: SyncLifecycleEvent,
+  source: string | readonly string[],
+  target: string | null | undefined,
+  sink: ((decision: SyncControlDecision) => void) | undefined,
+): void {
+  if (!sink) return;
+  const command = controlCommand(event);
+  if (!command || !("commandId" in event)) return;
+  const sourceState = typeof source === "string" ? source : source[0];
+  if (!sourceState) return;
+  const actorState = actorStateForState(target ?? sourceState);
+  const observed = { actorState, incarnationId: context.incarnationId, version: context.version };
+  if (action === "emitControlRejected") {
+    const stateId = target ?? sourceState;
+    const reason =
+      "expectedVersion" in event &&
+      event.expectedVersion !== undefined &&
+      event.expectedVersion !== context.version
+        ? "stale-version"
+        : stateId === "stopping.forShutdown" || stateId === "stopped.shutdown"
+          ? "shutdown-terminal"
+          : stateId.startsWith("stopping.")
+            ? "busy"
+            : "incompatible-state";
+    sink({
+      kind: "rejected",
+      commandId: event.commandId,
+      reason,
+      observed,
+    });
+    return;
+  }
+  if (action === "emitControlAccepted") {
+    sink({
+      kind: "accepted",
+      commandId: event.commandId,
+      target: {
+        command,
+        actorStates:
+          command === "resume"
+            ? ["starting"]
+            : command === "start"
+              ? ["starting", "backfilling", "sweeping", "retrying"]
+              : [actorState],
+        completed: false,
+      },
+      observed,
+    });
+    return;
+  }
+  if (action === "emitControlPending") {
+    sink({
+      kind: "accepted",
+      commandId: event.commandId,
+      target: {
+        command,
+        actorStates:
+          command === "pause" ? ["paused"] : command === "stop" ? ["stopped"] : [actorState],
+        completed: true,
+      },
+      observed,
+    });
+    return;
+  }
+  sink({
+    kind: "accepted",
+    commandId: event.commandId,
+    target: { command, actorStates: [actorState], completed: true },
+    observed,
+  });
 }
 
 function expectedVersionMatches(context: SyncLifecycleContext, event: SyncLifecycleEvent): boolean {
@@ -1499,7 +1614,7 @@ function transitionConfig(
           actions: spec.actions.map((name) =>
             machineSetup.assign(
               ({ context, event }: { context: SyncLifecycleContext; event: SyncLifecycleEvent }) =>
-                applyAction(name, context, event, source, dependencies),
+                applyAction(name, context, event, source, dependencies, spec.target),
             ),
           ),
         }
@@ -1723,6 +1838,38 @@ function createSyncLifecycleMachine(
   dependencies: SyncLifecycleDependencies = createDefaultDependencies(),
   lifecycleInput?: SyncLifecycleInput,
 ) {
+  const controlFallbackTransitions = Object.fromEntries(
+    [
+      "control.start.requested",
+      "control.pause.requested",
+      "control.resume.requested",
+      "control.stop.requested",
+    ].map((eventType) => [
+      eventType,
+      [
+        {
+          actions: machineSetup.assign(
+            ({
+              context,
+              event,
+              self,
+            }: {
+              context: SyncLifecycleContext;
+              event: SyncLifecycleEvent;
+              self: AnyActorRef;
+            }) =>
+              applyAction(
+                "emitControlRejected",
+                context,
+                event,
+                atomicStateId(self.getSnapshot().value),
+                dependencies,
+              ),
+          ),
+        },
+      ],
+    ]),
+  );
   return machineSetup.createMachine({
     id: SYNC_STATECHART_ID,
     version: SYNC_STATECHART_MODEL_VERSION,
@@ -1732,7 +1879,7 @@ function createSyncLifecycleMachine(
     },
     initial: "stopped",
     context: ({ input }) => initialContext(input),
-    on: rootFallbackTransitions,
+    on: { ...rootFallbackTransitions, ...controlFallbackTransitions },
     states: {
       stopped: compoundConfig("stopped", "clean", configuration, dependencies, lifecycleInput),
       starting: compoundConfig("starting", "active", configuration, dependencies, lifecycleInput),
