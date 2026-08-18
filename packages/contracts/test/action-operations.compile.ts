@@ -1,11 +1,15 @@
 import type { z } from "zod";
 import {
+  expiredActionPlanSchema,
+  failedActionPlanSchema,
   actionPlanSchema,
   perTargetResultSchema,
   uncertainReconciliationRequestSchema,
 } from "../src/action-operations";
 
 type ActionPlan = z.infer<typeof actionPlanSchema>;
+type FailedActionPlan = z.infer<typeof failedActionPlanSchema>;
+type ExpiredActionPlan = z.infer<typeof expiredActionPlanSchema>;
 type PerTargetResult = z.infer<typeof perTargetResultSchema>;
 type ReconciliationRequest = z.infer<typeof uncertainReconciliationRequestSchema>;
 
@@ -23,6 +27,26 @@ const plan: ActionPlan = {
   createdAt: "2026-08-18T00:00:00.000Z",
   expiresAt: "2026-08-18T01:00:00.000Z",
   completedAt: "2026-08-18T00:03:00.000Z",
+};
+
+const failedPlan: FailedActionPlan = {
+  state: "failed",
+  planId: "plan:one",
+  action: { kind: "moveToArchive" },
+  targets: plan.targets,
+  createdAt: "2026-08-18T00:00:00.000Z",
+  expiresAt: "2026-08-18T01:00:00.000Z",
+  failedAt: "2026-08-18T00:03:00.000Z",
+};
+
+const expiredPlan: ExpiredActionPlan = {
+  state: "expired",
+  planId: "plan:one",
+  action: { kind: "moveToArchive" },
+  targets: plan.targets,
+  createdAt: "2026-08-18T00:00:00.000Z",
+  expiresAt: "2026-08-18T01:00:00.000Z",
+  expiredAt: "2026-08-18T01:00:00.000Z",
 };
 
 const result: PerTargetResult = {
@@ -46,4 +70,6 @@ const reconciliation: ReconciliationRequest = {
 };
 
 void plan;
+void failedPlan;
+void expiredPlan;
 void reconciliation;

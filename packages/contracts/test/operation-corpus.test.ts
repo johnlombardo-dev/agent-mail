@@ -35,8 +35,11 @@ describe("public operation corpus", () => {
       const requestCanonical = operation.request.parse(entry.request);
       expect(operation.request.parse(jsonRoundTrip(requestCanonical))).toEqual(requestCanonical);
 
-      const responseCanonical = operation.response.parse(entry.success);
-      expect(operation.response.parse(jsonRoundTrip(responseCanonical))).toEqual(responseCanonical);
+      const successVariants = [entry.success, ...(entry.successVariants ?? [])];
+      for (const success of successVariants) {
+        const responseCanonical = operation.response.parse(success);
+        expect(operation.response.parse(jsonRoundTrip(responseCanonical))).toEqual(responseCanonical);
+      }
       for (const error of entry.errors) {
         const errorCanonical = operation.response.parse(error.response);
         expect(operation.response.parse(jsonRoundTrip(errorCanonical))).toEqual(errorCanonical);

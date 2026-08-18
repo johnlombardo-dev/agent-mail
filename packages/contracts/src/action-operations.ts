@@ -119,6 +119,11 @@ const partialActionPlanInputSchema = z.strictObject({
   ...planBaseShape,
   completedAt: actionInstantSchema,
 });
+const failedActionPlanInputSchema = z.strictObject({
+  state: z.literal("failed"),
+  ...planBaseShape,
+  failedAt: actionInstantSchema,
+});
 const rejectedActionPlanInputSchema = z.strictObject({
   state: z.literal("rejected"),
   ...planBaseShape,
@@ -142,6 +147,7 @@ const actionPlanInputVariantsSchema = z.discriminatedUnion("state", [
   executingActionPlanInputSchema,
   completedActionPlanInputSchema,
   partialActionPlanInputSchema,
+  failedActionPlanInputSchema,
   rejectedActionPlanInputSchema,
   expiredActionPlanInputSchema,
   uncertainActionPlanInputSchema,
@@ -170,6 +176,7 @@ const actionPlanInputSchema = actionPlanInputVariantsSchema.superRefine((plan, c
       message: "completion precedes creation",
     });
   }
+  if (plan.state === "failed") validateFailedActionPlanTemporal(plan, context);
   if (plan.state === "rejected" && Date.parse(plan.rejectedAt) < createdAt) {
     context.addIssue({
       code: "custom",
@@ -177,13 +184,7 @@ const actionPlanInputSchema = actionPlanInputVariantsSchema.superRefine((plan, c
       message: "rejection precedes creation",
     });
   }
-  if (plan.state === "expired" && Date.parse(plan.expiredAt) < expiresAt) {
-    context.addIssue({
-      code: "custom",
-      path: ["expiredAt"],
-      message: "expiration precedes expiry",
-    });
-  }
+  if (plan.state === "expired") validateExpiredActionPlanTemporal(plan, context);
   if (plan.state === "uncertain" && Date.parse(plan.missingLocalResultAt) < createdAt) {
     context.addIssue({
       code: "custom",
@@ -199,6 +200,42 @@ export type ActionPlanContract = z.infer<typeof actionPlanSchema>;
 
 export const pendingActionPlanSchema = pendingActionPlanInputSchema;
 export type PendingActionPlanContract = z.infer<typeof pendingActionPlanSchema>;
+
+function validateFailedActionPlanTemporal(
+  plan: z.infer<typeof failedActionPlanInputSchema>,
+  context: z.RefinementCtx,
+): void {
+  if (Date.parse(plan.failedAt) < Date.parse(plan.createdAt)) {
+    context.addIssue({
+      code: "custom",
+      path: ["failedAt"],
+      message: "failure precedes creation",
+    });
+  }
+}
+
+export const failedActionPlanSchema = failedActionPlanInputSchema.superRefine(
+  validateFailedActionPlanTemporal,
+);
+export type FailedActionPlanContract = z.infer<typeof failedActionPlanSchema>;
+
+function validateExpiredActionPlanTemporal(
+  plan: z.infer<typeof expiredActionPlanInputSchema>,
+  context: z.RefinementCtx,
+): void {
+  if (Date.parse(plan.expiredAt) < Date.parse(plan.expiresAt)) {
+    context.addIssue({
+      code: "custom",
+      path: ["expiredAt"],
+      message: "expiration precedes expiry",
+    });
+  }
+}
+
+export const expiredActionPlanSchema = expiredActionPlanInputSchema.superRefine(
+  validateExpiredActionPlanTemporal,
+);
+export type ExpiredActionPlanContract = z.infer<typeof expiredActionPlanSchema>;
 
 const actionResultBaseShape = {
   planId: actionPlanIdSchema,
@@ -434,6 +471,8 @@ export const actionPlanCommitResponseSchema = z
     plan: z.union([
       completedActionPlanInputSchema,
       partialActionPlanInputSchema,
+      failedActionPlanSchema,
+      expiredActionPlanSchema,
       rejectedActionPlanInputSchema,
       uncertainActionPlanInputSchema,
     ]),

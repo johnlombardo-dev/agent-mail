@@ -26,6 +26,8 @@ export type OperationStreamFixture = Readonly<{
 export type OperationCorpusEntry = Readonly<{
   readonly request: unknown;
   readonly success: unknown;
+  /** Additional success variants exercise terminal-state unions without adding operations. */
+  readonly successVariants?: readonly unknown[];
   readonly errors: readonly OperationErrorFixture[];
   readonly stream?: OperationStreamFixture;
 }>;
@@ -183,13 +185,18 @@ const actionPlanBase = {
   expiresAt: "2024-03-02T00:00:00.000Z",
 };
 const pendingPlan = { state: "pending" as const, ...actionPlanBase };
-const completedPlan = {
-  state: "completed" as const,
+const failedPlan = {
+  state: "failed" as const,
   ...actionPlanBase,
-  completedAt: laterInstant,
+  failedAt: laterInstant,
 };
-const successfulAttemptResult = {
-  kind: "success" as const,
+const expiredPlan = {
+  state: "expired" as const,
+  ...actionPlanBase,
+  expiredAt: actionPlanBase.expiresAt,
+};
+const failedAttemptResult = {
+  kind: "failed" as const,
   planId: actionPlanBase.planId,
   action,
   target: actionTarget,
@@ -198,12 +205,8 @@ const successfulAttemptResult = {
   startedAt: instant,
   resultAt: laterInstant,
   certainty: "definite" as const,
-  postcondition: {
-    kind: "flags" as const,
-    observedAt: laterInstant,
-    flags: ["\\Seen"],
-    modseq: maximumSafeInteger,
-  },
+  failureReason: "server-rejected" as const,
+  detail: "The remote server rejected the frozen action — 例",
 };
 
 const routingRule = {
@@ -368,11 +371,12 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
   },
   "action-plans.commit": {
     request: {
-      planId: completedPlan.planId,
+      planId: failedPlan.planId,
       digest,
       authorizationId: "authorization:authorization-例",
     },
-    success: { plan: completedPlan, results: [successfulAttemptResult] },
+    success: { plan: failedPlan, results: [failedAttemptResult] },
+    successVariants: [{ plan: expiredPlan, results: [] }],
     errors: [],
   },
   "reports.create": {

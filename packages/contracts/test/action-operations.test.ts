@@ -7,6 +7,8 @@ import {
   actionPlanCommitRequestSchema,
   actionPlanCommitResponseSchema,
   actionPlanCreateOperation,
+  expiredActionPlanSchema,
+  failedActionPlanSchema,
   actionPlanInspectOperation,
   actionPlanOperationDefinitions,
   actionPlanPreviewResponseSchema,
@@ -65,6 +67,14 @@ const uncertain = {
   detail: "the command was sent before the socket timed out",
 } as const;
 
+const failed = {
+  ...attemptBase,
+  kind: "failed",
+  certainty: "definite",
+  failureReason: "server-rejected",
+  detail: "the remote server rejected the frozen action",
+} as const;
+
 describe("remote action operation contracts", () => {
   it("round-trips partial plans and preserves each target/result identity", () => {
     const plan = actionPlanSchema.parse({
@@ -114,6 +124,58 @@ describe("remote action operation contracts", () => {
       ...uncertain,
       detail: "Authorization: Bearer secret-value",
     })).toThrow();
+  });
+
+  it("round-trips a failed terminal plan and enforces its creation boundary", () => {
+    const plan = failedActionPlanSchema.parse({
+      ...basePlan,
+      state: "failed",
+      failedAt: "2026-08-18T00:03:00.000Z",
+    });
+    expect(plan.state).toBe("failed");
+    expect(plan.failedAt).toBe("2026-08-18T00:03:00.000Z");
+    expect(
+      actionPlanCommitResponseSchema.parse({ plan, results: [failed] }),
+    ).toEqual({ plan, results: [failed] });
+    expect(() => failedActionPlanSchema.parse({
+      ...basePlan,
+      state: "failed",
+      failedAt: "2026-08-17T23:59:59.999Z",
+    })).toThrow(/failure precedes creation/);
+    expect(() => actionPlanCommitResponseSchema.parse({
+      plan: {
+        ...basePlan,
+        state: "failed",
+        failedAt: "2026-08-17T23:59:59.999Z",
+      },
+      results: [failed],
+    })).toThrow(/failure precedes creation/);
+    expect(() => failedActionPlanSchema.parse({
+      ...basePlan,
+      state: "failed",
+      failedAt: "2026-08-18T00:03:00.000Z",
+      completedAt: "2026-08-18T00:04:00.000Z",
+    })).toThrow();
+  });
+
+  it("accepts an expired commit response only at or after plan expiry", () => {
+    const plan = expiredActionPlanSchema.parse({
+      ...basePlan,
+      state: "expired",
+      expiredAt: basePlan.expiresAt,
+    });
+    expect(actionPlanCommitResponseSchema.parse({ plan, results: [] })).toEqual({
+      plan,
+      results: [],
+    });
+    expect(() => actionPlanCommitResponseSchema.parse({
+      plan: {
+        ...basePlan,
+        state: "expired",
+        expiredAt: "2026-08-18T00:59:59.999Z",
+      },
+      results: [],
+    })).toThrow(/expiration precedes expiry/);
   });
 
   it("rejects duplicate immutable identities, missing MODSEQ, and unknown fields", () => {
