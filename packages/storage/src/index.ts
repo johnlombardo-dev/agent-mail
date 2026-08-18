@@ -7,6 +7,7 @@ export * from "./action-plan-attempt";
 export * from "./action-plan-recovery";
 export * from "./action-plan-reconciliation";
 export * from "./action-plan-result";
+export * from "./action-plan-finalization";
 export * from "./backup-manifest";
 export * from "./backup-writer";
 export * from "./backup-restore";
