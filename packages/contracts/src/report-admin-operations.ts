@@ -297,6 +297,7 @@ const operationDefaults = {
 export const reportAdminReportOperation = defineOperation({
   key: "reports.create",
   route: "/v1/reports",
+  method: "POST",
   cliName: "reports-create",
   scope: "reports:write",
   request: reportAdminReportRequestSchema,
@@ -307,6 +308,7 @@ export const reportAdminReportOperation = defineOperation({
 export const reportAdminExportOperation = defineOperation({
   key: "exports.selected",
   route: "/v1/exports",
+  method: "POST",
   cliName: "exports-selected",
   scope: "mail:export.selected",
   request: reportAdminExportRequestSchema,
@@ -318,6 +320,7 @@ export const reportAdminExportOperation = defineOperation({
 export const reportAdminBackupOperation = defineOperation({
   key: "admin.backup",
   route: "/v1/admin/backup",
+  method: "POST",
   cliName: "admin-backup",
   scope: "admin:backup",
   request: reportAdminBackupRequestSchema,
@@ -328,6 +331,7 @@ export const reportAdminBackupOperation = defineOperation({
 export const reportAdminRestoreOperation = defineOperation({
   key: "admin.restore",
   route: "/v1/admin/restore",
+  method: "POST",
   cliName: "admin-restore",
   scope: "admin:restore",
   request: reportAdminRestoreRequestSchema,
@@ -338,6 +342,7 @@ export const reportAdminRestoreOperation = defineOperation({
 export const reportAdminDoctorOperation = defineOperation({
   key: "admin.doctor",
   route: "/v1/admin/doctor",
+  method: "POST",
   cliName: "admin-doctor",
   scope: "admin:doctor",
   request: reportAdminDoctorRequestSchema,
@@ -348,6 +353,7 @@ export const reportAdminDoctorOperation = defineOperation({
 export const reportAdminReindexOperation = defineOperation({
   key: "admin.reindex",
   route: "/v1/admin/reindex",
+  method: "POST",
   cliName: "admin-reindex",
   scope: "admin:reindex",
   request: reportAdminReindexRequestSchema,

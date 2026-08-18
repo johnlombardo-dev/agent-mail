@@ -13,6 +13,7 @@ function operation(overrides: Partial<OperationDefinition> = {}): OperationDefin
   return defineOperation({
     key: "messages.search",
     route: "/v1/messages/search",
+    method: "GET",
     cliName: "messages-search",
     scope: "mail:read",
     request: requestSchema,
@@ -47,16 +48,20 @@ describe("operation registry", () => {
       {
         key: "messages.search",
         route: "/v1/messages/search",
+        method: "GET",
         cliName: "messages-search",
         scope: "mail:read",
+        errors: [],
         streaming: "none",
         strictness: "strict",
       },
       {
         key: "messages.export",
         route: "/v1/messages/export/{id}",
+        method: "GET",
         cliName: "messages-export",
         scope: "mail:export",
+        errors: [],
         streaming: "bytes",
         strictness: "strict",
       },
@@ -124,11 +129,20 @@ describe("operation registry", () => {
   });
 
   it("snapshots and freezes definitions and generated metadata", () => {
-    const definitions = [operation()];
+    const mutableError = {
+      code: "nested_mutation",
+      status: 400 as const,
+      details: z.strictObject({ resource: z.literal("nested") }),
+    };
+    const definitions = [operation({ errors: [mutableError] })];
     const registry = createOperationRegistry(definitions);
     expect(registry.operations).not.toBe(definitions);
     expect(Object.isFrozen(registry.operations)).toBe(true);
     expect(Object.isFrozen(registry.operations[0])).toBe(true);
+    expect(Object.isFrozen(registry.operations[0]?.errors)).toBe(true);
+    expect(Object.isFrozen(registry.operations[0]?.errors[0])).toBe(true);
+    expect(Reflect.set(registry.operations[0]?.errors[0] ?? {}, "status", 409)).toBe(false);
+    expect(registry.operations[0]?.errors[0]?.status).toBe(400);
     expect(Object.isFrozen(registry.metadata)).toBe(true);
     definitions.push(
       operation({

@@ -313,6 +313,7 @@ export const routingPreviewOperation: OperationDefinition<
 > = defineOperation({
   key: "routing.preview",
   route: "/v1/routing/preview",
+  method: "POST",
   cliName: "routing-preview",
   scope: "mail:routing:read",
   request: routingPreviewRequestSchema,
@@ -327,6 +328,7 @@ export const routingCommitOperation: OperationDefinition<
 > = defineOperation({
   key: "routing.commit",
   route: "/v1/routing/commit",
+  method: "POST",
   cliName: "routing-commit",
   scope: "mail:routing:write",
   request: routingCommitRequestSchema,
@@ -341,6 +343,7 @@ export const labelOperation: OperationDefinition<
 > = defineOperation({
   key: "messages.label",
   route: "/v1/messages/{messageId}/label",
+  method: "POST",
   cliName: "messages-label",
   scope: "mail:label:write",
   request: labelRequestSchema,

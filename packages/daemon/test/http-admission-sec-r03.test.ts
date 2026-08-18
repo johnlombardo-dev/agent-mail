@@ -17,6 +17,7 @@ const responseSchema = z.union([z.strictObject({ ok: z.literal(true), value: z.s
 const operation = defineOperation({
   key: "synthetic.admission",
   route: "/v1/synthetic/admission",
+  method: "POST",
   cliName: "synthetic-admission",
   scope: "synthetic:admission",
   request: requestSchema,

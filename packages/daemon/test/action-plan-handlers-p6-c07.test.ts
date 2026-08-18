@@ -291,10 +291,10 @@ describe("P6-C07 public action-plan HTTP handlers", () => {
     expect(missing.status).toBe(401);
     expect(wrong.status).toBe(403);
     expect(extra.status).toBe(400);
-    expect(raw.status).toBe(400);
+    expect(raw.status).toBe(404);
     expect(await wrong.json()).toMatchObject({ code: "insufficient_scope" });
     expect(await extra.json()).toMatchObject({ code: "invalid_request" });
-    expect(await raw.json()).toMatchObject({ code: "invalid_request" });
+    expect(await raw.json()).toMatchObject({ code: "not_found" });
     expect(invocations).toBe(0);
     expect(publicErrorEnvelopeSchema.parse(await missing.json())).toMatchObject({
       code: "missing_credentials",

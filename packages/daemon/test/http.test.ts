@@ -23,6 +23,7 @@ const responseSchema = z.union([successSchema, publicErrorEnvelopeSchema]);
 const echoOperation = defineOperation({
   key: "synthetic.echo",
   route: "/v1/synthetic/{id}",
+  method: "POST",
   cliName: "synthetic-echo",
   scope: "synthetic:echo",
   request: requestSchema,

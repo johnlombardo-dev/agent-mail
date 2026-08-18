@@ -15,6 +15,23 @@ export const errorCodeSchema = z
   .string()
   .min(1)
   .regex(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/u);
+/** Stable HTTP status classes used by public error projections. */
+export const publicErrorStatusSchema = z.union([
+  z.literal(400),
+  z.literal(401),
+  z.literal(403),
+  z.literal(404),
+  z.literal(409),
+  z.literal(413),
+  z.literal(415),
+  z.literal(429),
+  z.literal(500),
+  z.literal(503),
+]);
+export type PublicErrorStatus = z.infer<typeof publicErrorStatusSchema>;
+export const httpErrorStatusSchema = publicErrorStatusSchema;
+export type HttpErrorStatus = PublicErrorStatus;
+
 export const safeErrorMessageSchema = z
   .string()
   .min(1)
@@ -85,6 +102,7 @@ export type ErrorDefinition<
   TMessage extends string | undefined = string | undefined,
 > = Readonly<{
   readonly code: TCode;
+  readonly status: PublicErrorStatus;
   readonly message?: TMessage;
   readonly details: TDetails;
 }>;
@@ -96,7 +114,13 @@ export function defineError<
 >(
   definition: ErrorDefinition<TDetails, TCode, TMessage>,
 ): ErrorDefinition<TDetails, TCode, TMessage> {
+  const unknownKey = Object.keys(definition).find(
+    (key) => !new Set(["code", "status", "message", "details"]).has(key),
+  );
+  if (unknownKey !== undefined)
+    throw new TypeError(`error ${definition.code} has unknown metadata: ${unknownKey}`);
   errorCodeSchema.parse(definition.code);
+  publicErrorStatusSchema.parse(definition.status);
   if (definition.message !== undefined) safeErrorMessageSchema.parse(definition.message);
   if (typeof definition.details?.parse !== "function")
     throw new TypeError(`error ${definition.code} has no details schema`);
@@ -123,10 +147,32 @@ export type ErrorParseResult =
   | Readonly<{ readonly success: true; readonly data: PublicErrorEnvelope }>
   | Readonly<{ readonly success: false; readonly error: Error }>;
 
+/** Parse one operation-scoped error without imposing global code uniqueness. */
+export function parseErrorDefinition(
+  definition: ErrorDefinition,
+  input: unknown,
+): PublicErrorEnvelope {
+  const envelope = publicErrorEnvelopeSchema.parse(input);
+  if (envelope.code !== definition.code)
+    throw new Error(`error code does not match definition: ${envelope.code}`);
+  if (definition.message !== undefined && envelope.message !== definition.message)
+    throw new Error(`error ${envelope.code} message does not match its definition`);
+  const details = parseStrictDetails(definition.details, envelope.details);
+  if (!isSafeErrorDetails(details))
+    throw new Error(`error ${envelope.code} details must be an object`);
+  return { ...envelope, details };
+}
+
 /** Register stable errors and parse only envelopes whose code and details are registered. */
 export function createErrorRegistry(definitions: readonly ErrorDefinition[]): ErrorRegistry {
   definitions.forEach((definition) => {
+    const unknownKey = Object.keys(definition).find(
+      (key) => !new Set(["code", "status", "message", "details"]).has(key),
+    );
+    if (unknownKey !== undefined)
+      throw new TypeError(`error ${definition.code} has unknown metadata: ${unknownKey}`);
     errorCodeSchema.parse(definition.code);
+    publicErrorStatusSchema.parse(definition.status);
     if (definition.message !== undefined) safeErrorMessageSchema.parse(definition.message);
     if (typeof definition.details?.parse !== "function")
       throw new TypeError(`error ${definition.code} has no details schema`);
@@ -141,12 +187,7 @@ export function createErrorRegistry(definitions: readonly ErrorDefinition[]): Er
     const envelope = publicErrorEnvelopeSchema.parse(input);
     const definition = get(envelope.code);
     if (definition === undefined) throw new Error(`unregistered error code: ${envelope.code}`);
-    if (definition.message !== undefined && envelope.message !== definition.message)
-      throw new Error(`error ${envelope.code} message does not match its registry definition`);
-    const details = parseStrictDetails(definition.details, envelope.details);
-    if (!isSafeErrorDetails(details))
-      throw new Error(`error ${envelope.code} details must be an object`);
-    return { ...envelope, details };
+    return parseErrorDefinition(definition, envelope);
   };
   const safeParse = (input: unknown): ErrorParseResult => {
     try {

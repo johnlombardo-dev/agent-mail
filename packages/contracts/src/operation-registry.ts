@@ -1,8 +1,21 @@
 import { z } from "zod";
+import {
+  errorCodeSchema,
+  publicErrorStatusSchema,
+  safeErrorMessageSchema,
+  type ErrorDefinition,
+} from "./error-envelope";
 
 /** The only stream modes understood by a public operation. */
 export const operationStreamingSchema = z.enum(["none", "ndjson", "bytes"]);
 export type OperationStreaming = z.infer<typeof operationStreamingSchema>;
+
+/** HTTP methods currently admitted by the public operation surface. */
+export const operationHttpMethodSchema = z.enum(["GET", "POST", "DELETE"]);
+export type OperationHttpMethod = z.infer<typeof operationHttpMethodSchema>;
+/** Short alias for consumers describing transport metadata. */
+export const httpMethodSchema = operationHttpMethodSchema;
+export type HttpMethod = OperationHttpMethod;
 
 /** Registry consumers must opt into the unknown-field policy explicitly. */
 export const operationStrictnessSchema = z.literal("strict");
@@ -34,10 +47,12 @@ export type OperationDefinition<
 > = Readonly<{
   readonly key: string;
   readonly route: string;
+  readonly method: OperationHttpMethod;
   readonly cliName: string;
   readonly scope: string | null;
   readonly request: TRequest;
   readonly response: TResponse;
+  readonly errors: readonly ErrorDefinition[];
   readonly streaming: OperationStreaming;
   readonly strictness: OperationStrictness;
 }>;
@@ -45,13 +60,16 @@ export type OperationDefinition<
 export type OperationDefinitionInput<
   TRequest extends OperationSchema = OperationSchema,
   TResponse extends OperationSchema = OperationSchema,
-> = OperationDefinition<TRequest, TResponse>;
+> = Omit<OperationDefinition<TRequest, TResponse>, "errors"> &
+  Partial<Pick<OperationDefinition<TRequest, TResponse>, "errors">>;
 
 export type OperationMetadata = Readonly<{
   readonly key: string;
   readonly route: string;
+  readonly method: OperationHttpMethod;
   readonly cliName: string;
   readonly scope: string | null;
+  readonly errors: readonly ErrorDefinition[];
   readonly streaming: OperationStreaming;
   readonly strictness: OperationStrictness;
 }>;
@@ -75,9 +93,31 @@ function checkedText(value: unknown, schema: z.ZodType<string>, label: string): 
   return result.data;
 }
 
+function freezeErrorDefinitions(
+  definitions: readonly ErrorDefinition[],
+): readonly ErrorDefinition[] {
+  return Object.freeze(definitions.map((definition) => Object.freeze({ ...definition })));
+}
+
 function validateOperationDefinition(definition: OperationDefinition): void {
+  const expectedKeys = new Set([
+    "key",
+    "route",
+    "method",
+    "cliName",
+    "scope",
+    "request",
+    "response",
+    "errors",
+    "streaming",
+    "strictness",
+  ]);
+  const unknownKey = Object.keys(definition).find((key) => !expectedKeys.has(key));
+  if (unknownKey !== undefined)
+    throw new TypeError(`operation ${definition.key} has unknown metadata: ${unknownKey}`);
   checkedText(definition.key, operationNameSchema, "operation key");
   checkedText(definition.route, routeSchema, "operation route");
+  operationHttpMethodSchema.parse(definition.method);
   checkedText(definition.cliName, operationNameSchema, "operation CLI name");
   if (definition.scope !== null) checkedText(definition.scope, scopeSchema, "operation scope");
   operationStreamingSchema.parse(definition.streaming);
@@ -86,6 +126,26 @@ function validateOperationDefinition(definition: OperationDefinition): void {
     throw new TypeError(`operation ${definition.key} has no request schema`);
   if (typeof definition.response?.parse !== "function")
     throw new TypeError(`operation ${definition.key} has no response schema`);
+  if (!Array.isArray(definition.errors))
+    throw new TypeError(`operation ${definition.key} has no error metadata`);
+  const errorCodes = new Set<string>();
+  for (const error of definition.errors) {
+    const unknownErrorKey = Object.keys(error).find(
+      (key) => !new Set(["code", "status", "message", "details"]).has(key),
+    );
+    if (unknownErrorKey !== undefined)
+      throw new TypeError(
+        `operation ${definition.key} error ${error.code} has unknown metadata: ${unknownErrorKey}`,
+      );
+    errorCodeSchema.parse(error.code);
+    publicErrorStatusSchema.parse(error.status);
+    if (error.message !== undefined) safeErrorMessageSchema.parse(error.message);
+    if (errorCodes.has(error.code))
+      throw new TypeError(`operation ${definition.key} has duplicate error code: ${error.code}`);
+    errorCodes.add(error.code);
+    if (typeof error.details?.parse !== "function")
+      throw new TypeError(`operation ${definition.key} error ${error.code} has no details schema`);
+  }
 }
 
 /** Define one operation at the typed boundary. */
@@ -95,8 +155,12 @@ export function defineOperation<
 >(
   definition: OperationDefinitionInput<TRequest, TResponse>,
 ): OperationDefinition<TRequest, TResponse> {
-  validateOperationDefinition(definition);
-  return Object.freeze({ ...definition });
+  const normalized = {
+    ...definition,
+    errors: freezeErrorDefinitions(definition.errors ?? []),
+  };
+  validateOperationDefinition(normalized);
+  return Object.freeze(normalized);
 }
 
 function assertUnique(values: readonly string[], label: string): void {
@@ -136,7 +200,16 @@ export function createOperationRegistry(
     "CLI name",
   );
   const scopes = new Map<string, string>();
+  const errorStatuses = new Map<string, number>();
   for (const definition of definitions) {
+    for (const error of definition.errors) {
+      const previousStatus = errorStatuses.get(error.code);
+      if (previousStatus !== undefined && previousStatus !== error.status)
+        throw new Error(
+          `conflicting operation error status for ${error.code}: ${previousStatus} and ${error.status}`,
+        );
+      errorStatuses.set(error.code, error.status);
+    }
     if (definition.scope === null) continue;
     const previous = scopes.get(definition.scope);
     const sharedApprovalScope =
@@ -150,11 +223,13 @@ export function createOperationRegistry(
   }
 
   const operations = Object.freeze(
-    definitions.map((definition) => Object.freeze({ ...definition })),
+    definitions.map((definition) =>
+      Object.freeze({ ...definition, errors: freezeErrorDefinitions(definition.errors) }),
+    ),
   );
   const metadata = Object.freeze(
-    definitions.map(({ key, route, cliName, scope, streaming, strictness }) =>
-      Object.freeze({ key, route, cliName, scope, streaming, strictness }),
+    operations.map(({ key, route, method, cliName, scope, streaming, strictness, errors }) =>
+      Object.freeze({ key, route, method, cliName, scope, streaming, strictness, errors }),
     ),
   );
   const get = (key: string): OperationDefinition | undefined =>

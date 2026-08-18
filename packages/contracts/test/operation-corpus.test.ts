@@ -84,6 +84,7 @@ describe("public operation corpus", () => {
     const adjacentOperation = defineOperation({
       key: "adjacent.missing-success",
       route: "/v1/adjacent/missing-success",
+      method: "POST",
       cliName: "adjacent-missing-success",
       scope: "adjacent:test",
       request: z.strictObject({ value: z.string() }),

@@ -10,10 +10,12 @@ import {
 const registry = createErrorRegistry([
   defineError({
     code: "not-found",
+    status: 404,
     details: z.strictObject({ resource: z.string() }),
   }),
   defineError({
     code: "invalid-query",
+    status: 400,
     details: z.strictObject({ field: z.string(), reason: z.string() }),
   }),
 ] as const);
@@ -29,6 +31,7 @@ describe("public error envelope", () => {
     const fixed = createErrorRegistry([
       defineError({
         code: "fixed-message",
+        status: 400,
         message: "The stable public message.",
         details: z.strictObject({}),
       }),
@@ -128,8 +131,8 @@ describe("public error envelope", () => {
   it("rejects duplicate registered error codes", () => {
     expect(() =>
       createErrorRegistry([
-        defineError({ code: "same-code", details: z.strictObject({}) }),
-        defineError({ code: "same-code", details: z.strictObject({}) }),
+        defineError({ code: "same-code", status: 400, details: z.strictObject({}) }),
+        defineError({ code: "same-code", status: 400, details: z.strictObject({}) }),
       ]),
     ).toThrow(/duplicate error code/);
   });

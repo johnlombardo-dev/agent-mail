@@ -227,7 +227,9 @@ describe("direct Hono retrieval matrix P6-C04", () => {
     expect(missingMessage.status).toBe(404);
     expect(await missingMessage.json()).toMatchObject({ code: "not_found", details: { resource: "message", id: missingMessageId } });
     const missingThreadId = `thread:${"f".repeat(64)}`;
-    const missingThread = await app.request(request(`/v1/threads/${missingThreadId}`));
+    const missingThread = await app.request(
+      request(`/v1/threads/${missingThreadId}`, { threadId: missingThreadId }),
+    );
     expect(missingThread.status).toBe(404);
     expect(await missingThread.json()).toMatchObject({ code: "not_found", details: { resource: "thread", id: missingThreadId } });
     const malformedCursor = await app.request(request(`/v1/threads/${missingThreadId}`, { threadId: missingThreadId, limit: 1, cursor: "A".repeat(64) }));

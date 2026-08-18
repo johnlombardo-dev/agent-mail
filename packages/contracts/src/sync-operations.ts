@@ -257,31 +257,37 @@ const capacityMessage = "Sync control idempotency capacity is exhausted.";
 
 export const syncControlRejectedErrorDefinition = defineError({
   code: "sync.control-rejected",
+  status: 500,
   message: rejectedMessage,
   details: syncControlRejectedDetailsSchema,
 });
 export const syncControlFailedErrorDefinition = defineError({
   code: "sync.control-failed",
+  status: 500,
   message: failedMessage,
   details: syncControlFailedDetailsSchema,
 });
 export const syncControlCancelledErrorDefinition = defineError({
   code: "sync.control-cancelled",
+  status: 500,
   message: cancelledMessage,
   details: syncControlCancelledDetailsSchema,
 });
 export const syncControlTimeoutErrorDefinition = defineError({
   code: "sync.control-timeout",
+  status: 500,
   message: timeoutMessage,
   details: syncControlTimeoutDetailsSchema,
 });
 export const syncControlIdempotencyConflictErrorDefinition = defineError({
   code: "sync.control-idempotency-conflict",
+  status: 500,
   message: conflictMessage,
   details: syncControlIdempotencyConflictDetailsSchema,
 });
 export const syncControlCapacityErrorDefinition = defineError({
   code: "sync.control-capacity",
+  status: 500,
   message: capacityMessage,
   details: syncControlCapacityDetailsSchema,
 });
@@ -296,6 +302,13 @@ export const syncControlErrorDefinitions = Object.freeze([
   syncControlCapacityErrorDefinition,
 ]);
 export const syncControlErrorRegistry = createErrorRegistry(syncControlErrorDefinitions);
+const syncStartErrorDefinitions = Object.freeze([
+  syncControlRejectedErrorDefinition,
+  syncControlFailedErrorDefinition,
+  syncControlCancelledErrorDefinition,
+  syncControlTimeoutErrorDefinition,
+]);
+const syncIdempotentErrorDefinitions = syncControlErrorDefinitions;
 
 export const syncControlRejectedErrorSchema = z.strictObject({
   code: z.literal("sync.control-rejected"),
@@ -808,50 +821,60 @@ const operationDefaults = {
 export const syncStatusOperation = defineOperation({
   key: "sync.status",
   route: "/v1/sync/status",
+  method: "GET",
   cliName: "sync-status",
   scope: "sync:read.status",
   request: syncStatusRequestSchema,
   response: syncStatusResponseSchema,
+  errors: [],
   ...operationDefaults,
 });
 
 export const syncStartOperation = defineOperation({
   key: "sync.start",
   route: "/v1/sync/start",
+  method: "POST",
   cliName: "sync-start",
   scope: "sync:control.start",
   request: syncStartRequestSchema,
   response: syncStartResponseSchema,
+  errors: syncStartErrorDefinitions,
   ...operationDefaults,
 });
 
 export const syncPauseOperation = defineOperation({
   key: "sync.pause",
   route: "/v1/sync/pause",
+  method: "POST",
   cliName: "sync-pause",
   scope: "sync:control.pause",
   request: syncPauseRequestSchema,
   response: syncPauseResponseSchema,
+  errors: syncIdempotentErrorDefinitions,
   ...operationDefaults,
 });
 
 export const syncResumeOperation = defineOperation({
   key: "sync.resume",
   route: "/v1/sync/resume",
+  method: "POST",
   cliName: "sync-resume",
   scope: "sync:control.resume",
   request: syncResumeRequestSchema,
   response: syncResumeResponseSchema,
+  errors: syncIdempotentErrorDefinitions,
   ...operationDefaults,
 });
 
 export const syncStopOperation = defineOperation({
   key: "sync.stop",
   route: "/v1/sync/stop",
+  method: "POST",
   cliName: "sync-stop",
   scope: "sync:control.stop",
   request: syncStopRequestSchema,
   response: syncStopResponseSchema,
+  errors: syncIdempotentErrorDefinitions,
   ...operationDefaults,
 });
 

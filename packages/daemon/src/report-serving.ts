@@ -110,6 +110,7 @@ const sourceResponseSchema = z.union([
 const reportServeOperation = defineOperation({
   key: "reports.serve",
   route: "/v1/reports/{reportId}",
+  method: "GET",
   cliName: "reports-serve",
   scope: REPORT_READ_SCOPE,
   request: reportRequestSchema,
@@ -121,6 +122,7 @@ const reportServeOperation = defineOperation({
 const sourceTextOperation = defineOperation({
   key: "messages.text",
   route: "/v1/messages/{messageId}/text",
+  method: "GET",
   cliName: "messages-text",
   scope: SOURCE_READ_SCOPE,
   request: sourceRequestSchema,

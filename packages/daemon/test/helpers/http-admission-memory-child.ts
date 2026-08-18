@@ -7,6 +7,7 @@ const iterations = 200;
 const operation = defineOperation({
   key: "synthetic.memory",
   route: "/v1/synthetic/memory",
+  method: "POST",
   cliName: "synthetic-memory",
   scope: "synthetic:memory",
   request: z.strictObject({ value: z.string() }),

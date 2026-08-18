@@ -389,10 +389,10 @@ async function executeStreamRoute(
 /** Create the isolated byte-stream routes; the main HTTP app mounts these routes. */
 export function createContentStreamingApp(options: ContentStreamingAppOptions): Hono {
   const app = new Hono();
-  app.all("/v1/messages/:messageId/raw", async (context) =>
+  app.get("/v1/messages/:messageId/raw", async (context) =>
     executeStreamRoute(context, options, "messages.raw", context.req.param("messageId")),
   );
-  app.all("/v1/attachments/:attachmentId", async (context) =>
+  app.get("/v1/attachments/:attachmentId", async (context) =>
     executeStreamRoute(context, options, "attachments.get", context.req.param("attachmentId")),
   );
   return app;

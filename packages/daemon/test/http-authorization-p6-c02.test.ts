@@ -29,12 +29,23 @@ function requestPath(operationKey: string): string {
 function requestFor(operationKey: string, authorization?: string): Request {
   const fixture = operationCorpus[operationKey];
   if (fixture === undefined) throw new Error(`missing operation fixture ${operationKey}`);
+  const operation = publicOperationRegistry.get(operationKey);
+  if (operation === undefined) throw new Error(`missing registered operation ${operationKey}`);
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (authorization !== undefined) headers.authorization = authorization;
-  return new Request(`http://localhost${requestPath(operationKey)}`, {
-    method: "POST",
+  const query =
+    operation.method === "GET" &&
+    operationKey === "messages.search" &&
+    typeof fixture.request === "object" &&
+    fixture.request !== null &&
+    "query" in fixture.request &&
+    typeof fixture.request.query === "string"
+      ? `?query=${encodeURIComponent(fixture.request.query)}`
+      : "";
+  return new Request(`http://localhost${requestPath(operationKey)}${query}`, {
+    method: operation.method,
     headers,
-    body: JSON.stringify(fixture.request),
+    ...(operation.method === "GET" ? {} : { body: JSON.stringify(fixture.request) }),
   });
 }
 

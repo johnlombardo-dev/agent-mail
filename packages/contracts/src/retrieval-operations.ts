@@ -329,6 +329,43 @@ export const threadNotFoundErrorSchema = notFoundFor("thread", threadIdSchema);
 export const rawMessageNotFoundErrorSchema = notFoundFor("raw-message", messageIdSchema);
 export const attachmentNotFoundErrorSchema = notFoundFor("attachment", attachmentIdSchema);
 
+const messageNotFoundDetailsSchema = z.strictObject({
+  resource: z.literal("message"),
+  id: messageIdSchema,
+});
+const threadNotFoundDetailsSchema = z.strictObject({
+  resource: z.literal("thread"),
+  id: threadIdSchema,
+});
+const rawMessageNotFoundDetailsSchema = z.strictObject({
+  resource: z.literal("raw-message"),
+  id: messageIdSchema,
+});
+const attachmentNotFoundDetailsSchema = z.strictObject({
+  resource: z.literal("attachment"),
+  id: attachmentIdSchema,
+});
+export const messageNotFoundErrorDefinition = defineError({
+  code: "not_found",
+  status: 404,
+  details: messageNotFoundDetailsSchema,
+});
+export const threadNotFoundErrorDefinition = defineError({
+  code: "not_found",
+  status: 404,
+  details: threadNotFoundDetailsSchema,
+});
+export const rawMessageNotFoundErrorDefinition = defineError({
+  code: "not_found",
+  status: 404,
+  details: rawMessageNotFoundDetailsSchema,
+});
+export const attachmentNotFoundErrorDefinition = defineError({
+  code: "not_found",
+  status: 404,
+  details: attachmentNotFoundDetailsSchema,
+});
+
 const searchInvalidQueryMessage = "invalid search query";
 const searchInvalidCursorMessage = "search cursor is invalid";
 
@@ -339,11 +376,13 @@ export const searchFeatureErrorDetailsSchema = z.strictObject({
 
 export const searchInvalidQueryErrorDefinition = defineError({
   code: "invalid_query",
+  status: 400,
   message: searchInvalidQueryMessage,
   details: searchFeatureErrorDetailsSchema,
 });
 export const searchInvalidCursorErrorDefinition = defineError({
   code: "invalid_cursor",
+  status: 400,
   message: searchInvalidCursorMessage,
   details: searchFeatureErrorDetailsSchema,
 });
@@ -377,6 +416,7 @@ export const threadInvalidCursorDetailsSchema = z.strictObject({
 });
 export const threadInvalidCursorErrorDefinition = defineError({
   code: "invalid_cursor",
+  status: 400,
   message: threadInvalidCursorMessage,
   details: threadInvalidCursorDetailsSchema,
 });
@@ -493,10 +533,12 @@ export const attachmentRequestSchema = z.strictObject({ attachmentId: attachment
 export const searchOperation = defineOperation({
   key: "messages.search",
   route: "/v1/messages/search",
+  method: "POST",
   cliName: "messages-search",
   scope: "mail:read.search",
   request: searchRequestSchema,
   response: searchResponseSchema,
+  errors: searchRetrievalErrorDefinitions,
   streaming: "none",
   strictness: "strict",
 });
@@ -504,10 +546,12 @@ export const searchOperation = defineOperation({
 export const messageOperation = defineOperation({
   key: "messages.get",
   route: "/v1/messages/{messageId}",
+  method: "GET",
   cliName: "messages-get",
   scope: "mail:read.message",
   request: messageRequestSchema,
   response: messageResponseSchema,
+  errors: [messageNotFoundErrorDefinition],
   streaming: "none",
   strictness: "strict",
 });
@@ -516,10 +560,12 @@ export const messageRetrievalOperation = messageOperation;
 export const threadOperation = defineOperation({
   key: "threads.get",
   route: "/v1/threads/{threadId}",
+  method: "POST",
   cliName: "threads-get",
   scope: "mail:read.thread",
   request: threadRequestSchema,
   response: threadResponseSchema,
+  errors: [threadInvalidCursorErrorDefinition, threadNotFoundErrorDefinition],
   streaming: "none",
   strictness: "strict",
 });
@@ -528,10 +574,12 @@ export const threadRetrievalOperation = threadOperation;
 export const rawMessageOperation = defineOperation({
   key: "messages.raw",
   route: "/v1/messages/{messageId}/raw",
+  method: "GET",
   cliName: "messages-raw",
   scope: "mail:read.raw",
   request: rawMessageRequestSchema,
   response: rawMessageResponseSchema,
+  errors: [rawMessageNotFoundErrorDefinition],
   streaming: "bytes",
   strictness: "strict",
 });
@@ -540,10 +588,12 @@ export const rawMessageRetrievalOperation = rawMessageOperation;
 export const attachmentOperation = defineOperation({
   key: "attachments.get",
   route: "/v1/attachments/{attachmentId}",
+  method: "GET",
   cliName: "attachments-get",
   scope: "mail:read.attachment",
   request: attachmentRequestSchema,
   response: attachmentResponseSchema,
+  errors: [attachmentNotFoundErrorDefinition],
   streaming: "bytes",
   strictness: "strict",
 });

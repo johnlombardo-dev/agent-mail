@@ -28,14 +28,15 @@ function auth(): HttpCredentialResolution {
 }
 
 function jsonRequest(path: string, body: unknown, correlationId = "correlation:test"): Request {
+  const method = path === searchRoute || path.startsWith("/v1/threads/") ? "POST" : "GET";
   return new Request(`http://localhost${path}`, {
-    method: "POST",
+    method,
     headers: {
       authorization: "Bearer test",
       "content-type": "application/json",
       "x-correlation-id": correlationId,
     },
-    body: JSON.stringify(body),
+    ...(method === "POST" ? { body: JSON.stringify(body) } : {}),
   });
 }
 

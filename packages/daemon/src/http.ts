@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { createHash } from "node:crypto";
 import {
   actionPlanCreateOperation,
@@ -8,6 +9,7 @@ import {
   createErrorRegistry,
   createOperationRegistry,
   defineError,
+  parseErrorDefinition,
   publicErrorEnvelopeSchema,
   reportAdminOperationDefinitions,
   retrievalOperationDefinitions,
@@ -18,6 +20,7 @@ import {
   type OperationDefinition,
   type OperationRegistry,
   type PublicErrorEnvelope,
+  type PublicErrorStatus,
 } from "@agent-mail/contracts";
 import { z } from "zod";
 import { DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES } from "./config";
@@ -94,101 +97,119 @@ const emptyDetailsSchema = z.strictObject({});
 
 /** The public errors produced by the transport before a feature handler runs. */
 export const httpErrorRegistry = createErrorRegistry([
-  defineError({ code: "invalid_request", details: emptyDetailsSchema }),
-  defineError({ code: "missing_credentials", details: emptyDetailsSchema }),
-  defineError({ code: "invalid_credentials", details: emptyDetailsSchema }),
-  defineError({ code: "expired_credentials", details: emptyDetailsSchema }),
-  defineError({ code: "insufficient_scope", details: emptyDetailsSchema }),
-  defineError({ code: "request_too_large", details: emptyDetailsSchema }),
-  defineError({ code: "not_found", details: emptyDetailsSchema }),
-  defineError({ code: "internal_error", details: emptyDetailsSchema }),
+  defineError({ code: "invalid_request", status: 400, details: emptyDetailsSchema }),
+  defineError({ code: "missing_credentials", status: 401, details: emptyDetailsSchema }),
+  defineError({ code: "invalid_credentials", status: 401, details: emptyDetailsSchema }),
+  defineError({ code: "expired_credentials", status: 401, details: emptyDetailsSchema }),
+  defineError({ code: "insufficient_scope", status: 403, details: emptyDetailsSchema }),
+  defineError({ code: "request_too_large", status: 413, details: emptyDetailsSchema }),
+  defineError({ code: "not_found", status: 404, details: emptyDetailsSchema }),
+  defineError({ code: "internal_error", status: 500, details: emptyDetailsSchema }),
   defineError({
     code: "action.approval_forbidden",
+    status: 403,
     message: "request credentials cannot perform this approval operation",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.approval_presence_required",
+    status: 403,
     message: "fresh human-present authentication is required",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.operator_presence_unsupported",
+    status: 503,
     message: "secure operator presence is unavailable",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.operator_challenge_capacity",
+    status: 429,
     message: "operator challenge capacity is exhausted",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.operator_challenge_not_found",
+    status: 404,
     message: "operator challenge was not found",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.operator_challenge_expired",
+    status: 409,
     message: "operator challenge has expired",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.operator_challenge_consumed",
+    status: 409,
     message: "operator challenge was already consumed",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.operator_assertion_invalid",
+    status: 403,
     message: "operator presence assertion is invalid",
     details: actionAuthorityErrorDetails.empty,
   }),
   defineError({
     code: "action.approval_not_found",
+    status: 409,
     message: "action approval was not found",
     details: actionAuthorityErrorDetails.approval,
   }),
   defineError({
     code: "action.approval_mismatch",
+    status: 409,
     message: "action approval does not match the frozen plan",
     details: actionAuthorityErrorDetails.approval,
   }),
   defineError({
     code: "action.approval_expired",
+    status: 409,
     message: "action approval has expired",
     details: actionAuthorityErrorDetails.expiredApproval,
   }),
   defineError({
     code: "action.approval_cancelled",
+    status: 409,
     message: "action approval was cancelled",
     details: actionAuthorityErrorDetails.cancelledApproval,
   }),
   defineError({
     code: "action.approval_invalidated",
+    status: 409,
     message: "action approval is no longer valid",
     details: actionAuthorityErrorDetails.invalidatedApproval,
   }),
   defineError({
     code: "action.approval_consumed",
+    status: 409,
     message: "action approval was already consumed",
     details: actionAuthorityErrorDetails.consumedApproval,
   }),
   defineError({
     code: "action.plan_version_stale",
+    status: 409,
     message: "action plan version is stale",
     details: actionAuthorityErrorDetails.planVersion,
   }),
   defineError({
     code: "action.plan_not_pending",
+    status: 409,
     message: "action plan is not pending",
     details: actionAuthorityErrorDetails.planState,
   }),
   defineError({
     code: "action.plan_expired",
+    status: 409,
     message: "action plan has expired",
     details: actionAuthorityErrorDetails.expiredPlan,
   }),
   defineError({
     code: "action.legacy_authority",
+    status: 409,
     message: "action plan lacks trusted approval authority",
     details: actionAuthorityErrorDetails.legacy,
   }),
@@ -478,52 +499,13 @@ type PublicHttpErrorCode =
 
 function errorStatus(
   body: unknown,
-): 200 | 400 | 401 | 403 | 404 | 409 | 413 | 415 | 429 | 500 | 503 {
+  errorRegistry: Pick<ErrorRegistry, "get">,
+  operation?: Pick<OperationDefinition, "errors">,
+): 200 | PublicErrorStatus | undefined {
   const result = publicErrorEnvelopeSchema.safeParse(body);
   if (!result.success) return 200;
-  switch (result.data.code) {
-    case "invalid_request":
-    case "invalid_query":
-    case "invalid_cursor":
-      return 400;
-    case "missing_credentials":
-    case "invalid_credentials":
-    case "expired_credentials":
-      return 401;
-    case "insufficient_scope":
-      return 403;
-    case "request_too_large":
-      return 413;
-    case "not_found":
-      return 404;
-    case "action.operator_challenge_capacity":
-      return 429;
-    case "action.operator_presence_unsupported":
-      return 503;
-    case "action.approval_forbidden":
-    case "action.approval_presence_required":
-    case "action.operator_assertion_invalid":
-      return 403;
-    case "action.operator_challenge_not_found":
-      return 404;
-    case "action.operator_challenge_expired":
-    case "action.operator_challenge_consumed":
-    case "action.approval_not_found":
-    case "action.approval_mismatch":
-    case "action.approval_expired":
-    case "action.approval_cancelled":
-    case "action.approval_invalidated":
-    case "action.approval_consumed":
-    case "action.plan_version_stale":
-    case "action.plan_not_pending":
-    case "action.plan_expired":
-    case "action.legacy_authority":
-      return 409;
-    case "internal_error":
-      return 500;
-    default:
-      return 500;
-  }
+  const operationError = operation?.errors.find(({ code }) => code === result.data.code);
+  return operationError?.status ?? errorRegistry.get(result.data.code)?.status;
 }
 
 function fallbackCorrelationId(): string {
@@ -901,7 +883,7 @@ function logPrivate(logger: PrivateHttpLogger | undefined, entry: PrivateHttpLog
 }
 
 type FeatureProjection = Readonly<{
-  readonly status: 200 | 400 | 401 | 403 | 404 | 409 | 413 | 415 | 429 | 500 | 503;
+  readonly status: PublicErrorStatus;
   readonly body: PublicErrorEnvelope;
 }>;
 
@@ -927,14 +909,29 @@ function projectRegisteredFeatureError(
   if (!isJsonObject(candidate)) return undefined;
   if (typeof candidate.message !== "string" || !isJsonObject(candidate.details)) return undefined;
 
-  const registered = errorRegistry.safeParse({
+  const envelope = {
     code: candidate.code,
     message: candidate.message,
     correlationId,
     details: candidate.details,
-  });
+  };
+  const operationDefinition = operation.errors.find(({ code }) => code === candidate.code);
+  if (operationDefinition !== undefined) {
+    try {
+      const body = parseErrorDefinition(operationDefinition, envelope);
+      return Object.freeze({ status: operationDefinition.status, body });
+    } catch {
+      return undefined;
+    }
+  }
+  const registered = errorRegistry.safeParse(envelope);
   if (registered.success) {
-    return Object.freeze({ status: errorStatus(registered.data), body: registered.data });
+    const status = errorRegistry.get(registered.data.code)?.status;
+    if (status === undefined) return undefined;
+    return Object.freeze({
+      status,
+      body: registered.data,
+    });
   }
 
   const parsed = operation.response.safeParse({
@@ -947,11 +944,9 @@ function projectRegisteredFeatureError(
   const publicParsed = publicErrorEnvelopeSchema.safeParse(parsed.data);
   if (!publicParsed.success) return undefined;
 
-  const body: PublicErrorEnvelope = publicParsed.data;
-  return Object.freeze({
-    status: errorStatus(body),
-    body,
-  });
+  // A response schema can admit a public error that has no operation-owned
+  // status metadata. Do not guess a status for that contract escape.
+  return undefined;
 }
 
 /**
@@ -996,21 +991,26 @@ export function createRegistryTransportAdapter(
               context: context[authenticatedContext],
             };
       if (authentication.kind === "denied") {
-        return {
-          status: errorStatus(
-            publicError(
-              authentication.code,
-              "request credentials are not authorized",
+        const body = publicError(
+          authentication.code,
+          "request credentials are not authorized",
+          context.correlationId,
+          errorRegistry,
+        );
+        const status = errorStatus(body, errorRegistry, operation);
+        if (status === undefined || status === 200)
+          return {
+            status: 500,
+            body: publicError(
+              "internal_error",
+              "internal server error",
               context.correlationId,
               errorRegistry,
             ),
-          ),
-          body: publicError(
-            authentication.code,
-            "request credentials are not authorized",
-            context.correlationId,
-            errorRegistry,
-          ),
+          };
+        return {
+          status,
+          body,
         };
       }
       const insufficientScope = authorizationFailure(
@@ -1135,7 +1135,24 @@ export function createRegistryTransportAdapter(
         };
       }
 
-      return { status: errorStatus(parsedOutput), body: parsedOutput };
+      const parsedError = publicErrorEnvelopeSchema.safeParse(parsedOutput);
+      const status = errorStatus(parsedOutput, errorRegistry, operation);
+      if (!parsedError.success || status === 200) return { status: 200, body: parsedOutput };
+      if (status !== undefined) return { status, body: parsedOutput };
+      logPrivate(options.logger, {
+        kind: "invalid-handler-output",
+        operationKey,
+        correlationId: context.correlationId,
+      });
+      return {
+        status: 500,
+        body: publicError(
+          "internal_error",
+          "internal server error",
+          context.correlationId,
+          errorRegistry,
+        ),
+      };
     },
   });
 }
@@ -1601,8 +1618,39 @@ export function createHttpApp(options: HttpAppOptions = {}): Hono {
   });
   const app = new Hono();
 
+  // Hono's method router otherwise emits its own unstructured 404. Keep the
+  // wrong-method outcome stable while still rejecting before admission/body IO.
+  app.use("*", async (context, next) => {
+    const path = context.req.path;
+    const matched = registry.operations.find((candidate) => {
+      const routeParts = candidate.route.split("/");
+      const pathParts = path.split("/");
+      return (
+        routeParts.length === pathParts.length &&
+        routeParts.every((part, index) => {
+          const actual = pathParts[index];
+          return (
+            actual !== undefined && (part.startsWith("{") ? actual.length > 0 : part === actual)
+          );
+        })
+      );
+    });
+    if (matched !== undefined && matched.method !== context.req.method.toUpperCase()) {
+      return context.json(
+        publicError(
+          "not_found",
+          "route was not found",
+          correlationIdFrom(context.req.raw),
+          errorRegistry,
+        ),
+        404,
+      );
+    }
+    await next();
+  });
+
   for (const operation of registry.operations) {
-    app.all(operationRouteToHonoRoute(operation.route), async (context) => {
+    const routeHandler = async (context: Context) => {
       const request = context.req.raw;
       const correlationId = correlationIdFrom(request);
       const params: Readonly<Record<string, string>> = { ...context.req.param() };
@@ -1640,7 +1688,20 @@ export function createHttpApp(options: HttpAppOptions = {}): Hono {
         ),
       );
       return context.json(result.body, result.status);
-    });
+    };
+    switch (operation.method) {
+      case "GET":
+        app.get(operationRouteToHonoRoute(operation.route), routeHandler);
+        break;
+      case "POST":
+        app.post(operationRouteToHonoRoute(operation.route), routeHandler);
+        break;
+      case "DELETE":
+        app.delete(operationRouteToHonoRoute(operation.route), routeHandler);
+        break;
+      default:
+        throw new TypeError("unsupported operation method");
+    }
   }
 
   app.notFound((context) => {

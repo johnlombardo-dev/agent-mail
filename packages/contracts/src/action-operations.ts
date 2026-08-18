@@ -578,6 +578,7 @@ export const uncertainReconciliationResponseSchema = z.strictObject({
 export const actionPlanCreateOperation = defineOperation({
   key: "action-plans.create",
   route: "/v1/action-plans",
+  method: "POST",
   cliName: "action-plans-create",
   scope: "mail:action.create",
   request: actionPlanCreateRequestSchema,
@@ -589,6 +590,7 @@ export const actionPlanCreateOperation = defineOperation({
 export const actionPlanInspectOperation = defineOperation({
   key: "action-plans.inspect",
   route: "/v1/action-plans/{planId}",
+  method: "GET",
   cliName: "action-plans-inspect",
   scope: "mail:action.inspect",
   request: actionPlanInspectRequestSchema,
@@ -664,6 +666,7 @@ export const actionPlanCommitResponseV1Schema = z
 export const actionPlanApproveOperation = defineOperation({
   key: "action-plans.approve",
   route: "/v1/action-plans/{planId}/approvals",
+  method: "POST",
   cliName: "action-plans-approve",
   scope: "mail:action.approve",
   request: actionPlanApproveRequestV1Schema,
@@ -675,6 +678,7 @@ export const actionPlanApproveOperation = defineOperation({
 export const actionPlanCancelApprovalOperation = defineOperation({
   key: "action-plans.cancel-approval",
   route: "/v1/action-plans/{planId}/approvals/{approvalId}",
+  method: "DELETE",
   cliName: "action-plans-approval-cancel",
   scope: "mail:action.approve",
   request: actionPlanCancelApprovalRequestV1Schema,
@@ -686,6 +690,7 @@ export const actionPlanCancelApprovalOperation = defineOperation({
 export const actionPlanCommitOperation = defineOperation({
   key: "action-plans.commit",
   route: "/v1/action-plans/{planId}/commit",
+  method: "POST",
   cliName: "action-plans-commit",
   scope: "mail:action.commit",
   request: actionPlanCommitRequestV1Schema,
@@ -711,6 +716,7 @@ export function assertPublicActionOperation(definition: OperationDefinition): Op
   if (
     expected === undefined ||
     expected.route !== definition.route ||
+    expected.method !== definition.method ||
     expected.cliName !== definition.cliName ||
     expected.scope !== definition.scope ||
     expected.streaming !== definition.streaming ||

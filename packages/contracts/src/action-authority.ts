@@ -278,6 +278,7 @@ export const actionAuthorityErrorDetails = {
 export const operatorSessionOperation = defineOperation({
   key: "operator-sessions.create",
   route: "/v1/operator-sessions",
+  method: "POST",
   cliName: "operator-sessions-create",
   scope: null,
   request: operatorSessionRequestSchema,
@@ -289,6 +290,7 @@ export const operatorSessionOperation = defineOperation({
 export const authorityApproveOperation = defineOperation({
   key: "action-plans.approve",
   route: "/v1/action-plans/{planId}/approvals",
+  method: "POST",
   cliName: "action-plans-approve",
   scope: "mail:action.approve",
   request: actionPlanApproveRequestSchema,
@@ -300,6 +302,7 @@ export const authorityApproveOperation = defineOperation({
 export const authorityCancelApprovalOperation = defineOperation({
   key: "action-plans.cancel-approval",
   route: "/v1/action-plans/{planId}/approvals/{approvalId}",
+  method: "DELETE",
   cliName: "action-plans-approval-cancel",
   scope: "mail:action.approve",
   request: actionPlanCancelApprovalRequestSchema,
@@ -311,6 +314,7 @@ export const authorityCancelApprovalOperation = defineOperation({
 export const actionPlanAuthorityCommitOperation = defineOperation({
   key: "action-plans.commit",
   route: "/v1/action-plans/{planId}/commit",
+  method: "POST",
   cliName: "action-plans-commit",
   scope: "mail:action.commit",
   request: actionPlanAuthorityCommitRequestSchema,

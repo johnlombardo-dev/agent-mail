@@ -260,6 +260,7 @@ describe("remote action operation contracts", () => {
     const executeRaw = defineOperation({
       key: "action-plans.execute-raw",
       route: "/v1/action-plans/executeRaw",
+      method: "POST",
       cliName: "action-plans-execute-raw",
       scope: "mail:action.execute-raw",
       request: z.strictObject({ target: z.string() }),
