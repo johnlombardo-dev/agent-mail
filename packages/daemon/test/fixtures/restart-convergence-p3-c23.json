@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "oracleSnapshotSha256": "a4cebfe296c0c63c29a73945001da0c82db5d2f842a6591e720540db3376b47a",
+  "interruptionPoints": [
+    "download",
+    "parse",
+    "blob-promotion",
+    "storage-transaction",
+    "checkpoint-update",
+    "epoch-reset",
+    "pause",
+    "stop"
+  ],
+  "snapshotDomains": [
+    "messages",
+    "placements",
+    "headers",
+    "addresses",
+    "bodyParts",
+    "attachments",
+    "blobs",
+    "blobReferences",
+    "routingDecisions",
+    "routingOrigins",
+    "localRoutingProvenance",
+    "tombstones",
+    "checkpoints",
+    "completions",
+    "journal"
+  ],
+  "resourceEvidence": [
+    "fakeImapOpenHandles",
+    "activeQueueDownloads",
+    "controlDecisionListeners",
+    "stagingFiles"
+  ],
+  "interruptMarker": {
+    "schemaVersion": 1,
+    "abruptExitCode": 75,
+    "normalEnvelope": false,
+    "durableFacts": [
+      "messageCount",
+      "placementCount",
+      "tombstoneCount",
+      "journalCount",
+      "checkpointVersion",
+      "checkpointBackfillCompleted",
+      "canonicalBlobCount",
+      "stagingFiles"
+    ],
+    "controlFacts": [
+      "command",
+      "observed",
+      "actorState",
+      "version",
+      "configurationDigest",
+      "actorListenerCount",
+      "decisionListenerCount"
+    ]
+  },
+  "cutMarkers": {
+    "download": "download-queue-before-fetch",
+    "parse": "parse-after-stage-before-parse-success",
+    "blob-promotion": "blob-publication-before-promotion-storage",
+    "storage-transaction": "storage-transaction-before-routing-write",
+    "checkpoint-update": "checkpoint-update-before-completion-write",
+    "epoch-reset": "epoch-reset-before-journal-write",
+    "pause": "real-control-pause-accepted",
+    "stop": "real-control-stop-accepted"
+  },
+  "oracleGeneration": "bun -e 'import { mkdtemp } from \"node:fs/promises\"; import { tmpdir } from \"node:os\"; import { runChild, snapshotDigest } from \"./packages/daemon/test/helpers/restart-convergence-child.ts\"; const root = await mkdtemp(`${tmpdir()}/agent-mail-p3-c23-oracle-`); const result = await runChild(root, \"oracle\"); if (result.snapshot === undefined) throw new Error(\"missing snapshot\"); console.log(snapshotDigest(result.snapshot));'",
+  "reproduction": "bun test packages/daemon/test/restart-convergence-p3-c23.test.ts"
+}
