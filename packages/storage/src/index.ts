@@ -5,6 +5,7 @@ export * from "./blob-stage-cleanup";
 export * from "./absence-reconciliation";
 export * from "./action-plan-attempt";
 export * from "./action-plan-recovery";
+export * from "./action-plan-restart-recovery";
 export * from "./action-plan-reconciliation";
 export * from "./action-plan-result";
 export * from "./action-plan-finalization";

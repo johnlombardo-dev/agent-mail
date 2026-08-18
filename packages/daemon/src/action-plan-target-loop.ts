@@ -68,6 +68,13 @@ export type ActionPlanTargetLoopOptions = Readonly<{
       readonly raw: unknown;
     }>,
   ) => unknown;
+  /** @internal Test-only process-crash seam; absent in production callers. */
+  readonly onDurableTargetResult?: (
+    input: Readonly<{
+      readonly attempt: RemoteAttempt;
+      readonly result: RemoteAttemptResult;
+    }>,
+  ) => void | Promise<void>;
 }>;
 
 type AttemptBoundary = Readonly<{
@@ -169,7 +176,9 @@ async function runTarget(
       },
       mutationAdapter: options.mutationAdapter,
     });
-    return await persistExecution(options, durableAttempt.attempt, execution);
+    const result = await persistExecution(options, durableAttempt.attempt, execution);
+    await options.onDurableTargetResult?.({ attempt: durableAttempt.attempt, result });
+    return result;
   } catch {
     return await recoverAfterInterruption(options, durableAttempt.attempt);
   }
