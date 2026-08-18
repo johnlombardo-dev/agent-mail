@@ -1,17 +1,32 @@
 {
   "format": "agent-mail.sync-statechart/v1",
   "schemaVersion": 1,
-  "modelVersion": "1.0.0-candidate.7",
+  "modelVersion": "1.0.0-candidate.8",
   "status": "candidate-awaiting-independent-review",
   "oracle": {
     "normative": true,
     "description": "This file is the single normative lifecycle oracle. The accompanying Markdown files are checked views and rationale, not a second model.",
     "transitionExpansion": "A transition whose source is an array expands to one identical transition per listed atomic source configuration. @source in stoppedActors expands to the invokedActors of that source. @target in startedActors expands to the invokedActors of the target.",
     "eventSelection": "For one dequeued event, evaluate transitions from the active atomic state in listed priority order. Take the first transition whose guards all pass. If no state transition passes, apply globalEventPolicy.",
-    "checkedViewRule": "Every checked-view global-policy row must equal its globalEventPolicy oracle object in all five fields: id, ordered events, literal when condition, ordered actions, and literal result. Every checked CleanupCertificate, terminal-contract, slot-lifecycle, retention-bound, and churn row must likewise equal its named oracle object. Omitting an action column, paraphrasing GEP04/GEP05/GEP06, or copying a partial certificate field inventory is a projection failure.",
+    "checkedViewRule": "Every checked-view global-policy row must equal its globalEventPolicy oracle object in all five fields: id, ordered events, literal when condition, ordered actions, and literal result. Every checked CleanupCertificate, CleanupTerminalFault, terminal-contract, cleanup-terminal discriminant, slot-lifecycle, retention-bound, and churn row must likewise equal its named oracle object. Omitting an action column, paraphrasing GEP04/GEP05/GEP06, widening a cleanup terminal category, or copying a partial certificate/fault field inventory is a projection failure.",
     "actionOrder": "Installed XState 5.32.5 orders a selected external transition as source exit actions, transition actions, target entry actions, target invoke input evaluation, source fromCallback disposal or fromPromise abort notification, then target invoke start. Every possibly surviving resource is therefore covered before acquisition/start by either its own deduplicated release slot or the exact P3-C07 queue subtree's one parent-owned composite slot. beginOrPromoteCleanup revokes acquisition, captures the complete immutable source-tree snapshot, and creates the selected immutable phase snapshot in its transition action; a disposer or abort handler can only trigger an existing idempotent release. Slot retirement may delete registry entries only after terminal evidence reaches every referencing snapshot.",
     "versionRule": "Only advanceVersion changes context.version. Ignored, stale, duplicate, rejected, and idempotent no-op events leave it unchanged. Public observations are ordered by version only when their required incarnationId values match; different incarnations are unordered.",
-    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release and every acquisition-time release-slot terminal settles. The exact P3-C07 queue subtree is covered transitively by one parent-owned composite slot whose release is exact queue.stop() and whose terminal adopts that exact promise; the frozen queue and private job receive no registry capability and register no separate slots. cleanupBarrier is a per-invoke bounded fromPromise over a frozen registry phase terminal. Both terminal events carry the one exact CleanupCertificate type. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity, the frozen release-set identity, and zero live or unresolved resources. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation. Slot retirement cannot erase phase evidence or allow a new acquisition to reuse a settled closure.",
+    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release and every acquisition-time release-slot terminal settles. The exact P3-C07 queue subtree is covered transitively by one parent-owned composite slot whose release is exact queue.stop() and whose terminal adopts that exact promise; the frozen queue and private job receive no registry capability and register no separate slots. cleanupBarrier is a per-invoke bounded fromPromise over a frozen registry phase terminal. Both terminal events carry the one exact CleanupCertificate type; the error terminal additionally carries the one exact CleanupTerminalFault type. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity, the frozen release-set identity, and zero live or unresolved resources. The cleanup actor boundary admits only permanent/invariant terminal categories and totally normalizes every authentication/transient/unknown internal failure to the fixed safe invariant cleanup-terminal-contract fault after certified settlement. Malformed/invalid certificate material remains inside that boundary pending authoritative certification and never becomes a fromPromise rejection. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation. Slot retirement cannot erase phase evidence or allow a new acquisition to reuse a settled closure.",
+    "reservedActorEventBoundary": {
+      "externalSendEventIds": [
+        "control.start.requested",
+        "control.pause.requested",
+        "control.resume.requested",
+        "control.stop.requested",
+        "lifecycle.restart.requested",
+        "process.shutdown.requested",
+        "credentials.changed"
+      ],
+      "reservedPrefixes": ["xstate.done.actor.", "xstate.error.actor."],
+      "rule": "The public/trusted external send adapter parses only externalSendEventIds and has no constructor or escape hatch for any actor-origin or xstate-origin terminal event. Every reserved-prefix value and every event whose oracle origin is an actor or xstate is rejected before actor.send. Only XState may construct invoke terminal events with its non-forgeable actor identity.",
+      "modelInjection": "A pure transition-selector test may construct reserved terminal material to prove that invalid certificate guards select no modeled transition/action and map to GEP05. It must not call actor.send with that reserved event or claim XState runtime ignore semantics; bypassing the boundary with an actual unhandled xstate.error.actor event can put the root snapshot in status error and is a conformance violation.",
+      "mechanicalCheck": "Require the four control.* externalSendEventIds to exist with origin control-service, lifecycle.restart.requested and process.shutdown.requested to exist with origin daemon-supervisor, and credentials.changed to exist with origin credential-owner; require every xstate.done.actor.* and xstate.error.actor.* event to be absent. Parse every known event through the external schema: exactly the seven allowed IDs pass and all 17 internal/reserved events fail before actor.send."
+    },
     "cleanupTerminalFieldSetClosure": {
       "authority": "types.CleanupCertificate",
       "terminalContracts": {
@@ -21,6 +36,7 @@
       "consumers": {
         "actors.cleanupBarrier.successType": "CleanupCertificate.*",
         "actors.cleanupBarrier.errorReleaseCertificateType": "CleanupCertificate.*",
+        "types.CleanupTerminalFault.releaseCertificate": "CleanupCertificate.*",
         "faultType.WorkflowFault.releaseCertificate": "CleanupCertificate.*",
         "guards.cleanupCertificateCoversState.certificateType": "CleanupCertificate.*",
         "guards.cleanupFailureCertificateCoversState.certificateType": "CleanupCertificate.*",
@@ -74,7 +90,56 @@
       },
       "structuralCheck": "Resolve CleanupCertificate.* to the authority's exact leafFields. Both terminal event references and every consumer reference must resolve to that same type. Every ordered guardAndPolicyReads leaf must exist in the authority and therefore in both terminal contracts; duplicates, extra, missing, renamed, or separately enumerated terminal fields fail."
     },
-    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-01 through R189-19 are dispositioned as resolved in this candidate; independent exact-digest review remains required."
+    "cleanupTerminalDiscriminantClosure": {
+      "authority": "types.CleanupTerminalFault",
+      "baseAuthority": "faultType.WorkflowFault",
+      "discriminant": "category",
+      "admittedCategoryLiterals": ["permanent", "invariant"],
+      "excludedRawCategoryLiterals": ["authentication", "transient"],
+      "actorErrorType": "actors.cleanupBarrier.errorType:CleanupTerminalFault",
+      "eventErrorType": "events.xstate.error.actor.cleanupBarrier.error:CleanupTerminalFault",
+      "guardCategorySet": "guards.faultIsFatal.acceptedCategoryLiterals",
+      "transitionIds": ["T145", "T171", "T183", "T185"],
+      "expandedSources": [
+        "starting.pausing",
+        "backfilling.pausing",
+        "watching.closingForSweep",
+        "watching.closingForRetry",
+        "watching.closingForAuthBlock",
+        "watching.closingForPause",
+        "watching.closingForFailure",
+        "sweeping.pausing",
+        "retryWaiting.pausing",
+        "stopping.forStop",
+        "stopping.forRestart",
+        "stopping.forShutdown",
+        "stopping.afterFailure"
+      ],
+      "route": {
+        "nonShutdown": "each permanent/invariant current first error terminal takes exactly one expanded T145, T171, or T183 route to stopped.failed and records sync.terminal-failure",
+        "shutdown": "each permanent/invariant current first error terminal in stopping.forShutdown takes exactly T185 to stopped.shutdown and records sync.terminal-failure"
+      },
+      "rawNonfatalNormalization": {
+        "categories": ["authentication", "transient"],
+        "category": "invariant",
+        "code": "sync.cleanup-terminal-contract",
+        "safeMessage": "Cleanup terminal violated its fault-category contract.",
+        "redaction": "Discard cause, provider payload, raw message, credentials, authReason, and original message. Preserve only already-redacted bounded diagnostics in the CleanupCertificate phase snapshot."
+      },
+      "typescriptImplementationObligation": {
+        "type": "type CleanupTerminalFault = Readonly<{ category: 'permanent' | 'invariant'; code: string; safeMessage: string; releaseCertificate: CleanupCertificate }>",
+        "schema": "One strict discriminated schema accepts exactly the four named fields, errorCodeSchema-compatible code, safeErrorMessageSchema-compatible safeMessage, the literal permanent|invariant category union, and the exact CleanupCertificate schema; authReason and every extra field are rejected.",
+        "boundary": "cleanupBarrier's fromPromise implementation catches every unknown synchronous/asynchronous failure inside the actor logic. It never directly rethrows an unknown or broad WorkflowFault. It awaits or requests the registry's certified zero-audit phase settlement, then strict-parses the complete terminal and returns CleanupCertificate success or throws exactly the parsed CleanupTerminalFault. A permanent/invariant certified fault is parsed and retained; authentication/transient/unknown material is converted by the total non-throwing normalizer to the fixed invariant fault above. A malformed or invalid certificate/terminal parse never rejects into XState: the adapter keeps or resumes the authoritative registry wait and may reject later only after a valid certified terminal exists. If no CleanupCertificate exists yet, the actor remains pending on registry settlement and does not reject.",
+        "noPublicWidening": "CleanupTerminalFault is internal actor-terminal authority only. Public status/control/error-envelope schemas and their six registered public error codes are unchanged; recordTerminalFailure projects only the already accepted bounded sync.terminal-failure diagnostic."
+      },
+      "globalPolicySeparation": {
+        "GEP03": "Only an exited-invoke or duplicate terminal identity; it is never a category fallback.",
+        "GEP05": "Only model-injected current terminal material with an invalid CleanupCertificate; it is never a category or exited-invoke fallback. A conforming actor boundary never emits this material into XState.",
+        "currentTypedError": "A current first error carrying a valid certificate is structurally permanent/invariant and must take exactly one local transition."
+      },
+      "mechanicalCheck": "Require exact equality of the ordered admitted literals in CleanupTerminalFault.discriminant, faultIsFatal.acceptedCategoryLiterals, actor errorType, event error payload type, and every cleanup-error transition guard. Expand T145/T171/T183/T185 and require each of the 13 cleanup states exactly once. For each state and each admitted category, an installed XState 5.32.5 fromPromise rejection with a valid current certificate must select exactly one modeled terminal transition and leave root snapshot.status active or done, never error. Authentication/transient raw inputs must normalize to the fixed invariant fault before rejection. Actual stale old-invoke rejection must be ignored through XState actor identity under GEP03. Invalid certificate material must fail strict parsing and remain pending inside the actor boundary; a pure selector injection selects no transition/action and maps only to GEP05. Never actor.send a reserved terminal event or describe that bypass as an XState ignore guarantee."
+    },
+    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-01 through R189-20 are dispositioned as resolved in this candidate; independent exact-digest review remains required."
   },
   "frozenInputs": [
     {
@@ -393,6 +458,48 @@
         "diagnostics are bounded, redacted, and copied from the selected immutable phase snapshot"
       ],
       "authority": "This is the only cleanup success/error certificate field and constraint inventory. Consumers reference CleanupCertificate or CleanupCertificate.* and may not restate a narrower structural type."
+    },
+    {
+      "id": "CleanupTerminalFault",
+      "kind": "exact-discriminated-refinement",
+      "sealed": true,
+      "baseType": "WorkflowFault",
+      "discriminant": {
+        "path": "category",
+        "literals": ["permanent", "invariant"]
+      },
+      "fields": [
+        {
+          "path": "category",
+          "type": "literal-permanent|literal-invariant",
+          "presence": "required"
+        },
+        {
+          "path": "code",
+          "type": "errorCodeSchema-compatible-string",
+          "presence": "required"
+        },
+        {
+          "path": "safeMessage",
+          "type": "safeErrorMessageSchema-compatible-string<=500",
+          "presence": "required"
+        },
+        {
+          "path": "releaseCertificate",
+          "type": "CleanupCertificate",
+          "presence": "required"
+        }
+      ],
+      "forbiddenFields": [
+        "authReason",
+        "cause",
+        "providerPayload",
+        "password",
+        "token",
+        "authorizationHeader",
+        "rawCommand"
+      ],
+      "authority": "This is the only cleanupBarrier error authority. Its exact four-field object admits the same permanent/invariant literal category set as the cleanup transition guard, requires the one exact CleanupCertificate, and rejects authReason or any extra field. It is internal and does not widen any public error envelope."
     }
   ],
   "faultType": {
@@ -401,7 +508,7 @@
     "safeFields": ["category", "code", "safeMessage", "authReason"],
     "releaseCertificate": {
       "type": "CleanupCertificate",
-      "presence": "required exactly on xstate.error.actor.cleanupBarrier; forbidden on every other WorkflowFault"
+      "presence": "required exactly on CleanupTerminalFault at xstate.error.actor.cleanupBarrier; forbidden on every other WorkflowFault"
     },
     "forbiddenFields": [
       "cause",
@@ -553,7 +660,7 @@
     {
       "id": "xstate.error.actor.cleanupBarrier",
       "origin": "cleanupBarrier",
-      "payload": ["error:WorkflowFault", "error.releaseCertificate:CleanupCertificate"]
+      "payload": ["error:CleanupTerminalFault", "error.releaseCertificate:CleanupCertificate"]
     }
   ],
   "guards": [
@@ -623,6 +730,7 @@
     },
     {
       "id": "faultIsFatal",
+      "acceptedCategoryLiterals": ["permanent", "invariant"],
       "predicate": "fault.category is permanent or invariant"
     },
     {
@@ -900,9 +1008,10 @@
       ],
       "successType": "CleanupCertificate",
       "success": "One invocation-scoped CleanupCertificate. The wrapper awaits the selected immutable registry phase snapshot terminal and every frozen slot terminal, then binds the resulting certificate to its immutable invokeLease. A cached equal-scope terminal resolves the new wrapper promise; a promotion selects a fresh phase terminal.",
-      "errorType": "WorkflowFault",
+      "errorType": "CleanupTerminalFault",
       "errorReleaseCertificateType": "CleanupCertificate",
-      "error": "One invocation-scoped invariant WorkflowFault with required releaseCertificate:CleanupCertificate. The registry can create an error terminal only after every frozen slot terminal settled and the selected phase has a zero authoritative audit. Synthetic wrong scope/phase/lease/epoch/release-set/audit material fails the literal guard; an exited invoke terminal is ignored by XState identity.",
+      "error": "One invocation-scoped CleanupTerminalFault with literal category permanent or invariant and required releaseCertificate:CleanupCertificate. Permanent retains an already-safe certified permanent release failure. Invariant retains an already-safe certified invariant failure or the fixed normalization of authentication, transient, or unknown internal material. The registry can create an error terminal only after every frozen slot terminal settled and the selected phase has a zero authoritative audit. Synthetic wrong scope/phase/lease/epoch/release-set/audit material fails the literal guard; an exited invoke terminal is ignored by XState identity.",
+      "implementationErrorBoundary": "Implement cleanupBarrier as one total fromPromise boundary over unknown. Catch every synchronous/asynchronous internal failure; do not directly rethrow it. Await or request certified registry settlement and strict-parse the complete success/error terminal. Parse and throw permanent/invariant CleanupTerminalFault unchanged only after its exact CleanupCertificate exists. Convert authentication/transient/unknown material to invariant code `sync.cleanup-terminal-contract` and safeMessage `Cleanup terminal violated its fault-category contract.`, discard original message/cause/provider/auth material, attach the certified CleanupCertificate, and throw only the strict parsed CleanupTerminalFault. A malformed/invalid certificate or terminal parse stays inside the adapter: keep or resume the authoritative registry wait and reject later only after a valid certificate exists. If certification is not yet available, remain pending rather than rejecting. The normalizer itself is total and non-throwing.",
       "scopePromotion": "resourceRegistry.requestPhase is the linearization point. A watch-to-workflow request atomically updates effective scope, increments cleanupPhase, installs a fresh pending workflow phase terminal, and only then returns replacement invoke input. It does this whether the watch phase is open or settled. Old watch terminals can settle only old-phase wrappers and cannot satisfy the new phase.",
       "cancellation": "A cleanup-state replacement exits the old wrapper and increments cleanupInvokeLease. Equal-scope replacement receives a new wrapper promise over the current phase, resolving from its cached immutable terminal when already settled. Promotion receives the newly created workflow phase. Release handles remain owned and deduplicated by the one registry session; no wrapper starts a second close job.",
       "cleanupOwner": "resourceRegistry.cleanupSession is the sole release owner; cleanupBarrier is an awaited phase adapter",
@@ -2952,9 +3061,9 @@
       "events": ["xstate.done.actor.cleanupBarrier", "xstate.error.actor.cleanupBarrier"],
       "certificateType": "CleanupCertificate",
       "certificateReadSet": "CleanupCertificate.*",
-      "when": "Terminal is from an exited invoke, or certificate effectiveScope/cleanupEpoch/cleanupPhase/invokeLease/frozenReleaseSetId/certificateId/audit digest differs from current registry/context, or released is not literal true, or authoritative audit scope/frozenReleaseSetId differs, or liveResourceCount or unresolvedReleaseCount is nonzero.",
+      "when": "A model-injected current-invoke terminal fixture has certificate effectiveScope/cleanupEpoch/cleanupPhase/invokeLease/frozenReleaseSetId/certificateId/audit digest different from current registry/context, or released is not literal true, or authoritative audit scope/frozenReleaseSetId differs, or liveResourceCount or unresolvedReleaseCount is nonzero.",
       "actions": [],
-      "result": "Exited-invoke terminals are ignored by XState. Synthetic invalid current-invoke material cannot pass a transition. The current registry phase remains authoritative; promotion has its own fresh terminal and equal-scope replacement has a new wrapper promise over the cached/current phase."
+      "result": "The conforming cleanupBarrier boundary never emits malformed/invalid current material: it remains pending on authoritative registry settlement and may later emit only a strict valid terminal. Reserved actor-terminal event types are rejected by the external send boundary. In the pure model selector, an invalid fixture selects no transition or action and the registry phase remains authoritative. This policy makes no claim that XState ignores an actual invalid fromPromise rejection or a caller that bypasses the reserved-event boundary; either is a conformance violation. Exited/duplicate invoke identity belongs only to GEP03."
     },
     {
       "id": "GEP06",
@@ -3518,6 +3627,10 @@
     {
       "id": "I22",
       "statement": "The incarnation registry retains at most configuration.maxReleaseSlotEntries unretired slot entries, one immutable source-tree snapshot, and two immutable phase snapshots. Slot settlement publishes terminal/audit/diagnostic evidence to every referencing snapshot before registry-owned retirement deletes the entry and release closure. New resources receive never-reused generations; capacity or generation exhaustion faults before acquisition; retired entries cannot be reused and snapshot-owned current/cached/promotion/equal-scope certificates cannot change."
+    },
+    {
+      "id": "I23",
+      "statement": "cleanupBarrier errorType, the typed error event, CleanupTerminalFault, faultIsFatal, and every expanded cleanup-error transition admit exactly permanent and invariant. The total actor boundary normalizes authentication, transient, or unknown internal failure to fixed redacted invariant `sync.cleanup-terminal-contract` only after a valid CleanupCertificate exists; malformed/invalid certificate material remains inside the boundary pending certification and never rejects into XState. Every current first certified error in each of the 13 cleanup states takes exactly one modeled route and never leaves the root snapshot in status error. Actual exited/duplicate identity remains GEP03; pure-selector invalid-certificate injection remains GEP05; reserved terminal types are not externally sendable."
     }
   ],
   "unreachableStateAccount": {
@@ -3673,6 +3786,17 @@
           "one source-tree snapshot and the two-level watch/workflow lattice bound phase snapshots to current plus one superseded watch phase",
           "all terminal, release-set, diagnostic, audit, and certificate evidence is phase-snapshot owned independently of retired entries"
         ]
+      },
+      {
+        "id": "U18",
+        "configuration": "a current first cleanupBarrier error terminal leaves the XState root snapshot in status error, or authentication/transient crosses the typed cleanup terminal boundary",
+        "excludedBy": [
+          "CleanupTerminalFault is a sealed exact four-field object with literal permanent|invariant discriminant",
+          "cleanupBarrier.errorType and its typed event reference that same authority",
+          "faultIsFatal and all four cleanup-error transition definitions admit that exact literal set",
+          "the total actor boundary normalizes authentication/transient/unknown material to the fixed safe invariant terminal only after certified zero-audit settlement and keeps malformed/invalid certificate material pending instead of rejecting",
+          "installed XState 5.32.5 fromPromise rejection probes cover both admitted categories in all 13 cleanup states and assert root status is never error"
+        ]
       }
     ]
   },
@@ -3698,7 +3822,7 @@
       },
       {
         "id": "PATH-ACTOR",
-        "generator": "each actor success, normal completion, error category, cancellation, late terminal event, literal cleanup certificate mismatch, fromCallback disposal, fromPromise abort, acquisition-time slot registration, open/settled promotion, both terminal/promotion orders, and same-scope replacement settlement",
+        "generator": "each actor success, normal completion, error category, cancellation, late terminal event, literal cleanup certificate mismatch, every admitted cleanup terminal category in all 13 cleanup states, raw authentication/transient normalization, fromCallback disposal, fromPromise abort, acquisition-time slot registration, open/settled promotion, both terminal/promotion orders, and same-scope replacement settlement",
         "obligations": [
           "all workflow/nested actors",
           "all control outcomes",
@@ -3879,7 +4003,7 @@
       },
       {
         "id": "PROP-08",
-        "statement": "Every U01-U17 forbidden configuration remains unreachable; the generator invokes the construction attempt recorded for each U01 through U17 row."
+        "statement": "Every U01-U18 forbidden configuration remains unreachable; the generator invokes the construction attempt recorded for each U01 through U18 row."
       },
       {
         "id": "PROP-09",
@@ -3912,6 +4036,10 @@
       {
         "id": "PROP-16",
         "statement": "Across 10000 normal recurring-sweep/composite-queue plus direct-resource replacement cycles in one incarnation, slotEntryCount never exceeds the configured bound and returns to zero after each cycle; every slotGeneration is unique and increasing; every release call reaches only its own generation; source-tree snapshots stay at most one and phase snapshots at most two; retiring versus non-retiring reference registries produce byte-identical current-pending/current-cached/watch-to-workflow/equal-scope success/error CleanupCertificates; capacity and generation exhaustion return their exact safe WorkflowFault before identity allocation or resource acquisition and leak no slot, closure, audit unit, or snapshot."
+      },
+      {
+        "id": "PROP-17",
+        "statement": "The CleanupTerminalFault discriminant, cleanupBarrier errorType, typed error event, faultIsFatal accepted literals, and T145/T171/T183/T185 category domain are identical. Installed XState 5.32.5 probes reject permanent and invariant in every one of the 13 cleanup states: each current first valid-certificate terminal selects exactly one stopped.failed/stopped.shutdown route and no root snapshot has status error. Authentication/transient raw phase failures normalize to the exact fixed redacted invariant terminal before rejection; malformed/invalid certificates remain pending inside the actor boundary. An actual stale old-invoke rejection remains GEP03; a pure-selector invalid-certificate fixture remains GEP05; reserved actor terminal events fail the external schema before actor.send."
       }
     ],
     "registryChurn": {
@@ -3955,7 +4083,8 @@
       "control cache fingerprint/retention/capacity state",
       "process incarnation identity",
       "cleanup phase and invoke lease plus phase-terminal identity",
-      "release-slot generation/high-water mark, retained-entry count, source-tree/phase snapshot counts, and retirement evidence"
+      "release-slot generation/high-water mark, retained-entry count, source-tree/phase snapshot counts, and retirement evidence",
+      "cleanup terminal raw/admitted category, normalized code/message, selected transition, public outcome, and root snapshot status"
     ]
   },
   "traceability": [
@@ -4011,9 +4140,9 @@
         "T184",
         "T185"
       ],
-      "invariants": ["I06", "I07", "I15", "I21", "I22"],
-      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while callback disposal/promise abort, direct closes, and exact P3-C07 queue.stop() are delayed; permute direct/composite release success/error with current/cached/promotion/equal-scope/replacement settlement across all eight source-exit phase cases; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
-      "postcondition": "One registry session owns acquisition-time direct slots and at most one workflow-scoped P3-C07 composite queue slot; phase freeze precedes source disposal/abort; the composite slot terminal is the exact queue.stop() promise and settles only after active adapter cleanup. Terminal evidence enters immutable source-tree/phase snapshots before the slot entry retires; promotion installs a fresh versioned workflow terminal from that snapshot; equal-scope replacement settles from a new wrapper over the current phase; exact CleanupCertificate scope/release-set/audit identity and zero live/unresolved counts gate paused/stopped; retirement cannot change the certificate; shutdown never restarts its incarnation."
+      "invariants": ["I06", "I07", "I15", "I21", "I22", "I23"],
+      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while callback disposal/promise abort, direct closes, and exact P3-C07 queue.stop() are delayed; permute direct/composite release success/error with current/cached/promotion/equal-scope/replacement settlement across all eight source-exit phase cases; reject permanent/invariant CleanupTerminalFault in all 13 cleanup states; inject raw authentication/transient before actor-boundary normalization; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
+      "postcondition": "One registry session owns acquisition-time direct slots and at most one workflow-scoped P3-C07 composite queue slot; phase freeze precedes source disposal/abort; the composite slot terminal is the exact queue.stop() promise and settles only after active adapter cleanup. Terminal evidence enters immutable source-tree/phase snapshots before the slot entry retires; promotion installs a fresh versioned workflow terminal from that snapshot; equal-scope replacement settles from a new wrapper over the current phase; exact CleanupCertificate scope/release-set/audit identity and zero live/unresolved counts gate paused/stopped; retirement cannot change the certificate. Every current first cleanup error is a strict permanent/invariant CleanupTerminalFault, selects one modeled route, and never produces root status error; raw nonfatal/unknown material is fixed-message invariant-normalized before rejection. Shutdown never restarts its incarnation."
     },
     {
       "id": "F19",
@@ -4081,9 +4210,10 @@
         "I19",
         "I20",
         "I21",
-        "I22"
+        "I22",
+        "I23"
       ],
-      "failureInjection": "Generate controls and actor outcomes at every state, guard branch, callback-disposal/promise-abort cancellation edge, timer edge, cleanup epoch/phase/lease/release-set race, and restart boundary.",
+      "failureInjection": "Generate controls and actor outcomes at every state, guard branch, callback-disposal/promise-abort cancellation edge, timer edge, cleanup epoch/phase/lease/release-set/category race, and restart boundary.",
       "postcondition": "The active state names current work, owns every effect, and controls report only observed transitions."
     }
   ],
@@ -4204,12 +4334,12 @@
       "Broader watch-to-workflow request: before replacement invoke creation, atomically select the broader subset of the immutable source-tree snapshot, including terminal evidence for already-retired members and any workflow composite queue slot, set workflow, allocate phase+1 and lease+1, install a fresh pending immutable workflow phase over that union, reuse/deduplicate only still-live release triggers, and run a fresh snapshot-local workflow audit. No acquisition capability is reopened. This rule is identical for open and settled watch phases.",
       "finishCleanupScope: only after literal CleanupCertificate admission, close the session and purge its one source-tree plus at most two phase snapshots; the event-owned immutable certificate remains available to following actions, and later cleanup allocates a new epoch."
     ],
-    "phaseSettlement": "Only the registry may settle a phase. The immutable phase snapshot already owns its effective scope, ordered frozen release set, release-set identity, and terminal references. It awaits every reference even when one rejects, replaces the open snapshot with an immutable settled snapshot containing every terminal evidence/diagnostic/audit fact, and creates a CleanupCertificate success or WorkflowFault plus CleanupCertificate error only at literal liveResourceCount=0 and unresolvedReleaseCount=0. A superseded phase may finish for its old wrapper but cannot mutate or settle the current phase. Retired slot entries are never consulted.",
+    "phaseSettlement": "Only the registry may settle a phase. The immutable phase snapshot already owns its effective scope, ordered frozen release set, release-set identity, and terminal references. It awaits every reference even when one rejects, replaces the open snapshot with an immutable settled snapshot containing every terminal evidence/diagnostic/audit fact, and creates a CleanupCertificate success or CleanupTerminalFault error only at literal liveResourceCount=0 and unresolvedReleaseCount=0. A certified permanent/invariant release failure retains that category. Authentication/transient/unknown failure material is redacted and converted to the fixed invariant `sync.cleanup-terminal-contract` fault; no broad WorkflowFault rejection crosses the adapter boundary. A superseded phase may finish for its old wrapper but cannot mutate or settle the current phase. Retired slot entries are never consulted.",
     "invokeAdapter": "Each cleanupBarrier fromPromise awaits resourceRegistry.awaitPhase(epoch, phase), which always returns a new promise for that invocation over the immutable phase snapshot. If the same phase is already settled, the registry resolves the new promise from its cached immutable terminal and the wrapper binds the current lease. It never reuses an old invocation output. If scope promoted, the wrapper awaits the fresh workflow phase, never the old settled watch promise. Slot retirement has no effect on either result.",
     "admissionType": "CleanupCertificate",
     "admissionReadSet": "CleanupCertificate.*",
-    "admission": "Parse the success output or WorkflowFault.releaseCertificate through the exact CleanupCertificate authority, then require current XState invoke plus exact certificate/context/registry epoch, phase, invoke lease, effective-scope, and frozenReleaseSetId equality; scope dominance; audit scope and release-set equality; literal released=true; literal zero live and unresolved counts; and current immutable phase certificate/audit digest equality.",
-    "invalidMaterial": "Wrong scope, stale phase/epoch/lease, replaced invoke, wrong frozen release set, wrong certificate ID/digest, or nonzero live/unresolved audit cannot transition. Old-invoke events are ignored; synthetic current-invoke invalid material leaves the current phase pending/settled and observable as an invariant fault at the adapter boundary.",
+    "admission": "Parse the success output or CleanupTerminalFault.releaseCertificate through the exact CleanupCertificate authority, parse every error through the strict CleanupTerminalFault authority, then require current XState invoke plus exact certificate/context/registry epoch, phase, invoke lease, effective-scope, and frozenReleaseSetId equality; scope dominance; audit scope and release-set equality; literal released=true; literal zero live and unresolved counts; and current immutable phase certificate/audit digest equality.",
+    "invalidMaterial": "Wrong scope, stale phase/epoch/lease, replaced invoke, wrong frozen release set, wrong certificate ID/digest, or nonzero live/unresolved audit cannot transition. Old-invoke events are ignored under GEP03. Malformed/invalid current material is caught before fromPromise rejection and remains pending on authoritative registry certification; a later valid terminal may use the fixed invariant normalization. A pure model-selector injection maps to GEP05 but is never sent to XState and is not a runtime-ignore claim.",
     "sourceExitTraces": [
       {
         "id": "SOURCE-EXIT-01",
@@ -4481,7 +4611,7 @@
     {
       "id": "R189-13",
       "disposition": "resolved",
-      "oracle": ["PROP-08 covers U01-U17"]
+      "oracle": ["PROP-08 covers U01-U18"]
     },
     {
       "id": "R189-14",
@@ -4543,6 +4673,7 @@
       "disposition": "resolved",
       "oracle": [
         "types.CleanupCertificate",
+        "types.CleanupTerminalFault.releaseCertificate",
         "faultType.WorkflowFault.releaseCertificate",
         "events.xstate.done.actor.cleanupBarrier",
         "events.xstate.error.actor.cleanupBarrier",
@@ -4568,6 +4699,31 @@
         "U17",
         "PROP-16",
         "F17",
+        "F18"
+      ]
+    },
+    {
+      "id": "R189-20",
+      "disposition": "resolved",
+      "oracle": [
+        "types.CleanupTerminalFault",
+        "faultType.WorkflowFault.releaseCertificate",
+        "actors.cleanupBarrier.errorType",
+        "actors.cleanupBarrier.implementationErrorBoundary",
+        "events.xstate.error.actor.cleanupBarrier",
+        "guards.faultIsFatal.acceptedCategoryLiterals",
+        "T145",
+        "T171",
+        "T183",
+        "T185",
+        "oracle.cleanupTerminalDiscriminantClosure",
+        "oracle.reservedActorEventBoundary",
+        "cleanupProtocol.phaseSettlement",
+        "GEP03",
+        "GEP05",
+        "I23",
+        "U18",
+        "PROP-17",
         "F18"
       ]
     }
