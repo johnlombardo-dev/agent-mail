@@ -1,5 +1,113 @@
 # P3-C15 independent sync-statechart review
 
+Status: **candidate.5 rejected; reviewer signature withheld for one high/consequential ownership defect and one low checked-view defect**.
+
+Review mode: independent whole-artifact adversarial review of candidate.5 and the accepted public contracts. A corrected orchestration stopped four briefly started exploratory lanes; no child conclusion is used as a disposition below. The reviewer independently reran every retained structural, contract, installed-XState, release-phase, frozen-source, and checked-view probe at Sol/ultra.
+
+Target:
+
+- Candidate provenance commit: `cffc2feaeb8666dc1a87c70f22b0e8b77cbbc88d`; the shared worktree HEAD advanced during review, but all four candidate artifacts remained byte-identical to this commit
+- Normative model: `docs/architecture/sync-statechart.model.json`
+- Candidate version: `1.0.0-candidate.5`
+- Candidate digest: `03a8ba94bac80f613761b63f35697195cabeb8578eae702f1307f2d42496ad69`
+- Companion hashes: statechart `6e9d9908f24f7536a4b4aca11487960be04c6f302d701b1c03f4d170a1e67677`; decisions `ec9092088f7c9eee408eb5ef992c061fafd85a6b0a3c76741351cf23a2a51751`; coverage `e77b2c2fcde31356411e21e9274c15320011086491a8f7f4b93dc3d2efad0d6e`
+- Accepted sync contract pin: `packages/contracts/src/sync-operations.ts` at `74a32d41a636ac2334d8245f1043fb6cf76e8bacd9f30895f5475e16dc0817a8`
+- Accepted error registry pin: `packages/contracts/src/error-envelope.ts` at `f02a6f25dfd884aa717f136e4024f550697a3d1a32b8cafd5bad84eaf27ae934`
+- Review contract: GitHub issue `#189`; accepted public-contract authority: issue `#196`; accepted queue authority: issue `#98`
+- Reviewer execution profile: Sol, `gpt-5.6-sol`, `ultra`
+- Accepted planning hashes: PLAN `a4b2c93d9ae47369e6893be0a7eace854fce9dccda14bd0d138d9c98b63a2afc`; EVIDENCE `544c1ee220e13b96dc88aa71096701a3887fb1adba22e9b8d60a244533f50cc9`
+
+## Result for candidate.5
+
+Candidate.5 is rejected for implementation and its exact digest is **not signed**. R189-15's abstract acquisition-time release protocol works under installed XState 5.32.5: source-exit ordering, frozen current/cached/promotion/equal-scope success and error, impossible late registration, terminal zero-live/zero-unresolved audits, and literal T097 `reenter: true` all passed. The repair is not implementable literally against the exact frozen P3-C07 queue, however. The model requires the queue registration path to receive a parent registry and requires its private job actor to register job, abort-listener, response-stream, and staging slots, while the pinned actor exposes none of those inputs or capabilities. Resolving that mismatch requires an upstream artifact amendment or a different composite ownership contract. The reviewer has no authority to choose either.
+
+R189-17 is separate and non-consequential at runtime: the normative JSON retains the accepted terminal-shutdown behavior and the cleanup guards fail closed, but its global invalid-terminal policy omits two candidate.5 certificate clauses and the coverage table is stale for GEP04/GEP06. This invalidates the claimed exact checked-view pass and should be repaired mechanically with the ownership repair.
+
+Current unresolved totals are zero critical, one high, zero medium, and one low. There is one unresolved consequential finding.
+
+## Candidate.5 complete finding disposition
+
+| Finding | Candidate.5 severity/status | Mechanical disposition |
+| --- | --- | --- |
+| R189-01 | Critical resolved | All 13 cleanup states bind minimum scope, epoch, phase, lease, frozen release-set identity, phase terminal, and registry; both terminal guards require current invoke, literal identity equality, scope dominance, and zero live/unresolved audit. |
+| R189-02 | High resolved | T117/T118 retain the accepted P3-C10 four-field non-CAS completion save. |
+| R189-03 | High resolved | T150/T156 retain the accepted shared completion repository and atomic checkpoint/completion write; T157/T158 write nothing. |
+| R189-04 | High resolved | All 15 context fields have literal or validated constructor initials; empty and populated strict status projections remain complete. |
+| R189-05 | High resolved | Terminal diagnostic policy and transition reachability distinguish childless `stopped.clean` from `stopped.failed`. |
+| R189-06 | High consequential resolved | The model and accepted issue-196 contract expand to the same exhaustive 85-cell resolver, seven settlements, exact cache/waiter effects, and six strict registered errors. |
+| R189-07 | High consequential resolved | Every accepted status, success observation, and non-success last observation requires the bounded incarnation identity; different incarnations are unordered. |
+| R189-08 | High resolved | Ordered credential revision and fault branches remain complete across bootstrap, backfill, IDLE cleanup, and sweep. |
+| R189-09 | High resolved | Accepted shutdown covers all nonterminal sources, starts no later child, and terminates through certified success or error in childless `stopped.shutdown`. |
+| R189-10 | Medium resolved as an identity pin | Both queue references and the frozen Git object match issue 98 exactly. R189-16 is the distinct candidate.5 interface/ownership incompatibility with that exact pin. |
+| R189-11 | Low resolved | The oracle contains 27 guards and 27 guard branches; references and counts are generated consistently. |
+| R189-12 | High consequential resolved in the abstract registry | Current pending/cached, watch-to-workflow promotion, and equal-scope replacement each preserve phase/set identity and settle once for success and certified error. |
+| R189-13 | Low resolved | PROP-08 constructs U01 through U16 and all 16 forbidden configurations are retained. |
+| R189-14 | Low resolved in the normative JSON | GEP04 and GEP06 encode the accepted terminal-shutdown credential and stop policy. R189-17 records the stale coverage projection. |
+| R189-15 | High consequential resolved only at the abstract protocol boundary | Acquisition-time registration, first-freeze capability revocation, idempotent trigger-only disposal/abort, all eight phase cases, zero unresolved terminal audits, and literal T097 reentry pass. R189-16 blocks conformance by the frozen descendant actor. |
+| R189-16 | **High consequential, open** | The exact P3-C07 queue cannot receive or perform the per-job/per-handle registration candidate.5 requires. An upstream amendment/re-pin or an explicitly different composite queue-terminal contract is required. |
+| R189-17 | **Low, non-consequential, open** | GEP05 omits invalid `frozenReleaseSetId` and nonzero `unresolvedReleaseCount` cases; the coverage GEP04/GEP06 rows contradict the normative JSON and the recorded exact-view PASS. |
+
+### R189-16: frozen P3-C07 cannot implement the required descendant release-slot protocol
+
+- Lane: lifecycle/resource ownership, public/upstream contract conformance, and workflow ordering.
+- Candidate facts: `frozenInputs.P3-C07` and `rawDownloadQueue.acceptedArtifact` pin issue 98 commit `e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae`, path `packages/imap/src/raw-download-queue.ts`, and SHA-256 `b676dee263b51eaac88846d03a109e6a77ad428959cfbc54de491b076d4cdd67`. The queue actor input separately requires a `parent resource registry`; its `resourceRegistration` requires a job slot before admission; its private job must register abort-listener, response-stream, and staging slots before acquisition. `cleanupProtocol.releaseSlotProtocol.descendants`, D29, I21, U16, PROP-15, F17, and F18 make those requirements normative rather than illustrative.
+- Frozen-source facts: `QueueContext` contains only adapter, capacity, queue, active job, shutdown flag, and stop waiters. The machine input contains only adapter and capacity. `DownloadInput` contains only job and adapter. The public constructor accepts only adapter and options. `withActorAbort` installs the private caller abort listener directly, and the private `download` actor calls the adapter then removes that listener in `finally`. The frozen `packages/imap` tree has no `registerReleaseSlot`, resource-registry, frozen-set, or release-slot API.
+- Direct counterexample: consume the accepted actor without revision. The parent can pre-register one queue slot and call `queue.stop()`, but the queue cannot register a queued-job slot before admission and the private job cannot register its abort-listener slot. The implementation therefore violates I21 and the claimed frozen release-set inventory even if the composite stop eventually closes safely.
+- Boundary counterexample: add the missing registry to the accepted machine input, job input, listener setup, response acquisition, and staging acquisition. That changes the exact frozen artifact and invalidates both P3-C07 pins unless issue 98's owner accepts and re-pins it.
+- Wrapper counterexample: retain the exact actor and invent a wrapper or adapter that owns the extra slots. The model names no such actor, capability adapter, or composite audit owner; the private caller abort listener is not observable through the public API. Choosing this path changes the modeled actor graph and ownership boundary rather than implementing the published metadata directly.
+- Impact: downstream implementation must silently choose between a false exact-artifact claim, a false per-resource registration claim, or an unmodeled wrapper/composite owner. Issue 189 explicitly stops on an upstream artifact or ownership/interface decision. Abstract registry probes cannot establish end-to-end source-tree closure until this seam is frozen.
+
+Bounded repair packet:
+
+1. Choose and obtain acceptance for one ownership boundary. For per-resource slots, amend P3-C07 so its typed queue input/constructor and private job acquisition path receive the scoped registration capability; register job before admission and listener/response/staging terminals before acquisition; then publish a new exact commit/path/SHA pin.
+2. Alternatively, explicitly make one parent-registered composite queue slot authoritative. Its release must call the exact `queue.stop()` terminal, and the model must replace the per-job/per-handle slot claims with a proved transitive terminal contract. Record why queued jobs own no independently live handles and why active job listener/adapter/staging cleanup completes before that terminal.
+3. Model any wrapper or capability adapter explicitly, including its actor owner, input type, registration linearization point, release terminal, audit identity, and relationship to the accepted queue. Do not leave the implementation to infer it from prose.
+4. Re-run the installed-XState source-exit and all eight phase cases through the selected P3-C07 composition, not only a synthetic registry. Assert late registration is unrepresentable and every `paused`, `stopped.clean`, `stopped.failed`, and `stopped.shutdown` observation has zero unresolved descendant close.
+
+### R189-17: global invalid-terminal policy and checked coverage are incomplete
+
+- Lane: model/schema completeness and generated-oracle fidelity.
+- Normative-policy hole: both cleanup guards require equality of `frozenReleaseSetId` and `authoritativeAudit.unresolvedReleaseCount === 0`, but GEP05 enumerates neither invalid case. A current-invoke cleanup terminal with every listed GEP05 field equal, live count zero, and unresolved count one fails its local guard, is not an exited/duplicate GEP03 event, and satisfies no stated global-policy condition. XState still ignores it, so this is fail-closed rather than a new runtime decision, but PROP-09's exhaustive known-illegal-event claim is not mechanically true.
+- Checked-view mismatch: an exact parser found 7/7 rows but only 16/21 event/condition/result fields equal. Coverage GEP04 omits `stopping.forShutdown` and describes newer revisions as otherwise transitioning; GEP06 omits `control.stop.requested`, stale-version precedence, and T041 join; GEP05's result is also not the oracle text. The same coverage file nevertheless records checked Markdown views as PASS and its R189-14 row claims the missing GEP04/GEP06 content.
+- Repair: add wrong frozen release-set identity and nonzero unresolved count to GEP05, regenerate every global-policy row from the oracle, and extend the checked-view verifier to compare global policy IDs, event lists, conditions, actions, and results.
+
+## Candidate.5 manifest and acceptance audit
+
+| Behavioral seam | Evidence status | Result |
+| --- | --- | --- |
+| Exact target and frozen inputs | Commit/object hashes plus worktree byte comparison | Exercised: candidate digest and companion/planning/contract/P3-C10/P3-C11/P3-C07 hashes exact despite unrelated shared-HEAD movement. |
+| Structural graph and references | Independent schema/reference/reachability verifier | Exercised: 24 atomic states, 91 definitions, 204 expanded transitions, 24 events, 27 guards, 24 actions, 10 actors, 15 context fields, 21 invariants, 16 forbidden configurations, 15 properties, 24 paths, 85 resolver cells, and 15 review responses; all atomic states reachable. |
+| Public identity, errors, and resolver | Model-to-contract expansion, strict Zod fixtures, focused tests | Exercised: 48 status projections, every success observation, same/cross-incarnation ordering, 85 cells at 18/21/25/21, seven settlements, and six exact errors pass. |
+| Installed XState ordering and T097 | Direct XState 5.32.5 callback/promise/self-target probes | Exercised: source exit/freeze/target input precede disposal/abort; barrier starts last. Default self-target leaves the failed child, while literal `reenter: true` starts a fresh active child. |
+| Abstract release registry | Installed-XState frozen-slot harness plus deterministic phase matrix | Exercised: callback/promise release success/error remain closing until settlement; current pending/cached, promotion, and equal-scope success/error settle once; late registration rejects; final audits are live 0/unresolved 0. |
+| Frozen descendant source tree | Exact P3-C07 source/API inspection and focused accepted tests | **Failed: R189-16.** Composite `queue.stop()` waits for active cleanup, but the exact actor has no capability for the candidate's claimed queue/job/handle registrations. |
+| Global policy and checked views | Exact JSON-to-Markdown policy parser and guard-policy comparison | **Failed: R189-17.** Five field mismatches and two omitted invalid-certificate clauses. |
+| Candidate formatting/planning integrity | Planning checker, candidate-only format check, JSON parse, whitespace/diff checks | Exercised: candidate remains valid, formatted, and byte-identical; only this retained review ledger changes. |
+
+## Candidate.5 checks and adversarial probes
+
+All commands ran from `/Users/john/.codex/worktrees/efa7/agent-mail`. No live iCloud access, remote mutation, launchd, Tailscale, production/candidate/public-contract edit, commit, push, issue edit, metrics edit, or other GitHub mutation was performed. Only this review ledger was changed.
+
+| Evidence | Exact command or probe | Exit | Result |
+| --- | --- | ---: | --- |
+| E61 | Full `gh issue view` reads for issues 189, 196, and 98; `git rev-parse`; SHA-256 over planning, candidate, contracts, and frozen Git objects; candidate-file byte comparison to `cffc2fe` | 0 | Exact candidate.5 and accepted authority established; shared-HEAD movement did not alter candidate bytes. |
+| E62 | Independent Bun inventory, unique/reference, reachability, cleanup-input, source-exit, review-response, actor-registration, and T097 structural verifier | 0 | Counts are 24 atomic, 91 definitions, 204 expanded, 24 events, 27 guards, 24 actions, 10 actors, 15 context, 21 invariants, 16 forbidden, 15 properties, 24 paths, 85 resolver cells, 15 responses; 13/13 cleanup inputs, 8/8 source-exit rows, and literal unique T097 `reenter: true` pass. |
+| E63 | Independent JSON-to-Markdown transition and global-event-policy parsers | 1 | Transitions pass 91/91 across nine fields. Global policy fails five of 21 compared fields: GEP04 condition/result, GEP05 result, and GEP06 events/result. R189-17 reproduced. |
+| E64 | Direct model-to-accepted-contract resolver/schema expansion; `bun test packages/contracts/test/sync-operations.test.ts packages/contracts/test/error-envelope.test.ts` | 0 | Resolver exact at 85 cells with 18/21/25/21 command counts; 14 tests, 561 expectations, all strict identity/error/consequential-order fixtures pass. |
+| E65 | Installed-XState 5.32.5 action-order and T097 self-target probes | 0 | Callback and promise order is source exit, transition freeze, target entry, target input, dispose/abort, target start. Default self-target is starts 1/entries 1/exits 0 with failed child; literal reentry is starts 2/entries 2/exits 1 with active replacement. |
+| E66 | Installed-XState frozen-slot harness: callback/promise crossed with release success/error | 0 | All four remain `closing` until release, then success reaches `paused` and error reaches `failed`; registration after freeze rejects, duplicate trigger yields one release, one phase settlement, and live 0/unresolved 0. |
+| E67 | Deterministic release registry matrix: current pending, current cached, watch-to-workflow promotion, and equal-scope replacement crossed with success/error | 0 | All eight cases preserve expected phase/lease/frozen set, settle each phase once, reject late registration, trigger each slot once, and finish at live 0/unresolved 0. |
+| E68 | Exact frozen P3-C07 API/input inspection; negative grep for registry/slot APIs; `bun test packages/imap/test/raw-download-queue-p3-c07.test.ts` | 0 | Frozen hash exact; no parent registry or per-job/per-handle registration capability exists. Four accepted queue tests pass, including stop waiting for adapter/stage cleanup. This proves the composite terminal but not candidate.5's stronger slot inventory. |
+| E69 | `python3 .agents/skills/plan-agent-mail/scripts/check_plan.py`; candidate-only `bunx vp fmt --check`; `jq empty`; final-newline/trailing-whitespace and scoped `git diff --check`; final hashes | 0 | Planning pack passes; four protected candidate artifacts remain valid, formatted, clean, and pinned. Review-ledger history was preserved rather than mechanically reformatted. |
+
+## Candidate.5 signature
+
+Reviewer signature for digest `03a8ba94bac80f613761b63f35697195cabeb8578eae702f1307f2d42496ad69`: **WITHHELD**.
+
+Reason: R189-16 leaves the descendant acquisition-time release owner unimplementable as written against the exact frozen P3-C07 actor. Choosing an upstream queue amendment, an explicit wrapper, or one transitive composite queue terminal is a consequential ownership/interface decision outside this reviewer's authority. R189-17 also requires a mechanical global-policy and checked-view repair. The digest must not be signed until those changes produce a new exact candidate and a fresh independent whole-artifact review finds zero consequential defects.
+
+## Retained candidate.4 and earlier review records
+
 Status: **candidate.4 rejected; reviewer signature withheld for one high/consequential lifecycle defect**.
 
 Review mode: final independent system-mode adversarial review of the complete candidate.4 artifact and its accepted public contracts. The reviewer reread the full issue and candidate rather than inheriting the candidate author's conclusion. No subagents or decomposition were used.
