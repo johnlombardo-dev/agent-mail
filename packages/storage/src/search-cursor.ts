@@ -1,5 +1,11 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
-import { parseMessageId, parseUtcInstant, type MessageId, type UtcInstant } from "@agent-mail/core";
+import {
+  parseAccountId,
+  parseMessageId,
+  parseUtcInstant,
+  type MessageId,
+  type UtcInstant,
+} from "@agent-mail/core";
 import type { SQLQueryBindings } from "bun:sqlite";
 import type { CompiledSearchQuery } from "./search-query-compiler";
 import type { CompiledStructuredFilter } from "./structured-filter-compiler";
@@ -54,15 +60,20 @@ export function createSearchCursorIntegrityCodec(secret: unknown): SearchCursorI
   });
 }
 
-/** Digest only normalized query semantics, not raw user spelling or SQL text. */
+/** Digest normalized query semantics and, for search, the exact account scope. */
 export function digestNormalizedSearchQuery(
   text: CompiledSearchQuery,
   filters: CompiledStructuredFilter,
+  accountId?: unknown,
 ): string {
   if (text.kind !== "compiled" || filters.kind !== "compiled") {
     throw new TypeError("search cursor digest requires compiled query and filters");
   }
-  const normalized = JSON.stringify({ ast: text.ast, filters: filters.filters });
+  const normalized = JSON.stringify({
+    accountId: accountId === undefined ? null : parseAccountId(accountId),
+    ast: text.ast,
+    filters: filters.filters,
+  });
   return createHash("sha256").update(normalized, "utf8").digest("hex");
 }
 

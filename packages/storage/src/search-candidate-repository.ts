@@ -67,7 +67,7 @@ export function selectSearchCandidates(
   request: SearchCandidateRequest,
 ): SearchCandidatePage {
   const accountId = assertRequest(request);
-  const queryDigest = digestNormalizedSearchQuery(request.text, request.filters);
+  const queryDigest = digestNormalizedSearchQuery(request.text, request.filters, accountId);
   const cursor =
     request.cursor === undefined
       ? undefined

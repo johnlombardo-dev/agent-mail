@@ -4,8 +4,11 @@ import {
   type CompiledStructuredFilter,
 } from "../src/structured-filter-compiler";
 
-function compiled(input: readonly unknown[]): CompiledStructuredFilter {
-  const result = compileStructuredFilters(input);
+function compiled(
+  input: readonly unknown[],
+  options: Readonly<{ readonly accountId?: unknown }> = {},
+): CompiledStructuredFilter {
+  const result = compileStructuredFilters(input, options);
   expect(result.kind).toBe("compiled");
   if (result.kind !== "compiled") throw new Error("expected compiled filters");
   return result;
@@ -30,6 +33,18 @@ describe("structured filter compiler P4-C04", () => {
       { field: "list", operator: "eq", value: "<News@Example.COM>" },
       "(EXISTS (SELECT 1 FROM message_headers AS mh WHERE mh.message_id = m.message_id AND mh.normalized_name = 'list-id' AND mh.normalized_value = ?))",
       ["<news@example.com>"],
+    ],
+    [
+      "exact normalized subject equality",
+      { field: "subject", operator: "eq", value: "  Caf\u00e9\t  Report  " },
+      "(EXISTS (SELECT 1 FROM message_headers AS subject_header WHERE subject_header.message_id = m.message_id AND subject_header.normalized_name = 'subject' AND subject_header.normalized_value = ?))",
+      ["Caf\u00e9 Report"],
+    ],
+    [
+      "account-scoped canonical thread membership",
+      { field: "threadId", operator: "eq", value: `thread:${"a".repeat(64)}` },
+      "(EXISTS (SELECT 1 FROM thread_memberships AS filtered_membership JOIN thread_handles AS filtered_handle ON filtered_handle.account_id = filtered_membership.account_id AND filtered_handle.set_id = filtered_membership.set_id WHERE filtered_membership.account_id = ? AND filtered_membership.message_id = m.message_id AND filtered_handle.thread_id = ?))",
+      ["account:fixture", `thread:${"a".repeat(64)}`],
     ],
     [
       "remote mailbox equality",
@@ -116,7 +131,10 @@ describe("structured filter compiler P4-C04", () => {
       ["2026-01-02T00:00:00.000Z"],
     ],
   ] as const)("compiles %s to its exact relational predicate", (_name, input, expectedSql, expectedParameters) => {
-    const result = compiled([input]);
+    const result = compiled(
+      [input],
+      input.field === "threadId" ? { accountId: "account:fixture" } : {},
+    );
     expect(result.sql).toBe(expectedSql);
     expect(result.parameters).toEqual(expectedParameters);
   });
@@ -170,6 +188,18 @@ describe("structured filter compiler P4-C04", () => {
     expect(compileStructuredFilters([{ field: "remoteMailbox", operator: "eq", value: "label:archive" }])).toMatchObject({ code: "invalid_filter" });
   });
 
+  test("requires account scope for a thread membership predicate", () => {
+    const threadId = `thread:${"a".repeat(64)}`;
+    expect(compileStructuredFilters([{ field: "threadId", operator: "eq", value: threadId }])).toMatchObject({
+      code: "invalid_filter",
+    });
+    expect(
+      compileStructuredFilters([{ field: "threadId", operator: "eq", value: threadId }], {
+        accountId: "account:fixture",
+      }),
+    ).toMatchObject({ kind: "compiled" });
+  });
+
   test("uses NOT EXISTS over the same equality relation for negative filters", () => {
     const result = compiled([
       { field: "sender", operator: "neq", value: "alice@example.com" },
@@ -182,7 +212,7 @@ describe("structured filter compiler P4-C04", () => {
   });
 
   test.each([
-    ["unknown field", [{ field: "subject", operator: "eq", value: "invoice" }]],
+    ["unknown field", [{ field: "bogus", operator: "eq", value: "invoice" }]],
     ["unknown operator", [{ field: "sender", operator: "contains", value: "alice@example.com" }]],
     ["sender malformed", [{ field: "sender", operator: "eq", value: "alice" }]],
     ["attachment value", [{ field: "attachment", operator: "exists", value: true }]],

@@ -1,4 +1,10 @@
-import { createLocalLabel, createMailboxId, createUtcInstant } from "@agent-mail/core";
+import {
+  createLocalLabel,
+  createMailboxId,
+  createUtcInstant,
+  parseAccountId,
+  type AccountId,
+} from "@agent-mail/core";
 
 /** The message relation alias expected by the candidate-query composer. */
 export const STRUCTURED_FILTER_MESSAGE_ALIAS = "m" as const;
@@ -8,10 +14,14 @@ const MAX_SENDER_LENGTH = 320;
 const MAX_LIST_LENGTH = 998;
 const MAX_FLAG_LENGTH = 128;
 const MAX_NAMESPACE_VALUE_LENGTH = 256;
+const MAX_SUBJECT_LENGTH = 998;
+const THREAD_ID = /^thread:[a-f0-9]{64}$/u;
 
 export type StructuredFilterField =
   | "sender"
   | "list"
+  | "subject"
+  | "threadId"
   | "remoteMailbox"
   | "flag"
   | "importance"
@@ -32,6 +42,8 @@ export type StructuredFilterOperator =
 export type StructuredFilter =
   | Readonly<{ readonly field: "sender"; readonly operator: "eq" | "neq"; readonly value: string }>
   | Readonly<{ readonly field: "list"; readonly operator: "eq" | "neq"; readonly value: string }>
+  | Readonly<{ readonly field: "subject"; readonly operator: "eq"; readonly value: string }>
+  | Readonly<{ readonly field: "threadId"; readonly operator: "eq"; readonly value: string }>
   | Readonly<{
       readonly field: "remoteMailbox";
       readonly operator: "eq" | "neq";
@@ -74,6 +86,11 @@ export type InvalidStructuredFilter = Readonly<{
 }>;
 
 export type StructuredFilterCompileResult = CompiledStructuredFilter | InvalidStructuredFilter;
+
+export type StructuredFilterCompileOptions = Readonly<{
+  /** Required when compiling an account-scoped threadId predicate. */
+  readonly accountId?: unknown;
+}>;
 
 const INVALID_FILTER: InvalidStructuredFilter = Object.freeze({
   kind: "invalid_filter",
@@ -155,6 +172,8 @@ function normalizeField(value: unknown): StructuredFilterField | undefined {
   switch (value) {
     case "sender":
     case "list":
+    case "subject":
+    case "threadId":
     case "remoteMailbox":
     case "flag":
     case "importance":
@@ -184,6 +203,36 @@ function normalizeList(value: unknown): string | undefined {
   const text = boundedText(value, MAX_LIST_LENGTH);
   if (text === undefined || text.length === 0) return undefined;
   return text.toLocaleLowerCase("en-US");
+}
+
+function normalizeSubject(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.length > MAX_SUBJECT_LENGTH) {
+    return undefined;
+  }
+  if (hasSubjectUnsafeCharacters(value)) return undefined;
+  const normalized = value
+    .replace(/[ \t\r\n]+/gu, " ")
+    .trim()
+    .normalize("NFC");
+  return normalized.length === 0 || normalized.length > MAX_SUBJECT_LENGTH ? undefined : normalized;
+}
+
+function hasSubjectUnsafeCharacters(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      ((codePoint <= 0x1f && codePoint !== 0x09 && codePoint !== 0x0a && codePoint !== 0x0d) ||
+        (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function normalizeThreadId(value: unknown): string | undefined {
+  return typeof value === "string" && THREAD_ID.test(value) ? value : undefined;
 }
 
 function normalizeRemoteMailbox(value: unknown): string | undefined {
@@ -290,6 +339,16 @@ function normalizeFilter(value: unknown): StructuredFilter | undefined {
       const list = normalizeList(value.value);
       return list === undefined ? undefined : { field, operator, value: list };
     }
+    case "subject": {
+      if (operator !== "eq") return undefined;
+      const subject = normalizeSubject(value.value);
+      return subject === undefined ? undefined : { field, operator, value: subject };
+    }
+    case "threadId": {
+      if (operator !== "eq") return undefined;
+      const threadId = normalizeThreadId(value.value);
+      return threadId === undefined ? undefined : { field, operator, value: threadId };
+    }
     case "remoteMailbox": {
       if (operator !== "eq" && operator !== "neq") return undefined;
       const mailbox = normalizeRemoteMailbox(value.value);
@@ -330,6 +389,8 @@ function fieldRank(field: StructuredFilterField): number {
   return [
     "sender",
     "list",
+    "subject",
+    "threadId",
     "remoteMailbox",
     "flag",
     "importance",
@@ -354,6 +415,7 @@ function compareFilters(left: StructuredFilter, right: StructuredFilter): number
 
 function predicate(
   filter: StructuredFilter,
+  accountId: AccountId | undefined,
 ): Readonly<{ readonly sql: string; readonly parameters: readonly string[] }> {
   const value = "value" in filter ? [filter.value] : [];
   const exists =
@@ -368,6 +430,17 @@ function predicate(
       return {
         sql: `${exists} (SELECT 1 FROM message_headers AS mh WHERE mh.message_id = m.message_id AND mh.normalized_name = 'list-id' AND mh.normalized_value = ?)`,
         parameters: value,
+      };
+    case "subject":
+      return {
+        sql: "EXISTS (SELECT 1 FROM message_headers AS subject_header WHERE subject_header.message_id = m.message_id AND subject_header.normalized_name = 'subject' AND subject_header.normalized_value = ?)",
+        parameters: value,
+      };
+    case "threadId":
+      if (accountId === undefined) throw new TypeError("threadId filter requires account scope");
+      return {
+        sql: "EXISTS (SELECT 1 FROM thread_memberships AS filtered_membership JOIN thread_handles AS filtered_handle ON filtered_handle.account_id = filtered_membership.account_id AND filtered_handle.set_id = filtered_membership.set_id WHERE filtered_membership.account_id = ? AND filtered_membership.message_id = m.message_id AND filtered_handle.thread_id = ?)",
+        parameters: [accountId, ...value],
       };
     case "remoteMailbox":
       return {
@@ -411,7 +484,10 @@ function predicate(
  * function never executes SQL and never copies a caller value into SQL
  * structure; all value-bearing predicates use bound parameters.
  */
-export function compileStructuredFilters(input: unknown): StructuredFilterCompileResult {
+export function compileStructuredFilters(
+  input: unknown,
+  options: StructuredFilterCompileOptions = {},
+): StructuredFilterCompileResult {
   if (!Array.isArray(input) || input.length > MAX_FILTERS) return INVALID_FILTER;
   const filters: StructuredFilter[] = [];
   for (const candidate of input) {
@@ -421,7 +497,20 @@ export function compileStructuredFilters(input: unknown): StructuredFilterCompil
   }
   filters.sort(compareFilters);
 
-  const predicates = filters.map(predicate);
+  const accountId = filters.some((filter) => filter.field === "threadId")
+    ? (() => {
+        try {
+          return parseAccountId(options.accountId);
+        } catch {
+          return undefined;
+        }
+      })()
+    : undefined;
+  if (filters.some((filter) => filter.field === "threadId") && accountId === undefined) {
+    return INVALID_FILTER;
+  }
+
+  const predicates = filters.map((filter) => predicate(filter, accountId));
   return Object.freeze({
     kind: "compiled",
     ok: true,

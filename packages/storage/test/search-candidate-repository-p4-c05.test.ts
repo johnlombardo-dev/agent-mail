@@ -13,11 +13,14 @@ import { placementObservationMigration } from "../src/migrations/0003-placement-
 import { compileSearchQuery } from "../src/search-query-compiler";
 import { selectSearchCandidates } from "../src/search-candidate-repository";
 import { compileStructuredFilters } from "../src/structured-filter-compiler";
+import { createSearchCursorIntegrityCodec, SearchCursorError } from "../src/search-cursor";
+import { threadGraphMigration } from "../src/migrations/0008-thread-graph";
 
 const roots: string[] = [];
 const accountId = "account:fixture";
 const otherAccountId = "account:other";
 const mailboxId = "mailbox:inbox";
+const cursorCodec = createSearchCursorIntegrityCodec("search-filter-closure-secret");
 const messageIds = {
   a: createMessageId(`message:${"a".repeat(64)}`),
   b: createMessageId(`message:${"b".repeat(64)}`),
@@ -31,6 +34,7 @@ const migrations: readonly Migration[] = [
   externalContentSearchMigration,
   { ...placementObservationMigration, version: 4 },
   { ...localLabelMigration, version: 5 },
+  { ...threadGraphMigration, version: 6 },
 ];
 
 afterEach(async () => {
@@ -127,6 +131,97 @@ async function openFixture(
     }
   }
 
+  const canonicalThread = `thread:${"a".repeat(64)}`;
+  const aliasThread = `thread:${"b".repeat(64)}`;
+  const otherAccountThread = `thread:${"d".repeat(64)}`;
+  opened.db
+    .query(
+      "INSERT INTO thread_sets (account_id, set_id, member_count, node_count, equivalence_count, edge_count, participant_count, handle_count, canonical_root_node_key, canonical_thread_id, updated_generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    )
+    .run(
+      accountId,
+      "set-a",
+      2,
+      0,
+      0,
+      0,
+      0,
+      2,
+      "m:" + "a".repeat(64),
+      canonicalThread,
+      0,
+      accountId,
+      "set-b",
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      "m:" + "c".repeat(64),
+      `thread:${"c".repeat(64)}`,
+      0,
+      otherAccountId,
+      "set-other",
+      1,
+      0,
+      0,
+      0,
+      0,
+      1,
+      "m:" + "c".repeat(64),
+      otherAccountThread,
+      0,
+    );
+  opened.db
+    .query(
+      "INSERT INTO thread_handles (thread_id, account_id, set_id, created_generation, canonical_when_created) VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?), (?, ?, ?, ?, ?);",
+    )
+    .run(
+      canonicalThread,
+      accountId,
+      "set-a",
+      0,
+      1,
+      aliasThread,
+      accountId,
+      "set-a",
+      0,
+      0,
+      `thread:${"c".repeat(64)}`,
+      accountId,
+      "set-b",
+      0,
+      1,
+      otherAccountThread,
+      otherAccountId,
+      "set-other",
+      0,
+      1,
+    );
+  opened.db
+    .query(
+      "INSERT INTO thread_memberships (account_id, message_id, set_id, member_node_key, order_state, sent_at_missing_rank, added_generation) VALUES (?, ?, ?, ?, 'parsed', 1, 0), (?, ?, ?, ?, 'parsed', 1, 0), (?, ?, ?, ?, 'parsed', 1, 0), (?, ?, ?, ?, 'parsed', 1, 0);",
+    )
+    .run(
+      accountId,
+      messageIds.a,
+      "set-a",
+      "m:" + "a".repeat(64),
+      accountId,
+      messageIds.b,
+      "set-a",
+      "m:" + "b".repeat(64),
+      accountId,
+      messageIds.c,
+      "set-b",
+      "m:" + "c".repeat(64),
+      otherAccountId,
+      messageIds.c,
+      "set-other",
+      "m:" + "c".repeat(64),
+    );
+
   opened.db
     .query(
       "INSERT INTO message_fts(rowid, subject, participants, body_plain, body_html, attachment_names) SELECT rowid, subject, participants, body_plain, body_html, attachment_names FROM indexed_messages;",
@@ -139,15 +234,16 @@ function request(
   filters: readonly unknown[] = [],
   limit = 100,
   selectedAccountId: unknown = accountId,
+  cursor?: unknown,
 ) {
   const text = compileSearchQuery("needle");
-  const compiledFilters = compileStructuredFilters(filters);
+  const compiledFilters = compileStructuredFilters(filters, { accountId: selectedAccountId });
   expect(text.kind).toBe("compiled");
   expect(compiledFilters.kind).toBe("compiled");
   if (text.kind !== "compiled" || compiledFilters.kind !== "compiled") {
     throw new Error("fixture compiler input did not compile");
   }
-  return { accountId: selectedAccountId, text, filters: compiledFilters, limit };
+  return { accountId: selectedAccountId, text, filters: compiledFilters, limit, cursor, cursorCodec };
 }
 
 describe("bounded FTS candidate repository P4-C05", () => {
@@ -185,6 +281,106 @@ describe("bounded FTS candidate repository P4-C05", () => {
         request([{ field: "importance", operator: "eq", value: "high" }]),
       ).candidates.map((candidate) => candidate.messageId),
     ).toEqual([messageIds.a]);
+    await opened.close();
+  });
+
+  test("matches exact normalized subjects and account-scoped canonical/alias handles", async () => {
+    const opened = await openFixture();
+    const canonical = `thread:${"a".repeat(64)}`;
+    const alias = `thread:${"b".repeat(64)}`;
+    // Mirror the ingestion boundary: normalized_value is whitespace-collapsed
+    // and NFC-normalized before the candidate query ever sees it.
+    opened.db
+      .query(
+        "UPDATE message_headers SET value = ?, normalized_value = ? WHERE message_id = ? AND normalized_name = 'subject';",
+      )
+      .run("Cafe\u0301  Report", "Caf\u00e9 Report", messageIds.a);
+    const subject = selectSearchCandidates(
+      opened.db,
+      request([{ field: "subject", operator: "eq", value: " Cafe\u0301\t Report " }]),
+    );
+    expect(subject.candidates.map(({ messageId }) => messageId)).toEqual([messageIds.a]);
+
+    const canonicalPage = selectSearchCandidates(
+      opened.db,
+      request([{ field: "threadId", operator: "eq", value: canonical }]),
+    );
+    const aliasPage = selectSearchCandidates(
+      opened.db,
+      request([{ field: "threadId", operator: "eq", value: alias }]),
+    );
+    expect(aliasPage.candidates.map(({ messageId }) => messageId)).toEqual(
+      canonicalPage.candidates.map(({ messageId }) => messageId),
+    );
+    expect(
+      selectSearchCandidates(
+        opened.db,
+        request([{ field: "threadId", operator: "eq", value: `thread:${"f".repeat(64)}` }]),
+      ).candidates,
+    ).toEqual([]);
+    expect(
+      selectSearchCandidates(
+        opened.db,
+        request([{ field: "threadId", operator: "eq", value: `thread:${"d".repeat(64)}` }]),
+      ).candidates,
+    ).toEqual([]);
+
+    const combined = selectSearchCandidates(
+      opened.db,
+      request([
+        { field: "subject", operator: "eq", value: "Cafe\u0301 Report" },
+        { field: "threadId", operator: "eq", value: alias },
+      ]),
+    );
+    expect(combined.candidates.map(({ messageId }) => messageId)).toEqual([messageIds.a]);
+    await opened.close();
+  });
+
+  test("keeps an alias-issued cursor valid after the canonical handle changes", async () => {
+    const opened = await openFixture();
+    const alias = `thread:${"b".repeat(64)}`;
+    const first = selectSearchCandidates(
+      opened.db,
+      request([{ field: "threadId", operator: "eq", value: alias }], 1),
+    );
+    expect(first.nextCursor).not.toBeNull();
+    opened.db
+      .query("UPDATE thread_sets SET canonical_thread_id = ? WHERE account_id = ? AND set_id = ?;")
+      .run(`thread:${"e".repeat(64)}`, accountId, "set-a");
+    if (first.nextCursor === null) throw new Error("expected alias cursor");
+    const continuation = selectSearchCandidates(
+      opened.db,
+      request([{ field: "threadId", operator: "eq", value: alias }], 1, accountId, first.nextCursor),
+    );
+    expect(continuation.candidates).toHaveLength(1);
+    await opened.close();
+  });
+
+  test("binds cursor replay to the requested account and thread handle", async () => {
+    const opened = await openFixture();
+    const alias = `thread:${"b".repeat(64)}`;
+    const first = selectSearchCandidates(
+      opened.db,
+      request([{ field: "threadId", operator: "eq", value: alias }], 1),
+    );
+    if (first.nextCursor === null) throw new Error("expected alias cursor");
+    expect(() =>
+      selectSearchCandidates(
+        opened.db,
+        request([{ field: "threadId", operator: "eq", value: alias }], 1, otherAccountId, first.nextCursor),
+      ),
+    ).toThrow(SearchCursorError);
+    expect(() =>
+      selectSearchCandidates(
+        opened.db,
+        request(
+          [{ field: "threadId", operator: "eq", value: `thread:${"c".repeat(64)}` }],
+          1,
+          accountId,
+          first.nextCursor,
+        ),
+      ),
+    ).toThrow(SearchCursorError);
     await opened.close();
   });
 
