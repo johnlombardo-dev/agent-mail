@@ -29,6 +29,12 @@ import {
   SIGNED_TRANSITIONS,
   type SignedStatechartTransition,
 } from "./sync-statechart-model";
+import {
+  nativeRetryRandomSource,
+  nativeRetryTimerClock,
+  retryTimerActorLogic,
+} from "./retry-timer-actor";
+import type { RetryTimerClock } from "./retry-timer-actor";
 
 /** The model and this executable chart are intentionally pinned together. */
 export const SYNC_STATECHART_MODEL_VERSION = SIGNED_SYNC_STATECHART.modelVersion;
@@ -366,6 +372,9 @@ export interface SyncLifecycleInput {
   readonly incarnationId?: string;
   /** Concrete IDLE adapter injection remains owned by the composition seam. */
   readonly validatedIdleAdapter?: unknown;
+  /** Internal retry composition seam; production defaults remain explicit. */
+  readonly retryTimerClock?: RetryTimerClock;
+  readonly retryRandomSource?: () => number;
 }
 
 export interface SyncActorInputs {
@@ -406,10 +415,12 @@ export interface RecurringSweepActorInput extends SyncActorInputs {
 }
 
 export interface RetryTimerActorInput extends SyncActorInputs {
+  readonly retryAttempt: number;
   readonly retryBaseMs: number;
   readonly retryCapMs: number;
   readonly retryJitterRatio: number;
   readonly injectedRandomSource: () => number;
+  readonly injectedClock: RetryTimerClock;
 }
 
 export interface CleanupBarrierActorInput extends SyncActorInputs {
@@ -533,7 +544,7 @@ const defaultActors: Record<string, AnyActorLogic> = {
   idleSession: inertCallbackActor,
   periodicStatusTimer: inertCallbackActor,
   recurringSweep: neverPromiseActor,
-  retryTimer: inertCallbackActor,
+  retryTimer: retryTimerActorLogic,
   cleanupBarrier: cleanupBarrierActor,
   rawDownloadQueue: inertCallbackActor,
   rawDownloadJob: neverPromiseActor,
@@ -1035,6 +1046,17 @@ function createDefaultDependencies(input?: SyncLifecycleInput): SyncLifecycleDep
   return {
     resourceRegistry: createSyncResourceRegistry({ incarnationId, maxReleaseSlotEntries }),
   };
+}
+
+function validateRetryTimerComposition(input: SyncLifecycleInput): void {
+  if (
+    input.retryTimerClock !== undefined &&
+    (typeof input.retryTimerClock.setTimeout !== "function" ||
+      typeof input.retryTimerClock.clearTimeout !== "function")
+  )
+    throw new TypeError("retryTimerClock must provide setTimeout and clearTimeout");
+  if (input.retryRandomSource !== undefined && typeof input.retryRandomSource !== "function")
+    throw new TypeError("retryRandomSource must be callable");
 }
 
 export function createSyncLifecycleDependencies(
@@ -1717,10 +1739,12 @@ function actorSpecificInput(
       return { checkpoint: context.checkpoint, boundedWorkConfiguration: configuration };
     case "retryTimer":
       return {
+        retryAttempt: context.retryAttempt,
         retryBaseMs: configuration.retryBaseMs,
         retryCapMs: configuration.retryCapMs,
         retryJitterRatio: configuration.retryJitterRatio,
-        injectedRandomSource: () => 0.5,
+        injectedRandomSource: lifecycleInput?.retryRandomSource ?? nativeRetryRandomSource,
+        injectedClock: lifecycleInput?.retryTimerClock ?? nativeRetryTimerClock,
       };
     case "cleanupBarrier":
       return {};
@@ -2115,6 +2139,7 @@ export function createSyncLifecycleActor(
   actors: SyncActorImplementations = {},
   dependencies?: SyncLifecycleDependencies,
 ) {
+  validateRetryTimerComposition(input);
   const configuration = syncLifecycleConfigurationSchema.parse(input.configuration);
   const machine = createSyncLifecycleMachine(
     configuration,
