@@ -1,0 +1,38 @@
+{
+  "authenticationFailure": {
+    "name": "AuthenticationFailure",
+    "authenticationFailed": true,
+    "serverResponseCode": "AUTHENTICATIONFAILED",
+    "response": "AUTHENTICATIONFAILED: Invalid credentials (password=fixture-secret)"
+  },
+  "authorizationFailure": {
+    "name": "AuthenticationFailure",
+    "authenticationFailed": true,
+    "serverResponseCode": "AUTHORIZATIONFAILED",
+    "response": "AUTHORIZATIONFAILED: authorization: Bearer fixture-token"
+  },
+  "oauthFailure": {
+    "name": "Error",
+    "authenticationFailed": true,
+    "oauthError": { "status": "invalid_token", "error_description": "token=fixture-secret" },
+    "message": "OAuth authentication failed"
+  },
+  "credentialTextFailure": {
+    "name": "Error",
+    "message": "Invalid password for account user@example.com"
+  },
+  "responseOnlyFailure": {
+    "name": "Error",
+    "response": "AUTHENTICATIONFAILED: invalid credentials"
+  },
+  "networkTimeout": {
+    "name": "Error",
+    "code": "ETIMEDOUT",
+    "message": "socket timed out while connecting"
+  },
+  "invalidPasswordWithNetworkCode": {
+    "name": "Error",
+    "code": "ETIMEDOUT",
+    "response": "Invalid password; retrying connection would not repair credentials"
+  }
+}
