@@ -16,6 +16,9 @@ import {
   type PublicErrorEnvelope,
 } from "@agent-mail/contracts";
 import { z } from "zod";
+import { DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES } from "./config";
+
+export { DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES } from "./config";
 
 const emptyDetailsSchema = z.strictObject({});
 
@@ -26,6 +29,7 @@ export const httpErrorRegistry = createErrorRegistry([
   defineError({ code: "invalid_credentials", details: emptyDetailsSchema }),
   defineError({ code: "expired_credentials", details: emptyDetailsSchema }),
   defineError({ code: "insufficient_scope", details: emptyDetailsSchema }),
+  defineError({ code: "request_too_large", details: emptyDetailsSchema }),
   defineError({ code: "not_found", details: emptyDetailsSchema }),
   defineError({ code: "internal_error", details: emptyDetailsSchema }),
 ] as const);
@@ -120,7 +124,7 @@ export type TransportRequestContext = Readonly<{
 }>;
 
 export type TransportResult = Readonly<{
-  readonly status: 200 | 400 | 401 | 403 | 404 | 415 | 500;
+  readonly status: 200 | 400 | 401 | 403 | 404 | 413 | 415 | 500;
   readonly body: unknown;
 }>;
 
@@ -146,17 +150,61 @@ export type HttpAppOptions = Readonly<{
   readonly errorRegistry?: ErrorRegistry;
   readonly logger?: PrivateHttpLogger;
   readonly authenticate?: HttpCredentialAuthenticator;
+  readonly maxRequestBodyBytes?: number;
 }>;
+
+export type HttpAdmissionOptions = Readonly<{
+  readonly operation: OperationDefinition;
+  readonly request: HttpAdmissionRequest;
+  readonly params?: Readonly<Record<string, string>>;
+  readonly query?: Readonly<Record<string, string>>;
+  readonly authenticate?: HttpCredentialAuthenticator;
+  readonly errorRegistry?: ErrorRegistry;
+  readonly maxRequestBodyBytes?: number;
+  readonly correlationId?: string;
+  readonly lifecycleProbe?: HttpAdmissionLifecycleProbe;
+}>;
+
+/** The minimal request shape needed by the admission boundary. */
+export type HttpAdmissionRequest = Pick<Request, "headers" | "body" | "method" | "signal">;
+
+/** Optional test/diagnostic hooks for proving stream ownership at this boundary. */
+export type HttpAdmissionLifecycleProbe = Readonly<{
+  readonly onReaderAcquired?: () => void;
+  readonly onReaderReleased?: () => void;
+  readonly onInputCancelled?: () => void;
+  readonly onAbortListenerRemoved?: () => void;
+}>;
+
+export type HttpAdmissionResult =
+  | Readonly<{
+      readonly kind: "accepted";
+      readonly input: unknown;
+      readonly principal: HttpPrincipal;
+    }>
+  | Readonly<{
+      readonly kind: "rejected";
+      readonly status: 400 | 401 | 403 | 413 | 415;
+      readonly body: PublicErrorEnvelope;
+    }>;
 
 type JsonObject = Readonly<Record<string, unknown>>;
 
-class InvalidHttpRequestError extends Error {
-  readonly status: 400 | 415;
+type HttpRequestErrorCode = "invalid_request" | "request_too_large";
 
-  constructor(message: string, status: 400 | 415) {
+class InvalidHttpRequestError extends Error {
+  readonly status: 400 | 413 | 415;
+  readonly code: HttpRequestErrorCode;
+
+  constructor(
+    message: string,
+    status: 400 | 413 | 415,
+    code: HttpRequestErrorCode = "invalid_request",
+  ) {
     super(message);
     this.name = "InvalidHttpRequestError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -176,10 +224,11 @@ type PublicHttpErrorCode =
   | "invalid_credentials"
   | "expired_credentials"
   | "insufficient_scope"
+  | "request_too_large"
   | "not_found"
   | "internal_error";
 
-function errorStatus(body: unknown): 200 | 400 | 401 | 403 | 404 | 500 {
+function errorStatus(body: unknown): 200 | 400 | 401 | 403 | 404 | 413 | 500 {
   const result = publicErrorEnvelopeSchema.safeParse(body);
   if (!result.success) return 200;
   switch (result.data.code) {
@@ -193,6 +242,8 @@ function errorStatus(body: unknown): 200 | 400 | 401 | 403 | 404 | 500 {
       return 401;
     case "insufficient_scope":
       return 403;
+    case "request_too_large":
+      return 413;
     case "not_found":
       return 404;
     case "internal_error":
@@ -206,7 +257,7 @@ function fallbackCorrelationId(): string {
   return `request:${crypto.randomUUID()}`;
 }
 
-function correlationIdFrom(request: Request): string {
+function correlationIdFrom(request: HttpAdmissionRequest): string {
   const header = request.headers.get("x-correlation-id");
   const parsed = correlationIdSchema.safeParse(header);
   return parsed.success ? parsed.data : fallbackCorrelationId();
@@ -296,7 +347,7 @@ type AuthenticationDecision =
     }>;
 
 function malformedBearerCredential(
-  request: Request,
+  request: HttpAdmissionRequest,
 ):
   | Readonly<{ readonly kind: "missing" }>
   | Readonly<{ readonly kind: "invalid" }>
@@ -309,7 +360,7 @@ function malformedBearerCredential(
 }
 
 async function authenticateRequest(
-  request: Request,
+  request: HttpAdmissionRequest,
   authenticate: HttpCredentialAuthenticator | undefined,
 ): Promise<AuthenticationDecision> {
   const parsed = malformedBearerCredential(request);
@@ -355,7 +406,7 @@ function logPrivate(logger: PrivateHttpLogger | undefined, entry: PrivateHttpLog
 }
 
 type FeatureProjection = Readonly<{
-  readonly status: 200 | 400 | 401 | 403 | 404 | 500;
+  readonly status: 200 | 400 | 401 | 403 | 404 | 413 | 500;
   readonly body: PublicErrorEnvelope;
 }>;
 
@@ -551,37 +602,280 @@ export function createRegistryTransportAdapter(
   });
 }
 
-function contentTypeIsJson(request: Request): boolean {
+function contentTypeIsJson(request: HttpAdmissionRequest): boolean {
   const contentType = request.headers.get("content-type");
   if (contentType === null) return false;
   const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
   return mediaType === "application/json" || mediaType?.endsWith("+json") === true;
 }
 
-function requestMayHaveBody(request: Request): boolean {
+function requestMayHaveBody(request: HttpAdmissionRequest): boolean {
   const method = request.method.toUpperCase();
   return (
     request.headers.get("content-length") !== null || ["POST", "PUT", "PATCH"].includes(method)
   );
 }
 
+type DeclaredContentLength = number | undefined;
+
+function declaredContentLength(request: HttpAdmissionRequest): DeclaredContentLength {
+  const value = request.headers.get("content-length");
+  if (value === null) return undefined;
+  if (!/^\d+$/u.test(value) || value.includes(",")) {
+    throw new InvalidHttpRequestError("request content length is invalid", 400);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new InvalidHttpRequestError("request content length is invalid", 400);
+  }
+  return parsed;
+}
+
+async function cancelInput(
+  request: HttpAdmissionRequest,
+  lifecycleProbe: HttpAdmissionLifecycleProbe | undefined,
+): Promise<void> {
+  const body = request.body;
+  if (body === null) return;
+  try {
+    await body.cancel();
+  } catch {
+    // Releasing a rejected input stream is best effort; it cannot change the response.
+  } finally {
+    lifecycleProbe?.onInputCancelled?.();
+  }
+}
+
+class RequestAbortedError extends Error {
+  constructor() {
+    super("request body was aborted");
+    this.name = "RequestAbortedError";
+  }
+}
+
+async function readWithAbort(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  signal: AbortSignal,
+  cancelReader: () => Promise<void>,
+  lifecycleProbe: HttpAdmissionLifecycleProbe | undefined,
+): Promise<Awaited<ReturnType<typeof reader.read>>> {
+  if (signal.aborted) {
+    await cancelReader();
+    throw new RequestAbortedError();
+  }
+  let abortHandler: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    abortHandler = () => {
+      reject(new RequestAbortedError());
+      void cancelReader();
+    };
+    signal.addEventListener("abort", abortHandler, { once: true });
+  });
+  try {
+    return await Promise.race([reader.read(), aborted]);
+  } finally {
+    if (abortHandler !== undefined) {
+      signal.removeEventListener("abort", abortHandler);
+      lifecycleProbe?.onAbortListenerRemoved?.();
+    }
+  }
+}
+
+async function readReceivedBytes(
+  request: HttpAdmissionRequest,
+  maxRequestBodyBytes: number,
+  lifecycleProbe: HttpAdmissionLifecycleProbe | undefined,
+): Promise<Uint8Array> {
+  if (!Number.isSafeInteger(maxRequestBodyBytes) || maxRequestBodyBytes <= 0) {
+    throw new TypeError("maxRequestBodyBytes must be a positive safe integer");
+  }
+  const declared = declaredContentLength(request);
+  if (declared !== undefined && declared > maxRequestBodyBytes) {
+    await cancelInput(request, lifecycleProbe);
+    throw new InvalidHttpRequestError(
+      "request body exceeds configured limit",
+      413,
+      "request_too_large",
+    );
+  }
+
+  const body = request.body;
+  if (body === null) {
+    if (declared !== undefined && declared !== 0) {
+      throw new InvalidHttpRequestError("request content length does not match body", 400);
+    }
+    return new Uint8Array(0);
+  }
+
+  const initialCapacity = Math.min(maxRequestBodyBytes, declared ?? 64 * 1024);
+  let bytes = new Uint8Array(initialCapacity);
+  let received = 0;
+  const reader = body.getReader();
+  lifecycleProbe?.onReaderAcquired?.();
+  let shouldCancel = true;
+  let readerCancellation: Promise<void> | undefined;
+  const cancelReader = (): Promise<void> => {
+    readerCancellation ??= reader.cancel().catch(() => {
+      // The stream may already be errored or closed.
+    });
+    return readerCancellation;
+  };
+  try {
+    for (;;) {
+      const result = await readWithAbort(reader, request.signal, cancelReader, lifecycleProbe);
+      if (result.done) break;
+      const chunk = result.value;
+      if (chunk.byteLength > maxRequestBodyBytes - received) {
+        throw new InvalidHttpRequestError(
+          "request body exceeds configured limit",
+          413,
+          "request_too_large",
+        );
+      }
+      const requiredCapacity = received + chunk.byteLength;
+      if (requiredCapacity > bytes.byteLength) {
+        const nextCapacity = Math.min(
+          maxRequestBodyBytes,
+          Math.max(requiredCapacity, Math.max(1, bytes.byteLength * 2)),
+        );
+        const next = new Uint8Array(nextCapacity);
+        next.set(bytes.subarray(0, received));
+        bytes = next;
+      }
+      bytes.set(chunk, received);
+      received = requiredCapacity;
+    }
+    if (declared !== undefined && declared !== received) {
+      throw new InvalidHttpRequestError("request content length does not match body", 400);
+    }
+    shouldCancel = false;
+    return bytes.subarray(0, received);
+  } catch (error: unknown) {
+    if (error instanceof InvalidHttpRequestError) throw error;
+    throw new InvalidHttpRequestError("request body could not be read", 400);
+  } finally {
+    if (shouldCancel) await cancelReader();
+    reader.releaseLock();
+    lifecycleProbe?.onReaderReleased?.();
+  }
+}
+
 async function readUnknownRequestInput(
-  request: Request,
+  request: HttpAdmissionRequest,
   params: Readonly<Record<string, string>>,
   query: Readonly<Record<string, string>>,
+  maxRequestBodyBytes: number,
+  lifecycleProbe: HttpAdmissionLifecycleProbe | undefined,
 ): Promise<unknown> {
+  // Validate the framing header even for methods that normally have no body;
+  // malformed framing is always a 400 boundary failure.
+  try {
+    declaredContentLength(request);
+  } catch (error: unknown) {
+    await cancelInput(request, lifecycleProbe);
+    throw error;
+  }
   let body: unknown = {};
   if (requestMayHaveBody(request)) {
-    if (!contentTypeIsJson(request))
+    if (!contentTypeIsJson(request)) {
+      await cancelInput(request, lifecycleProbe);
       throw new InvalidHttpRequestError("request content type must be JSON", 415);
+    }
+    const contentEncoding = request.headers.get("content-encoding");
+    if (contentEncoding !== null && contentEncoding.trim().toLowerCase() !== "identity") {
+      await cancelInput(request, lifecycleProbe);
+      throw new InvalidHttpRequestError("request content encoding is unsupported", 415);
+    }
     try {
-      body = await request.clone().json();
-    } catch {
+      const received = await readReceivedBytes(request, maxRequestBodyBytes, lifecycleProbe);
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(received);
+      body = text.length === 0 ? undefined : JSON.parse(text);
+    } catch (error: unknown) {
+      if (error instanceof InvalidHttpRequestError) throw error;
       throw new InvalidHttpRequestError("request body is malformed JSON", 400);
     }
   }
   if (!isJsonObject(body)) return body;
   return { ...body, ...query, ...params };
+}
+
+/** Authenticate and authorize before touching the request body stream. */
+export async function admitHttpRequest(
+  options: HttpAdmissionOptions,
+): Promise<HttpAdmissionResult> {
+  const errorRegistry = options.errorRegistry ?? httpErrorRegistry;
+  const correlationId = options.correlationId ?? correlationIdFrom(options.request);
+  const authentication = await authenticateRequest(options.request, options.authenticate);
+  if (authentication.kind === "denied") {
+    await cancelInput(options.request, options.lifecycleProbe);
+    const body = publicError(
+      authentication.code,
+      "request credentials are not authorized",
+      correlationId,
+      errorRegistry,
+    );
+    return {
+      kind: "rejected",
+      status: 401,
+      body,
+    };
+  }
+  if (authorizationFailure(options.operation, authentication.principal) !== undefined) {
+    await cancelInput(options.request, options.lifecycleProbe);
+    return {
+      kind: "rejected",
+      status: 403,
+      body: publicError(
+        "insufficient_scope",
+        "request credentials are not authorized",
+        correlationId,
+        errorRegistry,
+      ),
+    };
+  }
+
+  try {
+    const input = await readUnknownRequestInput(
+      options.request,
+      options.params ?? {},
+      options.query ?? {},
+      options.maxRequestBodyBytes ?? DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES,
+      options.lifecycleProbe,
+    );
+    return {
+      kind: "accepted",
+      input,
+      principal: authentication.principal,
+    };
+  } catch (error: unknown) {
+    const requestError =
+      error instanceof InvalidHttpRequestError
+        ? error
+        : new InvalidHttpRequestError("request is invalid", 400);
+    return {
+      kind: "rejected",
+      status: requestError.status,
+      body: publicError(
+        requestError.code,
+        requestError.code === "request_too_large"
+          ? "request body exceeds configured limit"
+          : "request is invalid",
+        correlationId,
+        errorRegistry,
+      ),
+    };
+  }
+}
+
+/** Preserve an already-admitted principal when a feature adapter is called. */
+export function authenticatedTransportContext(
+  context: TransportRequestContext,
+  principal: HttpPrincipal,
+): TransportRequestContext {
+  return Object.freeze({
+    ...context,
+    [authenticatedPrincipal]: immutablePrincipal(principal),
+  });
 }
 
 /** Construct a Hono app without binding a listener or adding feature behavior. */
@@ -604,39 +898,25 @@ export function createHttpApp(options: HttpAppOptions = {}): Hono {
       const correlationId = correlationIdFrom(request);
       const params: Readonly<Record<string, string>> = { ...context.req.param() };
       const query: Readonly<Record<string, string>> = { ...context.req.query() };
-      const authentication = await authenticateRequest(request, options.authenticate);
-      if (authentication.kind === "denied") {
-        return context.json(
-          publicError(
-            authentication.code,
-            "request credentials are not authorized",
-            correlationId,
-            errorRegistry,
-          ),
-          authentication.code === "missing_credentials" ||
-            authentication.code === "invalid_credentials" ||
-            authentication.code === "expired_credentials"
-            ? 401
-            : 403,
-        );
-      }
-      let input: unknown;
-      try {
-        input = await readUnknownRequestInput(request, params, query);
-      } catch (error: unknown) {
-        const status = error instanceof InvalidHttpRequestError ? error.status : 400;
-        return context.json(
-          publicError("invalid_request", "request is invalid", correlationId, errorRegistry),
-          status,
-        );
-      }
-      const result = await adapter.execute(operation.key, input, {
+      const admission = await admitHttpRequest({
+        operation,
         request,
-        correlationId,
         params,
         query,
-        [authenticatedPrincipal]: authentication.principal,
+        authenticate: options.authenticate,
+        errorRegistry,
+        maxRequestBodyBytes: options.maxRequestBodyBytes,
+        correlationId,
       });
+      if (admission.kind === "rejected") return context.json(admission.body, admission.status);
+      const result = await adapter.execute(
+        operation.key,
+        admission.input,
+        authenticatedTransportContext(
+          { request, correlationId, params, query },
+          admission.principal,
+        ),
+      );
       return context.json(result.body, result.status);
     });
   }

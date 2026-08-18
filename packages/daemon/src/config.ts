@@ -11,6 +11,9 @@ const ERROR_MESSAGES = {
   portAssignment: "startup ports do not match the approved role map",
 } as const;
 
+/** The received-byte ceiling used by every JSON HTTP ingress by default. */
+export const DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES = 1024 * 1024;
+
 export type StartupConfigErrorCode = keyof typeof ERROR_MESSAGES;
 
 export class StartupConfigError extends Error {
@@ -41,10 +44,20 @@ const secretFileSchema = z.strictObject({
   mode: z.number().int().min(0).max(0o777).optional(),
 });
 
+const httpConfigSchema = z.strictObject({
+  maxRequestBodyBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(100 * 1024 * 1024)
+    .optional(),
+});
+
 const startupConfigInputSchema = z.strictObject({
   privateRoot: pathValueSchema,
   paths: pathOverridesSchema.optional(),
   secretFile: secretFileSchema.optional(),
+  http: httpConfigSchema.optional(),
   ports: portRoleConfigSchema,
 });
 
@@ -65,6 +78,7 @@ export type StartupConfig = Readonly<{
   readonly privateRoot: string;
   readonly paths: PrivatePaths;
   readonly secretFile: SecretFileConfig;
+  readonly http: Readonly<{ readonly maxRequestBodyBytes: number }>;
   readonly ports: PortRoleConfig;
 }>;
 
@@ -185,6 +199,10 @@ function parseValidatedConfig(input: unknown): StartupConfig {
     privateRoot: parsed.privateRoot,
     paths,
     secretFile,
+    http: Object.freeze({
+      maxRequestBodyBytes:
+        parsed.http?.maxRequestBodyBytes ?? DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES,
+    }),
     ports: Object.freeze({ ...parsed.ports }),
   });
 }

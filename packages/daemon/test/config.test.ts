@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   derivePrivatePaths,
+  DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES,
   parseStartupConfig,
   safeParseStartupConfig,
   startupConfigSchema,
@@ -35,10 +36,25 @@ describe("startup configuration", () => {
     expect(parsed.privateRoot).toBe(fixture.privateRoot);
     expect(parsed.paths).toEqual(fixture.paths);
     expect(parsed.secretFile).toEqual(fixture.secretFile);
+    expect(parsed.http.maxRequestBodyBytes).toBe(DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES);
     expect(parsed.ports).toEqual(fixture.ports);
     expect(parseStartupConfig(parsed)).toEqual(parsed);
     expect(startupConfigSchema.parse(fixture)).toEqual(parsed);
     expect(derivePrivatePaths(fixture.privateRoot)).toEqual(fixture.paths);
+  });
+
+  test("accepts a positive bounded HTTP body limit and rejects an unsafe value", () => {
+    const configured = parseStartupConfig({
+      ...fixture,
+      http: { maxRequestBodyBytes: 2 * 1024 * 1024 },
+    });
+    expect(configured.http.maxRequestBodyBytes).toBe(2 * 1024 * 1024);
+    expect(safeParseStartupConfig({ ...fixture, http: { maxRequestBodyBytes: 0 } }).success).toBe(
+      false,
+    );
+    expect(safeParseStartupConfig({ ...fixture, http: { maxRequestBodyBytes: 100 * 1024 * 1024 + 1 } }).success).toBe(
+      false,
+    );
   });
 
   test("rejects unknown keys with a stable safe error", () => {

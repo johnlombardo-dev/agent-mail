@@ -21,6 +21,8 @@ import {
   type ExportFrame,
 } from "./export-stream-framing";
 import {
+  admitHttpRequest,
+  authenticatedTransportContext,
   createRegistryTransportAdapter,
   httpErrorRegistry,
   publicOperationRegistry,
@@ -77,6 +79,7 @@ export type SelectedExportStreamOptions = Readonly<{
   readonly source: SelectedExportSource;
   readonly authenticate?: HttpCredentialAuthenticator;
   readonly logger?: PrivateHttpLogger;
+  readonly maxRequestBodyBytes?: number;
 }>;
 
 export class SelectedExportError extends Error {
@@ -299,13 +302,17 @@ export function createSelectedExportStreamingApp(options: SelectedExportStreamOp
   app.post("/v1/exports", async (context) => {
     const request = context.req.raw;
     const correlationId = correlationIdFrom(request);
-    let input: unknown = {};
-    try {
-      input = await request.clone().json();
-    } catch {
-      // Let the shared adapter produce the registered invalid_request envelope.
-      input = undefined;
-    }
+    const operation = publicOperationRegistry.get("exports.selected");
+    if (operation === undefined) return context.json(internalErrorBody(correlationId), 500);
+    const admission = await admitHttpRequest({
+      operation,
+      request,
+      authenticate: options.authenticate,
+      errorRegistry: httpErrorRegistry,
+      maxRequestBodyBytes: options.maxRequestBodyBytes,
+      correlationId,
+    });
+    if (admission.kind === "rejected") return context.json(admission.body, admission.status);
     let stream: AsyncGenerator<Uint8Array> | undefined;
     const handlers: OperationHandlerMap = {
       "exports.selected": async (value, _handlerContext) => {
@@ -321,10 +328,11 @@ export function createSelectedExportStreamingApp(options: SelectedExportStreamOp
       logger: options.logger,
       authenticate: options.authenticate,
     });
-    const result = await adapter.execute("exports.selected", input, {
-      request,
-      correlationId,
-    });
+    const result = await adapter.execute(
+      "exports.selected",
+      admission.input,
+      authenticatedTransportContext({ request, correlationId }, admission.principal),
+    );
     if (result.status !== 200 || stream === undefined) return context.json(result.body, result.status);
     let prefetched: IteratorResult<Uint8Array>;
     try {
