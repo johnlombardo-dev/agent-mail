@@ -1,0 +1,5731 @@
+{
+  "format": "agent-mail.sync-runtime-conformance-traces/v1",
+  "modelVersion": "1.0.0-candidate.8",
+  "modelDigest": "3c26fe8132871e2f2295ca805161e17571c93d99a74aad0161117c38eb979f91",
+  "generator": "packages/daemon/test/fixtures/generate-sync-runtime-conformance-traces.ts",
+  "boundedPropertySeeds": [
+    149,
+    148,
+    209,
+    196,
+    189,
+    132,
+    129,
+    136
+  ],
+  "resourceObservationGaps": [
+    {
+      "state": "starting.active",
+      "fields": [
+        "actorOutput"
+      ],
+      "reason": "The default bootstrap actor is the accepted never-settling placeholder; the concrete production-composed lane supplies the real bootstrap result and cleanup behavior."
+    },
+    {
+      "state": "backfilling.active",
+      "fields": [
+        "actorOutput",
+        "nestedChildren"
+      ],
+      "reason": "The default initial-backfill actor is the accepted never-settling placeholder; the concrete production-composed lane supplies the real SQLite loop, while the separate raw-download probe supplies nested queue/job ownership."
+    },
+    {
+      "state": "watching.idling",
+      "fields": [
+        "timers",
+        "listeners",
+        "streams",
+        "subscriptions"
+      ],
+      "reason": "The default lifecycle actor map intentionally retains inert callback placeholders; the concrete production-composed IDLE probe supplies exact counts."
+    },
+    {
+      "state": "watching.polling",
+      "fields": [
+        "timers",
+        "listeners",
+        "streams",
+        "subscriptions"
+      ],
+      "reason": "The default lifecycle actor map intentionally retains an inert callback placeholder; the concrete production-composed polling probe supplies exact counts."
+    },
+    {
+      "state": "sweeping.active",
+      "fields": [
+        "actorOutput",
+        "nestedChildren"
+      ],
+      "reason": "The default recurring-sweep actor is the accepted never-settling placeholder; the concrete production-composed lane supplies the real SQLite sweep, while the separate raw-download probe supplies nested queue/job ownership."
+    }
+  ],
+  "durableObservationGaps": [
+    {
+      "transitionIds": [
+        "T110",
+        "T116",
+        "T117",
+        "T118",
+        "T150",
+        "T156"
+      ],
+      "fields": [
+        "mailboxCheckpoint",
+        "initialBackfillCompletion"
+      ],
+      "reason": "The generated row lane exercises reserved actor-result routing against the default never-settling backfill/sweep placeholders; concrete production-composed loops own the SQLite writes and are checked separately."
+    }
+  ],
+  "counterexamples": [
+    {
+      "id": "CE-POLL-TIMER-LEAK",
+      "events": [
+        "control.start.requested",
+        "watchTimer.elapsed",
+        "control.stop.requested",
+        "xstate.done.actor.cleanupBarrier",
+        "leak.virtualTimer"
+      ],
+      "expectedFailure": "terminal audit retains a live timer"
+    },
+    {
+      "id": "CE-LATE-DOWNLOAD-COMPLETION",
+      "events": [
+        "control.start.requested",
+        "control.stop.requested",
+        "xstate.done.actor.initialBackfill"
+      ],
+      "expectedFailure": "late completion is ignored and durable summary is unchanged"
+    }
+  ],
+  "traces": [
+    {
+      "id": "T001:@uninitialized",
+      "transitionId": "T001",
+      "source": "@uninitialized",
+      "event": "xstate.init",
+      "target": "stopped.clean",
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T010:stopped.clean",
+      "transitionId": "T010",
+      "source": "stopped.clean",
+      "event": "control.start.requested",
+      "target": "starting.active",
+      "stoppedActors": [],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T010:stopped.failed",
+      "transitionId": "T010",
+      "source": "stopped.failed",
+      "event": "control.start.requested",
+      "target": "starting.active",
+      "stoppedActors": [],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T050",
+        "T183"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T011:starting.active",
+      "transitionId": "T011",
+      "source": "starting.active",
+      "event": "control.start.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T011:backfilling.active",
+      "transitionId": "T011",
+      "source": "backfilling.active",
+      "event": "control.start.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "initialBackfill"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T011:sweeping.active",
+      "transitionId": "T011",
+      "source": "sweeping.active",
+      "event": "control.start.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "recurringSweep"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T011:retryWaiting.active",
+      "transitionId": "T011",
+      "source": "retryWaiting.active",
+      "event": "control.start.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "retryTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T012:watching.idling",
+      "transitionId": "T012",
+      "source": "watching.idling",
+      "event": "control.start.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T012:watching.polling",
+      "transitionId": "T012",
+      "source": "watching.polling",
+      "event": "control.start.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T020:starting.active",
+      "transitionId": "T020",
+      "source": "starting.active",
+      "event": "control.pause.requested",
+      "target": "starting.pausing",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T021:backfilling.active",
+      "transitionId": "T021",
+      "source": "backfilling.active",
+      "event": "control.pause.requested",
+      "target": "backfilling.pausing",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T022:watching.idling",
+      "transitionId": "T022",
+      "source": "watching.idling",
+      "event": "control.pause.requested",
+      "target": "watching.closingForPause",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T022:watching.polling",
+      "transitionId": "T022",
+      "source": "watching.polling",
+      "event": "control.pause.requested",
+      "target": "watching.closingForPause",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T023:sweeping.active",
+      "transitionId": "T023",
+      "source": "sweeping.active",
+      "event": "control.pause.requested",
+      "target": "sweeping.pausing",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T024:retryWaiting.active",
+      "transitionId": "T024",
+      "source": "retryWaiting.active",
+      "event": "control.pause.requested",
+      "target": "retryWaiting.pausing",
+      "stoppedActors": [
+        "retryTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T025:watching.closingForSweep",
+      "transitionId": "T025",
+      "source": "watching.closingForSweep",
+      "event": "control.pause.requested",
+      "target": "watching.closingForPause",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T025:watching.closingForRetry",
+      "transitionId": "T025",
+      "source": "watching.closingForRetry",
+      "event": "control.pause.requested",
+      "target": "watching.closingForPause",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T123"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T025:watching.closingForFailure",
+      "transitionId": "T025",
+      "source": "watching.closingForFailure",
+      "event": "control.pause.requested",
+      "target": "watching.closingForPause",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T124"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T029:watching.closingForAuthBlock",
+      "transitionId": "T029",
+      "source": "watching.closingForAuthBlock",
+      "event": "control.pause.requested",
+      "target": "watching.closingForPause",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T026:starting.pausing",
+      "transitionId": "T026",
+      "source": "starting.pausing",
+      "event": "control.pause.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T026:backfilling.pausing",
+      "transitionId": "T026",
+      "source": "backfilling.pausing",
+      "event": "control.pause.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100",
+        "T021"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T026:watching.closingForPause",
+      "transitionId": "T026",
+      "source": "watching.closingForPause",
+      "event": "control.pause.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T022"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T026:sweeping.pausing",
+      "transitionId": "T026",
+      "source": "sweeping.pausing",
+      "event": "control.pause.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140",
+        "T023"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T026:retryWaiting.pausing",
+      "transitionId": "T026",
+      "source": "retryWaiting.pausing",
+      "event": "control.pause.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103",
+        "T024"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T027:authBlocked",
+      "transitionId": "T027",
+      "source": "authBlocked",
+      "event": "control.pause.requested",
+      "target": "paused",
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T102"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T028:paused",
+      "transitionId": "T028",
+      "source": "paused",
+      "event": "control.pause.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020",
+        "T170"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T030:paused",
+      "transitionId": "T030",
+      "source": "paused",
+      "event": "control.resume.requested",
+      "target": "starting.active",
+      "stoppedActors": [],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020",
+        "T170"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T031:starting.active",
+      "transitionId": "T031",
+      "source": "starting.active",
+      "event": "control.resume.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T032:backfilling.active",
+      "transitionId": "T032",
+      "source": "backfilling.active",
+      "event": "control.resume.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "initialBackfill"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T032:watching.idling",
+      "transitionId": "T032",
+      "source": "watching.idling",
+      "event": "control.resume.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T032:watching.polling",
+      "transitionId": "T032",
+      "source": "watching.polling",
+      "event": "control.resume.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T032:sweeping.active",
+      "transitionId": "T032",
+      "source": "sweeping.active",
+      "event": "control.resume.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "recurringSweep"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T032:retryWaiting.active",
+      "transitionId": "T032",
+      "source": "retryWaiting.active",
+      "event": "control.resume.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "retryTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T040:stopped.clean",
+      "transitionId": "T040",
+      "source": "stopped.clean",
+      "event": "control.stop.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T040:stopped.failed",
+      "transitionId": "T040",
+      "source": "stopped.failed",
+      "event": "control.stop.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T050",
+        "T183"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T040:stopped.shutdown",
+      "transitionId": "T040",
+      "source": "stopped.shutdown",
+      "event": "control.stop.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T054"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T041:stopping.forStop",
+      "transitionId": "T041",
+      "source": "stopping.forStop",
+      "event": "control.stop.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T043"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T041:stopping.forShutdown",
+      "transitionId": "T041",
+      "source": "stopping.forShutdown",
+      "event": "control.stop.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T053"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T042:stopping.forRestart",
+      "transitionId": "T042",
+      "source": "stopping.forRestart",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T050"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T042:stopping.afterFailure",
+      "transitionId": "T042",
+      "source": "stopping.afterFailure",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T104"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:starting.active",
+      "transitionId": "T043",
+      "source": "starting.active",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:starting.pausing",
+      "transitionId": "T043",
+      "source": "starting.pausing",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:backfilling.active",
+      "transitionId": "T043",
+      "source": "backfilling.active",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:backfilling.pausing",
+      "transitionId": "T043",
+      "source": "backfilling.pausing",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100",
+        "T021"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:watching.idling",
+      "transitionId": "T043",
+      "source": "watching.idling",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:watching.polling",
+      "transitionId": "T043",
+      "source": "watching.polling",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:watching.closingForSweep",
+      "transitionId": "T043",
+      "source": "watching.closingForSweep",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:watching.closingForRetry",
+      "transitionId": "T043",
+      "source": "watching.closingForRetry",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T123"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:watching.closingForAuthBlock",
+      "transitionId": "T043",
+      "source": "watching.closingForAuthBlock",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:watching.closingForPause",
+      "transitionId": "T043",
+      "source": "watching.closingForPause",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T022"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:watching.closingForFailure",
+      "transitionId": "T043",
+      "source": "watching.closingForFailure",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T124"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:sweeping.active",
+      "transitionId": "T043",
+      "source": "sweeping.active",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:sweeping.pausing",
+      "transitionId": "T043",
+      "source": "sweeping.pausing",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140",
+        "T023"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:retryWaiting.active",
+      "transitionId": "T043",
+      "source": "retryWaiting.active",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:retryWaiting.pausing",
+      "transitionId": "T043",
+      "source": "retryWaiting.pausing",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103",
+        "T024"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:authBlocked",
+      "transitionId": "T043",
+      "source": "authBlocked",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T102"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T043:paused",
+      "transitionId": "T043",
+      "source": "paused",
+      "event": "control.stop.requested",
+      "target": "stopping.forStop",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020",
+        "T170"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:stopped.clean",
+      "transitionId": "T050",
+      "source": "stopped.clean",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:stopped.failed",
+      "transitionId": "T050",
+      "source": "stopped.failed",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T050",
+        "T183"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:starting.active",
+      "transitionId": "T050",
+      "source": "starting.active",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:starting.pausing",
+      "transitionId": "T050",
+      "source": "starting.pausing",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:backfilling.active",
+      "transitionId": "T050",
+      "source": "backfilling.active",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:backfilling.pausing",
+      "transitionId": "T050",
+      "source": "backfilling.pausing",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100",
+        "T021"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:watching.idling",
+      "transitionId": "T050",
+      "source": "watching.idling",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:watching.polling",
+      "transitionId": "T050",
+      "source": "watching.polling",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:watching.closingForSweep",
+      "transitionId": "T050",
+      "source": "watching.closingForSweep",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:watching.closingForRetry",
+      "transitionId": "T050",
+      "source": "watching.closingForRetry",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T123"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:watching.closingForAuthBlock",
+      "transitionId": "T050",
+      "source": "watching.closingForAuthBlock",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:watching.closingForPause",
+      "transitionId": "T050",
+      "source": "watching.closingForPause",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T022"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:watching.closingForFailure",
+      "transitionId": "T050",
+      "source": "watching.closingForFailure",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T124"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:sweeping.active",
+      "transitionId": "T050",
+      "source": "sweeping.active",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:sweeping.pausing",
+      "transitionId": "T050",
+      "source": "sweeping.pausing",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140",
+        "T023"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:retryWaiting.active",
+      "transitionId": "T050",
+      "source": "retryWaiting.active",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:retryWaiting.pausing",
+      "transitionId": "T050",
+      "source": "retryWaiting.pausing",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103",
+        "T024"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:authBlocked",
+      "transitionId": "T050",
+      "source": "authBlocked",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T102"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T050:paused",
+      "transitionId": "T050",
+      "source": "paused",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020",
+        "T170"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T051:stopping.forStop",
+      "transitionId": "T051",
+      "source": "stopping.forStop",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T043"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T051:stopping.afterFailure",
+      "transitionId": "T051",
+      "source": "stopping.afterFailure",
+      "event": "lifecycle.restart.requested",
+      "target": "stopping.forRestart",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T104"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T052:stopping.forRestart",
+      "transitionId": "T052",
+      "source": "stopping.forRestart",
+      "event": "lifecycle.restart.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T050"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:starting.active",
+      "transitionId": "T053",
+      "source": "starting.active",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:starting.pausing",
+      "transitionId": "T053",
+      "source": "starting.pausing",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:backfilling.active",
+      "transitionId": "T053",
+      "source": "backfilling.active",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:backfilling.pausing",
+      "transitionId": "T053",
+      "source": "backfilling.pausing",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100",
+        "T021"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:watching.idling",
+      "transitionId": "T053",
+      "source": "watching.idling",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:watching.polling",
+      "transitionId": "T053",
+      "source": "watching.polling",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:watching.closingForSweep",
+      "transitionId": "T053",
+      "source": "watching.closingForSweep",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:watching.closingForRetry",
+      "transitionId": "T053",
+      "source": "watching.closingForRetry",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T123"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:watching.closingForAuthBlock",
+      "transitionId": "T053",
+      "source": "watching.closingForAuthBlock",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:watching.closingForPause",
+      "transitionId": "T053",
+      "source": "watching.closingForPause",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T022"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:watching.closingForFailure",
+      "transitionId": "T053",
+      "source": "watching.closingForFailure",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T124"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:sweeping.active",
+      "transitionId": "T053",
+      "source": "sweeping.active",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:sweeping.pausing",
+      "transitionId": "T053",
+      "source": "sweeping.pausing",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140",
+        "T023"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:retryWaiting.active",
+      "transitionId": "T053",
+      "source": "retryWaiting.active",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:retryWaiting.pausing",
+      "transitionId": "T053",
+      "source": "retryWaiting.pausing",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103",
+        "T024"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:authBlocked",
+      "transitionId": "T053",
+      "source": "authBlocked",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T102"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:paused",
+      "transitionId": "T053",
+      "source": "paused",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020",
+        "T170"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:stopping.forStop",
+      "transitionId": "T053",
+      "source": "stopping.forStop",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T043"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:stopping.forRestart",
+      "transitionId": "T053",
+      "source": "stopping.forRestart",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T050"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T053:stopping.afterFailure",
+      "transitionId": "T053",
+      "source": "stopping.afterFailure",
+      "event": "process.shutdown.requested",
+      "target": "stopping.forShutdown",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T104"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T054:stopped.clean",
+      "transitionId": "T054",
+      "source": "stopped.clean",
+      "event": "process.shutdown.requested",
+      "target": "stopped.shutdown",
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T054:stopped.failed",
+      "transitionId": "T054",
+      "source": "stopped.failed",
+      "event": "process.shutdown.requested",
+      "target": "stopped.shutdown",
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T050",
+        "T183"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:stopped.clean",
+      "transitionId": "T059",
+      "source": "stopped.clean",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:stopped.failed",
+      "transitionId": "T059",
+      "source": "stopped.failed",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T050",
+        "T183"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:starting.active",
+      "transitionId": "T059",
+      "source": "starting.active",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:starting.pausing",
+      "transitionId": "T059",
+      "source": "starting.pausing",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:backfilling.active",
+      "transitionId": "T059",
+      "source": "backfilling.active",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "initialBackfill"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:backfilling.pausing",
+      "transitionId": "T059",
+      "source": "backfilling.pausing",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100",
+        "T021"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:watching.idling",
+      "transitionId": "T059",
+      "source": "watching.idling",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:watching.polling",
+      "transitionId": "T059",
+      "source": "watching.polling",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:watching.closingForSweep",
+      "transitionId": "T059",
+      "source": "watching.closingForSweep",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:watching.closingForRetry",
+      "transitionId": "T059",
+      "source": "watching.closingForRetry",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T123"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:watching.closingForAuthBlock",
+      "transitionId": "T059",
+      "source": "watching.closingForAuthBlock",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:watching.closingForPause",
+      "transitionId": "T059",
+      "source": "watching.closingForPause",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T022"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:watching.closingForFailure",
+      "transitionId": "T059",
+      "source": "watching.closingForFailure",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T124"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:sweeping.active",
+      "transitionId": "T059",
+      "source": "sweeping.active",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "recurringSweep"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:sweeping.pausing",
+      "transitionId": "T059",
+      "source": "sweeping.pausing",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140",
+        "T023"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:retryWaiting.active",
+      "transitionId": "T059",
+      "source": "retryWaiting.active",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "retryTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:retryWaiting.pausing",
+      "transitionId": "T059",
+      "source": "retryWaiting.pausing",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103",
+        "T024"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:paused",
+      "transitionId": "T059",
+      "source": "paused",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020",
+        "T170"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:stopping.forStop",
+      "transitionId": "T059",
+      "source": "stopping.forStop",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T043"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:stopping.forRestart",
+      "transitionId": "T059",
+      "source": "stopping.forRestart",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T050"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T059:stopping.afterFailure",
+      "transitionId": "T059",
+      "source": "stopping.afterFailure",
+      "event": "credentials.changed",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T104"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T055:stopping.forShutdown",
+      "transitionId": "T055",
+      "source": "stopping.forShutdown",
+      "event": "process.shutdown.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T053"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T055:stopped.shutdown",
+      "transitionId": "T055",
+      "source": "stopped.shutdown",
+      "event": "process.shutdown.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T054"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T056:stopping.forShutdown",
+      "transitionId": "T056",
+      "source": "stopping.forShutdown",
+      "event": "lifecycle.restart.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T053"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T056:stopped.shutdown",
+      "transitionId": "T056",
+      "source": "stopped.shutdown",
+      "event": "lifecycle.restart.requested",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T054"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T060:authBlocked",
+      "transitionId": "T060",
+      "source": "authBlocked",
+      "event": "credentials.changed",
+      "target": "starting.active",
+      "stoppedActors": [],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T102"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T100:starting.active",
+      "transitionId": "T100",
+      "source": "starting.active",
+      "event": "xstate.done.actor.bootstrapSession",
+      "target": "backfilling.active",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "initialBackfill"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "initialBackfill"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T101:starting.active",
+      "transitionId": "T101",
+      "source": "starting.active",
+      "event": "xstate.done.actor.bootstrapSession",
+      "target": "watching.idling",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T106:starting.active",
+      "transitionId": "T106",
+      "source": "starting.active",
+      "event": "xstate.done.actor.bootstrapSession",
+      "target": "watching.polling",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T097:starting.active",
+      "transitionId": "T097",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "target": "starting.active",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T098:starting.active",
+      "transitionId": "T098",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T102:starting.active",
+      "transitionId": "T102",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "target": "authBlocked",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T103:starting.active",
+      "transitionId": "T103",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "target": "retryWaiting.active",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "retryTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T104:starting.active",
+      "transitionId": "T104",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T105:starting.active",
+      "transitionId": "T105",
+      "source": "starting.active",
+      "event": "xstate.error.actor.bootstrapSession",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "bootstrapSession"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "bootstrapSession"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T110:backfilling.active",
+      "transitionId": "T110",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "target": "watching.idling",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T116:backfilling.active",
+      "transitionId": "T116",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "target": "watching.polling",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T117:backfilling.active",
+      "transitionId": "T117",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "target": "watching.idling",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T118:backfilling.active",
+      "transitionId": "T118",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "target": "watching.polling",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T111:backfilling.active",
+      "transitionId": "T111",
+      "source": "backfilling.active",
+      "event": "xstate.done.actor.initialBackfill",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T107:backfilling.active",
+      "transitionId": "T107",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "target": "starting.active",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T108:backfilling.active",
+      "transitionId": "T108",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T112:backfilling.active",
+      "transitionId": "T112",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "target": "authBlocked",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T113:backfilling.active",
+      "transitionId": "T113",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "target": "retryWaiting.active",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "retryTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T114:backfilling.active",
+      "transitionId": "T114",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T115:backfilling.active",
+      "transitionId": "T115",
+      "source": "backfilling.active",
+      "event": "xstate.error.actor.initialBackfill",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "initialBackfill"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "initialBackfill"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T120:watching.idling",
+      "transitionId": "T120",
+      "source": "watching.idling",
+      "event": "idle.ready",
+      "target": null,
+      "stoppedActors": [],
+      "startedActors": [],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T121:watching.idling",
+      "transitionId": "T121",
+      "source": "watching.idling",
+      "event": "idle.mailboxChanged",
+      "target": "watching.closingForSweep",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T122:watching.idling",
+      "transitionId": "T122",
+      "source": "watching.idling",
+      "event": "watchTimer.elapsed",
+      "target": "watching.closingForSweep",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T122:watching.polling",
+      "transitionId": "T122",
+      "source": "watching.polling",
+      "event": "watchTimer.elapsed",
+      "target": "watching.closingForSweep",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T123:watching.idling",
+      "transitionId": "T123",
+      "source": "watching.idling",
+      "event": "idle.completed",
+      "target": "watching.closingForRetry",
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T124:watching.idling",
+      "transitionId": "T124",
+      "source": "watching.idling",
+      "event": "idle.completed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T124F:watching.idling",
+      "transitionId": "T124F",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T125:watching.idling",
+      "transitionId": "T125",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "target": "watching.closingForAuthBlock",
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T126:watching.idling",
+      "transitionId": "T126",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "target": "watching.closingForRetry",
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T127:watching.idling",
+      "transitionId": "T127",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T128:watching.idling",
+      "transitionId": "T128",
+      "source": "watching.idling",
+      "event": "idle.failed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T129:watching.idling",
+      "transitionId": "T129",
+      "source": "watching.idling",
+      "event": "watchTimer.failed",
+      "target": "watching.closingForRetry",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T129:watching.polling",
+      "transitionId": "T129",
+      "source": "watching.polling",
+      "event": "watchTimer.failed",
+      "target": "watching.closingForRetry",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T130:watching.idling",
+      "transitionId": "T130",
+      "source": "watching.idling",
+      "event": "watchTimer.failed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T130:watching.polling",
+      "transitionId": "T130",
+      "source": "watching.polling",
+      "event": "watchTimer.failed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T131:watching.idling",
+      "transitionId": "T131",
+      "source": "watching.idling",
+      "event": "watchTimer.failed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T131:watching.polling",
+      "transitionId": "T131",
+      "source": "watching.polling",
+      "event": "watchTimer.failed",
+      "target": "watching.closingForFailure",
+      "stoppedActors": [
+        "@source"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "periodicStatusTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T106"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T140:watching.closingForSweep",
+      "transitionId": "T140",
+      "source": "watching.closingForSweep",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "sweeping.active",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "recurringSweep"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "recurringSweep"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T141:watching.closingForRetry",
+      "transitionId": "T141",
+      "source": "watching.closingForRetry",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "retryWaiting.active",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "retryTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T123"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T139:watching.closingForAuthBlock",
+      "transitionId": "T139",
+      "source": "watching.closingForAuthBlock",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "starting.active",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T142:watching.closingForAuthBlock",
+      "transitionId": "T142",
+      "source": "watching.closingForAuthBlock",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "authBlocked",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T143:watching.closingForPause",
+      "transitionId": "T143",
+      "source": "watching.closingForPause",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "paused",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T022"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T144:watching.closingForFailure",
+      "transitionId": "T144",
+      "source": "watching.closingForFailure",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T124"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T145:watching.closingForSweep",
+      "transitionId": "T145",
+      "source": "watching.closingForSweep",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T145:watching.closingForRetry",
+      "transitionId": "T145",
+      "source": "watching.closingForRetry",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T123"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T145:watching.closingForAuthBlock",
+      "transitionId": "T145",
+      "source": "watching.closingForAuthBlock",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T125"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T145:watching.closingForPause",
+      "transitionId": "T145",
+      "source": "watching.closingForPause",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T022"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T145:watching.closingForFailure",
+      "transitionId": "T145",
+      "source": "watching.closingForFailure",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T124"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T150:sweeping.active",
+      "transitionId": "T150",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "target": "watching.idling",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T156:sweeping.active",
+      "transitionId": "T156",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "target": "watching.polling",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T157:sweeping.active",
+      "transitionId": "T157",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "target": "watching.idling",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "idleSession",
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T158:sweeping.active",
+      "transitionId": "T158",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "target": "watching.polling",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "periodicStatusTimer"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "periodicStatusTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T151:sweeping.active",
+      "transitionId": "T151",
+      "source": "sweeping.active",
+      "event": "xstate.done.actor.recurringSweep",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T146:sweeping.active",
+      "transitionId": "T146",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "target": "starting.active",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T147:sweeping.active",
+      "transitionId": "T147",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T152:sweeping.active",
+      "transitionId": "T152",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "target": "authBlocked",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T153:sweeping.active",
+      "transitionId": "T153",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "target": "retryWaiting.active",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "retryTimer"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "retryTimer"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T154:sweeping.active",
+      "transitionId": "T154",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T155:sweeping.active",
+      "transitionId": "T155",
+      "source": "sweeping.active",
+      "event": "xstate.error.actor.recurringSweep",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "recurringSweep"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "recurringSweep"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T160:retryWaiting.active",
+      "transitionId": "T160",
+      "source": "retryWaiting.active",
+      "event": "retryTimer.elapsed",
+      "target": "starting.active",
+      "stoppedActors": [
+        "retryTimer"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T161:retryWaiting.active",
+      "transitionId": "T161",
+      "source": "retryWaiting.active",
+      "event": "retryTimer.failed",
+      "target": "stopping.afterFailure",
+      "stoppedActors": [
+        "retryTimer"
+      ],
+      "startedActors": [
+        "cleanupBarrier"
+      ],
+      "ownershipBefore": [
+        "retryTimer"
+      ],
+      "ownershipAfter": [
+        "cleanupBarrier"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T170:starting.pausing",
+      "transitionId": "T170",
+      "source": "starting.pausing",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "paused",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T170:backfilling.pausing",
+      "transitionId": "T170",
+      "source": "backfilling.pausing",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "paused",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100",
+        "T021"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T170:sweeping.pausing",
+      "transitionId": "T170",
+      "source": "sweeping.pausing",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "paused",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140",
+        "T023"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T170:retryWaiting.pausing",
+      "transitionId": "T170",
+      "source": "retryWaiting.pausing",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "paused",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103",
+        "T024"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T171:starting.pausing",
+      "transitionId": "T171",
+      "source": "starting.pausing",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T020"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T171:backfilling.pausing",
+      "transitionId": "T171",
+      "source": "backfilling.pausing",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T100",
+        "T021"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T171:sweeping.pausing",
+      "transitionId": "T171",
+      "source": "sweeping.pausing",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T101",
+        "T121",
+        "T140",
+        "T023"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T171:retryWaiting.pausing",
+      "transitionId": "T171",
+      "source": "retryWaiting.pausing",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T103",
+        "T024"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T180:stopping.forStop",
+      "transitionId": "T180",
+      "source": "stopping.forStop",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "stopped.clean",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T043"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T181:stopping.forRestart",
+      "transitionId": "T181",
+      "source": "stopping.forRestart",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "starting.active",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [
+        "bootstrapSession"
+      ],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [
+        "bootstrapSession"
+      ],
+      "pathTransitionIds": [
+        "T001",
+        "T050"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T182:stopping.afterFailure",
+      "transitionId": "T182",
+      "source": "stopping.afterFailure",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T104"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T184:stopping.forShutdown",
+      "transitionId": "T184",
+      "source": "stopping.forShutdown",
+      "event": "xstate.done.actor.cleanupBarrier",
+      "target": "stopped.shutdown",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T053"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T185:stopping.forShutdown",
+      "transitionId": "T185",
+      "source": "stopping.forShutdown",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.shutdown",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T053"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T183:stopping.forStop",
+      "transitionId": "T183",
+      "source": "stopping.forStop",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T043"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T183:stopping.forRestart",
+      "transitionId": "T183",
+      "source": "stopping.forRestart",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T050"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    },
+    {
+      "id": "T183:stopping.afterFailure",
+      "transitionId": "T183",
+      "source": "stopping.afterFailure",
+      "event": "xstate.error.actor.cleanupBarrier",
+      "target": "stopped.failed",
+      "stoppedActors": [
+        "cleanupBarrier"
+      ],
+      "startedActors": [],
+      "ownershipBefore": [
+        "cleanupBarrier"
+      ],
+      "ownershipAfter": [],
+      "pathTransitionIds": [
+        "T001",
+        "T010",
+        "T104"
+      ],
+      "outcomeKinds": [
+        "cancelled",
+        "late",
+        "duplicate"
+      ]
+    }
+  ]
+}
