@@ -88,7 +88,23 @@ export const cleanupCertificateSchema = z.strictObject({
   diagnostics: syncDiagnosticsSchema,
 });
 
-export type CleanupCertificate = z.infer<typeof cleanupCertificateSchema>;
+export type CleanupCertificate = {
+  readonly certificateId: string;
+  readonly cleanupEpoch: number;
+  readonly cleanupPhase: number;
+  readonly invokeLease: number;
+  readonly effectiveScope: "watch" | "workflow";
+  readonly frozenReleaseSetId: string;
+  readonly released: true;
+  readonly authoritativeAudit: {
+    readonly scope: "watch" | "workflow";
+    readonly frozenReleaseSetId: string;
+    readonly liveResourceCount: 0;
+    readonly unresolvedReleaseCount: 0;
+    readonly digest: string;
+  };
+  readonly diagnostics: readonly SyncDiagnostic[];
+};
 
 export const cleanupTerminalFaultSchema = z.strictObject({
   category: z.union([z.literal("permanent"), z.literal("invariant")]),
@@ -97,7 +113,12 @@ export const cleanupTerminalFaultSchema = z.strictObject({
   releaseCertificate: cleanupCertificateSchema,
 });
 
-export type CleanupTerminalFault = z.infer<typeof cleanupTerminalFaultSchema>;
+export type CleanupTerminalFault = {
+  readonly category: "permanent" | "invariant";
+  readonly code: string;
+  readonly safeMessage: string;
+  readonly releaseCertificate: CleanupCertificate;
+};
 
 /** The immutable terminal owned by one resource-registry cleanup phase. */
 export type SyncCleanupPhaseTerminal =
@@ -127,6 +148,47 @@ export interface SyncCleanupPhaseRequest {
   readonly invokeLease: number;
 }
 
+export type SyncReleaseOwnerScope = "watch" | "workflow";
+
+export interface SyncReleaseSlotRequest {
+  readonly ownerScope: SyncReleaseOwnerScope;
+  readonly ownerInvokeIdentity: string;
+  readonly resourceOrdinal: number;
+  readonly stableResourceId: string;
+  readonly release: () => void | Promise<void>;
+}
+
+export interface SyncReleaseSlotTerminal {
+  readonly status: "success" | "error";
+  readonly slotInstanceId: string;
+  readonly slotGeneration: number;
+  readonly stableResourceId: string;
+  readonly diagnostic: SyncDiagnostic | null;
+  readonly category: WorkflowFaultCategory | null;
+}
+
+export interface SyncReleaseSlotHandle {
+  readonly slotInstanceId: string;
+  readonly slotGeneration: number;
+  readonly stableResourceId: string;
+  readonly terminal: Promise<SyncReleaseSlotTerminal>;
+  readonly triggerRelease: () => Promise<SyncReleaseSlotTerminal>;
+}
+
+export interface SyncCompositeQueueSlotRegistration {
+  readonly handle: SyncReleaseSlotHandle;
+  /** Bind exact queue.stop() after synchronous queue construction. */
+  readonly bindQueueStop: (stop: () => void | Promise<void>) => void;
+}
+
+export interface SyncResourceRegistrySnapshot {
+  readonly slotEntryCount: number;
+  readonly sourceTreeSnapshotCount: number;
+  readonly phaseSnapshotCount: number;
+  readonly nextSlotGeneration: number;
+  readonly cleanupSessionOpen: boolean;
+}
+
 export interface SyncResourceRegistryAuthority {
   /** The current immutable phase, or null before the first cleanup request. */
   readonly currentPhase: SyncCleanupPhaseSnapshot | null;
@@ -136,7 +198,12 @@ export interface SyncResourceRegistryAuthority {
   readonly awaitPhase: (
     cleanupEpoch: number,
     cleanupPhase: number,
+    invokeLease?: number,
   ) => Promise<SyncCleanupPhaseTerminal>;
+  /** Optional concrete-registry operations; injected test authorities may omit them. */
+  readonly registerReleaseSlot?: (request: SyncReleaseSlotRequest) => SyncReleaseSlotHandle;
+  readonly finishCleanupScope?: (certificate: CleanupCertificate) => void;
+  readonly snapshot?: () => SyncResourceRegistrySnapshot;
 }
 
 export interface SyncLifecycleDependencies {
@@ -293,6 +360,8 @@ export interface SyncLifecycleInput {
   readonly initialCheckpoint: SyncCheckpointSummary;
   readonly initialCredentialRevision: number;
   readonly incarnationId?: string;
+  /** Concrete IDLE adapter injection remains owned by the composition seam. */
+  readonly validatedIdleAdapter?: unknown;
 }
 
 export interface SyncActorInputs {
@@ -404,6 +473,56 @@ const neverPromiseActor = fromPromise<never, SyncActorInputs>(
 );
 const inertCallbackActor = fromCallback<SyncLifecycleEvent, SyncActorInputs>(() => undefined);
 
+function normalizedCleanupFault(certificate: CleanupCertificate): CleanupTerminalFault {
+  return cleanupTerminalFaultSchema.parse({
+    category: "invariant",
+    code: "sync.cleanup-terminal-contract",
+    safeMessage: "Cleanup terminal violated its fault-category contract.",
+    releaseCertificate: certificate,
+  });
+}
+
+const cleanupBarrierActor = fromPromise<CleanupCertificate, CleanupBarrierActorInput>(
+  async ({ input }) => {
+    // The #190 model-path harness injects a deliberately manual authority. It
+    // drives reserved terminal events itself; only the concrete registry owns
+    // an autonomous cleanup barrier.
+    if (!input.resourceRegistry.registerReleaseSlot)
+      return new Promise<CleanupCertificate>(() => undefined);
+    let phaseTerminal = input.phaseTerminal;
+    let internalFailure: unknown = undefined;
+    for (;;) {
+      let candidate: unknown;
+      try {
+        candidate = await phaseTerminal;
+      } catch (value: unknown) {
+        internalFailure = value;
+        candidate = undefined;
+      }
+      if (isRecord(candidate) && candidate.status === "success") {
+        const certificate = cleanupCertificateSchema.safeParse(candidate.certificate);
+        if (certificate.success) {
+          if (internalFailure !== undefined) throw normalizedCleanupFault(certificate.data);
+          return certificate.data;
+        }
+      }
+      if (isRecord(candidate) && candidate.status === "error") {
+        const fault = cleanupTerminalFaultSchema.safeParse(candidate.fault);
+        if (fault.success) {
+          if (fault.data.category === "permanent" || fault.data.category === "invariant")
+            throw fault.data;
+        }
+      }
+      phaseTerminal = input.resourceRegistry.awaitPhase(
+        input.cleanupEpoch,
+        input.cleanupPhase,
+        input.invokeLease,
+      );
+      internalFailure = undefined;
+    }
+  },
+);
+
 const defaultActors: Record<string, AnyActorLogic> = {
   bootstrapSession: neverPromiseActor,
   initialBackfill: neverPromiseActor,
@@ -411,48 +530,513 @@ const defaultActors: Record<string, AnyActorLogic> = {
   periodicStatusTimer: inertCallbackActor,
   recurringSweep: neverPromiseActor,
   retryTimer: inertCallbackActor,
-  cleanupBarrier: neverPromiseActor,
+  cleanupBarrier: cleanupBarrierActor,
   rawDownloadQueue: inertCallbackActor,
   rawDownloadJob: neverPromiseActor,
   controlWaiter: inertCallbackActor,
 };
 
-function createInertResourceRegistryAuthority(): SyncResourceRegistryAuthority {
+const releaseSlotOwnerScopeSchema = z.enum(["watch", "workflow"]);
+const releaseSlotRequestSchema = z.strictObject({
+  ownerScope: releaseSlotOwnerScopeSchema,
+  ownerInvokeIdentity: boundedText(256),
+  resourceOrdinal: nonNegativeSafeInteger,
+  stableResourceId: boundedText(256),
+});
+
+type ReleaseSlotFailure = {
+  readonly category: WorkflowFaultCategory;
+  readonly diagnostic: SyncDiagnostic;
+};
+
+type ReleaseSlotEntry = {
+  readonly key: string;
+  readonly request: SyncReleaseSlotRequest;
+  readonly slotInstanceId: string;
+  readonly slotGeneration: number;
+  readonly terminal: Promise<SyncReleaseSlotTerminal>;
+  readonly resolveTerminal: (terminal: SyncReleaseSlotTerminal) => void;
+  releaseStarted: boolean;
+  settled: boolean;
+  failure: ReleaseSlotFailure | null;
+};
+
+type FrozenSlot = Readonly<{
+  readonly slotInstanceId: string;
+  readonly slotGeneration: number;
+  readonly stableResourceId: string;
+  readonly terminal: Promise<SyncReleaseSlotTerminal>;
+}>;
+
+type RegistryPhase = {
+  readonly epoch: number;
+  readonly phase: number;
+  readonly scope: SyncReleaseOwnerScope;
+  readonly frozen: readonly FrozenSlot[];
+  readonly frozenReleaseSetId: string;
+  readonly certificateId: string;
+  readonly waiters: Array<{
+    readonly invokeLease: number | undefined;
+    readonly resolve: (terminal: SyncCleanupPhaseTerminal) => void;
+  }>;
+  invokeLease: number;
+  snapshot: SyncCleanupPhaseSnapshot;
+  settled: boolean;
+};
+
+type SourceTreeSnapshot = Readonly<{
+  readonly frozen: readonly FrozenSlot[];
+}>;
+
+function safeDiagnostic(
+  value: unknown,
+  fallbackCode: string,
+  fallbackMessage: string,
+): SyncDiagnostic {
+  if (isRecord(value)) {
+    const code = value.code;
+    const message = value.safeMessage ?? value.message;
+    if (
+      typeof code === "string" &&
+      errorCodeSchema.safeParse(code).success &&
+      typeof message === "string" &&
+      safeErrorMessageSchema.safeParse(message).success
+    )
+      return { code, message };
+  }
+  return { code: fallbackCode, message: fallbackMessage };
+}
+
+function releaseFailure(value: unknown): ReleaseSlotFailure {
+  const category =
+    isRecord(value) &&
+    (value.category === "authentication" ||
+      value.category === "transient" ||
+      value.category === "permanent" ||
+      value.category === "invariant")
+      ? value.category
+      : "invariant";
+  return {
+    category,
+    diagnostic: safeDiagnostic(
+      value,
+      "sync.cleanup-release",
+      "A workflow-owned resource failed to close.",
+    ),
+  };
+}
+
+function phaseCertificate(
+  phase: RegistryPhase,
+  invokeLease: number,
+  terminals: readonly SyncReleaseSlotTerminal[],
+): CleanupCertificate {
+  const diagnostics = syncDiagnosticsSchema.parse(
+    terminals.flatMap((terminal) => (terminal.diagnostic ? [terminal.diagnostic] : [])).slice(-32),
+  );
+  const digest = `${phase.certificateId}:${phase.frozenReleaseSetId}:${diagnostics
+    .map((item) => `${item.code}:${item.message}`)
+    .join("|")}`.slice(0, 256);
+  const certificate = cleanupCertificateSchema.parse({
+    certificateId: phase.certificateId,
+    cleanupEpoch: phase.epoch,
+    cleanupPhase: phase.phase,
+    invokeLease,
+    effectiveScope: phase.scope,
+    frozenReleaseSetId: phase.frozenReleaseSetId,
+    released: true,
+    authoritativeAudit: {
+      scope: phase.scope,
+      frozenReleaseSetId: phase.frozenReleaseSetId,
+      liveResourceCount: 0,
+      unresolvedReleaseCount: 0,
+      digest,
+    },
+    diagnostics,
+  });
+  return Object.freeze({
+    ...certificate,
+    authoritativeAudit: Object.freeze({ ...certificate.authoritativeAudit }),
+    diagnostics: Object.freeze(
+      certificate.diagnostics.map((diagnostic) => Object.freeze({ ...diagnostic })),
+    ),
+  });
+}
+
+function phaseTerminalForLease(
+  terminal: SyncCleanupPhaseTerminal,
+  invokeLease: number | undefined,
+): SyncCleanupPhaseTerminal {
+  if (invokeLease === undefined || terminal.status === "pending") return terminal;
+  const certificate = { ...terminal.certificate, invokeLease };
+  if (terminal.status === "success") return { status: "success", certificate };
+  return {
+    status: "error",
+    certificate,
+    fault: { ...terminal.fault, releaseCertificate: certificate },
+  };
+}
+
+/**
+ * One incarnation-scoped registry. Registration is synchronous, and cleanup
+ * phases only ever retain immutable slot terminals after the registry entry is
+ * retired. The optional methods on SyncResourceRegistryAuthority remain
+ * optional so existing deterministic authority fakes stay source-compatible.
+ */
+export function createSyncResourceRegistry(
+  options: Readonly<{ readonly incarnationId: string; readonly maxReleaseSlotEntries: number }>,
+): SyncResourceRegistryAuthority {
+  const incarnationId = boundedText(256).parse(options.incarnationId);
+  const maxEntries = positiveSafeInteger.max(4096).parse(options.maxReleaseSlotEntries);
+  const entries = new Map<string, ReleaseSlotEntry>();
+  let nextGeneration = 0;
   let currentPhase: SyncCleanupPhaseSnapshot | null = null;
+  let currentRecord: RegistryPhase | null = null;
+  let supersededWatch: RegistryPhase | null = null;
+  let sourceTree: SourceTreeSnapshot | null = null;
+  let sessionOpen = false;
+
+  const slotKey = (request: SyncReleaseSlotRequest): string =>
+    `${request.ownerScope}:${request.ownerInvokeIdentity}:${request.resourceOrdinal}`;
+
+  const snapshot = (): SyncResourceRegistrySnapshot => ({
+    slotEntryCount: entries.size,
+    sourceTreeSnapshotCount: sourceTree ? 1 : 0,
+    phaseSnapshotCount: (currentRecord ? 1 : 0) + (supersededWatch ? 1 : 0),
+    nextSlotGeneration: nextGeneration,
+    cleanupSessionOpen: sessionOpen,
+  });
+
+  const settlePhase = (record: RegistryPhase): void => {
+    if (record.settled) return;
+    void Promise.all(record.frozen.map((slot) => slot.terminal)).then((terminals) => {
+      if (record.settled) return;
+      record.settled = true;
+      const certificate = phaseCertificate(record, record.invokeLease, terminals);
+      const settledAuditDigest = certificate.authoritativeAudit.digest;
+      const firstFailure = terminals.find((terminal) => terminal.status === "error");
+      const failure = firstFailure?.diagnostic
+        ? releaseFailure({
+            category: firstFailure.category,
+            code: firstFailure.diagnostic.code,
+            safeMessage: firstFailure.diagnostic.message,
+          })
+        : null;
+      const terminal: SyncCleanupPhaseTerminal = failure
+        ? {
+            status: "error",
+            certificate,
+            fault: {
+              category: failure.category === "permanent" ? "permanent" : "invariant",
+              code:
+                failure.category === "permanent"
+                  ? failure.diagnostic.code
+                  : "sync.cleanup-terminal-contract",
+              safeMessage:
+                failure.category === "permanent"
+                  ? failure.diagnostic.message
+                  : "Cleanup terminal violated its fault-category contract.",
+              releaseCertificate: certificate,
+            },
+          }
+        : { status: "success", certificate };
+      record.snapshot = Object.freeze({
+        ...record.snapshot,
+        auditDigest: settledAuditDigest,
+        terminal: Object.freeze(terminal),
+      });
+      if (currentRecord === record) currentPhase = record.snapshot;
+      for (const waiter of record.waiters.splice(0))
+        waiter.resolve(phaseTerminalForLease(record.snapshot.terminal, waiter.invokeLease));
+    });
+  };
+
+  const trigger = (entry: ReleaseSlotEntry): Promise<SyncReleaseSlotTerminal> => {
+    if (entry.releaseStarted) return entry.terminal;
+    entry.releaseStarted = true;
+    Promise.resolve()
+      .then(() => entry.request.release())
+      .then(
+        () => {
+          if (entry.settled) return;
+          entry.settled = true;
+          const terminal: SyncReleaseSlotTerminal = {
+            status: "success",
+            slotInstanceId: entry.slotInstanceId,
+            slotGeneration: entry.slotGeneration,
+            stableResourceId: entry.request.stableResourceId,
+            diagnostic: null,
+            category: null,
+          };
+          entry.resolveTerminal(terminal);
+          entries.delete(entry.key);
+        },
+        (value: unknown) => {
+          if (entry.settled) return;
+          entry.settled = true;
+          const failure = releaseFailure(value);
+          entry.failure = failure;
+          const terminal: SyncReleaseSlotTerminal = {
+            status: "error",
+            slotInstanceId: entry.slotInstanceId,
+            slotGeneration: entry.slotGeneration,
+            stableResourceId: entry.request.stableResourceId,
+            diagnostic: failure.diagnostic,
+            category: failure.category,
+          };
+          entry.resolveTerminal(terminal);
+          entries.delete(entry.key);
+        },
+      );
+    return entry.terminal;
+  };
+
+  const registerReleaseSlot = (request: SyncReleaseSlotRequest): SyncReleaseSlotHandle => {
+    releaseSlotRequestSchema.parse({
+      ownerScope: request.ownerScope,
+      ownerInvokeIdentity: request.ownerInvokeIdentity,
+      resourceOrdinal: request.resourceOrdinal,
+      stableResourceId: request.stableResourceId,
+    });
+    if (typeof request.release !== "function") throw new TypeError("release must be callable");
+    if (sessionOpen)
+      throw {
+        category: "invariant",
+        code: "sync.release-slot-late-registration",
+        safeMessage: "A resource was registered after cleanup began.",
+      } satisfies WorkflowFault;
+    const key = slotKey(request);
+    const existing = entries.get(key);
+    if (existing)
+      return {
+        slotInstanceId: existing.slotInstanceId,
+        slotGeneration: existing.slotGeneration,
+        stableResourceId: existing.request.stableResourceId,
+        terminal: existing.terminal,
+        triggerRelease: () => trigger(existing),
+      };
+    if (entries.size >= maxEntries)
+      throw {
+        category: "transient",
+        code: "sync.release-slot-capacity",
+        safeMessage: "Release-slot capacity exhausted.",
+      } satisfies WorkflowFault;
+    if (nextGeneration >= Number.MAX_SAFE_INTEGER)
+      throw {
+        category: "invariant",
+        code: "sync.release-slot-generation-exhausted",
+        safeMessage: "Release-slot generation exhausted.",
+      } satisfies WorkflowFault;
+    nextGeneration += 1;
+    let resolveTerminal: (terminal: SyncReleaseSlotTerminal) => void = () => undefined;
+    const terminal = new Promise<SyncReleaseSlotTerminal>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    const entry: ReleaseSlotEntry = {
+      key,
+      request: Object.freeze({ ...request }),
+      slotInstanceId: `${incarnationId}:${nextGeneration}`,
+      slotGeneration: nextGeneration,
+      terminal,
+      resolveTerminal,
+      releaseStarted: false,
+      settled: false,
+      failure: null,
+    };
+    entries.set(key, entry);
+    return {
+      slotInstanceId: entry.slotInstanceId,
+      slotGeneration: entry.slotGeneration,
+      stableResourceId: entry.request.stableResourceId,
+      terminal: entry.terminal,
+      triggerRelease: () => trigger(entry),
+    };
+  };
+
+  const releaseScopeIncludes = (
+    effectiveScope: SyncReleaseOwnerScope,
+    ownerScope: SyncReleaseOwnerScope,
+  ): boolean => effectiveScope === "workflow" || ownerScope === "watch";
+
+  const requestPhase = (request: SyncCleanupPhaseRequest): SyncCleanupPhaseSnapshot => {
+    const effectiveScope =
+      currentRecord?.scope === "workflow" ? "workflow" : request.effectiveScope;
+    if (
+      currentRecord &&
+      currentRecord.epoch === request.cleanupEpoch &&
+      currentRecord.scope === effectiveScope
+    ) {
+      currentRecord.invokeLease = request.invokeLease;
+      if (
+        currentRecord.snapshot.terminal.status === "pending" ||
+        currentRecord.snapshot.terminal.certificate.invokeLease !== request.invokeLease
+      ) {
+        const replacement = {
+          ...currentRecord.snapshot,
+          terminal:
+            currentRecord.snapshot.terminal.status === "pending"
+              ? currentRecord.snapshot.terminal
+              : phaseTerminalForLease(currentRecord.snapshot.terminal, request.invokeLease),
+        };
+        currentRecord.snapshot = Object.freeze(replacement);
+        currentPhase = currentRecord.snapshot;
+      }
+      return currentRecord.snapshot;
+    }
+    sessionOpen = true;
+    if (sourceTree === null) {
+      const frozen = [...entries.values()].map((entry) =>
+        Object.freeze({
+          slotInstanceId: entry.slotInstanceId,
+          slotGeneration: entry.slotGeneration,
+          stableResourceId: entry.request.stableResourceId,
+          terminal: entry.terminal,
+        }),
+      );
+      sourceTree = Object.freeze({ frozen });
+    }
+    const selected = sourceTree.frozen.filter((slot) => {
+      const entry = [...entries.values()].find(
+        (candidate) => candidate.slotInstanceId === slot.slotInstanceId,
+      );
+      return entry === undefined || releaseScopeIncludes(effectiveScope, entry.request.ownerScope);
+    });
+    const frozenReleaseSetId =
+      `release-set:${request.cleanupEpoch}:${request.cleanupPhase}:${selected
+        .map((slot) => slot.slotInstanceId)
+        .join(",")}`.slice(0, 256);
+    const record: RegistryPhase = {
+      epoch: request.cleanupEpoch,
+      phase: request.cleanupPhase,
+      scope: effectiveScope,
+      frozen: selected,
+      frozenReleaseSetId,
+      certificateId:
+        `certificate:${incarnationId}:${request.cleanupEpoch}:${request.cleanupPhase}`.slice(
+          0,
+          256,
+        ),
+      waiters: [],
+      invokeLease: request.invokeLease,
+      snapshot: Object.freeze({
+        cleanupEpoch: request.cleanupEpoch,
+        cleanupPhase: request.cleanupPhase,
+        effectiveScope,
+        frozenReleaseSetId,
+        certificateId:
+          `certificate:${incarnationId}:${request.cleanupEpoch}:${request.cleanupPhase}`.slice(
+            0,
+            256,
+          ),
+        auditDigest: `audit:${request.cleanupEpoch}:${request.cleanupPhase}`,
+        terminal: { status: "pending" as const },
+      }),
+      settled: false,
+    };
+    if (currentRecord?.scope === "watch" && effectiveScope === "workflow")
+      supersededWatch = currentRecord;
+    currentRecord = record;
+    currentPhase = record.snapshot;
+    for (const slot of selected) {
+      const entry = [...entries.values()].find(
+        (candidate) => candidate.slotInstanceId === slot.slotInstanceId,
+      );
+      if (entry) void trigger(entry);
+    }
+    // Runtime inspection asks for actor input against the zeroed initial
+    // context without starting the actor. Keep that synthetic phase pending;
+    // real cleanup actions always advance all three identifiers first.
+    if (request.cleanupEpoch > 0 && request.cleanupPhase > 0 && request.invokeLease > 0)
+      settlePhase(record);
+    return record.snapshot;
+  };
+
   const authority: SyncResourceRegistryAuthority = {
     get currentPhase() {
       return currentPhase;
     },
-    requestPhase: (request) => {
-      const phase: SyncCleanupPhaseSnapshot = {
-        cleanupEpoch: request.cleanupEpoch,
-        cleanupPhase: request.cleanupPhase,
-        effectiveScope: request.effectiveScope,
-        frozenReleaseSetId: `inert-release-set:${request.cleanupEpoch}:${request.cleanupPhase}`,
-        certificateId: `inert-certificate:${request.cleanupEpoch}:${request.cleanupPhase}`,
-        auditDigest: `inert-audit:${request.cleanupEpoch}:${request.cleanupPhase}`,
-        terminal: { status: "pending" },
-      };
-      currentPhase = phase;
-      return phase;
+    requestPhase,
+    awaitPhase: (cleanupEpoch, cleanupPhase, invokeLease) => {
+      const record =
+        currentRecord &&
+        currentRecord.epoch === cleanupEpoch &&
+        currentRecord.phase === cleanupPhase
+          ? currentRecord
+          : supersededWatch &&
+              supersededWatch.epoch === cleanupEpoch &&
+              supersededWatch.phase === cleanupPhase
+            ? supersededWatch
+            : null;
+      if (!record) return new Promise<SyncCleanupPhaseTerminal>(() => undefined);
+      if (record.snapshot.terminal.status !== "pending")
+        return Promise.resolve(phaseTerminalForLease(record.snapshot.terminal, invokeLease));
+      return new Promise<SyncCleanupPhaseTerminal>((resolve) => {
+        record.waiters.push({ invokeLease, resolve });
+      });
     },
-    awaitPhase: async (cleanupEpoch, cleanupPhase) => {
+    registerReleaseSlot,
+    finishCleanupScope: (certificate) => {
       const phase = currentPhase;
+      if (!phase || phase.terminal.status === "pending") return;
       if (
-        !phase ||
-        phase.cleanupEpoch !== cleanupEpoch ||
-        phase.cleanupPhase !== cleanupPhase ||
-        phase.terminal.status === "pending"
+        phase.certificateId !== certificate.certificateId ||
+        phase.frozenReleaseSetId !== certificate.frozenReleaseSetId
       )
-        return new Promise<SyncCleanupPhaseTerminal>(() => undefined);
-      return phase.terminal;
+        return;
+      sessionOpen = false;
+      sourceTree = null;
+      currentRecord = null;
+      supersededWatch = null;
+      currentPhase = null;
     },
+    snapshot,
   };
   return authority;
 }
 
-function createDefaultDependencies(): SyncLifecycleDependencies {
-  return { resourceRegistry: createInertResourceRegistryAuthority() };
+/** Register the sole composite slot used by the frozen P3-C07 queue boundary. */
+export function registerCompositeQueueSlot(
+  resourceRegistry: SyncResourceRegistryAuthority,
+  ownerInvokeIdentity: string,
+): SyncCompositeQueueSlotRegistration {
+  if (!resourceRegistry.registerReleaseSlot)
+    throw new TypeError("a concrete resource registry is required for queue registration");
+  let queueStop: (() => void | Promise<void>) | undefined;
+  const handle = resourceRegistry.registerReleaseSlot({
+    ownerScope: "workflow",
+    ownerInvokeIdentity,
+    resourceOrdinal: 0,
+    stableResourceId: `rawDownloadQueue:${ownerInvokeIdentity}:0`,
+    release: () => {
+      if (!queueStop) throw new Error("raw download queue was not bound before cleanup");
+      return queueStop();
+    },
+  });
+  return Object.freeze({
+    handle,
+    bindQueueStop: (stop: () => void | Promise<void>) => {
+      if (queueStop) throw new Error("raw download queue stop was already bound");
+      queueStop = stop;
+    },
+  });
+}
+
+export const createSyncResourceRegistryAuthority = createSyncResourceRegistry;
+
+function createDefaultDependencies(input?: SyncLifecycleInput): SyncLifecycleDependencies {
+  const incarnationId = input?.incarnationId ?? `incarnation:${crypto.randomUUID()}`;
+  const maxReleaseSlotEntries = input
+    ? syncLifecycleConfigurationSchema.parse(input.configuration).maxReleaseSlotEntries
+    : inspectionConfiguration.maxReleaseSlotEntries;
+  return {
+    resourceRegistry: createSyncResourceRegistry({ incarnationId, maxReleaseSlotEntries }),
+  };
+}
+
+export function createSyncLifecycleDependencies(
+  input: SyncLifecycleInput,
+): SyncLifecycleDependencies {
+  return createDefaultDependencies(input);
 }
 
 function initialContext(input: SyncLifecycleInput): SyncLifecycleContext {
@@ -539,6 +1123,7 @@ function applyAction(
   context: SyncLifecycleContext,
   event: SyncLifecycleEvent,
   source: string | readonly string[],
+  dependencies?: SyncLifecycleDependencies,
 ): Partial<SyncLifecycleContext> {
   switch (name) {
     case "advanceVersion":
@@ -641,8 +1226,12 @@ function applyAction(
         effectiveCleanupScope: nextScope,
       };
     }
-    case "finishCleanupScope":
+    case "finishCleanupScope": {
+      const certificate = cleanupOutput(event);
+      if (certificate && dependencies?.resourceRegistry.finishCleanupScope)
+        dependencies.resourceRegistry.finishCleanupScope(certificate);
       return { effectiveCleanupScope: null };
+    }
     default:
       return {};
   }
@@ -910,7 +1499,7 @@ function transitionConfig(
           actions: spec.actions.map((name) =>
             machineSetup.assign(
               ({ context, event }: { context: SyncLifecycleContext; event: SyncLifecycleEvent }) =>
-                applyAction(name, context, event, source),
+                applyAction(name, context, event, source, dependencies),
             ),
           ),
         }
@@ -942,6 +1531,7 @@ function invokeConfig(
   configuration: SyncLifecycleConfiguration,
   dependencies: SyncLifecycleDependencies,
   stateId: string,
+  lifecycleInput?: SyncLifecycleInput,
 ): {
   id: string;
   src: string;
@@ -975,11 +1565,15 @@ function invokeConfig(
         effectiveScope: context.effectiveCleanupScope,
         minimumScope,
         phaseTerminal: phase
-          ? dependencies.resourceRegistry.awaitPhase(context.cleanupEpoch, context.cleanupPhase)
+          ? dependencies.resourceRegistry.awaitPhase(
+              context.cleanupEpoch,
+              context.cleanupPhase,
+              context.cleanupInvokeLease,
+            )
           : null,
         frozenReleaseSetId: phase?.frozenReleaseSetId ?? null,
         resourceRegistry: dependencies.resourceRegistry,
-        ...actorSpecificInput(actor, context, configuration),
+        ...actorSpecificInput(actor, context, configuration, lifecycleInput),
       };
     },
   };
@@ -989,6 +1583,7 @@ function actorSpecificInput(
   actor: string,
   context: SyncLifecycleContext,
   configuration: SyncLifecycleConfiguration,
+  lifecycleInput?: SyncLifecycleInput,
 ): Readonly<Record<string, unknown>> {
   switch (actor) {
     case "bootstrapSession":
@@ -1000,7 +1595,7 @@ function actorSpecificInput(
         boundedBatchConfiguration: configuration,
       };
     case "idleSession":
-      return { validatedIdleAdapter: undefined };
+      return { validatedIdleAdapter: lifecycleInput?.validatedIdleAdapter };
     case "periodicStatusTimer":
       return { periodicStatusIntervalMs: configuration.periodicStatusIntervalMs };
     case "recurringSweep":
@@ -1041,6 +1636,7 @@ function atomicConfig(
   stateId: string,
   configuration: SyncLifecycleConfiguration,
   dependencies: SyncLifecycleDependencies,
+  lifecycleInput?: SyncLifecycleInput,
 ) {
   const modelState = SIGNED_SYNC_STATECHART.states.find((state) => state.id === stateId);
   const invoked = modelState && "invokedActors" in modelState ? modelState.invokedActors : [];
@@ -1050,7 +1646,7 @@ function atomicConfig(
     ...(invoked.length > 0
       ? {
           invoke: invoked.map((actor: string) =>
-            invokeConfig(actor, configuration, dependencies, stateId),
+            invokeConfig(actor, configuration, dependencies, stateId, lifecycleInput),
           ),
         }
       : {}),
@@ -1063,6 +1659,7 @@ function compoundConfig(
   initial: string,
   configuration: SyncLifecycleConfiguration,
   dependencies: SyncLifecycleDependencies,
+  lifecycleInput?: SyncLifecycleInput,
 ) {
   const children = SIGNED_SYNC_STATECHART.states.filter(
     (state) => "parent" in state && state.parent === name,
@@ -1073,7 +1670,7 @@ function compoundConfig(
     states: Object.fromEntries(
       children.map((child) => [
         child.id.slice(name.length + 1),
-        atomicConfig(child.id, configuration, dependencies),
+        atomicConfig(child.id, configuration, dependencies, lifecycleInput),
       ]),
     ),
   });
@@ -1124,6 +1721,7 @@ const inspectionConfiguration: SyncLifecycleConfiguration = {
 function createSyncLifecycleMachine(
   configuration: SyncLifecycleConfiguration,
   dependencies: SyncLifecycleDependencies = createDefaultDependencies(),
+  lifecycleInput?: SyncLifecycleInput,
 ) {
   return machineSetup.createMachine({
     id: SYNC_STATECHART_ID,
@@ -1136,15 +1734,27 @@ function createSyncLifecycleMachine(
     context: ({ input }) => initialContext(input),
     on: rootFallbackTransitions,
     states: {
-      stopped: compoundConfig("stopped", "clean", configuration, dependencies),
-      starting: compoundConfig("starting", "active", configuration, dependencies),
-      backfilling: compoundConfig("backfilling", "active", configuration, dependencies),
-      watching: compoundConfig("watching", "idling", configuration, dependencies),
-      sweeping: compoundConfig("sweeping", "active", configuration, dependencies),
-      retryWaiting: compoundConfig("retryWaiting", "active", configuration, dependencies),
-      authBlocked: atomicConfig("authBlocked", configuration, dependencies),
-      paused: atomicConfig("paused", configuration, dependencies),
-      stopping: compoundConfig("stopping", "forStop", configuration, dependencies),
+      stopped: compoundConfig("stopped", "clean", configuration, dependencies, lifecycleInput),
+      starting: compoundConfig("starting", "active", configuration, dependencies, lifecycleInput),
+      backfilling: compoundConfig(
+        "backfilling",
+        "active",
+        configuration,
+        dependencies,
+        lifecycleInput,
+      ),
+      watching: compoundConfig("watching", "idling", configuration, dependencies, lifecycleInput),
+      sweeping: compoundConfig("sweeping", "active", configuration, dependencies, lifecycleInput),
+      retryWaiting: compoundConfig(
+        "retryWaiting",
+        "active",
+        configuration,
+        dependencies,
+        lifecycleInput,
+      ),
+      authBlocked: atomicConfig("authBlocked", configuration, dependencies, lifecycleInput),
+      paused: atomicConfig("paused", configuration, dependencies, lifecycleInput),
+      stopping: compoundConfig("stopping", "forStop", configuration, dependencies, lifecycleInput),
     },
   });
 }
@@ -1356,10 +1966,14 @@ const runtimeMetadata = deriveRuntimeStatechartMetadata();
 export function createSyncLifecycleActor(
   input: SyncLifecycleInput,
   actors: SyncActorImplementations = {},
-  dependencies: SyncLifecycleDependencies = createDefaultDependencies(),
+  dependencies?: SyncLifecycleDependencies,
 ) {
   const configuration = syncLifecycleConfigurationSchema.parse(input.configuration);
-  const machine = createSyncLifecycleMachine(configuration, dependencies).provide({
+  const machine = createSyncLifecycleMachine(
+    configuration,
+    dependencies ?? createDefaultDependencies(input),
+    input,
+  ).provide({
     actors: { ...defaultActors, ...actors },
   });
   return createActor(machine, { input });

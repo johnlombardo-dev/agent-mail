@@ -31,6 +31,26 @@ type Fixture = {
   readonly counts: ResourceCounts;
 };
 
+function minimalIdleRegistry(): IdleSessionActorInput["resourceRegistry"] {
+  return {
+    registerReleaseSlot: ({ release }) => {
+      let releasePromise: Promise<void> | undefined;
+      return {
+        triggerRelease: () => {
+          releasePromise ??= Promise.resolve().then(release);
+          return releasePromise;
+        },
+      };
+    },
+  };
+}
+
+const expectedIdleAdapterFailure = {
+  category: "transient" as const,
+  code: "sync.idle-adapter-failure",
+  safeMessage: "IMAP IDLE adapter failed.",
+};
+
 function fixture(): Fixture {
   const counts: ResourceCounts = { listeners: 0, sockets: 0, closeCalls: 0 };
   let handlers: {
@@ -314,7 +334,7 @@ test("ready is not emitted after a terminal request", async () => {
   const events: IdleSessionEvent[] = [];
   const pending = runIdleSession({
     adapter: {
-      start: async (nextHandlers) => {
+      start: async (nextHandlers: Parameters<IdleSessionAdapter["start"]>[0]) => {
         handlers = nextHandlers;
         return { close: async () => undefined };
       },
@@ -359,7 +379,12 @@ test("the callback actor captures scope and classifies authentication failures",
     },
   };
   const actor = createActor(machine, {
-    input: { scopeEpoch: 9, credentialRevision: 7, validatedIdleAdapter: adapter },
+    input: {
+      scopeEpoch: 9,
+      credentialRevision: 7,
+      validatedIdleAdapter: adapter,
+      resourceRegistry: minimalIdleRegistry(),
+    },
   });
   actor.start();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -397,7 +422,12 @@ test("the callback actor reports one safe failure for an invalid adapter", async
     },
   });
   const actor = createActor(machine, {
-    input: { scopeEpoch: 12, credentialRevision: 8, validatedIdleAdapter: undefined },
+    input: {
+      scopeEpoch: 12,
+      credentialRevision: 8,
+      validatedIdleAdapter: undefined,
+      resourceRegistry: minimalIdleRegistry(),
+    },
   });
   actor.start();
   await new Promise((resolve) => setTimeout(resolve, 0));
@@ -415,6 +445,54 @@ test("the callback actor reports one safe failure for an invalid adapter", async
   ]);
   expect(JSON.stringify(observed)).not.toContain("invalid IDLE adapter");
   actor.stop();
+});
+
+test("the callback actor fails closed before adapter start without a registry", async () => {
+  for (const resourceRegistry of [
+    undefined,
+    {},
+    { registerReleaseSlot: () => undefined },
+  ]) {
+    const observed: IdleSessionActorEvent[] = [];
+    let adapterStarts = 0;
+    const machine = setup({
+      types: {} as {
+        context: IdleSessionActorInput;
+        input: IdleSessionActorInput;
+        events: IdleSessionActorEvent;
+      },
+      actors: { idleSession: idleSessionActor },
+    }).createMachine({
+      context: ({ input }) => input,
+      invoke: { src: "idleSession", input: ({ context }) => context },
+      on: {
+        "idle.failed": { actions: ({ event }) => observed.push(event) },
+      },
+    });
+    const runtimeInput = {
+      scopeEpoch: 30,
+      credentialRevision: 4,
+      validatedIdleAdapter: {
+        start: async () => {
+          adapterStarts += 1;
+          return { close: async () => undefined };
+        },
+      },
+      resourceRegistry,
+    } as unknown as IdleSessionActorInput;
+    const actor = createActor(machine, { input: runtimeInput });
+    actor.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(observed).toEqual([
+      {
+        type: "idle.failed",
+        scopeEpoch: 30,
+        fault: { ...expectedIdleAdapterFailure },
+      },
+    ]);
+    expect(adapterStarts).toBe(0);
+    actor.stop();
+  }
 });
 
 test("the callback actor emits every signed lifecycle event with its scope", async () => {
@@ -458,7 +536,12 @@ test("the callback actor emits every signed lifecycle event with its scope", asy
       },
     };
     const actor = createActor(machine, {
-      input: { scopeEpoch, credentialRevision, validatedIdleAdapter: adapter },
+      input: {
+        scopeEpoch,
+        credentialRevision,
+        validatedIdleAdapter: adapter,
+        resourceRegistry: minimalIdleRegistry(),
+      },
     });
     actor.start();
     await new Promise((resolve) => setTimeout(resolve, 0));

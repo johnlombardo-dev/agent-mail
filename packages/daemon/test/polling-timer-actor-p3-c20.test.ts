@@ -9,6 +9,7 @@ import {
 } from "../src/polling-timer-actor";
 import {
   createSyncLifecycleActor,
+  createSyncResourceRegistry,
   type SyncCleanupPhaseRequest,
   type SyncCleanupPhaseTerminal,
   type SyncLifecycleDependencies,
@@ -120,6 +121,22 @@ const activeResources = (clock: VirtualClock, probe: ListenerProbe) => ({
 });
 
 describe("polling timer actor P3-C20", () => {
+  test("registers the timer/listener release before scheduling and retires it on disposal", async () => {
+    const clock = new VirtualClock();
+    const probe = trackedAbortController();
+    const registry = createSyncResourceRegistry({ incarnationId: "polling:registry", maxReleaseSlotEntries: 8 });
+    const actor = createPollingTimerActor(
+      { ...inputs(), resourceRegistry: registry },
+      { clock, createAbortController: () => probe.controller },
+    );
+    actor.start();
+    expect(registry.snapshot?.().slotEntryCount).toBe(1);
+    actor.stop();
+    await Bun.sleep(0);
+    expect(registry.snapshot?.().slotEntryCount).toBe(0);
+    expect(probe.activeAbortListeners()).toBe(0);
+  });
+
   test("keeps listener and timer ownership bounded across thousands of cancellation cycles", () => {
     const clock = new VirtualClock();
 

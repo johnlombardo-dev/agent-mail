@@ -37,6 +37,10 @@ export interface PollingTimerDependencies {
   readonly faultFromError?: (error: unknown) => PollingTimerFault;
 }
 
+interface PollingReleaseSlotHandle {
+  readonly triggerRelease: () => Promise<unknown>;
+}
+
 const nativeClock: PollingTimerClock = {
   setTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
   clearTimeout: (handle) => globalThis.clearTimeout(handle),
@@ -79,6 +83,7 @@ export function createPollingTimerActorLogic(
     const signal = controller.signal;
     let timer: PollingTimerHandle | undefined;
     let cleaned = false;
+    let releaseSlot: PollingReleaseSlotHandle | undefined;
 
     const cleanup = (): void => {
       if (cleaned) return;
@@ -96,6 +101,7 @@ export function createPollingTimerActorLogic(
         fault = defaultFault(error);
       }
       cleanup();
+      void releaseSlot?.triggerRelease();
       sendBack({ type: "watchTimer.failed", scopeEpoch: input.scopeEpoch, fault });
     };
 
@@ -109,15 +115,30 @@ export function createPollingTimerActorLogic(
       }
       if (cleaned) return;
       cleanup();
+      void releaseSlot?.triggerRelease();
       sendBack({ type: "watchTimer.elapsed", scopeEpoch: input.scopeEpoch });
     };
 
     const onAbort = (): void => {
       cleanup();
+      void releaseSlot?.triggerRelease();
     };
 
     if (signal.aborted) {
       cleanup();
+      return;
+    }
+
+    try {
+      releaseSlot = input.resourceRegistry.registerReleaseSlot?.({
+        ownerScope: "watch",
+        ownerInvokeIdentity: `periodicStatusTimer:${input.scopeEpoch}`,
+        resourceOrdinal: 0,
+        stableResourceId: `periodicStatusTimer:${input.scopeEpoch}`,
+        release: cleanup,
+      });
+    } catch (error: unknown) {
+      sendFailure(error);
       return;
     }
 
@@ -135,6 +156,7 @@ export function createPollingTimerActorLogic(
     return () => {
       controller.abort();
       cleanup();
+      void releaseSlot?.triggerRelease();
     };
   });
 }

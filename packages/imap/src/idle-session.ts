@@ -12,6 +12,20 @@ export interface IdleSessionResource {
   readonly close: () => Promise<void>;
 }
 
+interface IdleReleaseSlotHandle {
+  readonly triggerRelease: () => Promise<unknown>;
+}
+
+interface IdleReleaseRegistry {
+  readonly registerReleaseSlot: (request: {
+    readonly ownerScope: "watch";
+    readonly ownerInvokeIdentity: string;
+    readonly resourceOrdinal: number;
+    readonly stableResourceId: string;
+    readonly release: () => void | Promise<void>;
+  }) => IdleReleaseSlotHandle;
+}
+
 export interface IdleSessionHandlers {
   readonly ready: () => void;
   readonly mailboxChanged: () => void;
@@ -50,6 +64,10 @@ function isResource(value: unknown): value is IdleSessionResource {
 
 function isAdapter(value: unknown): value is IdleSessionAdapter {
   return isRecord(value) && typeof value.start === "function";
+}
+
+function isReleaseSlotHandle(value: unknown): value is IdleReleaseSlotHandle {
+  return isRecord(value) && typeof value.triggerRelease === "function";
 }
 
 function notify(
@@ -190,6 +208,8 @@ export type IdleSessionActorInput = Readonly<{
   readonly scopeEpoch: number;
   readonly credentialRevision: number | null;
   readonly validatedIdleAdapter: unknown;
+  /** The actor-incarnation registry is required before the adapter can start. */
+  readonly resourceRegistry: IdleReleaseRegistry;
 }>;
 
 export type IdleSessionWorkflowFault = Readonly<{
@@ -229,7 +249,40 @@ export const idleSessionActor = fromCallback<IdleSessionActorEvent, IdleSessionA
     if (scopeEpoch === null) return () => undefined;
 
     const controller = new AbortController();
-    void runIdleSession({
+    let sessionPromise: Promise<IdleSessionOutcome> | undefined;
+    const runtimeRegistry: unknown = input.resourceRegistry;
+    if (!isRecord(runtimeRegistry) || typeof runtimeRegistry.registerReleaseSlot !== "function") {
+      sendBack({
+        type: "idle.failed",
+        scopeEpoch,
+        fault: { ...IDLE_ADAPTER_FAILURE },
+      });
+      return () => undefined;
+    }
+
+    let slot: IdleReleaseSlotHandle;
+    try {
+      const candidateSlot = input.resourceRegistry.registerReleaseSlot({
+        ownerScope: "watch",
+        ownerInvokeIdentity: `idleSession:${scopeEpoch}`,
+        resourceOrdinal: 0,
+        stableResourceId: `idleSession:${scopeEpoch}`,
+        release: () => {
+          controller.abort();
+          return sessionPromise?.then(() => undefined);
+        },
+      });
+      if (!isReleaseSlotHandle(candidateSlot)) throw new TypeError("invalid IDLE release slot");
+      slot = candidateSlot;
+    } catch {
+      sendBack({
+        type: "idle.failed",
+        scopeEpoch,
+        fault: { ...IDLE_ADAPTER_FAILURE },
+      });
+      return () => undefined;
+    }
+    sessionPromise = runIdleSession({
       adapter: input.validatedIdleAdapter,
       signal: controller.signal,
       onEvent: (event) => {
@@ -237,6 +290,7 @@ export const idleSessionActor = fromCallback<IdleSessionActorEvent, IdleSessionA
           sendBack({ type: "idle.ready", scopeEpoch });
           return;
         }
+        void slot.triggerRelease();
         switch (event.outcome.kind) {
           case "normal-completion":
             sendBack({ type: "idle.completed", scopeEpoch });
@@ -268,7 +322,10 @@ export const idleSessionActor = fromCallback<IdleSessionActorEvent, IdleSessionA
       },
     });
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      void slot.triggerRelease();
+    };
   },
 );
 

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fromPromise } from "xstate";
+import { idleSessionActor } from "../../imap/src/idle-session";
 import signedModel from "../../../docs/architecture/sync-statechart.model.json" with { type: "json" };
 import {
   SIGNED_ATOMIC_STATES,
@@ -9,6 +10,8 @@ import {
   cleanupTerminalFaultSchema,
   cleanupCertificateSchema,
   createSyncExternalSendAdapter,
+  createSyncResourceRegistry,
+  registerCompositeQueueSlot,
   createSyncLifecycleActor,
   parseExternalSyncEvent,
   projectSyncStatus,
@@ -757,4 +760,195 @@ test("machine hierarchy has the accepted root and 24 atomic nodes", () => {
   expect(syncLifecycleMachine.id).toBe("syncLifecycle");
   expect(syncLifecycleMachine.version).toBe("1.0.0-candidate.8");
   expect(Object.keys(syncLifecycleMachine.states)).toEqual(["stopped", "starting", "backfilling", "watching", "sweeping", "retryWaiting", "authBlocked", "paused", "stopping"]);
+});
+
+describe("candidate.8 cleanup registry", () => {
+  test("concurrent phase waiters share one delayed release and finish purges ownership", async () => {
+    const registry = createSyncResourceRegistry({ incarnationId: "registry:test", maxReleaseSlotEntries: 8 });
+    let release: (() => void) | undefined;
+    let releaseCalls = 0;
+    registry.registerReleaseSlot?.({
+      ownerScope: "workflow",
+      ownerInvokeIdentity: "workflow:test",
+      resourceOrdinal: 0,
+      stableResourceId: "resource:test",
+      release: () => {
+        releaseCalls += 1;
+        return new Promise<void>((resolve) => {
+          release = resolve;
+        });
+      },
+    });
+    registry.requestPhase({
+      minimumScope: "workflow",
+      cleanupEpoch: 1,
+      cleanupPhase: 1,
+      effectiveScope: "workflow",
+      invokeLease: 1,
+    });
+    const first = registry.awaitPhase(1, 1, 1);
+    const second = registry.awaitPhase(1, 1, 1);
+    await Promise.resolve();
+    expect(releaseCalls).toBe(1);
+    expect(registry.snapshot?.().slotEntryCount).toBe(1);
+    release?.();
+    const terminals = await Promise.all([first, second]);
+    expect(JSON.stringify(terminals[0])).toBe(JSON.stringify(terminals[1]));
+    expect(terminals[0].status).toBe("success");
+    if (terminals[0].status === "success") registry.finishCleanupScope?.(terminals[0].certificate);
+    expect(registry.snapshot?.()).toMatchObject({
+      slotEntryCount: 0,
+      sourceTreeSnapshotCount: 0,
+      phaseSnapshotCount: 0,
+      cleanupSessionOpen: false,
+    });
+  });
+
+  test("watch promotion freezes the broader pre-registered set and normalizes close failure after zero audit", async () => {
+    const registry = createSyncResourceRegistry({ incarnationId: "registry:promotion", maxReleaseSlotEntries: 8 });
+    let rejectWorkflow: ((reason: unknown) => void) | undefined;
+    registry.registerReleaseSlot?.({
+      ownerScope: "watch",
+      ownerInvokeIdentity: "watch:test",
+      resourceOrdinal: 0,
+      stableResourceId: "watch:test",
+      release: async () => undefined,
+    });
+    registry.registerReleaseSlot?.({
+      ownerScope: "workflow",
+      ownerInvokeIdentity: "workflow:test",
+      resourceOrdinal: 0,
+      stableResourceId: "workflow:test",
+      release: () => new Promise<void>((_resolve, reject) => {
+        rejectWorkflow = reject;
+      }),
+    });
+    const watch = registry.requestPhase({
+      minimumScope: "watch",
+      cleanupEpoch: 1,
+      cleanupPhase: 1,
+      effectiveScope: "watch",
+      invokeLease: 1,
+    });
+    const watchTerminal = await registry.awaitPhase(1, 1, 1);
+    expect(watchTerminal.status).toBe("success");
+    const workflow = registry.requestPhase({
+      minimumScope: "workflow",
+      cleanupEpoch: 1,
+      cleanupPhase: 2,
+      effectiveScope: "workflow",
+      invokeLease: 2,
+    });
+    expect(workflow.frozenReleaseSetId).not.toBe(watch.frozenReleaseSetId);
+    const workflowTerminalPromise = registry.awaitPhase(1, 2, 2);
+    await Promise.resolve();
+    expect(registry.snapshot?.().slotEntryCount).toBe(1);
+    rejectWorkflow?.({
+      category: "transient",
+      code: "sync.test-close-failure",
+      safeMessage: "test close failure",
+    });
+    const workflowTerminal = await workflowTerminalPromise;
+    expect(workflowTerminal.status).toBe("error");
+    if (workflowTerminal.status === "error") {
+      expect(workflowTerminal.fault.category).toBe("invariant");
+      expect(workflowTerminal.certificate.authoritativeAudit.liveResourceCount).toBe(0);
+      expect(workflowTerminal.certificate.authoritativeAudit.unresolvedReleaseCount).toBe(0);
+      registry.finishCleanupScope?.(workflowTerminal.certificate);
+    }
+  });
+
+  test("capacity admission is before generation and acquisition", () => {
+    const registry = createSyncResourceRegistry({ incarnationId: "registry:capacity", maxReleaseSlotEntries: 1 });
+    registry.registerReleaseSlot?.({
+      ownerScope: "workflow",
+      ownerInvokeIdentity: "one",
+      resourceOrdinal: 0,
+      stableResourceId: "one",
+      release: async () => undefined,
+    });
+    let failure: unknown;
+    try {
+      registry.registerReleaseSlot?.({
+        ownerScope: "workflow",
+        ownerInvokeIdentity: "two",
+        resourceOrdinal: 0,
+        stableResourceId: "two",
+        release: async () => undefined,
+      });
+    } catch (value: unknown) {
+      failure = value;
+    }
+    expect(failure).toMatchObject({
+      category: "transient",
+      code: "sync.release-slot-capacity",
+      safeMessage: "Release-slot capacity exhausted.",
+    });
+    expect(registry.snapshot?.()).toMatchObject({ slotEntryCount: 1, nextSlotGeneration: 1 });
+  });
+
+  test("the composite queue slot adopts one exact queue.stop promise", async () => {
+    const registry = createSyncResourceRegistry({ incarnationId: "registry:queue", maxReleaseSlotEntries: 8 });
+    let stopCalls = 0;
+    let settleStop: (() => void) | undefined;
+    const registration = registerCompositeQueueSlot(registry, "sweep:invoke");
+    registration.bindQueueStop(() => {
+      stopCalls += 1;
+      return new Promise<void>((resolve) => {
+        settleStop = resolve;
+      });
+    });
+    registry.requestPhase({
+      minimumScope: "workflow",
+      cleanupEpoch: 1,
+      cleanupPhase: 1,
+      effectiveScope: "workflow",
+      invokeLease: 1,
+    });
+    const terminal = registry.awaitPhase(1, 1, 1);
+    await Promise.resolve();
+    expect(stopCalls).toBe(1);
+    settleStop?.();
+    expect((await terminal).status).toBe("success");
+  });
+
+  test("real lifecycle IDLE cleanup remains closing until the adapter close settles", async () => {
+    const registry = createSyncResourceRegistry({ incarnationId: "registry:idle", maxReleaseSlotEntries: 8 });
+    let settleClose: (() => void) | undefined;
+    const adapter = {
+      start: async (handlers: { readonly ready: () => void }) => {
+        handlers.ready();
+        return {
+          close: () => new Promise<void>((resolve) => {
+            settleClose = resolve;
+          }),
+        };
+      },
+    };
+    const actor = createSyncLifecycleActor(
+      { ...input, incarnationId: "registry:idle", validatedIdleAdapter: adapter },
+      { bootstrapSession: fromPromise(async () => ({ next: "idle" as const, checkpoint })), idleSession: idleSessionActor },
+      { resourceRegistry: registry },
+    );
+    actor.start();
+    actor.send({ type: "control.start.requested", commandId: "real-idle-start" });
+    await waitForActor();
+    expect(actor.getSnapshot().matches({ watching: "idling" })).toBe(true);
+    expect(registry.snapshot?.().slotEntryCount).toBe(1);
+
+    actor.send({ type: "control.pause.requested", commandId: "real-idle-pause", idempotencyKey: "real-idle-pause" });
+    await waitForActor();
+    expect(actor.getSnapshot().matches({ watching: "closingForPause" })).toBe(true);
+    expect(registry.snapshot?.().slotEntryCount).toBe(1);
+
+    settleClose?.();
+    await waitForActor();
+    expect(actor.getSnapshot().matches("paused")).toBe(true);
+    expect(registry.snapshot?.()).toMatchObject({
+      slotEntryCount: 0,
+      sourceTreeSnapshotCount: 0,
+      phaseSnapshotCount: 0,
+      cleanupSessionOpen: false,
+    });
+  });
 });
