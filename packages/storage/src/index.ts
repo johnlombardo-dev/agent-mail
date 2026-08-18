@@ -24,5 +24,12 @@ export * from "./routing-decision-origin-migration";
 export * from "./search-projection";
 export * from "./search-cursor";
 export * from "./search-reindex";
+export * from "./thread-types";
+export * from "./thread-normalizer";
+export * from "./thread-cursor";
+export * from "./thread-graph-repository";
+export * from "./thread-hydration-repository";
+export * from "./migrations/0008-thread-graph";
+export * from "./thread-migration";
 
 export const packageMarker = true;

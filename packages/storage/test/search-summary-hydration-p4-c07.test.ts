@@ -11,7 +11,8 @@ import {
   createUtcInstant,
   type MessageId,
 } from "@agent-mail/core";
-import type { Database } from "bun:sqlite";
+import { Database } from "bun:sqlite";
+import type { Database as DatabaseType } from "bun:sqlite";
 import { applyMigrations, type Migration } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
@@ -25,8 +26,12 @@ import { compileStructuredFilters } from "../src/structured-filter-compiler";
 import { promoteCanonicalMessage, type PromotionUnit } from "../src/canonical-promotion";
 import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
 import { updateMessageSearchProjection } from "../src/search-projection";
+import { composeThreadGraphMigrations } from "../src/thread-migration";
+import { ThreadGraphRepository } from "../src/thread-graph-repository";
+import { normalizeThreadFacts } from "../src/thread-normalizer";
 import {
   hydrateSearchSummaryPage,
+  SearchSummaryHydrationError,
   searchSummaryHydrationSql,
 } from "../src/search-summary-hydration-repository";
 
@@ -41,14 +46,14 @@ const messageIds = {
   canonical: createMessageId(`message:${"e".repeat(64)}`),
 } as const;
 
-const migrations: readonly Migration[] = [
+const migrations: readonly Migration[] = composeThreadGraphMigrations([
   messageCatalogMigration,
   structuredContentMigration,
   { ...messageBlobReferencesMigration, version: 3 },
   { ...externalContentSearchMigration, version: 4 },
   { ...placementObservationMigration, version: 5 },
   { ...operationalJournalMigration, version: 6 },
-];
+]);
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -149,7 +154,7 @@ function canonicalUnit(): PromotionUnit {
 }
 
 function seedMessage(
-  database: Database,
+  database: DatabaseType,
   messageId: MessageId,
   documentId: number,
   subject: string,
@@ -187,13 +192,27 @@ function seedMessage(
       "INSERT INTO operational_journal (id, occurred_at, category, subject_id, correlation_id, payload_version, payload_json) VALUES (?, ?, 'sync', ?, ?, 1, '{\"status\":\"promoted\"}');",
     )
     .run(`event:promotion:${documentId}`, "2026-08-18T00:00:00.000Z", messageId, `sync:${documentId}`);
+  new ThreadGraphRepository(database).ingestFacts(
+    normalizeThreadFacts({
+      accountId,
+      messageId,
+      headers: [
+        { ordinal: 1, normalizedName: "message-id", value: `<${messageId.slice("message:".length)}@fixture.test>` },
+        { ordinal: 2, normalizedName: "date", value: "2026-08-18T00:00:00.000Z" },
+      ],
+      receivedAt: internalDate,
+      participants: senderAddress.includes("\u0001")
+        ? []
+        : [{ address: senderAddress, displayName: `Sender ${documentId}`, role: "from", position: 1 }],
+    }),
+  );
 }
 
 function candidate(messageId: MessageId, score: number, position: number, receivedAt: string | null) {
   return { messageId, score, position, canonicalInstant: receivedAt } as const;
 }
 
-function addLivePlacement(database: Database, messageId: MessageId, uid: number, flagsJson: string): void {
+function addLivePlacement(database: DatabaseType, messageId: MessageId, uid: number, flagsJson: string): void {
   database
     .query(
       "INSERT INTO remote_placements (account_id, mailbox_id, uid_validity, uid, message_id, internal_date, flags_json) VALUES (?, ?, 1, ?, ?, ?, ?);",
@@ -215,7 +234,7 @@ describe("final-page search summary hydration P4-C07", () => {
     expect(result.map(({ messageId }) => messageId)).toEqual([messageIds.second, messageIds.first]);
     expect(result[0]).toEqual({
       messageId: messageIds.second,
-      threadId: `thread:${messageIds.second.slice("message:".length)}`,
+      threadId: expect.stringMatching(/^thread:[0-9a-f]{64}$/u),
       subject: "Second subject",
       sender: { name: "Sender 2", address: "sender-2@example.test" },
       sentAt: "2026-08-18T00:00:00.000Z",
@@ -330,6 +349,33 @@ describe("final-page search summary hydration P4-C07", () => {
         ),
       }),
     ).toThrow("candidate page size");
+    await opened.close();
+  });
+
+  test("requires the composed thread graph and never fabricates a thread handle", async () => {
+    const database = new Database(":memory:");
+    applyMigrations(database, migrations.slice(0, -1));
+    expect(searchSummaryHydrationSql(1)).not.toContain("substr(message_id");
+    expect(() =>
+      hydrateSearchSummaryPage(database, {
+        accountId,
+        candidates: [candidate(messageIds.first, -1, 1, "2026-08-18T00:01:00.000Z")],
+      }),
+    ).toThrow(SearchSummaryHydrationError);
+    database.close();
+  });
+
+  test("fails closed when a final candidate has no graph membership", async () => {
+    const opened = await openFixture();
+    opened.db
+      .query("DELETE FROM thread_memberships WHERE account_id = ? AND message_id = ?;")
+      .run(accountId, messageIds.first);
+    expect(() =>
+      hydrateSearchSummaryPage(opened.db, {
+        accountId,
+        candidates: [candidate(messageIds.first, -1, 1, "2026-08-18T00:01:00.000Z")],
+      }),
+    ).toThrow("thread graph membership is missing");
     await opened.close();
   });
 });

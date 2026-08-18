@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import {
+  createUtcInstant,
   parseAccountId,
   parseBlobId,
   parseMailboxId,
@@ -16,6 +17,8 @@ import {
 } from "@agent-mail/core";
 import { canonicalRoutingDecisionId } from "./routing-decision-identity";
 import { parseRoutingDecisionOrigin, type RoutingDecisionOrigin } from "./routing-decision-origin";
+import { normalizeThreadFacts } from "./thread-normalizer";
+import { ThreadGraphRepository } from "./thread-graph-repository";
 import {
   decodeBoundedSafeInteger,
   decodeCanonicalIdentifier,
@@ -174,6 +177,7 @@ export function promoteCanonicalMessage(
       for (const routing of unit.routingDecisions) {
         writeRoutingOrigins(write, unit.messageId, routing);
       }
+      promoteThreadFacts(database, unit);
       database.exec("COMMIT;");
       return { messageId: unit.messageId, status: "duplicate" };
     }
@@ -360,6 +364,7 @@ export function promoteCanonicalMessage(
         unit.journal.payloadJson,
       ],
     );
+    promoteThreadFacts(database, unit);
     database.exec("COMMIT;");
     return { messageId: unit.messageId, status: "committed" };
   } catch (error: unknown) {
@@ -378,6 +383,82 @@ export function promoteCanonicalMessage(
     throw new CanonicalPromotionError("write-failed", "canonical promotion transaction failed", {
       cause: error,
     });
+  }
+}
+
+/** Submit bounded normalized header facts only when the thread extension is composed. */
+function promoteThreadFacts(database: Database, unit: PromotionUnit): void {
+  if (!hasTable(database, "thread_generation") || unit.placements.length === 0) return;
+  const accounts = new Set(unit.placements.map((placement) => placement.accountId));
+  const headers = unit.headers.map((header) => ({
+    ordinal: header.ordinal,
+    normalizedName: header.normalizedName,
+    value: header.value,
+  }));
+  const participants = unit.addresses
+    .filter(
+      (
+        address,
+      ): address is PromotionAddress &
+        Readonly<{ readonly role: "from" | "sender" | "to" | "cc" }> =>
+        address.role === "from" ||
+        address.role === "sender" ||
+        address.role === "to" ||
+        address.role === "cc",
+    )
+    .map((address) => ({
+      address: address.normalizedAddress,
+      displayName: address.displayName,
+      role: address.role,
+      position: address.position,
+    }));
+  const repository = new ThreadGraphRepository(database);
+  for (const accountId of accounts) {
+    const receivedAt = unit.placements
+      .filter((placement) => placement.accountId === accountId)
+      .map((placement) => placement.internalDate)
+      .sort()[0];
+    const facts = normalizeThreadFacts({
+      accountId,
+      messageId: unit.messageId,
+      contentState: "parsed",
+      headers,
+      sentAt: parseStructuredSentAt(unit.headers),
+      receivedAt,
+      participants,
+    });
+    repository.ingestFactsInTransaction(facts);
+  }
+}
+
+function hasTable(database: Database, name: string): boolean {
+  return (
+    database
+      .query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?;")
+      .get(name) !== null
+  );
+}
+
+const RFC_DATE =
+  /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),\s+\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}\s+\d{2}:\d{2}(?::\d{2})?\s+(?:[+-]\d{4}|GMT|UT|UTC)$/iu;
+
+/** Structured-content owns Date parsing; the thread normalizer receives UTC or null. */
+function parseStructuredSentAt(headers: readonly PromotionHeader[]): UtcInstant | null {
+  const dateHeaders = headers.filter((header) => header.normalizedName === "date");
+  if (dateHeaders.length !== 1) return null;
+  const value = dateHeaders[0]?.value;
+  if (value === undefined) return null;
+  try {
+    return parseUtcInstant(value);
+  } catch {
+    if (!RFC_DATE.test(value)) return null;
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) return null;
+    try {
+      return createUtcInstant(new Date(timestamp).toISOString());
+    } catch {
+      return null;
+    }
   }
 }
 

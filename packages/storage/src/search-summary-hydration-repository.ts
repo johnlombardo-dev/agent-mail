@@ -48,6 +48,16 @@ type HydrationRow = Readonly<{
   readonly position: unknown;
 }>;
 
+/** Search summaries require the composed thread graph migration. */
+export class SearchSummaryHydrationError extends Error {
+  readonly code = "storage_invariant" as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "SearchSummaryHydrationError";
+  }
+}
+
 /**
  * Build the one-query final-page hydration statement. The candidate VALUES
  * relation is the query's driving table, so SQLite cannot materialize the
@@ -69,7 +79,7 @@ export function searchSummaryHydrationSql(candidateCount: number): string {
     SELECT
       cp.position AS position,
       cp.message_id AS message_id,
-      'thread:' || substr(cp.message_id, 9) AS thread_id,
+      thread_set.canonical_thread_id AS thread_id,
       NULLIF(projection.subject, '') AS subject,
       (
         SELECT a.display_name
@@ -117,6 +127,12 @@ export function searchSummaryHydrationSql(candidateCount: number): string {
     FROM candidate_page AS cp
     JOIN messages AS message ON message.message_id = cp.message_id
     JOIN indexed_messages AS projection ON projection.message_id = message.message_id
+    JOIN thread_memberships AS thread_membership
+      ON thread_membership.account_id = ?
+      AND thread_membership.message_id = cp.message_id
+    JOIN thread_sets AS thread_set
+      ON thread_set.account_id = thread_membership.account_id
+      AND thread_set.set_id = thread_membership.set_id
     ORDER BY cp.position;
   `;
 }
@@ -128,6 +144,7 @@ export function hydrateSearchSummaryPage(
 ): readonly SearchSummary[] {
   const accountId = parseAccountId(request.accountId);
   const candidates = parseCandidates(request.candidates);
+  assertThreadGraphSchema(database);
   if (candidates.length === 0) return [];
 
   const sql = searchSummaryHydrationSql(candidates.length);
@@ -141,10 +158,13 @@ export function hydrateSearchSummaryPage(
     );
   }
   parameters.push(accountId);
+  parameters.push(accountId);
 
   const rows = database.query<HydrationRow, SQLQueryBindings[]>(sql).all(...parameters);
   if (rows.length !== candidates.length) {
-    throw new Error("final candidate page changed before summary hydration completed");
+    throw new SearchSummaryHydrationError(
+      "thread graph membership is missing for a final search candidate",
+    );
   }
   return Object.freeze(rows.map(decodeHydrationRow));
 }
@@ -158,7 +178,7 @@ function parseCandidates(value: readonly unknown[]): readonly SearchCandidate[] 
     if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
       throw new TypeError("final candidate has an invalid shape");
     }
-    const item: Readonly<Record<string, unknown>> = candidate;
+    const item = candidate as Readonly<Record<string, unknown>>;
     const messageId = parseMessageId(item.messageId);
     if (!CANONICAL_MESSAGE_ID.test(messageId))
       throw new TypeError("final candidate has an invalid message ID");
@@ -183,6 +203,20 @@ function parseCandidates(value: readonly unknown[]): readonly SearchCandidate[] 
     throw new TypeError("final candidate identities must be unique");
   }
   return Object.freeze(candidates);
+}
+
+function assertThreadGraphSchema(database: Database): void {
+  const tables = database
+    .query<{ readonly name: string }, []>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('thread_memberships', 'thread_sets') ORDER BY name;",
+    )
+    .all()
+    .map(({ name }) => name);
+  if (tables.length !== 2) {
+    throw new SearchSummaryHydrationError(
+      "thread graph migration is required for search summary hydration",
+    );
+  }
 }
 
 function decodeHydrationRow(row: HydrationRow): SearchSummary {

@@ -5,6 +5,7 @@ import {
   createRemoteUid,
   parseMessageId,
   parseUtcInstant,
+  type AccountId,
   type ContentAbsenceReason,
   type IdentityOnlyContentState,
   type MessageId,
@@ -18,6 +19,8 @@ import {
   decodeUtcMillisecondInstant,
   type SqliteColumnContext,
 } from "./row-decoders";
+import { ThreadGraphRepository } from "./thread-graph-repository";
+import { normalizeThreadFacts } from "./thread-normalizer";
 
 type RecordValue = Readonly<Record<string, unknown>>;
 
@@ -138,6 +141,11 @@ export function storeIdentityOnlyMessage(database: Database, value: unknown): Id
           "identity-only message already has different durable state",
         );
       }
+      persistIdentityOnlyThreadFacts(
+        database,
+        input.content.messageId,
+        input.content.remoteUid.accountId,
+      );
       database.exec("COMMIT;");
       return existing;
     }
@@ -159,6 +167,11 @@ export function storeIdentityOnlyMessage(database: Database, value: unknown): Id
         input.observedAt,
         input.storedAt,
       );
+    persistIdentityOnlyThreadFacts(
+      database,
+      input.content.messageId,
+      input.content.remoteUid.accountId,
+    );
     database.exec("COMMIT;");
     return {
       ...input.content,
@@ -324,6 +337,20 @@ function tableExists(database: Database, table: string): boolean {
     .query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?;")
     .get(table);
   return row !== null;
+}
+
+function persistIdentityOnlyThreadFacts(
+  database: Database,
+  messageId: MessageId,
+  accountId: AccountId,
+): void {
+  if (!tableExists(database, "thread_generation")) return;
+  const facts = normalizeThreadFacts({
+    accountId,
+    messageId,
+    contentState: "identity-only",
+  });
+  new ThreadGraphRepository(database).ingestFactsInTransaction(facts);
 }
 
 function sameIdentityOnlyMessage(
