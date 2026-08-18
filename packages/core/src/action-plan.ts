@@ -123,6 +123,11 @@ export interface PartialActionPlan extends ActionPlanBase {
   readonly completedAt: UtcInstant;
 }
 
+export interface FailedActionPlan extends ActionPlanBase {
+  readonly state: "failed";
+  readonly failedAt: UtcInstant;
+}
+
 export interface RejectedActionPlan extends ActionPlanBase {
   readonly state: "rejected";
   readonly rejectedAt: UtcInstant;
@@ -146,6 +151,7 @@ export type ActionPlan =
   | ExecutingActionPlan
   | CompletedActionPlan
   | PartialActionPlan
+  | FailedActionPlan
   | RejectedActionPlan
   | ExpiredActionPlan
   | UncertainActionPlan;
@@ -162,6 +168,7 @@ export type ActionPlanEvent =
       readonly type: "partial";
       readonly completedAt: UtcInstant;
     }
+  | { readonly type: "fail"; readonly failedAt: UtcInstant }
   | { readonly type: "reject"; readonly rejectedAt: UtcInstant; readonly reason: ActionPlanReason }
   | { readonly type: "expire"; readonly expiredAt: UtcInstant }
   | {
@@ -177,6 +184,7 @@ export type ActionPlanEvent =
       readonly type: "resolve-partial";
       readonly completedAt: UtcInstant;
     }
+  | { readonly type: "resolve-failed"; readonly failedAt: UtcInstant }
   | {
       readonly type: "resolve-rejected";
       readonly rejectedAt: UtcInstant;
@@ -187,10 +195,11 @@ export type ActionPlanEventType = ActionPlanEvent["type"];
 
 export const ACTION_PLAN_ALLOWED_TRANSITIONS = {
   pending: ["claim", "reject", "expire"],
-  executing: ["complete", "partial", "uncertain"],
-  uncertain: ["resolve-completed", "resolve-partial", "resolve-rejected"],
+  executing: ["complete", "partial", "fail", "reject", "expire", "uncertain"],
+  uncertain: ["resolve-completed", "resolve-partial", "resolve-failed", "resolve-rejected"],
   completed: [],
   partial: [],
+  failed: [],
   rejected: [],
   expired: [],
 } as const satisfies Readonly<Record<ActionPlanState, readonly ActionPlanEventType[]>>;
@@ -371,6 +380,24 @@ export function createPartialActionPlan(value: unknown): PartialActionPlan {
   return result;
 }
 
+export function createFailedActionPlan(value: unknown): FailedActionPlan {
+  const record = requireRecord(value, "failed action plan");
+  const base = parseStateBase(record, "failed", [
+    "state",
+    "planId",
+    "action",
+    "targets",
+    "createdAt",
+    "expiresAt",
+    "failedAt",
+  ]);
+  const failedAt = parseUtcInstant(record.failedAt);
+  if (Date.parse(failedAt) < Date.parse(base.createdAt)) {
+    throw new TypeError("failure must not precede creation");
+  }
+  return { ...base, state: "failed", failedAt };
+}
+
 export function createRejectedActionPlan(value: unknown): RejectedActionPlan {
   const record = requireRecord(value, "rejected action plan");
   const base = parseStateBase(record, "rejected", [
@@ -443,6 +470,8 @@ export function createActionPlan(value: unknown): ActionPlan {
       return createCompletedActionPlan(record);
     case "partial":
       return createPartialActionPlan(record);
+    case "failed":
+      return createFailedActionPlan(record);
     case "rejected":
       return createRejectedActionPlan(record);
     case "expired":
@@ -475,6 +504,8 @@ export function serializeActionPlan(value: ActionPlan): ActionPlan {
       return { ...value, targets: cloneTargets(value.targets) };
     case "partial":
       return { ...value, targets: cloneTargets(value.targets) };
+    case "failed":
+      return { ...value, targets: cloneTargets(value.targets) };
     case "rejected":
       return { ...value, targets: cloneTargets(value.targets) };
     case "expired":
@@ -504,6 +535,9 @@ export function createActionPlanEvent(value: unknown): ActionPlanEvent {
     case "partial":
       requireExactKeys(record, ["type", "completedAt"]);
       return { type: "partial", completedAt: parseUtcInstant(record.completedAt) };
+    case "fail":
+      requireExactKeys(record, ["type", "failedAt"]);
+      return { type: "fail", failedAt: parseUtcInstant(record.failedAt) };
     case "reject":
       requireExactKeys(record, ["type", "rejectedAt", "reason"]);
       return {
@@ -527,6 +561,9 @@ export function createActionPlanEvent(value: unknown): ActionPlanEvent {
     case "resolve-partial":
       requireExactKeys(record, ["type", "completedAt"]);
       return { type: "resolve-partial", completedAt: parseUtcInstant(record.completedAt) };
+    case "resolve-failed":
+      requireExactKeys(record, ["type", "failedAt"]);
+      return { type: "resolve-failed", failedAt: parseUtcInstant(record.failedAt) };
     case "resolve-rejected":
       requireExactKeys(record, ["type", "rejectedAt", "reason"]);
       return {
@@ -569,6 +606,18 @@ function transitionToResult(
     ...baseFields(plan),
     state,
     completedAt: event.completedAt,
+  };
+}
+
+function transitionToFailed(
+  plan: ActionPlanBase,
+  event: { readonly failedAt: UtcInstant },
+): FailedActionPlan {
+  assertAtOrAfter(event.failedAt, plan.createdAt, "failure");
+  return {
+    ...baseFields(plan),
+    state: "failed",
+    failedAt: event.failedAt,
   };
 }
 
@@ -618,6 +667,20 @@ export function transitionActionPlan(plan: ActionPlan, event: ActionPlanEvent): 
         case "partial":
           assertAtOrAfter(event.completedAt, plan.startedAt, "completion");
           return transitionToResult(plan, event, "partial");
+        case "fail":
+          assertAtOrAfter(event.failedAt, plan.startedAt, "failure");
+          return transitionToFailed(plan, event);
+        case "reject":
+          assertAtOrAfter(event.rejectedAt, plan.startedAt, "rejection");
+          return {
+            ...baseFields(plan),
+            state: "rejected",
+            rejectedAt: event.rejectedAt,
+            reason: event.reason,
+          };
+        case "expire":
+          assertAtOrAfter(event.expiredAt, plan.expiresAt, "expiration");
+          return { ...baseFields(plan), state: "expired", expiredAt: event.expiredAt };
         case "uncertain":
           assertAtOrAfter(event.missingLocalResultAt, plan.startedAt, "missing local result");
           return {
@@ -646,6 +709,9 @@ export function transitionActionPlan(plan: ActionPlan, event: ActionPlanEvent): 
             "reconciliation completion",
           );
           return transitionToResult(plan, event, "partial");
+        case "resolve-failed":
+          assertAtOrAfter(event.failedAt, plan.missingLocalResultAt, "reconciliation failure");
+          return transitionToFailed(plan, event);
         case "resolve-rejected":
           assertAtOrAfter(event.rejectedAt, plan.missingLocalResultAt, "reconciliation rejection");
           return {
@@ -660,6 +726,7 @@ export function transitionActionPlan(plan: ActionPlan, event: ActionPlanEvent): 
       }
     case "completed":
     case "partial":
+    case "failed":
     case "rejected":
     case "expired": {
       throw new ActionPlanTransitionError(`event ${event.type} is not valid for terminal plan`);

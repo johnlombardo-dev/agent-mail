@@ -32,6 +32,8 @@ function describeState(plan: ActionPlan): string {
       return plan.completedAt;
     case "partial":
       return plan.completedAt;
+    case "failed":
+      return plan.failedAt;
     case "rejected":
       return plan.reason;
     case "expired":
@@ -53,6 +55,8 @@ function describeEvent(event: ActionPlanEvent): ActionPlanState {
       return "completed";
     case "partial":
       return "partial";
+    case "fail":
+      return "failed";
     case "reject":
       return "rejected";
     case "expire":
@@ -63,6 +67,8 @@ function describeEvent(event: ActionPlanEvent): ActionPlanState {
       return "completed";
     case "resolve-partial":
       return "partial";
+    case "resolve-failed":
+      return "failed";
     case "resolve-rejected":
       return "rejected";
     default: {

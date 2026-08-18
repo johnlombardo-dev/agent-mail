@@ -55,6 +55,11 @@ describe("action-plan algebra", () => {
       targets: [target, { ...target, uid: 8 }],
       completedAt: "2026-08-18T00:02:00.000Z",
     });
+    const failed = createActionPlan({
+      state: "failed",
+      ...base,
+      failedAt: "2026-08-18T00:02:00.000Z",
+    });
     const rejected = createActionPlan({
       ...base,
       state: "rejected",
@@ -69,19 +74,20 @@ describe("action-plan algebra", () => {
       missingLocalResultAt: "2026-08-18T00:02:00.000Z",
     });
     expect(
-      [pending, executing, completed, partial, rejected, expired, uncertain].map(
+      [pending, executing, completed, partial, failed, rejected, expired, uncertain].map(
         (item) => item.state,
       ),
-    ).toEqual(["pending", "executing", "completed", "partial", "rejected", "expired", "uncertain"]);
+    ).toEqual(["pending", "executing", "completed", "partial", "failed", "rejected", "expired", "uncertain"]);
   });
 
   it("follows the complete allowed transition table", () => {
     expect(ACTION_PLAN_ALLOWED_TRANSITIONS).toEqual({
       pending: ["claim", "reject", "expire"],
-      executing: ["complete", "partial", "uncertain"],
-      uncertain: ["resolve-completed", "resolve-partial", "resolve-rejected"],
+      executing: ["complete", "partial", "fail", "reject", "expire", "uncertain"],
+      uncertain: ["resolve-completed", "resolve-partial", "resolve-failed", "resolve-rejected"],
       completed: [],
       partial: [],
+      failed: [],
       rejected: [],
       expired: [],
     });
@@ -116,6 +122,12 @@ describe("action-plan algebra", () => {
         createActionPlanEvent({ type: "partial", completedAt: base.createdAt }),
       ).state,
     ).toBe("partial");
+    expect(
+      transitionActionPlan(
+        executing,
+        createActionPlanEvent({ type: "fail", failedAt: base.createdAt }),
+      ).state,
+    ).toBe("failed");
     const uncertain = transitionActionPlan(
       executing,
       createActionPlanEvent({
