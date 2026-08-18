@@ -1,0 +1,47 @@
+# Thread design decisions v1
+
+Status: checked rationale view. Normative oracle SHA-256: `cddac2500b0a71a5e51525aa42e827b3e487a65aeaf9ad5f5405f39d9de70239`.
+
+The decision IDs and operative rules live in [`thread-oracle.v1.json`](thread-oracle.v1.json). This view records why the selected model wins its trade-offs.
+
+| ID    | Decision                                                                                                                                | Rejected alternative and consequence                                                                                                                                                           |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `D01` | Scope graphs and thread IDs by account.                                                                                                 | A global Message-ID graph can disclose or merge identities across accounts and cannot support a future multi-account boundary safely.                                                          |
+| `D02` | Use a strict bounded RFC-derived grammar, NFC, and safe rejection.                                                                      | Liberal substring extraction accepts hidden or partial attacker-controlled bridges. Full obsolete-form canonicalization creates comparison choices that the RFC does not freeze.               |
+| `D03` | Use only RFC ancestry edges.                                                                                                            | Subject/sender heuristics merge unrelated newsletters, alerts, and repeated subjects; language-specific prefix handling is unstable.                                                           |
+| `D04` | Keep canonical-message and Message-ID identity separate with an own-ID equivalence link.                                                | Deduplicating by Message-ID discards distinct raw evidence. Replacing the canonical node after identity-only recovery would require a split or make final identity depend on recovery order.   |
+| `D05` | Use weak components with a deterministic directed root.                                                                                 | First-seen ownership is ingestion-order dependent. Hashing the full component churns on every descendant. The root rule changes only when ancestry actually changes the root.                  |
+| `D06` | Make v1 facts append-only and components merge-only.                                                                                    | Removing edges after publication creates splits, and one old handle cannot redirect unambiguously to several new threads.                                                                      |
+| `D07` | Keep every issued handle as a permanent alias.                                                                                          | Deleting a losing handle breaks saved search results, CLI scripts, cursors, and citations after a late bridge. HTTP redirect semantics also leak transport policy into domain identity.        |
+| `D08` | Separate public root identity from physical union-by-weight sets.                                                                       | Forcing the deterministic public winner to be the physical winner can rewrite a large component on every skewed merge. Physical-first public IDs are order dependent.                          |
+| `D09` | Order by final sent-time null rank, UTC instant, then canonical message ID; identity recovery may move null once to an earlier instant. | Placement time and UID change with mailbox copies; rowid/insertion order changes across restore; Message-ID is duplicated/untrusted.                                                           |
+| `D10` | Use a signed live keyset cursor with explicit late-arrival semantics.                                                                   | OFFSET duplicates/skips under insertions. A hidden snapshot needs durable membership history or server-side snapshot state that no accepted owner provides.                                    |
+| `D11` | Retain tombstoned members in direct history but exclude tombstoned-only members from default search.                                    | Removing membership makes thread identity depend on remote disappearance and contradicts canonical retention. Returning tombstoned-only content from normal search contradicts F14 visibility. |
+| `D12` | Unknown direct thread is shared 404/not_found, never 200-empty.                                                                         | A fabricated empty thread erases the distinction between an absent identity and an existing empty-capable value, reproducing F16.                                                              |
+| `D13` | Keep SQLite as the only authority and prove restore parity.                                                                             | FTS-, memory-, or sidecar-only identity cannot survive reindex/restart/backup with the accepted recovery substrate.                                                                            |
+| `D14` | Bound extraction, pages, participants, diagnostics, and application memory.                                                             | A corpus graph or whole-thread response violates the 250k/local-first capacity posture and lets one hostile header control work.                                                               |
+| `D15` | Hash normalized IDs and expose safe diagnostic codes only.                                                                              | Raw Message-ID text in URLs, SQL, logs, filenames, errors, or HTML creates injection, spoofing, and control-character surfaces.                                                                |
+| `D16` | Revise the shared thread request/success schema before #137.                                                                            | The current whole-array contract cannot express bounded pagination, count, truncation, or alias provenance truthfully.                                                                         |
+| `D17` | Put migrations/repositories in a dependency owned by storage, not #137 route handlers.                                                  | Hiding storage work inside handler scope violates package ownership and leaves search/direct retrieval inconsistent.                                                                           |
+| `D18` | Make #195 a pure shared-client projection.                                                                                              | Client assembly or sorting creates a second threading authority; a local exit code violates the frozen shared-policy seam.                                                                     |
+
+## Hard edge cases
+
+The model deliberately names cases that change identity:
+
+- A late descendant does not change a root. A late ancestor that introduces an earlier ancestor may change it; the old handle aliases forward.
+- A `References` bridge can merge components and re-parent a former root. Both old handles resolve after the transaction.
+- Distinct messages with one normalized Message-ID remain two ordered members. A duplicate `Message-ID` field inside one message is unusable and falls back to canonical content identity.
+- A cycle has no zero-indegree node, so the smallest node key is the deterministic fallback. No implementation may choose first seen.
+- Placement copies and tombstones change received/search metadata, not the immutable thread order tuple or membership.
+
+## Domain language
+
+This design sharpens several overloaded terms without changing the protected root glossary:
+
+- **Member** means a canonical message, never a placement or Message-ID node.
+- **Node** means an internal graph identity, including virtual referenced identities.
+- **Set** means the physical storage component selected for efficient union.
+- **Canonical thread handle** means the current root-derived public ID.
+- **Alias handle** means an old public ID permanently mapped to the current set.
+- **Merge** means append-only component union. v1 has no split operation.

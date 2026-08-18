@@ -1,0 +1,1323 @@
+{
+  "format": "agent-mail.thread-oracle/v1",
+  "schemaVersion": 1,
+  "modelVersion": "1.0.0",
+  "status": "frozen-design-with-downstream-contract-blockers",
+  "oracle": {
+    "normative": true,
+    "description": "This JSON file is the single normative deterministic-threading oracle. The thread-design, thread-decisions, and thread-coverage Markdown files are checked views. If prose conflicts with this file, this file wins.",
+    "scope": "One account-scoped, merge-only, durable graph that maps canonical messages to multi-message public threads without subject heuristics.",
+    "compatibilityRule": "thread-normalizer-v1 and thread-identity-v1 are immutable within /v1. A future normalization change that can remove an edge, split a component, or change a root requires a new algorithm namespace and migration contract; it cannot rewrite v1 handles in place.",
+    "issue": 197
+  },
+  "frozenInputs": [
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "sha256": "a4b2c93d9ae47369e6893be0a7eace854fce9dccda14bd0d138d9c98b63a2afc"
+    },
+    {
+      "id": "EVIDENCE-F16",
+      "path": "docs/planning/EVIDENCE.md",
+      "sha256": "544c1ee220e13b96dc88aa71096701a3887fb1adba22e9b8d60a244533f50cc9"
+    },
+    {
+      "id": "P2-C10-MIME",
+      "path": "packages/imap/src/mime-parser.ts",
+      "gitCommit": "1776503132bd4fbe7cd36128e046ab9a618f66f4",
+      "sha256": "e003194a3655f7c5aeec105d13e9a55be05328d84df606b833394d86c6d6a600"
+    },
+    {
+      "id": "P2-C04-CANONICAL-PLACEMENT",
+      "path": "packages/storage/src/migrations/0001-message-catalog.ts",
+      "gitCommit": "202e83ce2a8b9369a11eaa714832f2ba3ad00486",
+      "sha256": "ff755b12ae1eaad36e9f264a06894afd40174da7fe06f19770f4f917a23def36"
+    },
+    {
+      "id": "P2-C05-STRUCTURED-CONTENT",
+      "path": "packages/storage/src/migrations/0002-structured-content.ts",
+      "gitCommit": "5f1a5131798bf0b5798a17485ff8c4acc196b508",
+      "sha256": "87ec7badccd16bf895e6fc3c20628ecb01980b1c0ebd192f5ae4409c80e8359c"
+    },
+    {
+      "id": "P2-C12-IDENTITY-ONLY",
+      "path": "packages/storage/src/identity-only-repository.ts",
+      "gitCommit": "d83265b4101db6af4b2a3567e7eeb85cb1572020",
+      "sha256": "2f5164078465cb0548788ee17d9191d3fb78e35234307011514a5917bdd43cd3"
+    },
+    {
+      "id": "P2-C13-CANONICAL-PROMOTION",
+      "path": "packages/storage/src/canonical-promotion.ts",
+      "gitCommit": "da026418fe6eb33614732173e2bd4434c4cd1588",
+      "sha256": "431012fff89ab7c71c5bf88cc2c530901b6bf75c82a97cdc53b4ffd10bc59208"
+    },
+    {
+      "id": "P2-C14-TOMBSTONE",
+      "path": "packages/storage/src/remote-placement-tombstone.ts",
+      "gitCommit": "c0a5ac7824a2d85bf59d1ccfc9113fa7d8d12f3b",
+      "sha256": "3e0b68b4418fab1495919f22782a5117042b731b81e989b02d0ff01a376b913d"
+    },
+    {
+      "id": "P3-C12-PLACEMENT-OBSERVATION",
+      "path": "packages/storage/src/migrations/0003-placement-observation.ts",
+      "gitCommit": "574a679105b0b141e6b1a913badf0338e6e75eae",
+      "sha256": "e9673f92b9db2989e7af7dc6a967a55b8fe12c212a53a687d5ff2545ce4e1532"
+    },
+    {
+      "id": "P4-C07-SEARCH-SUMMARY",
+      "path": "packages/storage/src/search-summary-hydration-repository.ts",
+      "gitCommit": "165d4a3aff7361de02c456cf592dde6ad4a83a69",
+      "sha256": "31474d72d04e910bfe9b88ccde4b037703deafa1a95cf08726d662428f17a792"
+    },
+    {
+      "id": "P4-C08-SEARCH-CURSOR",
+      "path": "packages/storage/src/search-cursor.ts",
+      "gitCommit": "7a9fac905f6635050543e3a2add3de96baecca75",
+      "sha256": "7e468a50e442668aa16ee5311a012184934658656ab6fba366abdf4923370c0d"
+    },
+    {
+      "id": "P1-C09-RETRIEVAL-CONTRACT",
+      "path": "packages/contracts/src/retrieval-operations.ts",
+      "gitCommit": "55c01ab0471d806f5c713559f17a55d4c84ecb52",
+      "sha256": "97c2bae6dc411fdb72cf6ff7a90a55903d4f89c362618f923aafd761fabd9bcc"
+    },
+    {
+      "id": "P2-C16-BACKUP-MANIFEST",
+      "path": "packages/storage/src/backup-manifest.ts",
+      "gitCommit": "a907766557bf84e5b8d79bd429834c143a1b51a9",
+      "sha256": "60e09c3a57d4f8c81444e918985b57efe05396457af93f00d9aa58bfbb429645"
+    },
+    {
+      "id": "P2-C18-BACKUP-RESTORE",
+      "path": "packages/storage/src/backup-restore.ts",
+      "gitCommit": "21ce2ac47544e28e5dc10c7e75df983968352995",
+      "sha256": "91a3cd217abead59c5288d4c70d06c8c4df1566464e0c3e30de5826758433c3e"
+    },
+    {
+      "id": "P2-C19-RESTORE-PARITY",
+      "path": "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
+      "gitCommit": "da026418fe6eb33614732173e2bd4434c4cd1588",
+      "sha256": "f4af7c9745358f64f2916963c0d40f91ca5d6591696ee143aef00442f801ec8e"
+    }
+  ],
+  "primaryStandards": [
+    {
+      "id": "RFC5322-2.1.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc5322.html#section-2.1.1",
+      "use": "998-character generated-line ceiling and robust receiving context"
+    },
+    {
+      "id": "RFC5322-2.2.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc5322.html#section-2.2.3",
+      "use": "header unfolding semantics"
+    },
+    {
+      "id": "RFC5322-3.6.4",
+      "url": "https://www.rfc-editor.org/rfc/rfc5322.html#section-3.6.4",
+      "use": "Message-ID, References, In-Reply-To grammar and ancestry semantics; angle brackets are not semantic content"
+    },
+    {
+      "id": "RFC5322-4.5.4",
+      "url": "https://www.rfc-editor.org/rfc/rfc5322.html#section-4.5.4",
+      "use": "obsolete identification syntax and the explicit decision not to link ambiguous obsolete forms"
+    },
+    {
+      "id": "RFC6532-3.1",
+      "url": "https://www.rfc-editor.org/rfc/rfc6532.html#section-3.1",
+      "use": "UTF-8 header syntax and NFC, not NFKC"
+    },
+    {
+      "id": "RFC6532-3.2",
+      "url": "https://www.rfc-editor.org/rfc/rfc6532.html#section-3.2",
+      "use": "UTF-8 atext, domains, and Message-IDs"
+    },
+    {
+      "id": "RFC6532-3.3",
+      "url": "https://www.rfc-editor.org/rfc/rfc6532.html#section-3.3",
+      "use": "ASCII Message-ID generation remains preferred but UTF-8 input must be handled"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-NORMALIZATION",
+      "text": "Message-ID, References, and In-Reply-To have one exact bounded normalization and rejection algorithm for absent, duplicate, malformed, oversized, UTF-8, and adversarial values."
+    },
+    {
+      "id": "REQ-IDENTITY",
+      "text": "A public thread handle is deterministic, account-scoped, durable, and independent of canonical-message ingestion order."
+    },
+    {
+      "id": "REQ-MEMBERSHIP",
+      "text": "Membership is the weakly connected component of accepted RFC ancestry facts and preserves distinct canonical messages."
+    },
+    {
+      "id": "REQ-MERGE-ALIAS",
+      "text": "Components only merge; every issued losing handle remains a permanent alias for the merged component."
+    },
+    {
+      "id": "REQ-ORDER",
+      "text": "Every member has one final chronological order tuple with an exact missing-time rule, one monotonic identity-only recovery rule, and an identity tie-breaker; parsed tuples are immutable."
+    },
+    {
+      "id": "REQ-PAGINATION",
+      "text": "Thread pages use an integrity-protected keyset cursor with explicit live-pagination behavior under late arrivals and merges."
+    },
+    {
+      "id": "REQ-BOUNDS",
+      "text": "Header work, merge memory, storage growth, public page size, participant projection, and traversal are bounded; no corpus-wide graph is loaded in memory."
+    },
+    {
+      "id": "REQ-RESTART",
+      "text": "Thread facts, memberships, handles, aliases, and merge state survive restart and idempotent replay."
+    },
+    {
+      "id": "REQ-TOMBSTONE",
+      "text": "Placement tombstones never delete or split canonical thread membership."
+    },
+    {
+      "id": "REQ-RECOVERY",
+      "text": "Backup/restore preserves exact thread behavior; FTS reindex consumes thread truth but does not own or rebuild it."
+    },
+    {
+      "id": "REQ-PUBLIC",
+      "text": "Search, direct message, direct thread, alias, unknown, REST, and CLI behavior share one truthful contract."
+    },
+    {
+      "id": "REQ-UNTRUSTED",
+      "text": "Header bytes and diagnostics remain untrusted data and never become SQL, HTML, logs, public IDs, filenames, or error text without bounded projection."
+    },
+    {
+      "id": "REQ-DOWNSTREAM",
+      "text": "Issues 137 and 195 have explicit implementation and proof obligations, including required authority reshaping."
+    }
+  ],
+  "limits": {
+    "messageIdHeaderOccurrences": 1,
+    "referencesHeaderOccurrences": 1,
+    "inReplyToHeaderOccurrences": 1,
+    "messageIdFieldUtf8Bytes": 998,
+    "referencesFieldUtf8Bytes": 16384,
+    "inReplyToFieldUtf8Bytes": 4096,
+    "messageIdTokenUtf8Bytes": 998,
+    "referencesTokens": 100,
+    "inReplyToTokens": 32,
+    "commentNestingDepth": 8,
+    "anchorsPerMessage": 134,
+    "threadPageDefault": 50,
+    "threadPageMaximum": 100,
+    "participantMaximum": 256,
+    "diagnosticsPerMessage": 16,
+    "diagnosticCodeUtf8Bytes": 64,
+    "cursorUtf8Bytes": 8192
+  },
+  "types": [
+    {
+      "id": "ThreadScope",
+      "shape": "account_id",
+      "invariant": "Every node, edge, set, membership, and handle belongs to exactly one parsed account ID. No edge crosses accounts."
+    },
+    {
+      "id": "CanonicalMessage",
+      "shape": "message:<64-lowercase-hex>",
+      "invariant": "The accepted SHA-256 raw-EML identity remains the member identity. Message-ID never replaces or deduplicates it."
+    },
+    {
+      "id": "NormalizedMsgId",
+      "shape": "NFC id-left@id-right without angle brackets",
+      "invariant": "Local-part case is preserved; only ASCII A-Z in a dot-atom id-right is lowercased."
+    },
+    {
+      "id": "ThreadNodeKey",
+      "shape": "i:<64-lowercase-hex> | m:<64-lowercase-hex>",
+      "invariant": "i is a digest of a normalized RFC Message-ID; m is the canonical-message digest and permanent member node. A valid own Message-ID adds an equivalence link m--i rather than replacing m."
+    },
+    {
+      "id": "ThreadId",
+      "shape": "thread:<64-lowercase-hex>",
+      "invariant": "The digest input includes the account scope and deterministic component root."
+    },
+    {
+      "id": "ThreadSet",
+      "shape": "opaque physical set row",
+      "invariant": "Physical set identity is storage-only. Public identity is the canonical thread handle and does not depend on the physical union winner."
+    }
+  ],
+  "normalization": {
+    "version": "thread-normalizer-v1",
+    "input": {
+      "table": "message_headers",
+      "columns": ["message_id", "ordinal", "normalized_name", "value"],
+      "selection": "Select normalized_name in ('message-id','references','in-reply-to') ordered by ordinal. Use value, not normalized_value, because the accepted MIME boundary has already unfolded and decoded the field while value retains token punctuation.",
+      "sentAtInput": "The owning structured-content boundary supplies the accepted hydrated sentAt UTC instant or null. It is included in facts_sha256 but is not parsed by the Message-ID scanner.",
+      "immutability": "Parsed canonical raw content and its stored header rows are immutable. An identity-only message has a durable pending fact and may make exactly one monotonic transition to parsed facts when accepted structured content is recovered. Replaying either state must be byte-identical."
+    },
+    "occurrencePolicy": [
+      {
+        "field": "message-id",
+        "validOccurrences": 1,
+        "validTokenCount": 1,
+        "otherwise": "unusable-field"
+      },
+      {
+        "field": "references",
+        "validOccurrences": "0-or-1",
+        "validTokenCount": "1..100 when present",
+        "otherwise": "ignore-entire-field"
+      },
+      {
+        "field": "in-reply-to",
+        "validOccurrences": "0-or-1",
+        "validTokenCount": "1..32 when present",
+        "otherwise": "ignore-entire-field"
+      }
+    ],
+    "scanner": [
+      "Reject a field before token extraction when its UTF-8 byte length exceeds the field limit, UTF-8 is invalid, or it contains NUL, Unicode category Cc/Cf/Cs, a Unicode noncharacter, or an unpaired scalar.",
+      "Scan left to right once. Outside angle brackets, accept only space, horizontal tab, and RFC comments. Comments allow quoted-pair escapes, nest at most eight levels, and must close. Any other phrase, quote, stray angle bracket, CR, or LF rejects the entire field.",
+      "Inside angle brackets, comments, folding whitespace, quoted strings, escapes, nested angle brackets, and more than one at-sign are forbidden. The first closing angle bracket ends the candidate.",
+      "A candidate must match the v1 id-left and id-right grammar and its complete canonical UTF-8 form must be 1..998 bytes. One bad candidate rejects the entire field; partial-prefix linking is forbidden.",
+      "Deduplicate equal canonical tokens within References or In-Reply-To by first occurrence after the whole field validates."
+    ],
+    "grammar": {
+      "idLeft": "One or more dot-separated atoms. Each atom is one or more RFC 5322 ASCII atext characters or RFC 6532 non-ASCII Unicode scalars that are not whitespace, marks Cc/Cf/Cs, noncharacters, or ASCII specials outside atext. Empty atoms are forbidden.",
+      "idRightDotAtom": "The same dot-atom rule as idLeft.",
+      "idRightLiteral": "A bracketed nonempty sequence of RFC 5322 dtext (%d33-90 or %d94-126) or RFC 6532 permitted non-ASCII scalars; backslash, nested brackets, whitespace, controls, formats, surrogates, and noncharacters are forbidden.",
+      "obsoleteForms": "Quoted id-left, obs-id-left, obs-id-right, and phrase-bearing obsolete fields are preserved in raw/header storage but are unusable for v1 linking because their comparison semantics are ambiguous at this trust boundary."
+    },
+    "canonicalization": [
+      "Remove surrounding angle brackets and all permitted surrounding CFWS; angle brackets are not semantic Message-ID content.",
+      "Normalize id-left and id-right to Unicode NFC. Never apply NFKC, compatibility folding, locale folding, or Unicode-version-dependent case folding.",
+      "Preserve id-left byte-for-byte after NFC. For dot-atom id-right only, lowercase ASCII A through Z. Preserve non-ASCII code points and domain-literal case.",
+      "Join canonical id-left, one at-sign, and canonical id-right. Never expose this value as a public identifier or interpolate it into SQL/log text.",
+      "Compute node key i:<hex> as SHA-256 of UTF-8 bytes 'thread-msgid-v1\\0' followed by the canonical value."
+    ],
+    "messageNode": "Every canonical message has the permanent member node m:<message digest>. A valid own Message-ID adds an undirected equivalence link from m to its i: node. An unusable Message-ID leaves m as a one-node equivalence class and records a safe diagnostic code.",
+    "diagnostics": {
+      "storedShape": "{message_id, normalizer_version, field, code, ordinal|null}",
+      "allowedCodes": [
+        "absent",
+        "duplicate-field",
+        "field-too-large",
+        "invalid-unicode",
+        "forbidden-codepoint",
+        "malformed-cfws",
+        "malformed-token",
+        "too-many-tokens",
+        "self-edge-suppressed"
+      ],
+      "rule": "Codes and ordinals are bounded. Raw values, normalized IDs, excerpts, parser exceptions, and control characters are never copied into a public error or routine log."
+    }
+  },
+  "graph": {
+    "version": "thread-graph-v1",
+    "memberNode": "A canonical message is always the distinct member node m:<canonical-message-digest>. A valid own Message-ID places m in the equivalence class represented by its i: node; otherwise m represents its own class.",
+    "equivalence": "An own Message-ID creates one undirected m--i equivalence link. Several m nodes may link to the same i node, preserving separate canonical members with one RFC identity. Equivalence links affect weak connectivity but not ancestry indegree. The class representative is the lexicographically smallest i node when present, otherwise its m node.",
+    "edgeConstruction": [
+      "Define memberAnchor as the own i node when Message-ID is valid, otherwise the permanent m member node.",
+      "For a valid References list r[0..n-1], add directed ancestry edges r[i] -> r[i+1] for each adjacent pair, then r[n-1] -> memberAnchor.",
+      "For each valid In-Reply-To token p, add ancestry edge p -> memberAnchor.",
+      "Deduplicate equal ordered pairs across both fields. Suppress source == target and record self-edge-suppressed.",
+      "A referenced node may exist before any canonical message claims it. Materializing that ancestor later adds membership but does not require a merge or change the root when the virtual node already existed.",
+      "Subject, sender, recipients, List-ID, mailbox, flags, labels, body, and placement dates never create graph edges."
+    ],
+    "membership": "Within one account, a thread is the weakly connected component of permanent message nodes, own-ID equivalence links, referenced virtual nodes, and accepted directed ancestry edges. Every canonical m node in that component is a distinct member.",
+    "roots": "Collapse own-ID equivalence links into classes for root calculation. A root class has zero accepted ancestry edges from a different class. Its representative is the lexicographically smallest i node when present, otherwise its m node. The deterministic component root is the lexicographically smallest representative of a root class. If a malformed/adversarial cycle leaves no root class, use the lexicographically smallest class representative in the component.",
+    "publicIdentity": {
+      "version": "thread-identity-v1",
+      "formula": "thread:<sha256-hex('agent-mail-thread-v1\\0' || account_id UTF-8 || '\\0' || deterministic-root-node-key UTF-8)>",
+      "properties": [
+        "A reply that names a not-yet-ingested root gets the final root-derived handle immediately.",
+        "A later descendant does not change the root because it only adds incoming edges to itself.",
+        "A late ancestor that introduces an earlier ancestor, a duplicate Message-ID claimant with new ancestry, a cycle, or a bridge may change the canonical root; the old handle becomes an alias in the same transaction.",
+        "The final canonical handle and membership are independent of fact ingestion order."
+      ]
+    },
+    "duplicates": {
+      "sameCanonicalMessage": "Multiple placements of one canonical message create one membership row and never duplicate a thread member.",
+      "sameNormalizedMessageId": "Distinct canonical message nodes with the same valid normalized Message-ID link to the same i node and therefore the same thread. Their accepted ancestry edges are unioned while their memberships remain distinct.",
+      "duplicateHeaderOccurrence": "A single message with more than one Message-ID field has no usable Message-ID and uses its canonical-message fallback node."
+    },
+    "mergeAndAlias": [
+      "Parsed facts are append-only. Identity-only -> parsed recovery may only add the own-ID equivalence link and ancestry edges. Components therefore only merge and never split in v1.",
+      "When one transaction connects sets, recompute the deterministic root and canonical thread handle from indexed roots.",
+      "Retain every prior canonical or alias handle in thread_handles and repoint it to the physical winning set in the same transaction. A handle is never deleted, recycled, or mapped to another account.",
+      "Resolution is one indexed handle lookup. A losing handle returns the current canonical payload; it is not an HTTP redirect and does not disclose raw header data.",
+      "Persist one immutable thread_merges row for each losing canonical handle with bridge message, previous root, current root, and transaction generation."
+    ]
+  },
+  "persistence": {
+    "owner": "@agent-mail/storage",
+    "generation": "A SQLite INTEGER thread_generation row is incremented exactly once in every transaction that changes header facts, nodes, edges, membership, canonical identity, or aliases. No-op replay does not increment it.",
+    "tables": [
+      {
+        "name": "thread_header_facts",
+        "primaryKey": ["account_id", "message_id"],
+        "required": [
+          "content_state",
+          "normalizer_version",
+          "member_node_key",
+          "message_id_node_key|null",
+          "references_json",
+          "in_reply_to_json",
+          "sent_at|null",
+          "diagnostics_json",
+          "facts_sha256"
+        ],
+        "indexes": ["UNIQUE(account_id,message_id)", "(account_id,message_id_node_key)"]
+      },
+      {
+        "name": "thread_nodes",
+        "primaryKey": ["account_id", "node_key"],
+        "required": ["set_id", "class_key", "incoming_ancestry_count"],
+        "indexes": [
+          "(account_id,set_id,class_key,incoming_ancestry_count,node_key)",
+          "UNIQUE(account_id,class_key,node_key)"
+        ]
+      },
+      {
+        "name": "thread_equivalences",
+        "primaryKey": ["account_id", "member_node_key"],
+        "required": ["set_id", "message_id_node_key", "message_id"],
+        "indexes": [
+          "(account_id,set_id,member_node_key)",
+          "(account_id,message_id_node_key,member_node_key)"
+        ]
+      },
+      {
+        "name": "thread_edges",
+        "primaryKey": ["account_id", "source_class_key", "target_class_key"],
+        "required": ["set_id", "first_message_id", "first_field", "first_ordinal"],
+        "indexes": [
+          "(account_id,set_id,source_class_key,target_class_key)",
+          "(account_id,target_class_key)",
+          "(account_id,source_class_key)"
+        ]
+      },
+      {
+        "name": "thread_sets",
+        "primaryKey": ["account_id", "set_id"],
+        "required": [
+          "member_count",
+          "node_count",
+          "equivalence_count",
+          "edge_count",
+          "participant_count",
+          "handle_count",
+          "canonical_root_node_key",
+          "canonical_thread_id",
+          "updated_generation"
+        ],
+        "indexes": ["UNIQUE(account_id,canonical_thread_id)", "(account_id,member_count,set_id)"]
+      },
+      {
+        "name": "thread_memberships",
+        "primaryKey": ["account_id", "message_id"],
+        "required": [
+          "set_id",
+          "member_node_key",
+          "order_state",
+          "sent_at|null",
+          "sent_at_missing_rank",
+          "received_at",
+          "added_generation"
+        ],
+        "indexes": [
+          "(account_id,set_id,sent_at_missing_rank,sent_at,message_id)",
+          "(account_id,set_id,received_at,message_id)"
+        ]
+      },
+      {
+        "name": "thread_participants",
+        "primaryKey": ["account_id", "set_id", "normalized_address"],
+        "required": [
+          "display_name|null",
+          "first_sent_at_missing_rank",
+          "first_sent_at|null",
+          "first_message_id",
+          "first_role_rank",
+          "first_position"
+        ],
+        "indexes": [
+          "(account_id,set_id,normalized_address)",
+          "(account_id,set_id,first_sent_at_missing_rank,first_sent_at,first_message_id,first_role_rank,first_position)"
+        ]
+      },
+      {
+        "name": "thread_handles",
+        "primaryKey": ["thread_id"],
+        "required": ["account_id", "set_id", "created_generation", "canonical_when_created"],
+        "indexes": ["(account_id,set_id,thread_id)"]
+      },
+      {
+        "name": "thread_merges",
+        "primaryKey": ["account_id", "losing_thread_id", "merge_generation"],
+        "required": [
+          "winning_thread_id",
+          "bridge_message_id",
+          "previous_root_node_key",
+          "current_root_node_key"
+        ],
+        "indexes": ["(account_id,winning_thread_id,merge_generation)"]
+      }
+    ],
+    "ingestionTransaction": [
+      "Parse and normalize at most 134 node keys outside the write transaction; pass only parsed bounded facts to storage.",
+      "Compute facts_sha256 from canonical JSON containing content_state, normalizer_version, permanent member node, optional own-ID node, ordered deduplicated References/In-Reply-To arrays, accepted sentAt|null, and sorted safe diagnostics. Raw header text is excluded.",
+      "BEGIN IMMEDIATE; insert pending identity-only or parsed thread_header_facts when absent. Equal content_state + facts_sha256 is an idempotent no-op. The only unequal accepted transition is identity-only -> parsed after structured-content recovery; parsed -> any unequal state is an invariant failure.",
+      "Upsert bounded nodes and edges. Increment incoming_edge_count only when an edge row is newly inserted.",
+      "Collect distinct affected set IDs through node indexes. Choose the physical winner by greatest movable-row weight member_count + node_count + equivalence_count + edge_count + participant_count + handle_count, breaking equal weight by lexicographically smallest set_id.",
+      "Move rows from smaller physical sets with indexed SQL UPDATE statements. Merge participant rows with INSERT ON CONFLICT using the earliest deterministic provenance tuple, then delete the smaller rows. JavaScript holds only the at-most-134 node keys and affected set summaries, never all members, nodes, or participants.",
+      "Insert the message membership once. An identity-only -> parsed transition changes order_state once and replaces null sent_at with recovered valid sent_at or leaves it null; no other order update is allowed. Recompute root with indexed ORDER BY/LIMIT 1; derive canonical handle; retain and repoint all handles; append merge rows; update exact counts; increment generation once; COMMIT.",
+      "Any failure rolls back facts, graph, memberships, aliases, counts, and generation together. Search/retrieval observes the pre-merge or post-merge state, never a partial merge."
+    ],
+    "complexity": {
+      "normalizationMemory": "O(anchorsPerMessage), hard maximum 134",
+      "normalizationTime": "O(bounded header UTF-8 bytes)",
+      "mergeMemory": "O(anchorsPerMessage + affected set summaries), not O(component size)",
+      "mergeWrites": "Move only rows in physically smaller sets. Union-by-weight gives amortized O(log N) moves per row; one merge can touch the smaller affected component on disk but never loads it in memory.",
+      "storage": "O(messages + accepted tokens + distinct edges + distinct normalized participants + issued handles + merges)",
+      "handleResolution": "One indexed lookup",
+      "pageRead": "One handle lookup plus O(pageMaximum log componentMembers). Count is stored; first/last received time and subject use indexed LIMIT 1; participants use indexed LIMIT 257, so no complete component traversal is required.",
+      "forbidden": "No full messages scan, no full graph materialization, no OFFSET paging, and no recursive traversal over the corpus."
+    },
+    "restart": "SQLite is authoritative. Process restart reconstructs no in-memory graph and hydrates no graph snapshot. The first read uses durable handles/sets; replaying the same content state is an exact facts_sha256 no-op. Recovered identity-only content resumes the one monotonic parsed transition.",
+    "repair": "doctor verifies foreign keys, exact set counts, membership uniqueness, node incoming counts, handle account/set consistency, canonical root/ID formula, alias reachability, and facts digests. Repair builds shadow v1 tables from immutable accepted rows, compares the full public oracle, and atomically swaps only when byte-equivalent; it never silently changes v1 membership.",
+    "concurrency": "All thread mutations serialize through BEGIN IMMEDIATE. Readers use SQLite snapshot isolation. A search/message/thread response performs handle resolution, membership page, and aggregates in one read transaction."
+  },
+  "ordering": {
+    "version": "thread-order-v1",
+    "sentAtSource": "Use the already accepted hydrated sentAt value: the first valid stored Date header normalized to a UTC instant by the owning boundary. If absent, duplicate, or invalid, sentAt is null.",
+    "tuple": [
+      "sent_at_missing_rank ascending, where non-null is 0 and null is 1",
+      "sent_at ascending when non-null",
+      "canonical message_id ascending"
+    ],
+    "immutability": "A parsed tuple is immutable and never derives from placement order, UID, insertion rowid, observed time, or current wall clock. Identity-only begins with null sentAt and may transition once to the recovered parsed sentAt; null sorts last, so this only moves the row earlier. A later placement, tombstone, restart, or reindex cannot change the tuple.",
+    "receivedAt": "For public HydratedMessage.receivedAt, use the minimum non-null INTERNALDATE across every placement for the selected account, including tombstoned placements. If none exists and the message is identity-only for that account, use message_content_states.observed_at. Otherwise hydration is a storage invariant error because the accepted public schema requires receivedAt. This value is presentation/history metadata, not a thread order key.",
+    "aggregates": "firstReceivedAt and lastReceivedAt are the minimum and maximum member receivedAt across the current complete component, not merely the current page.",
+    "subject": "Choose the first non-null subject in member order. Do not strip Re/Fwd prefixes and do not use subject to establish membership.",
+    "participants": "Deduplicate normalized addresses across from/sender/to/cc in complete member order, then role order from,sender,to,cc, then stored position. Preserve the first bounded display name. Return at most 256 and expose participantsTruncated=true when more exist."
+  },
+  "pagination": {
+    "version": "thread-cursor-v1",
+    "request": {
+      "threadId": "required thread:<64-lowercase-hex> canonical or alias handle",
+      "limit": "default 50; integer 1..100",
+      "cursor": "optional opaque value at most 8192 UTF-8 bytes"
+    },
+    "payload": {
+      "registryVersion": 1,
+      "cursorKeyId": "bounded nonsecret identifier for the daemon-owned active HMAC key",
+      "accountScopeDigest": "sha256(account_id UTF-8)",
+      "requestedThreadHandle": "the exact validated handle from the first page",
+      "lastSentAtMissingRank": "0|1",
+      "lastSentAt": "UTC instant|null",
+      "lastMessageId": "message:<64-lowercase-hex>"
+    },
+    "envelope": "Canonical JSON [\"thread-cursor-v1\", payloadJson, hmacSha256Hex(payloadJson)] encoded as unpadded base64url with the daemon-owned key selected by cursorKeyId. Reject noncanonical encoding, unknown versions/keys, invalid tuples, wrong account scope, wrong requested handle, and invalid tags as invalid_cursor.",
+    "keyLifecycle": "Normal restart reloads the same owner-only cursor key, so cursors survive restart. Explicit key rotation or restore without that external key invalidates old cursors as invalid_cursor, never not_found; restore parity compares fresh cursor boundaries rather than promising secret export in the archive.",
+    "query": "Resolve requestedThreadHandle on every page, then select members strictly after the stored order tuple with the same ORDER BY and LIMIT. Never use OFFSET or client-side sorting.",
+    "lateArrivalSemantics": [
+      "Pagination is a live keyset, not a hidden snapshot.",
+      "A member or merged component whose tuple sorts at or before the cursor is omitted from continuation and appears on a fresh read.",
+      "A member or merged component whose tuple sorts after the cursor may appear on continuation.",
+      "Identity-only recovery can move one member from the null tail to an earlier dated position. If already returned it cannot repeat; if not yet returned and it moves at/before the cursor it appears on a fresh read, matching the late-arrival rule.",
+      "Immutable tuples and message uniqueness prevent duplicates. The cursor remains valid when the canonical handle changes because it binds the permanent originally requested handle, which resolves through thread_handles.",
+      "A continuation over a handle that existed when issued cannot become not_found. Cursor expiry policy, if any, is global and cannot masquerade as not_found."
+    ]
+  },
+  "publicProjection": {
+    "search": [
+      "Replace the one-thread-per-message expression with an account_id + message_id lookup through thread_memberships and thread_sets in the same hydration read transaction.",
+      "Search visibility remains the accepted at-least-one-live-placement predicate. A tombstoned-only member is absent from search but remains in direct thread retrieval.",
+      "A threadId filter resolves canonical and alias handles before candidate selection. An unknown filter is a valid search with zero items; it is not direct resource retrieval and does not fabricate a thread object.",
+      "A merge can change the canonical threadId shown by a fresh search hit. Every previously shown handle continues to resolve. The existing search cursor remains stable because its tuple contains score, canonical instant, and message ID, not thread ID."
+    ],
+    "messageGet": [
+      "Unknown canonical message ID returns the accepted not_found message envelope.",
+      "A known message returns its current canonical account-scoped threadId even when all placements are tombstoned.",
+      "No body is fetched remotely as a side effect of message or thread retrieval. Identity-only content keeps explicit unavailable fields under its owning contract."
+    ],
+    "threadGet": {
+      "successStatus": 200,
+      "knownAlias": "Resolve and return the current canonical thread payload. resolvedFromThreadId is the requested alias, or null when the request was canonical.",
+      "unknownStatus": 404,
+      "unknownBody": "The accepted thread not_found envelope with details.resource='thread' and details.id equal to the exact validated requested handle.",
+      "forbiddenUnknownBodies": ["[]", "{thread:null}", "{thread:{messageIds:[],messages:[]}}"],
+      "members": "Direct retrieval returns retained canonical members including tombstoned-only members. messageIds and messages are the same nonempty page in identical server order.",
+      "completeAggregates": "messageCount, participants, participantsTruncated, subject, firstReceivedAt, and lastReceivedAt describe the current complete component; nextCursor pages messages only.",
+      "empty": "A known v1 thread cannot have zero members because membership is retained and there is no canonical-message deletion path."
+    },
+    "requiredContractRevision": {
+      "threadId": "thread:<64-lowercase-hex> for both canonical and alias handles",
+      "threadRequest": ["threadId", "limit", "cursor"],
+      "threadSuccess": [
+        "threadId",
+        "resolvedFromThreadId",
+        "subject",
+        "participants",
+        "participantsTruncated",
+        "messageCount",
+        "messageIds",
+        "messages",
+        "firstReceivedAt",
+        "lastReceivedAt",
+        "nextCursor"
+      ],
+      "arrayInvariant": "1 <= messageIds.length == messages.length <= requested limit and messageIds[i] == messages[i].messageId",
+      "reason": "The accepted P1-C09 schema has whole unbounded arrays and no request cursor, count, truncation, or alias provenance. It cannot express the required bounded public behavior."
+    },
+    "apiCliParity": [
+      "API and CLI consume the same revised shared operation schemas. API maps thread not_found to HTTP 404.",
+      "CLI JSON writes the exact validated success object without reordering. Human output iterates the server-provided messages array and never assembles or sorts a thread locally.",
+      "CLI not_found writes the shared safe error through the global error renderer and exits nonzero. The numeric exit code must come from the shared global policy owned upstream of issue 195; thread code cannot invent it.",
+      "Alias, canonical, single-member, multi-member, page continuation, tombstoned member, unknown, invalid ID, invalid cursor, and authorization fixtures have storage/REST/CLI parity rows."
+    ]
+  },
+  "recovery": {
+    "backup": "All thread tables and the generation row live in the accepted SQLite database and therefore enter the accepted manifest-backed consistent database snapshot. No thread state may live only in FTS, memory, a sidecar, or generated dist output.",
+    "restore": "After verified restore into an empty private root, reopening the database must reproduce every canonical handle, alias resolution, member order, fresh page cursor boundary, tombstone behavior, and not_found outcome. Compare a canonical thread-domain snapshot before backup and after restore. Cursor HMAC secrets are external private authority and are not silently exported by the archive.",
+    "reindex": "FTS rebuild reads canonical thread IDs from thread storage when hydrating search results. It does not parse Message-ID headers, create edges, merge components, change generation, or rewrite aliases.",
+    "offlineReplacement": "The accepted offline root replacement must include the thread-domain parity snapshot among repository-observable behavior before publication."
+  },
+  "decisions": [
+    {
+      "id": "D01",
+      "decision": "Scope thread graphs and IDs by account."
+    },
+    {
+      "id": "D02",
+      "decision": "Use a strict bounded RFC-derived Message-ID grammar with NFC and reject ambiguous obsolete/adversarial forms from linking."
+    },
+    {
+      "id": "D03",
+      "decision": "Use RFC ancestry only; never subject or participant heuristics."
+    },
+    {
+      "id": "D04",
+      "decision": "Keep canonical-message identity distinct from Message-ID nodes through an own-ID equivalence link and preserve duplicate claimants as separate members."
+    },
+    {
+      "id": "D05",
+      "decision": "Define membership as weak connectivity and derive identity from the deterministic directed-graph root."
+    },
+    {
+      "id": "D06",
+      "decision": "Make v1 graph facts append-only so components merge but never split."
+    },
+    {
+      "id": "D07",
+      "decision": "Retain every issued handle as a one-lookup durable alias after a merge."
+    },
+    {
+      "id": "D08",
+      "decision": "Separate deterministic public identity from union-by-weight physical set identity."
+    },
+    {
+      "id": "D09",
+      "decision": "Order oldest-to-newest by final sentAt-null-rank, sentAt, and canonical message ID; only identity-only recovery may move null sentAt once to an earlier parsed instant."
+    },
+    {
+      "id": "D10",
+      "decision": "Use live integrity-protected keyset pagination and state its late-arrival behavior."
+    },
+    {
+      "id": "D11",
+      "decision": "Retain tombstoned-only members in direct message/thread history while excluding them from default search."
+    },
+    {
+      "id": "D12",
+      "decision": "Return shared 404/not_found for an unknown direct thread and never 200-empty."
+    },
+    {
+      "id": "D13",
+      "decision": "Make SQLite the only thread authority and include it in backup/restore parity."
+    },
+    {
+      "id": "D14",
+      "decision": "Bound header extraction, public pages, participants, diagnostics, and in-memory merge work."
+    },
+    {
+      "id": "D15",
+      "decision": "Keep raw and normalized Message-ID values out of public identifiers, errors, logs, SQL text, HTML, and filenames."
+    },
+    {
+      "id": "D16",
+      "decision": "Revise the accepted thread request/success schema before issue 137; the current whole-array shape is not a bounded contract."
+    },
+    {
+      "id": "D17",
+      "decision": "Require issue 137 to depend on a storage/migration implementation owner instead of hiding storage work in route handlers."
+    },
+    {
+      "id": "D18",
+      "decision": "Require issue 195 to project server order and the shared global nonzero error policy without local assembly or sorting."
+    }
+  ],
+  "implementationObligations": [
+    {
+      "id": "I137-01",
+      "issue": 137,
+      "owner": "contract-reshaping prerequisite",
+      "obligation": "Add a dependency on an implementation contract that owns the v1 thread migration, normalization adapter, graph repository, merge/alias transaction, message/thread hydration repository, and replacement of the search-summary placeholder. Issue 137's current handler-only authority cannot own this work."
+    },
+    {
+      "id": "I137-02",
+      "issue": 137,
+      "owner": "@agent-mail/contracts plus route contract",
+      "obligation": "Reshape authority to revise threadRequestSchema/threadSchema with limit, cursor, messageCount, participantsTruncated, resolvedFromThreadId, and nextCursor before handlers are implemented. Regenerate OpenAPI and CLI mapping from the shared registry."
+    },
+    {
+      "id": "I137-03",
+      "issue": 137,
+      "owner": "REST handlers",
+      "obligation": "Validate the revised request, execute one account-scoped repository read transaction, preserve server order, return canonical and alias success, map unknown direct handle to exact 404/not_found, and map invalid cursor to the registered invalid_cursor class without SQLite detail."
+    },
+    {
+      "id": "I137-04",
+      "issue": 137,
+      "owner": "composed storage/REST proof",
+      "obligation": "Run real-SQLite HTTP fixtures for every oracle example plus canonical/alias paging, unknown versus empty, tombstoned history, restart, and search threadId replacement."
+    },
+    {
+      "id": "I195-01",
+      "issue": 195,
+      "owner": "dispatch prerequisite",
+      "obligation": "Do not dispatch until revised shared schemas, issue 137 route, issue 155 shared client, and the global numeric exit-code policy are accepted. The current issue text claims some of these exist when they do not."
+    },
+    {
+      "id": "I195-02",
+      "issue": 195,
+      "owner": "thread-show adapter",
+      "obligation": "Require threadId, accept shared page arguments, perform exactly one mapped operation per page, validate the shared response, and never fetch missing bodies, assemble membership, resolve aliases, or sort locally."
+    },
+    {
+      "id": "I195-03",
+      "issue": 195,
+      "owner": "CLI projections",
+      "obligation": "JSON emits the exact server object. Human output shows alias provenance, count/truncation, and messages in server order. Unknown emits the shared error and global nonzero exit; it never prints No messages with exit zero."
+    },
+    {
+      "id": "I195-04",
+      "issue": 195,
+      "owner": "storage/REST/CLI parity proof",
+      "obligation": "Cover canonical, alias, single-member, multi-member, continuation, equal-time order, tombstoned member, unknown, invalid ID, invalid cursor, and authorization with exact request, response, stdout/stderr, and exit evidence."
+    }
+  ],
+  "properties": [
+    {
+      "id": "PROP-INGESTION-ORDER",
+      "generator": "Generate bounded immutable messages, virtual ancestors, branches, duplicates, cycles, and bridges; apply every permutation for corpora up to eight messages and randomized permutations above that.",
+      "assertion": "Final parsed facts, weak components, deterministic roots, canonical handles, and member order are identical after removing storage-only set IDs and generation numbers. Alias history may contain extra handles that were canonical in an observed intermediate state, but every issued handle must resolve to the same final component."
+    },
+    {
+      "id": "PROP-IDEMPOTENCY",
+      "generator": "Replay each identity-only state, each identity-only -> parsed transition, each directly parsed message, and every complete corpus zero, one, and many times across reopen boundaries.",
+      "assertion": "Equal-state replay leaves facts, nodes, equivalences, edges, memberships, handles, aliases, merges, counts, and generation byte-unchanged. Identity-only -> parsed advances once, converges to directly parsed canonical identity/membership/order, and only adds a stable alias for any observed singleton handle."
+    },
+    {
+      "id": "PROP-STABLE-ALIASES",
+      "generator": "Create two or more components, retain every returned handle, then add bridges in all orders and add later ancestors.",
+      "assertion": "Every retained handle resolves in one lookup to the final set, returns the same canonical payload, is never reassigned, and remains account-scoped after restart and restore."
+    },
+    {
+      "id": "PROP-DETERMINISTIC-ORDER",
+      "generator": "Generate valid, equal, offset-equivalent, absent, duplicate, and invalid Date values with arbitrary insertion and placement order.",
+      "assertion": "The exact stored tuple orders non-null instants ascending, nulls last, and equal/null cases by canonical message ID; server page arrays match and client performs no sort."
+    },
+    {
+      "id": "PROP-LIVE-CURSOR",
+      "generator": "Page a component, then add older/equal/newer descendants, recover identity-only content, add a late root, add a bridge, add placements, and tombstone placements before every continuation.",
+      "assertion": "No message repeats; only tuples strictly after the cursor can appear; preceding late or recovered members appear on a fresh read; aliases keep the cursor resolvable."
+    },
+    {
+      "id": "PROP-BOUNDED-NORMALIZATION",
+      "generator": "Fuzz UTF-8, comments, folds, angle brackets, obsolete forms, control/format characters, 0..101 References tokens, 0..33 In-Reply-To tokens, and byte boundaries minus/equal/plus one.",
+      "assertion": "Work and allocation stay within declared field/token bounds; invalid fields create only safe codes and no partial edges."
+    },
+    {
+      "id": "PROP-BOUNDED-STORAGE",
+      "generator": "Build a large chain and repeatedly merge similarly sized and highly skewed components.",
+      "assertion": "Application memory never scales with component/corpus size, each row moves only under union-by-weight, handle/page lookup uses named indexes, and EXPLAIN contains no corpus table scan or OFFSET."
+    },
+    {
+      "id": "PROP-RESTART-RESTORE",
+      "generator": "Interrupt before/after each transaction boundary, reopen, replay, back up, restore into an empty private root, and reopen again.",
+      "assertion": "The canonical thread-domain snapshot and every public fixture are exact before interruption and after converged replay/restore."
+    },
+    {
+      "id": "PROP-TOMBSTONE",
+      "generator": "Tombstone zero, some, and every placement of members in one or several mailboxes.",
+      "assertion": "Membership, handles, aliases, and direct-thread order do not change; only accepted search visibility changes."
+    },
+    {
+      "id": "PROP-NOT-FOUND",
+      "generator": "Generate well-formed nonexistent thread handles and malformed IDs through storage, REST, and CLI.",
+      "assertion": "Well-formed unknown is shared not_found/HTTP 404/nonzero CLI; malformed is invalid request; neither path can produce a 200/exit-0 empty thread."
+    },
+    {
+      "id": "PROP-CROSS-MAILBOX-DUPLICATE",
+      "generator": "Add the same canonical message through many placements and distinct canonical messages sharing one normalized Message-ID.",
+      "assertion": "Placements do not duplicate members; distinct canonical IDs remain distinct ordered members in one component."
+    }
+  ],
+  "examples": [
+    {
+      "id": "EX-TWO-MESSAGE-REPLY",
+      "caseTags": ["two-message-reply"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "headers": {
+            "message-id": "<root@example.test>",
+            "date": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        {
+          "messageId": "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "headers": {
+            "message-id": "<reply@example.test>",
+            "references": "<root@example.test>",
+            "in-reply-to": "<root@example.test>",
+            "date": "2026-01-01T01:00:00.000Z"
+          }
+        }
+      ],
+      "expected": {
+        "componentCount": 1,
+        "rootCanonicalMsgId": "root@example.test",
+        "order": [
+          "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    },
+    {
+      "id": "EX-BRANCHED-REPLIES",
+      "caseTags": ["branched-replies"],
+      "accountId": "account:example",
+      "base": "EX-TWO-MESSAGE-REPLY",
+      "additionalMessages": [
+        {
+          "messageId": "message:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "headers": {
+            "message-id": "<branch-c@example.test>",
+            "references": "<root@example.test>",
+            "in-reply-to": "<root@example.test>",
+            "date": "2026-01-01T02:00:00.000Z"
+          }
+        },
+        {
+          "messageId": "message:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "headers": {
+            "message-id": "<branch-d@example.test>",
+            "references": "<root@example.test> <reply@example.test>",
+            "in-reply-to": "<reply@example.test>",
+            "date": "2026-01-01T03:00:00.000Z"
+          }
+        }
+      ],
+      "expected": {
+        "componentCount": 1,
+        "rootCanonicalMsgId": "root@example.test",
+        "memberCount": 4
+      }
+    },
+    {
+      "id": "EX-MISSING-HEADERS",
+      "caseTags": ["missing-headers"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "headers": {}
+        },
+        {
+          "messageId": "message:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "headers": {
+            "in-reply-to": "<root@example.test>"
+          }
+        }
+      ],
+      "expected": {
+        "firstMemberNode": "m:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "firstIsSingleton": true,
+        "secondJoinsRootWhenRootComponentExists": true,
+        "secondMemberNode": "m:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    },
+    {
+      "id": "EX-MALFORMED-ADVERSARIAL",
+      "caseTags": ["malformed-adversarial-ids"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:1111111111111111111111111111111111111111111111111111111111111111",
+          "headers": {
+            "message-id": "<victim@example.test>\u202e<evil@example.test>",
+            "references": "<root@example.test> stray-phrase"
+          }
+        }
+      ],
+      "expected": {
+        "memberNode": "m:1111111111111111111111111111111111111111111111111111111111111111",
+        "edges": [],
+        "diagnostics": ["forbidden-codepoint", "malformed-cfws"],
+        "rawValuePubliclyExposed": false
+      }
+    },
+    {
+      "id": "EX-IDENTITY-ONLY-RECOVERY",
+      "caseTags": ["identity-only-recovery"],
+      "accountId": "account:example",
+      "message": {
+        "messageId": "message:1212121212121212121212121212121212121212121212121212121212121212",
+        "initialContentState": "identity-only",
+        "observedAt": "2026-01-15T00:00:00.000Z",
+        "recoveredHeaders": {
+          "message-id": "<recovered-reply@example.test>",
+          "references": "<recovered-root@example.test>",
+          "in-reply-to": "<recovered-root@example.test>"
+        }
+      },
+      "expected": {
+        "permanentMemberNode": "m:1212121212121212121212121212121212121212121212121212121212121212",
+        "initialSingletonHandleRemainsAlias": true,
+        "recoveryAddsOwnIdEquivalence": true,
+        "recoveryAddsAncestryWithoutRemovingFacts": true,
+        "finalRootCanonicalMsgId": "recovered-root@example.test",
+        "finalCanonicalMatchesDirectParsedIngestion": true,
+        "receivedAtFallback": "2026-01-15T00:00:00.000Z"
+      }
+    },
+    {
+      "id": "EX-DUPLICATE-MESSAGE-ID",
+      "caseTags": ["duplicate-message-id"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:2222222222222222222222222222222222222222222222222222222222222222",
+          "headers": {
+            "message-id": "<duplicate@example.test>",
+            "date": "2026-02-01T00:00:00.000Z"
+          }
+        },
+        {
+          "messageId": "message:3333333333333333333333333333333333333333333333333333333333333333",
+          "headers": {
+            "message-id": "<duplicate@EXAMPLE.TEST>",
+            "date": "2026-02-01T00:01:00.000Z"
+          }
+        }
+      ],
+      "expected": {
+        "normalizedMessageIds": ["duplicate@example.test", "duplicate@example.test"],
+        "componentCount": 1,
+        "memberCount": 2,
+        "membersRemainDistinct": true
+      }
+    },
+    {
+      "id": "EX-DUPLICATE-HEADER-OCCURRENCE",
+      "caseTags": ["duplicate-header-occurrence"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:4444444444444444444444444444444444444444444444444444444444444444",
+          "orderedHeaders": [
+            ["message-id", "<one@example.test>"],
+            ["message-id", "<two@example.test>"]
+          ]
+        }
+      ],
+      "expected": {
+        "memberNode": "m:4444444444444444444444444444444444444444444444444444444444444444",
+        "diagnostics": ["duplicate-field"]
+      }
+    },
+    {
+      "id": "EX-CROSS-MAILBOX-COPIES",
+      "caseTags": ["cross-mailbox-copies"],
+      "accountId": "account:example",
+      "message": {
+        "messageId": "message:5555555555555555555555555555555555555555555555555555555555555555",
+        "headers": {
+          "message-id": "<copy@example.test>"
+        },
+        "placements": [
+          {
+            "mailboxId": "mailbox:inbox",
+            "uidValidity": 1,
+            "uid": 50,
+            "internalDate": "2026-03-01T00:00:00.000Z"
+          },
+          {
+            "mailboxId": "mailbox:archive",
+            "uidValidity": 9,
+            "uid": 800,
+            "internalDate": "2026-02-28T23:00:00.000Z"
+          }
+        ]
+      },
+      "expected": {
+        "memberCount": 1,
+        "receivedAt": "2026-02-28T23:00:00.000Z",
+        "orderUnaffectedByPlacementOrder": true
+      }
+    },
+    {
+      "id": "EX-LATE-ROOT",
+      "caseTags": ["late-root"],
+      "accountId": "account:example",
+      "arrivalOrder": [
+        "message:7777777777777777777777777777777777777777777777777777777777777777",
+        "message:6666666666666666666666666666666666666666666666666666666666666666"
+      ],
+      "messages": [
+        {
+          "messageId": "message:6666666666666666666666666666666666666666666666666666666666666666",
+          "headers": {
+            "message-id": "<late-root@example.test>",
+            "date": "2026-04-01T00:00:00.000Z"
+          }
+        },
+        {
+          "messageId": "message:7777777777777777777777777777777777777777777777777777777777777777",
+          "headers": {
+            "message-id": "<early-reply@example.test>",
+            "references": "<late-root@example.test>",
+            "date": "2026-04-01T01:00:00.000Z"
+          }
+        }
+      ],
+      "expected": {
+        "rootCanonicalMsgIdBeforeRootMaterializes": "late-root@example.test",
+        "rootCanonicalMsgIdAfterRootMaterializes": "late-root@example.test",
+        "canonicalHandleChanges": false,
+        "memberCountAfter": 2
+      }
+    },
+    {
+      "id": "EX-LATE-BRIDGE-MERGE",
+      "caseTags": ["late-bridge-merge"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:8888888888888888888888888888888888888888888888888888888888888888",
+          "headers": {
+            "message-id": "<root-a@example.test>"
+          }
+        },
+        {
+          "messageId": "message:9999999999999999999999999999999999999999999999999999999999999999",
+          "headers": {
+            "message-id": "<root-b@example.test>"
+          }
+        },
+        {
+          "messageId": "message:0000000000000000000000000000000000000000000000000000000000000000",
+          "headers": {
+            "message-id": "<bridge@example.test>",
+            "references": "<root-a@example.test> <root-b@example.test>",
+            "in-reply-to": "<root-b@example.test>"
+          }
+        }
+      ],
+      "expected": {
+        "componentsBeforeBridge": 2,
+        "componentsAfterBridge": 1,
+        "rootCanonicalMsgIdAfter": "root-a@example.test",
+        "rootBHandleBecomesAlias": true,
+        "allArrivalPermutationsConverge": true
+      }
+    },
+    {
+      "id": "EX-TOMBSTONED-MEMBER",
+      "caseTags": ["tombstoned-member"],
+      "accountId": "account:example",
+      "base": "EX-TWO-MESSAGE-REPLY",
+      "mutation": "Tombstone every placement of message:aaaaaaaa... while reply remains live.",
+      "expected": {
+        "directThreadMemberCount": 2,
+        "searchContainsRoot": false,
+        "searchContainsReply": true,
+        "threadHandleChanges": false,
+        "orderChanges": false
+      }
+    },
+    {
+      "id": "EX-EQUAL-TIMESTAMPS",
+      "caseTags": ["equal-timestamps"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0",
+          "headers": {
+            "message-id": "<equal-a@example.test>",
+            "references": "<equal-root@example.test>",
+            "date": "2026-05-01T00:00:00.000Z"
+          }
+        },
+        {
+          "messageId": "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0",
+          "headers": {
+            "message-id": "<equal-b@example.test>",
+            "references": "<equal-root@example.test>",
+            "date": "2026-05-01T00:00:00+00:00"
+          }
+        }
+      ],
+      "expected": {
+        "order": [
+          "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0",
+          "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb0"
+        ],
+        "tieBreaker": "canonical-message-id"
+      }
+    },
+    {
+      "id": "EX-RESTART-IDEMPOTENCY",
+      "caseTags": ["restart"],
+      "accountId": "account:example",
+      "base": "EX-BRANCHED-REPLIES",
+      "sequence": [
+        "ingest corpus",
+        "close database",
+        "reopen database",
+        "replay every message",
+        "read canonical and alias handles"
+      ],
+      "expected": {
+        "domainSnapshotEqual": true,
+        "generationUnchangedByReplay": true,
+        "publicPayloadEqual": true
+      }
+    },
+    {
+      "id": "EX-BACKUP-RESTORE",
+      "caseTags": ["backup-restore"],
+      "accountId": "account:example",
+      "base": "EX-LATE-BRIDGE-MERGE",
+      "sequence": [
+        "capture canonical thread-domain snapshot",
+        "write accepted verified backup",
+        "restore into empty private root",
+        "reopen",
+        "capture snapshot and public fixtures"
+      ],
+      "expected": {
+        "domainSnapshotEqual": true,
+        "canonicalHandleEqual": true,
+        "aliasResolutionEqual": true,
+        "memberOrderEqual": true,
+        "unknownOutcomeEqual": true
+      }
+    },
+    {
+      "id": "EX-UNKNOWN-THREAD",
+      "caseTags": ["unknown-thread"],
+      "accountId": "account:example",
+      "request": {
+        "threadId": "thread:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "expected": {
+        "storage": "not-found",
+        "httpStatus": 404,
+        "errorCode": "not_found",
+        "detailsResource": "thread",
+        "cliExit": "global-nonzero-not-found-policy",
+        "successEmptyAllowed": false
+      }
+    },
+    {
+      "id": "EX-LIVE-PAGINATION-LATE-ARRIVAL",
+      "caseTags": ["pagination-late-arrival"],
+      "accountId": "account:example",
+      "fixture": "Four members ordered A,B,C,D; request limit 2 and retain cursor after B.",
+      "mutations": [
+        "insert late member X ordered before A",
+        "insert late member Y ordered between C and D",
+        "merge an alias component whose member Z orders after D"
+      ],
+      "expected": {
+        "continuation": ["C", "Y", "D", "Z"],
+        "omittedUntilFreshRead": ["X"],
+        "duplicates": 0,
+        "cursorUsesOriginalPermanentHandle": true
+      }
+    },
+    {
+      "id": "EX-OVERSIZED-REFERENCES",
+      "caseTags": ["oversized-headers"],
+      "accountId": "account:example",
+      "message": {
+        "messageId": "message:abababababababababababababababababababababababababababababababab",
+        "headers": {
+          "message-id": "<bounded@example.test>",
+          "referencesGenerator": {
+            "pattern": "<r{index}@example.test>",
+            "count": 101,
+            "separator": " "
+          }
+        }
+      },
+      "expected": {
+        "referencesAccepted": false,
+        "referenceEdges": 0,
+        "diagnostics": ["too-many-tokens"],
+        "messageIdStillUsable": true
+      }
+    },
+    {
+      "id": "EX-ROOTLESS-CYCLE",
+      "caseTags": ["cycle-adversarial"],
+      "accountId": "account:example",
+      "messages": [
+        {
+          "messageId": "message:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+          "headers": {
+            "message-id": "<cycle-a@example.test>",
+            "in-reply-to": "<cycle-b@example.test>"
+          }
+        },
+        {
+          "messageId": "message:dededededededededededededededededededededededededededededededede",
+          "headers": {
+            "message-id": "<cycle-b@example.test>",
+            "in-reply-to": "<cycle-a@example.test>"
+          }
+        }
+      ],
+      "expected": {
+        "componentCount": 1,
+        "zeroIndegreeRoots": 0,
+        "rootRule": "lexicographically-smallest-equivalence-class-representative",
+        "allArrivalPermutationsConverge": true
+      }
+    }
+  ],
+  "coverage": {
+    "REQ-NORMALIZATION": {
+      "decisions": ["D02", "D15"],
+      "examples": [
+        "EX-MALFORMED-ADVERSARIAL",
+        "EX-DUPLICATE-HEADER-OCCURRENCE",
+        "EX-OVERSIZED-REFERENCES"
+      ],
+      "properties": ["PROP-BOUNDED-NORMALIZATION"],
+      "obligations": ["I137-01"]
+    },
+    "REQ-IDENTITY": {
+      "decisions": ["D01", "D05"],
+      "examples": ["EX-LATE-ROOT", "EX-ROOTLESS-CYCLE"],
+      "properties": ["PROP-INGESTION-ORDER"],
+      "obligations": ["I137-01"]
+    },
+    "REQ-MEMBERSHIP": {
+      "decisions": ["D03", "D04", "D05"],
+      "examples": [
+        "EX-TWO-MESSAGE-REPLY",
+        "EX-BRANCHED-REPLIES",
+        "EX-MISSING-HEADERS",
+        "EX-IDENTITY-ONLY-RECOVERY",
+        "EX-DUPLICATE-MESSAGE-ID",
+        "EX-CROSS-MAILBOX-COPIES"
+      ],
+      "properties": ["PROP-INGESTION-ORDER", "PROP-CROSS-MAILBOX-DUPLICATE"],
+      "obligations": ["I137-01"]
+    },
+    "REQ-MERGE-ALIAS": {
+      "decisions": ["D06", "D07", "D08"],
+      "examples": ["EX-LATE-BRIDGE-MERGE"],
+      "properties": ["PROP-STABLE-ALIASES"],
+      "obligations": ["I137-01", "I137-03"]
+    },
+    "REQ-ORDER": {
+      "decisions": ["D09"],
+      "examples": ["EX-EQUAL-TIMESTAMPS"],
+      "properties": ["PROP-DETERMINISTIC-ORDER"],
+      "obligations": ["I137-03", "I195-02"]
+    },
+    "REQ-PAGINATION": {
+      "decisions": ["D10", "D16"],
+      "examples": ["EX-LIVE-PAGINATION-LATE-ARRIVAL"],
+      "properties": ["PROP-LIVE-CURSOR"],
+      "obligations": ["I137-02", "I137-03", "I195-02"]
+    },
+    "REQ-BOUNDS": {
+      "decisions": ["D08", "D10", "D14"],
+      "examples": ["EX-OVERSIZED-REFERENCES"],
+      "properties": ["PROP-BOUNDED-NORMALIZATION", "PROP-BOUNDED-STORAGE"],
+      "obligations": ["I137-01", "I137-04"]
+    },
+    "REQ-RESTART": {
+      "decisions": ["D06", "D13"],
+      "examples": ["EX-IDENTITY-ONLY-RECOVERY", "EX-RESTART-IDEMPOTENCY"],
+      "properties": ["PROP-IDEMPOTENCY", "PROP-RESTART-RESTORE"],
+      "obligations": ["I137-04"]
+    },
+    "REQ-TOMBSTONE": {
+      "decisions": ["D11"],
+      "examples": ["EX-TOMBSTONED-MEMBER"],
+      "properties": ["PROP-TOMBSTONE"],
+      "obligations": ["I137-04", "I195-04"]
+    },
+    "REQ-RECOVERY": {
+      "decisions": ["D13"],
+      "examples": ["EX-BACKUP-RESTORE"],
+      "properties": ["PROP-RESTART-RESTORE"],
+      "obligations": ["I137-04"]
+    },
+    "REQ-PUBLIC": {
+      "decisions": ["D11", "D12", "D16", "D18"],
+      "examples": ["EX-TOMBSTONED-MEMBER", "EX-UNKNOWN-THREAD"],
+      "properties": ["PROP-NOT-FOUND"],
+      "obligations": ["I137-02", "I137-03", "I195-02", "I195-03"]
+    },
+    "REQ-UNTRUSTED": {
+      "decisions": ["D02", "D15"],
+      "examples": ["EX-MALFORMED-ADVERSARIAL"],
+      "properties": ["PROP-BOUNDED-NORMALIZATION"],
+      "obligations": ["I137-01", "I137-03"]
+    },
+    "REQ-DOWNSTREAM": {
+      "decisions": ["D16", "D17", "D18"],
+      "examples": ["EX-UNKNOWN-THREAD"],
+      "properties": ["PROP-NOT-FOUND"],
+      "obligations": [
+        "I137-01",
+        "I137-02",
+        "I137-03",
+        "I137-04",
+        "I195-01",
+        "I195-02",
+        "I195-03",
+        "I195-04"
+      ]
+    }
+  },
+  "upstreamContradictions": [
+    {
+      "id": "UC01",
+      "severity": "blocking-for-137",
+      "acceptedArtifact": "packages/contracts/src/retrieval-operations.ts",
+      "contradiction": "The accepted thread request has only threadId and the success schema has unbounded whole messageIds/messages arrays with no limit, cursor, nextCursor, messageCount, participant truncation, or alias provenance.",
+      "resolution": "Reshape issue 137 to depend on and consume the revised shared contract in requiredContractRevision. Stable identity is not impossible, but bounded truthful retrieval is impossible under the current shape."
+    },
+    {
+      "id": "UC02",
+      "severity": "blocking-for-137",
+      "acceptedArtifact": "packages/storage/src/search-summary-hydration-repository.ts",
+      "contradiction": "Search still fabricates threadId as thread:<canonical-message-sha>; no thread tables or thread repository exist, while issue 137 protects query/storage changes and claims retrieval is ready to wire.",
+      "resolution": "Add a separate storage/migration implementation dependency and replace the placeholder before route work."
+    },
+    {
+      "id": "UC03",
+      "severity": "blocking-for-195-dispatch",
+      "acceptedArtifact": "GitHub issues 137, 155, 195",
+      "contradiction": "Issue 195 says the route and shared client exist and treats global exit-code policy as frozen, but issues 137 and 155 are open and the repository contains no command client or numeric global exit policy.",
+      "resolution": "Keep 195 blocked until its stated dependencies and a shared numeric exit policy are accepted; do not invent a thread-local code."
+    }
+  ]
+}
