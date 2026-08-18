@@ -1,5 +1,126 @@
 # P3-C15 independent sync-statechart review
 
+Status: **candidate.7 rejected; reviewer signature withheld for one high/consequential terminal-error contract defect**.
+
+Review mode: independent whole-artifact adversarial review of candidate.7, every retained R189-01 through R189-19 disposition, the accepted planning/public/frozen-source contracts, installed XState 5.32.5 semantics, and every checked view. The reviewer independently reproduced the evidence at Sol/ultra without decomposition or inherited designer conclusions.
+
+Target:
+
+- Candidate provenance commit and shared-worktree HEAD: `c7002f436a0b7372bb098e8fdc4dee92ef2a2f14`
+- Normative model: `docs/architecture/sync-statechart.model.json`
+- Candidate version: `1.0.0-candidate.7`
+- Candidate digest: `cfca5ae69d1cdeac8df628a0ebe0a02bbd20f5a7b512a0aafd2835433bd9a14e`
+- Companion hashes: statechart `af23148ee99ccb5dc41aa641d8443adb9b9981666062070dbd0bae1f8b9cf96a`; decisions `b10effc39b02464790adf59619ee12c18fb68d50208c183afc36d9111480b304`; coverage `2ee855d12843ccf5f5042c7ad504c4120148f79e1c60b174acf4ef3f3e68e632`
+- Retained candidate.6 ledger: commit `5b00de5`; SHA-256 `6034f1d16d7cc419ffa96a2f9db36bf364b26fee4e64108821d4b21d0adaa760`
+- Accepted planning hashes: PLAN `a4b2c93d9ae47369e6893be0a7eace854fce9dccda14bd0d138d9c98b63a2afc`; EVIDENCE `544c1ee220e13b96dc88aa71096701a3887fb1adba22e9b8d60a244533f50cc9`
+- Accepted sync contract pin: `packages/contracts/src/sync-operations.ts` at `74a32d41a636ac2334d8245f1043fb6cf76e8bacd9f30895f5475e16dc0817a8`
+- Accepted error registry pin: `packages/contracts/src/error-envelope.ts` at `f02a6f25dfd884aa717f136e4024f550697a3d1a32b8cafd5bad84eaf27ae934`
+- Accepted P3-C10 pin: commit `b6d07bc56e775cc7aea4b9436b81532bba7c4e9a`, source SHA-256 `89b3eee13a5846be92b16d2e657c197f1d4ee0e5ee90fca0d0a2a542d57692e8`
+- Accepted P3-C11 pin: commit `d5107472ffae6f5eb4deb8b87365ffda40fe30d3`, source SHA-256 `506f9dc2dff6affc311f1143a1f5d901f53bc5157836338c497a43332ec5db7f`
+- Accepted P3-C07 pin: commit `e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae`; queue SHA-256 `b676dee263b51eaac88846d03a109e6a77ad428959cfbc54de491b076d4cdd67`; accepted-test SHA-256 `53146a3be9ddb66fa9374ad04ed59fca533601c0daa8f07e51925292c68f583f`; adapter SHA-256 `373be897143cac27423c4857db9f2f8d7a8b96239034a8ad72444d56d579b9a2`
+- Review contract: GitHub issue `#189`; accepted public-contract authority: issue `#196`; accepted queue authority: issue `#98`
+- Reviewer execution profile: Sol, `gpt-5.6-sol`, `ultra`
+
+## Result for candidate.7
+
+Candidate.7 is rejected for implementation and its exact digest is **not signed**. Both advertised repairs work at their stated boundaries. R189-18 now has one sealed 13-leaf `CleanupCertificate` shared by both terminal contracts, every consumer, both guards, cleanup diagnostics, cleanup admission, and GEP05. R189-19 now gives the incarnation registry a linearized four-state retirement lifecycle, immutable source/phase evidence, deduplication before capacity admission, capacity before generation allocation/acquisition, never-reused generations, exact 4096/16384-plus-three bounds, and byte-identical retiring/reference certificates in all eight phase cases. The 10,000-cycle fixture retires all 20,000 entries without closure or generation reuse.
+
+The whole review found R189-20. The declared cleanup error is structurally `WorkflowFault`, whose authority admits authentication, transient, permanent, and invariant categories, but every cleanup-error transition additionally requires `faultIsFatal`, which admits only permanent or invariant. A current first terminal with an exact valid certificate and an authentication or transient category therefore matches neither T145/T171/T183/T185 nor GEP03/GEP05. An actual `fromPromise` rejection at that seam makes the XState root actor enter status `error` while retaining the cleanup state value, outside every modeled/public terminal.
+
+Current unresolved totals are zero critical, one high, zero medium, and zero low. There is one unresolved consequential finding. No other consequential contradiction was reproduced.
+
+## Candidate.7 complete finding disposition
+
+| Finding | Candidate.7 severity/status | Mechanical disposition |
+| --- | --- | --- |
+| R189-01 | Critical resolved | All 13 cleanup states bind the exact registry/context epoch, phase, lease, effective scope, release-set identity, immutable terminal, state minimum scope, and zero-audit certificate admission. |
+| R189-02 | High resolved | T117/T118 retain the accepted P3-C10 four-field non-CAS completion save. |
+| R189-03 | High resolved | T150/T156 retain the accepted shared completion repository and atomic checkpoint/completion write; T157/T158 write nothing. |
+| R189-04 | High resolved | All 15 context fields have literal or validated constructor initials; all 24 strict status projections pass empty/populated construction. |
+| R189-05 | High resolved | Terminal diagnostic policy and reachability distinguish childless `stopped.clean` from `stopped.failed`. |
+| R189-06 | High consequential resolved | The model and issue-196 contract retain the same exhaustive 85-cell resolver, seven settlements, exact cache/waiter effects, and six strict registered errors. |
+| R189-07 | High consequential resolved | Every status, success observation, and non-success last observation requires incarnation identity; different incarnations remain unordered. |
+| R189-08 | High resolved | Ordered credential revision/fault branches remain complete across bootstrap, backfill, both IDLE event orders, and sweep. |
+| R189-09 | High resolved | Shutdown covers every atomic source, starts no later child, and terminates through certified cleanup in childless `stopped.shutdown`. |
+| R189-10 | Medium resolved | Both queue references and the frozen Git object match issue 98 exactly. |
+| R189-11 | Low resolved | The oracle contains 27 guards and 27 checked guard branches; all references and generated counts agree. |
+| R189-12 | High consequential resolved | Current pending/cached, watch-to-workflow promotion, and equal-scope replacement preserve phase/set identity and settle once across success and error. |
+| R189-13 | Low resolved | PROP-08 constructs U01 through U17 and all 17 forbidden configurations are retained. |
+| R189-14 | Low resolved | GEP04 and GEP06 retain the accepted terminal-shutdown credential and stop policy. |
+| R189-15 | High consequential resolved | Acquisition-time registration, first-freeze revocation, trigger-only disposal/abort, all eight phase cases, zero-resource audits, and literal T097 reentry pass under installed XState 5.32.5. |
+| R189-16 | High consequential resolved | Exact frozen P3-C07 composition retains one parent composite terminal that aliases one `queue.stop()` promise and transitively waits for the private queue subtree without changing its API. |
+| R189-17 | Low non-consequential resolved | Global policies project 7/7 across ID, ordered events, literal condition, ordered actions, and literal result; GEP05 includes every certificate-invalidity clause. |
+| R189-18 | **High consequential, resolved** | One exact sealed 13-leaf `CleanupCertificate` closes both terminal contracts, all eight consumers, all three 12-leaf semantic read sets, and the checked Markdown view. |
+| R189-19 | **High consequential, resolved** | Registry-owned evidence publication precedes entry/key/closure retirement; bounds, admission order, generation exhaustion, 10,000-cycle churn, eight phase cases, and certificate byte parity pass. |
+| R189-20 | **High consequential, open** | Cleanup-error transitions are not exhaustive over their declared `WorkflowFault` category union; a valid current authentication/transient rejection terminates the XState root in unmodeled status `error`. |
+
+### R189-20: cleanup terminal error type and dispatch are not closed over the same categories
+
+- Lane: TypeScript/event contract, XState terminal semantics, cleanup/recovery ownership, and public observation completeness.
+- Normative contradiction: `faultType.WorkflowFault.categories` is `authentication|transient|permanent|invariant`; `events[xstate.error.actor.cleanupBarrier]` declares `error:WorkflowFault`; and `actors.cleanupBarrier.errorType` is `WorkflowFault`. The four cleanup-error transitions T145, T171, T183, and T185 all require `cleanupFailureCertificateCoversState` followed by `faultIsFatal`, whose predicate is only permanent or invariant. GEP05 tests certificate validity, not fault category. GEP03 tests exited/duplicate invoke identity, not a current first terminal.
+- Prose is not structural closure: the actor's `error` sentence says invariant-only, while its exact named error type remains the four-category authority and the transitions additionally admit permanent. A TypeScript implementation generated from the named contract can therefore reject with either nonfatal discriminant without violating the structural payload type.
+- Concrete counterexample: enter `watching.closingForPause`; let the current `cleanupBarrier` reject once with `error.category=authentication` and an otherwise exact current `CleanupCertificate` whose epoch, phase, lease, scope, release set, certificate/audit identity, literal `released:true`, and zero audit all match. `cleanupFailureCertificateCoversState` passes, `faultIsFatal` fails, GEP03 is false, and GEP05 is false. The same guard gap expands to all 13 cleanup states through T145/T171/T183/T185.
+- Installed-runtime result: XState 5.32.5 does not leave this as an ordinary ignored external event. The invoked promise has rejected and no transition handles its error, so the root snapshot becomes `{value:"closingForPause", status:"error", snapshotError:"authentication"}`. The transient variant is identical. Permanent and invariant variants take the modeled failure transition. The root-error result has no state row, public projection, retry/auth disposition, cleanup completion, or control settlement.
+- Violated accepted invariant: the candidate is not an exhaustive lifecycle oracle for its own typed actor terminal; PROP-07's no-deadlock/progress claim, PROP-09's global disposition for every known locally illegal event, PROP-15's cleanup error ordering, and issue 189's terminal/public-observation completeness requirement cannot all hold.
+
+Bounded repair packet:
+
+1. Freeze one exact shared cleanup-terminal error authority and use it in `cleanupBarrier.errorType`, the error event, the actor implementation boundary, and transition-category closure. The owner must decide whether the allowed discriminant is invariant-only or permanent/invariant; the reviewer does not choose between those advertised semantics.
+2. Alternatively, retain the full four-category `WorkflowFault` contract and define explicit current-valid-certificate authentication/transient transitions or policies, including their retry/auth/public-control outcomes. Do not rely on an actor prose sentence to narrow a broader named type.
+3. Add a structural discriminant-closure check and actual `fromPromise` rejection probes for all four categories in every one of the 13 cleanup states. Assert that each current first terminal reaches one modeled outcome, no root snapshot has status `error`, and stale/invalid-certificate GEP03/GEP05 cases remain separate.
+
+## Candidate.7 manifest and acceptance audit
+
+Selected review lanes were domain/value, public contract, lifecycle/resource, security/trust, persistence/recovery, concurrency/workflow, performance/capacity, external protocol, and operations. Accessibility was not applicable because the artifact exposes no user interface.
+
+| Behavioral seam | Evidence status | Result |
+| --- | --- | --- |
+| Exact target and frozen inputs | Commit/object hashes, live issue reads, and worktree byte comparison | Exercised: candidate, retained ledger, planning, contracts, P3-C10, P3-C11, and P3-C07 queue/test/adapter all match their pins. |
+| Structural graph and references | Independent schema/reference/reachability verifier | Exercised: 24 atomic states, 91 definitions, 204 expanded transitions, 24 events, 27 guards, 24 actions, 10 actors, one named type, nine configuration fields, 15 context fields, 22 invariants, 17 forbidden configurations, 16 properties, 24 state paths, 85 resolver cells, 19 responses, and 13 cleanup states; all atomic states are reachable. |
+| Candidate/model/view parity | Exact transition, global-policy, certificate, slot, retention, churn, state, guard, path, source-exit, response, and resolver projections | Exercised: transitions 91/91 across nine fields; policies 7/7 across five; certificate 13/13; resolver 85/85; every checked projection matches. |
+| CleanupCertificate closure | Independent authority/reference/read-set expansion | Exercised: one sealed authority, 13 exact leaves, four constraints, both terminal contracts, eight consumers, and three identical 12-leaf semantic read sets pass. R189-18 is resolved. |
+| Registry retirement and capacity | Exact-lifecycle reference models and bounds | Exercised: evidence-before-delete, dedup-before-capacity, capacity-before-generation/acquisition, 4096 entries, 16384 retained records plus three envelopes, MAX_SAFE generation once then exhaustion, and old-handle isolation pass. |
+| Long-incarnation and phase parity | 10,000-cycle churn plus retiring/reference matrix | Exercised: 20,000 unique increasing generations and matching once-only releases end at zero entries; all eight current/cached/promotion/equal-scope success/error certificates are byte-identical. R189-19 is resolved. |
+| Public identity, errors, and resolver | Model-to-contract expansion, strict Zod fixtures, and focused tests | Exercised: 24 status projections, same/cross-incarnation ordering, 85 cells at 18/21/25/21, seven settlements, and six exact errors; 14 tests and 561 expectations pass. |
+| Durable facts and reconstruction | Frozen-source hashes plus transition/write projection | Exercised: P3-C10 already-complete and completed paths, P3-C11 completed/not-eligible paths, and empty/populated reconstruction retain the accepted contracts. |
+| Installed XState ordering and T097 | Direct XState 5.32.5 callback/promise/self-target probes | Exercised: freeze/input precede disposal/abort and target start; literal T097 reentry stops/starts the child while default self-target does not. |
+| Exact P3-C07 composition | Frozen source/test hashes, accepted tests, and production-adapter composite probe | Exercised: four tests/14 expectations pass; one registered composite trigger aliases exact `queue.stop()`, rejects queued work, aborts active work, and settles after response/staging/finally cleanup. |
+| Cleanup terminal category dispatch | Static 13-state expansion plus actual four-category promise rejection | **Failed: R189-20.** Authentication/transient declared errors produce root status `error`; permanent/invariant take modeled failure. |
+| Credential, shutdown, illegal, and adjacent events | State/event construction and counterexample probes | Exercised: both IDLE credential orders, all 24 shutdown sources, 22 local plus two terminal credential sources, global illegal routing, childless paused entry, late actor completion, and observed pause settlement pass. |
+| Candidate preservation and integrity | Candidate.6 semantic comparison, planning/format/JSON/whitespace/diff/protected-file gates | Exercised: the transition graph, state/context/public/durable contracts, 22 non-cleanup events, 25 non-cleanup guards, and prior responses remain exact; only this retained review ledger changes. |
+
+## Candidate.7 checks and adversarial probes
+
+All commands ran from `/Users/john/.codex/worktrees/efa7/agent-mail`. No live iCloud access, remote mutation, launchd, Tailscale, candidate/public/production edit, commit, push, issue edit, metrics edit, or other GitHub mutation was performed. Only this review ledger was changed.
+
+| Evidence | Exact command or probe | Exit | Result |
+| --- | --- | ---: | --- |
+| E81 | `gh issue view` reads for 189, 188, 196, 98, 57, 117, and 120; `git rev-parse`; SHA-256 over planning, candidate, contracts, frozen Git objects, queue/test/adapter, and retained ledger | 0 | Exact candidate.7, issue contract, complete prior history, and every accepted authority established. |
+| E82 | Independent Bun unique/reference/reachability, actor-delta, event, cleanup-input, generated-path, response, source-exit, and T097 verifier | 0 | Counts match the manifest; 24/24 atomic states reachable, 204/204 actor deltas and 24/24 event semantics resolve, 13/13 cleanup inputs pass, and unique T097 has literal `reenter:true`. |
+| E83 | Independent JSON-to-Markdown transition/global-policy/certificate/retirement/state/guard/path/source-exit/response/resolver parsers | 0 | 91/91 transitions, 7/7 policies, 13 certificate leaves/four constraints/ten references/three read sets, 24/24 states, 27/27 guards, 24/24 paths, 8/8 source-exit cases, 19/19 responses, and 85/85 resolver cells match. |
+| E84 | CleanupCertificate structural authority/consumer/read-set verifier | 0 | One sealed exact type closes both terminal events and all eight consumers; every semantic read is present in both terminal contracts. |
+| E85 | Direct model-to-contract resolver/status/error expansion; `bun test packages/contracts/test/sync-operations.test.ts packages/contracts/test/error-envelope.test.ts` | 0 | 24 strict status fixtures, six error registrations, five operations, cross-incarnation unordered comparison, 85 cells, 14 tests, and 561 expectations pass. |
+| E86 | Frozen P3-C10/P3-C11 Git-object hashes and model durable-write projection | 0 | Frozen hashes are exact; T117/T118 write all four completion fields, T150/T156 retain the shared atomic write, and T157/T158 write nothing. |
+| E87 | Installed-XState 5.32.5 callback/promise exit-order and default-self versus reentry probes | 0 | Callback/promise order is source start, source exit, transition freeze, target entry/input, source dispose/abort, target start. Default counts are 1/0/1/0 and reentry counts are 2/1/2/1 for starts/stops/entries/exits. |
+| E88 | `bun test packages/imap/test/raw-download-queue-p3-c07.test.ts`; exact production-adapter composite probe | 0 | Four tests/14 expectations pass. Registration precedes construction; one trigger aliases exact stop; queued/active rejection and response destroy, stage abort, stage cleanup, and final stopped ordering pass. |
+| E89 | Deterministic 10,000-cycle retirement/dedup/capacity/generation/old-handle probe | 0 | 20,000 allocations, generations, and releases are unique/increasing/once-only; peak/end entries are 1/0; dedup wins at capacity; MAX_SAFE is allocated once and the next new key faults before acquisition. |
+| E90 | Maximum-retention and eight-case retiring/reference phase-certificate probes | 0 | 4096 entries plus three 4096-record snapshots equal 16384 records and three envelopes; all eight success/error certificates are byte-identical with 13 exact leaves and zero audits. |
+| E91 | Static cleanup-error expansion plus installed-XState four-category rejection probe | 0 | Reproduced R189-20: all 13 states use T145/T171/T183/T185 with fatal guard; authentication/transient yield root `error`, permanent/invariant yield modeled `failed`. |
+| E92 | Known-event/global-policy, credential-order, and shutdown-source constructor | 0 | No unrouted known state/event pair; shutdown covers 24/24 sources; credentials use 22 local plus two terminal-policy sources; bounded and IDLE revision/fault orderings pass. |
+| E93 | Adjacent paused/live-child/late-completion/public-observation counterexample | 0 | `paused` owns zero children; only childless authBlocked enters directly, every live source first enters cleanup, late bounded actor results use GEP03, and pause completes publicly only at paused. |
+| E94 | Candidate.6-to-candidate.7 protected semantic comparison | 0 | States, all 91 transitions, context, durable/public/initialization contracts, 22 non-cleanup events, 25 non-cleanup guards, 21 unrelated actions, and six unrelated global policies are byte-identical. |
+| E95 | `python3 .agents/skills/plan-agent-mail/scripts/check_plan.py`; candidate-only `bunx vp fmt --check`; `jq empty`; final-newline, trailing-whitespace, scoped `git diff --check`, protected-file byte comparisons, and final hashes | 0 | Planning and artifact integrity pass; four candidate artifacts remain byte-identical to `c7002f4`; prior ledger bytes are preserved after the deliberate candidate.7 prepend. |
+
+Setup-only reviewer harness attempts that exited before candidate evaluation were corrected and rerun above: Markdown normalizers initially treated `none`, comma-separated actor lists, and prose actor-kind labels as literal JSON; one registry script had a field-name typo; one maximum-bound fixture populated workflow rather than watch slots; one public-contract probe used the wrong export name; and one frozen-source hash command used two wrong paths. One combined registry command exceeded the output capture and was replaced by the bounded E89/E90 probes. None is counted as candidate evidence or as a candidate failure.
+
+## Candidate.7 signature
+
+Reviewer signature for digest `cfca5ae69d1cdeac8df628a0ebe0a02bbd20f5a7b512a0aafd2835433bd9a14e`: **WITHHELD**.
+
+Reason: R189-20 leaves the exact cleanup error contract broader than its transition/global-policy disposition. A valid current authentication or transient cleanup rejection exits the modeled lifecycle through XState root status `error`. Choosing a narrowed terminal fault authority or new retry/auth routing is a consequential design decision outside this reviewer's authority. A new candidate digest and fresh whole-artifact review are required before exact-digest consensus.
+
+## Retained candidate.6 and earlier review records
+
 Status: **candidate.6 rejected; reviewer signature withheld for two high/consequential oracle defects**.
 
 Review mode: independent whole-artifact adversarial review of candidate.6, every retained R189-01 through R189-17 disposition, the accepted public and frozen-source contracts, installed XState 5.32.5 semantics, and the checked views. The reviewer independently reproduced the evidence at Sol/ultra. No designer conclusion is inherited as a disposition.
