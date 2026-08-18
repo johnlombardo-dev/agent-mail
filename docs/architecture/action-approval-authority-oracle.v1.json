@@ -1,0 +1,2358 @@
+{
+  "format": "agent-mail.action-approval-authority-oracle/v1",
+  "schemaVersion": 1,
+  "modelVersion": "1.0.0",
+  "status": "frozen-design-ready-for-implementation",
+  "oracle": {
+    "normative": true,
+    "issue": 203,
+    "description": "This JSON file is the single normative authority for action approval. The design, decisions, and coverage Markdown files are checked views. If a view or downstream implementation conflicts with this file, this file wins.",
+    "scope": "Independent human-present approval for a frozen local action plan, followed by one atomic consume-and-claim by a distinct unattended agent principal.",
+    "compatibilityRule": "No /v1 caller, credential, scope string, authorization ID, prompt, or legacy proposal can stand in for an action-approval-authority-v1 artifact. A field, profile, seal, state, transition, or verification-rule change requires a new oracle digest and renewed review."
+  },
+  "productDecision": {
+    "id": "POLICY-A",
+    "source": "interactive user decision received 2026-08-18 after the SEC-R02-DESIGN stop",
+    "text": "After a human-present operator verifies the frozen preview, that operator may seal an expiring one-use approval. A distinct unattended agent principal may later atomically consume it and commit.",
+    "fixedConsequences": [
+      "A creator may be an operator-interactive or agent-unattended principal when its authenticated profile grants mail:action.create.",
+      "Only an operator-interactive authenticated profile with fresh request-bound human-presence evidence may approve.",
+      "Only an agent-unattended authenticated profile with mail:action.commit may consume and commit.",
+      "The committer principal ID and credential ID must both differ from the approver principal ID and credential ID.",
+      "The executor is an internal daemon capability, never a public principal or bearer profile.",
+      "Principal, credential, profile, scopes, authentication lifetime, and user presence come only from the authenticator.",
+      "No credential profile may contain both approval and unattended commit authority; scope-only or caller-supplied identity evidence fails closed."
+    ]
+  },
+  "authenticatorDecision": {
+    "id": "A1-MACOS-SECURE-ENCLAVE",
+    "source": "interactive user decision received after the root-review authenticator stop",
+    "text": "Use a macOS Keychain/Secure Enclave P-256 credential protected by device-owner user presence, with daemon-issued single-use request-bound challenges, a native CLI broker, and daemon public-key verification.",
+    "fallback": "fail-closed; unsupported hardware or unavailable device-owner authentication cannot approve or cancel"
+  },
+  "frozenInputs": [
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "gitCommit": "59c61ef76bc3c9ebb25a05e2c33440d4cac63aee",
+      "sha256": "50dae936c7240940bbfe5515d5bf5f09486aaaa0348930ddd89bdaeedfc251da"
+    },
+    {
+      "id": "EVIDENCE",
+      "path": "docs/planning/EVIDENCE.md",
+      "gitCommit": "59c61ef76bc3c9ebb25a05e2c33440d4cac63aee",
+      "sha256": "485e5a26d180eff03b2a6aaa2605f8d2f95251a97464c44730f39d9022e48675"
+    },
+    {
+      "id": "ACTION-DOMAIN",
+      "path": "packages/core/src/action-plan.ts",
+      "gitCommit": "5a61ed3f1bd9a770f7cf482b270af00d06ae0b94",
+      "sha256": "75184bd0a4ec734bb5d704d1bb8af975e6eb76759b9456940302ba04a84e7547"
+    },
+    {
+      "id": "ACTION-CONTRACTS",
+      "path": "packages/contracts/src/action-operations.ts",
+      "gitCommit": "414e9c36d1326536bb98944372d97016a1bb3af4",
+      "sha256": "769ba164ee807996ea4a2b6dd21d07a92a68ba1ce4296f11d5c649b53e43a8c2"
+    },
+    {
+      "id": "OPERATION-REGISTRY",
+      "path": "packages/contracts/src/operation-registry.ts",
+      "gitCommit": "1998ea543ef77db1f3eaec58abb4555fcd6a67c8",
+      "sha256": "64946adae163ed1b06f911691da131354a9c4ef447604681b0e8ccdbf0655cbd"
+    },
+    {
+      "id": "ERROR-ENVELOPE",
+      "path": "packages/contracts/src/error-envelope.ts",
+      "gitCommit": "8cf0d139c47094433b83bf29b46d0c42a2b47e86",
+      "sha256": "f02a6f25dfd884aa717f136e4024f550697a3d1a32b8cafd5bad84eaf27ae934"
+    },
+    {
+      "id": "ACTION-SCHEMA",
+      "path": "packages/storage/src/migrations/0001-action-schema.ts",
+      "gitCommit": "a71f789f54d553046f16131ecc4c708374308215",
+      "sha256": "693adfcd9738422c291e2b21525d5aff3b22ef2c162c186648b26318935bb936"
+    },
+    {
+      "id": "ACTION-PROPOSAL",
+      "path": "packages/storage/src/migrations/0002-action-plan-proposal.ts",
+      "gitCommit": "06b8546476a481accca7c7218c456b4d332f486a",
+      "sha256": "d8956b73473324d7753288edc5ce88ba2eaff653528915980e246846535f79a2"
+    },
+    {
+      "id": "ACTION-CLAIM-SCHEMA",
+      "path": "packages/storage/src/migrations/0003-action-plan-claim.ts",
+      "gitCommit": "092d06c49c460537641768505d0119c4ab37b392",
+      "sha256": "52e773c650038802874ae2e0881c9a10ff995245e91606a17e0eeff3b599f84d"
+    },
+    {
+      "id": "ACTION-REPOSITORY",
+      "path": "packages/storage/src/action-plan-repository.ts",
+      "gitCommit": "092d06c49c460537641768505d0119c4ab37b392",
+      "sha256": "7752fce04c8187d80a6ae16c5a9cff607743681fbeeda58cc0482d1523860929"
+    },
+    {
+      "id": "ACTION-CLAIM",
+      "path": "packages/storage/src/action-plan-claim.ts",
+      "gitCommit": "e82ae62e9d7a6e9ce80343464cde6d8aabbaaadc",
+      "sha256": "6c1d8d4ae864801739f559fea56a026bd99d4f9ac668e6a9b9081de44a711992"
+    },
+    {
+      "id": "ACTION-ATTEMPT",
+      "path": "packages/storage/src/action-plan-attempt.ts",
+      "gitCommit": "df02745697573b5f14f676995b7a64436f98793c",
+      "sha256": "debf215f872cfd87712bd6a6cccfba1f2476b07d51e25bf25d8a53e4c259779e"
+    },
+    {
+      "id": "ACTION-RECOVERY",
+      "path": "packages/storage/src/action-plan-recovery.ts",
+      "gitCommit": "df02745697573b5f14f676995b7a64436f98793c",
+      "sha256": "565c3a42925f1769b0133dde4fc07ecbfac44a3a9b1e865937b6ef5115dcfb95"
+    },
+    {
+      "id": "ACTION-RESULT",
+      "path": "packages/storage/src/action-plan-result.ts",
+      "gitCommit": "df02745697573b5f14f676995b7a64436f98793c",
+      "sha256": "a08d7bd8f2db589241b179f7d985b11ba63de0260dbe3cfb3943446521c5beda"
+    },
+    {
+      "id": "ACTION-FINALIZATION",
+      "path": "packages/storage/src/action-plan-finalization.ts",
+      "gitCommit": "7cb49805b263cbc19e1479a0e2cd5a06c225724e",
+      "sha256": "36739776406f754b35f12fdf4ce80be5f1be5dc53889310018a786ec27510a31"
+    },
+    {
+      "id": "STORAGE-RESTART",
+      "path": "packages/storage/src/action-plan-restart-recovery.ts",
+      "gitCommit": "09647724de8d1fd4a0e10785dad45b173ec629f8",
+      "sha256": "43a804f18f7c94be1060bdbf14944fc602783ed3f81445d8d5d9b16786fa20aa"
+    },
+    {
+      "id": "BACKUP-RESTORE",
+      "path": "packages/storage/src/backup-restore.ts",
+      "gitCommit": "96de7238ed71d5859c2fb69d6aa672d978783d1e",
+      "sha256": "91a3cd217abead59c5288d4c70d06c8c4df1566464e0c3e30de5826758433c3e"
+    },
+    {
+      "id": "ACTION-HANDLERS",
+      "path": "packages/daemon/src/action-plan-handlers.ts",
+      "gitCommit": "e9df1b8b996e811a78bec961cfd3613e811c640f",
+      "sha256": "8864beb341f06184c684f6709feb1002dd8adfdb9ec44d8de008a97c78dbb7e2"
+    },
+    {
+      "id": "HTTP-AUTH",
+      "path": "packages/daemon/src/http.ts",
+      "gitCommit": "44a0b284d4c98b132ee144a0a1d265b1d3fc3a5e",
+      "sha256": "21f90dd86260e5f27761a4e37c04fe90a4ac6f48c677fca8ba579fc91c964834"
+    },
+    {
+      "id": "CREDENTIAL-CONFIG",
+      "path": "packages/daemon/src/config.ts",
+      "gitCommit": "44a0b284d4c98b132ee144a0a1d265b1d3fc3a5e",
+      "sha256": "e2c5dc5cc4007c1b20e1ec38b145c63f4f531cdc7306abf444e430976cced194"
+    },
+    {
+      "id": "TARGET-LOOP",
+      "path": "packages/daemon/src/action-plan-target-loop.ts",
+      "gitCommit": "df02745697573b5f14f676995b7a64436f98793c",
+      "sha256": "2eb0305af987d544bdd449ad023a5dd716656aec961c555e93d2d68b7b38c824"
+    },
+    {
+      "id": "DAEMON-RESTART",
+      "path": "packages/daemon/src/action-plan-restart-recovery.ts",
+      "gitCommit": "df02745697573b5f14f676995b7a64436f98793c",
+      "sha256": "55afe1448dd6a585df148ba9ee202be03a8d008ae4d5bb29ad5b2a6c2b618523"
+    },
+    {
+      "id": "CLI-METADATA",
+      "path": "packages/cli/src/command-registry.ts",
+      "gitCommit": "1972070aa75a9f1554f0d1e0fc51dbfd8f4c697f",
+      "sha256": "b95f0aadbf975646c9a02d69556ec88de18a7fbbe3641110c0fac83ac532a5c2"
+    },
+    {
+      "id": "CLI-OUTPUT",
+      "path": "packages/cli/src/output-context.ts",
+      "gitCommit": "20e4d0eaa1a8a4285d4158065fd7f9a585ac7106",
+      "sha256": "5e0812f3f82da977f5349cd30a264a9af58ea8ff25ae9402e86c8cb60f28641c"
+    }
+  ],
+  "terms": [
+    {
+      "id": "TERM-PLAN",
+      "name": "FrozenActionPlan",
+      "meaning": "Server-owned immutable action kind, ordered target set, preconditions, creation time, plan expiry, version, canonical preview bytes, and preview digest."
+    },
+    {
+      "id": "TERM-CREATOR",
+      "name": "Creator",
+      "meaning": "The authenticated operator-interactive or agent-unattended principal that created the frozen plan. Creation grants no approval authority."
+    },
+    {
+      "id": "TERM-APPROVER",
+      "name": "Approver",
+      "meaning": "The authenticated human-present operator-interactive principal that reviewed the exact frozen preview and sealed its approval."
+    },
+    {
+      "id": "TERM-COMMITTER",
+      "name": "Committer",
+      "meaning": "The authenticated agent-unattended principal that atomically consumes an available approval and claims its exact plan."
+    },
+    {
+      "id": "TERM-EXECUTOR",
+      "name": "Executor",
+      "meaning": "The internal daemon action-executor-v1 capability that receives only a durable claim and consumption receipt; it has no public credential or scope."
+    },
+    {
+      "id": "TERM-APPROVAL",
+      "name": "ApprovalArtifact",
+      "meaning": "An immutable, HMAC-sealed, expiring authority record for exactly one plan version, preview, target set, normalized intent, and mail:action.commit scope."
+    },
+    {
+      "id": "TERM-RECEIPT",
+      "name": "ConsumptionReceipt",
+      "meaning": "The immutable durable proof that one committer consumed one approval in the same transaction that created the plan claim."
+    },
+    {
+      "id": "TERM-PRESENCE",
+      "name": "HumanPresence",
+      "meaning": "A fresh request-bound assertion verified by the authenticator from a non-exportable operator credential; a prompt, TTY, request field, or static bearer token is not human presence."
+    }
+  ],
+  "limits": {
+    "approvalLifetimeSeconds": 600,
+    "humanPresenceMaximumAgeSeconds": 60,
+    "humanPresenceClockSkewSeconds": 5,
+    "operatorSessionLifetimeSeconds": 600,
+    "operatorCredentialLifetimeSeconds": 31536000,
+    "nonceBytes": 32,
+    "digestBytes": 32,
+    "sealKeyBytes": 32,
+    "canonicalTargetBytesMaximum": 1048576,
+    "principalIdUtf8BytesMaximum": 256,
+    "credentialIdUtf8BytesMaximum": 256,
+    "authEventIdUtf8BytesMaximum": 256,
+    "executorInstanceIdUtf8BytesMaximum": 256
+  },
+  "profiles": [
+    {
+      "id": "PROFILE-OPERATOR",
+      "profile": "operator-interactive",
+      "principalKind": "human-operator",
+      "credential": "A1 macOS Secure Enclave P-256 credential using kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly plus SecAccessControl userPresence/privateKeyUsage, fresh zero-reuse LAContext signing, and daemon request-bound challenge verification. Static bearer credentials are forbidden.",
+      "nonApprovalSession": "An A1-minted memory-only operator session may authenticate only mail:action.create and mail:action.inspect for at most 600 seconds and never carries mail:action.approve or mail:action.commit.",
+      "allowedActionScopes": ["mail:action.create", "mail:action.inspect", "mail:action.approve"],
+      "requiredForApprove": ["mail:action.approve"],
+      "forbiddenActionScopes": ["mail:action.commit", "mail:action.authorize"],
+      "mayCreate": true,
+      "mayApprove": true,
+      "mayCommit": false,
+      "mayExecute": false
+    },
+    {
+      "id": "PROFILE-AGENT",
+      "profile": "agent-unattended",
+      "principalKind": "unattended-agent",
+      "credential": "Exportable or machine-held credential resolved only to this profile; it carries no approval capability.",
+      "allowedActionScopes": ["mail:action.create", "mail:action.inspect", "mail:action.commit"],
+      "requiredForCommit": ["mail:action.commit"],
+      "forbiddenActionScopes": ["mail:action.approve", "mail:action.authorize"],
+      "mayCreate": true,
+      "mayApprove": false,
+      "mayCommit": true,
+      "mayExecute": false
+    },
+    {
+      "id": "PROFILE-EXECUTOR",
+      "profile": "internal-action-executor",
+      "principalKind": "daemon-capability",
+      "credential": "No public credential. The executor accepts only an internal capability carrying an already durable plan claim and consumption receipt.",
+      "allowedActionScopes": [],
+      "forbiddenActionScopes": [
+        "mail:action.create",
+        "mail:action.inspect",
+        "mail:action.approve",
+        "mail:action.authorize",
+        "mail:action.commit"
+      ],
+      "mayCreate": false,
+      "mayApprove": false,
+      "mayCommit": false,
+      "mayExecute": true
+    }
+  ],
+  "authorityMatrix": [
+    {
+      "operation": "create",
+      "actor": "creator",
+      "acceptedProfiles": ["operator-interactive", "agent-unattended"],
+      "requiredScope": "mail:action.create",
+      "presenceByProfile": {
+        "operator-interactive": "current A1 non-approval operator session",
+        "agent-unattended": "unattended"
+      },
+      "durableOutput": "action_plan_creators plus trusted-v1 action_plan_authority_versions"
+    },
+    {
+      "operation": "inspect",
+      "actor": "reader",
+      "acceptedProfiles": ["operator-interactive", "agent-unattended"],
+      "requiredScope": "mail:action.inspect",
+      "presenceByProfile": {
+        "operator-interactive": "current A1 non-approval operator session",
+        "agent-unattended": "unattended"
+      },
+      "durableOutput": "none"
+    },
+    {
+      "operation": "approve",
+      "actor": "approver",
+      "acceptedProfiles": ["operator-interactive"],
+      "requiredScope": "mail:action.approve",
+      "presence": "fresh-request-bound",
+      "durableOutput": "operator_presence_challenge_consumptions plus action_approvals in one transaction"
+    },
+    {
+      "operation": "cancel-approval",
+      "actor": "approver",
+      "acceptedProfiles": ["operator-interactive"],
+      "requiredScope": "mail:action.approve",
+      "presence": "fresh-request-bound",
+      "durableOutput": "operator_presence_challenge_consumptions plus action_approval_cancellations and plan version update in one transaction"
+    },
+    {
+      "operation": "commit",
+      "actor": "committer",
+      "acceptedProfiles": ["agent-unattended"],
+      "requiredScope": "mail:action.commit",
+      "presence": "unattended",
+      "durableOutput": "action_approval_consumptions plus action_plan_claims in one transaction"
+    },
+    {
+      "operation": "execute",
+      "actor": "executor",
+      "acceptedProfiles": ["internal-action-executor"],
+      "requiredScope": null,
+      "presence": "not-applicable",
+      "durableOutput": "action_attempt_authorities plus existing dispatch/result evidence"
+    }
+  ],
+  "structurallyForbidden": [
+    {
+      "id": "FORBID-AUTHORIZE-COMMIT",
+      "rule": "Configuration and authenticator construction reject every credential containing mail:action.approve or retired mail:action.authorize together with mail:action.commit."
+    },
+    {
+      "id": "FORBID-OPERATOR-COMMIT",
+      "rule": "operator-interactive rejects mail:action.commit even when the scope appears in credential material."
+    },
+    {
+      "id": "FORBID-AGENT-APPROVE",
+      "rule": "agent-unattended rejects mail:action.approve and mail:action.authorize even when either scope appears in credential material."
+    },
+    {
+      "id": "FORBID-MULTI-PROFILE",
+      "rule": "One credential ID resolves to exactly one profile. Duplicate credential IDs, profile unions, fallback profiles, and profile inference from requested scopes fail daemon startup."
+    },
+    {
+      "id": "FORBID-STATIC-OPERATOR",
+      "rule": "A static bearer or file token cannot resolve to operator-interactive. Only a memory-only A1-minted non-approval session may use Bearer authentication for operator create/inspect, and it is structurally incapable of approve or commit."
+    },
+    {
+      "id": "FORBID-SESSION-AUTHORITY",
+      "rule": "An operator session has the exact closed scope set mail:action.create plus mail:action.inspect and is rejected for approve, cancel, commit, executor, challenge administration, credential administration, and seal-key administration."
+    },
+    {
+      "id": "FORBID-SAME-ACTOR",
+      "rule": "Consume rejects when committer principal ID equals approver principal ID, committer credential ID equals approver credential ID, or committer profile is not agent-unattended."
+    },
+    {
+      "id": "FORBID-PUBLIC-EXECUTOR",
+      "rule": "No operation registry entry, HTTP route, CLI command, scope, or credential exposes internal-action-executor."
+    },
+    {
+      "id": "FORBID-CALLER-IDENTITY",
+      "rule": "Strict public schemas contain no principalId, credentialId, profile, scopes, userPresence, executor identity, issuedAt, expiresAt, nonce, authorizationScope, seal key ID, or seal value input field."
+    }
+  ],
+  "authenticatedContext": {
+    "source": "credential authenticator only",
+    "commonFields": [
+      "principalId",
+      "credentialId",
+      "profile",
+      "scopes",
+      "authEventId",
+      "authenticatedAt",
+      "credentialExpiresAt"
+    ],
+    "operatorPresenceFields": [
+      "kind=human-present",
+      "ceremonyId",
+      "verifiedAt",
+      "validUntil",
+      "requestMethod",
+      "requestPath",
+      "requestBodySha256"
+    ],
+    "operatorSessionFields": [
+      "kind=a1-non-approval-session",
+      "sessionId",
+      "sessionAuthEventId",
+      "issuedAt",
+      "expiresAt",
+      "configurationRevision",
+      "credentialExpiresAt"
+    ],
+    "agentPresenceFields": ["kind=unattended"],
+    "verification": [
+      "All context fields are decoded from unknown, bounded, frozen, and passed out-of-band to the service; request JSON cannot override them.",
+      "Operator create and inspect require a current A1-minted non-approval session whose exact scopes are mail:action.create and mail:action.inspect; the session cannot authenticate approve, cancel, commit, or executor operations.",
+      "Approve and cancel require a non-exportable operator signing credential and an authenticator-verified user-presence assertion bound to the exact HTTP method, concrete route, and SHA-256 of the final bounded raw request-body bytes.",
+      "After EOF and strict boundary parsing, the approval service independently reconstructs the expected method and concrete path, recomputes SHA-256 from the retained final bounded raw request-body bytes, and compares all three against the authenticated presence context before any authority write.",
+      "At approval or cancellation time, verifiedAt is no more than 60 seconds old, the operation time is before validUntil plus at most 5 seconds accepted clock skew, and ceremonyId has not authorized any earlier approval operation. Ceremony uniqueness spans approve and cancel.",
+      "Commit authentication must be current at consume time. Approver and committer credential records must not be revoked; unavailable credential status fails closed."
+    ]
+  },
+  "operatorRequestBindings": [
+    {
+      "operation": "approve",
+      "method": "POST",
+      "pathTemplate": "/v1/action-plans/{planId}/approvals",
+      "pathConstruction": "'/v1/action-plans/' + encodeURIComponent(planId) + '/approvals'",
+      "strictBodyFieldsInCanonicalOrder": ["planId", "planVersion", "previewDigest"],
+      "cliBodyEncoding": "JSON.stringify({planId,planVersion,previewDigest}) encoded as UTF-8 once and retained unchanged",
+      "bodySha256": "lowercaseHex(SHA-256(final bounded raw HTTP body bytes)); the CLI bytes equal cliBodyEncoding, and any other accepted client must challenge and transmit the same exact strict JSON bytes"
+    },
+    {
+      "operation": "cancel-approval",
+      "method": "DELETE",
+      "pathTemplate": "/v1/action-plans/{planId}/approvals/{approvalId}",
+      "pathConstruction": "'/v1/action-plans/' + encodeURIComponent(planId) + '/approvals/' + encodeURIComponent(approvalId)",
+      "strictBodyFieldsInCanonicalOrder": ["planId", "approvalId", "planVersion", "previewDigest"],
+      "cliBodyEncoding": "JSON.stringify({planId,approvalId,planVersion,previewDigest}) encoded as UTF-8 once and retained unchanged",
+      "bodySha256": "lowercaseHex(SHA-256(final bounded raw HTTP body bytes)); the CLI bytes equal cliBodyEncoding, and any other accepted client must challenge and transmit the same exact strict JSON bytes"
+    }
+  ],
+  "operatorAuthenticatorProtocol": {
+    "version": "agent-mail-macos-operator-presence-v1",
+    "platform": "macOS with Secure Enclave and Security.framework device-owner user presence",
+    "availabilityPolicy": "Secure Enclave is mandatory. If key generation, device-owner authentication, or the native broker is unavailable, approval and cancellation fail with action.operator_presence_unsupported. There is no software-key, passphrase, static-bearer, prompt-only, remote-header, or agent-token fallback.",
+    "key": {
+      "algorithm": "P-256 ECDSA with SHA-256",
+      "privateKey": "Generated by the native broker using kSecAttrKeyTypeECSECPrimeRandom, 256 bits, kSecAttrTokenIDSecureEnclave, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, and SecAccessControl userPresence plus privateKeyUsage. Private key bytes are never exportable. Missing or removed device credentials fail closed and no weaker accessibility class is accepted.",
+      "publicKeyEncoding": "DER SubjectPublicKeyInfo for id-ecPublicKey plus prime256v1; base64url without padding in configuration",
+      "signatureEncoding": "64-byte IEEE-P1363 r||s, normalized to low-S by the broker, base64url without padding; daemon rejects non-low-S, zero, out-of-range, wrong-length, DER, padded, or non-canonical encodings",
+      "verification": "Daemon resolves the active credential record, decodes its SPKI, verifies P-256/SHA-256 over exact assertionCommitment UTF-8 bytes, and only then treats the record's principal/profile as authenticated.",
+      "authenticationContext": "The broker creates a fresh LAContext for every signature, sets touchIDAuthenticationAllowableReuseDuration to 0, supplies it only to that SecKey signing call, and discards it after success/failure. No authenticated context or biometric success is cached between challenges."
+    },
+    "instance": {
+      "authorityInstanceId": "instance:<UUIDv4 lowercase canonical text>, generated once during daemon configuration and stored outside the database",
+      "purpose": "Binds enrollment and challenges to this daemon installation so a signed assertion cannot move between installations."
+    },
+    "enrollment": {
+      "broker": "A native executable named agent-mail-operator-broker linked to Security.framework; #204 owns it and its narrow daemon provisioning adapter.",
+      "commands": {
+        "enroll": "agent-mail-operator-broker enroll --private-root <canonical-absolute-privateRoot>",
+        "rotate": "agent-mail-operator-broker rotate --private-root <canonical-absolute-privateRoot>",
+        "revoke": "agent-mail-operator-broker revoke --private-root <canonical-absolute-privateRoot> --credential-id <credentialId>",
+        "recover": "agent-mail-operator-broker recover --private-root <canonical-absolute-privateRoot>"
+      },
+      "commandRules": [
+        "Commands accept no principal, profile, scope, key material, assertion, or presence flags. privateRoot is the existing canonical startup root and never appears in the stored commitment.",
+        "Every command requires an attached TTY, takes the owner-only configuration/admission lock, verifies the caller effective UID equals the privateRoot owner, and exposes no JSON/noninteractive/yes/environment bypass.",
+        "enroll is allowed only when no active operator credential exists. rotate requires a signed fresh-presence rotation commitment from the current active key and a separately signed enrollment commitment from the new key while authority admission is locked; it atomically writes the new active/old revoked configuration first, then invalidates every old-key available challenge and unconsumed approval before releasing admission.",
+        "revoke requires a fresh-presence revocation commitment from that active credential while authority admission is locked. It atomically marks the configuration record revoked first, then invalidates all of its available challenges and unconsumed approvals in one database transaction before releasing admission. A crash between writes is fail-closed because the durable configuration already makes the credential inactive; startup completes invalidation before admission.",
+        "recover is the only path when no enrolled private key can sign. It requires fresh Security.framework deviceOwnerAuthentication on an attached TTY and a newly signed enrollment commitment for a new authorityInstanceId. While admission is locked it atomically writes the new instance/new active key/all old keys revoked first, then invalidates every available challenge and unconsumed approval regardless of credential/key before releasing admission. It never preserves live authority."
+      ],
+      "keychainApplicationTag": "UTF-8 'dev.johnlombardo.agent-mail.operator.v1:' + enrollmentId",
+      "enrollmentId": "enrollment:<UUIDv4 lowercase canonical text>, generated by the broker before key creation",
+      "principalId": "principal:local-operator",
+      "credentialId": "'credential:operator:' + lowercaseHex(SHA-256(publicKeySpki DER bytes))",
+      "enrollmentCommitment": "JSON.stringify([\"agent-mail-operator-enrollment-v1\", authorityInstanceId, enrollmentId, principalId, credentialId, \"operator-interactive\", \"ES256\", publicKeySpkiBase64url, enrolledAt, enrollmentNonceBase64url])",
+      "administrationCommitments": {
+        "rotate": "JSON.stringify([\"agent-mail-operator-rotation-v1\", authorityInstanceId, currentCredentialId, replacementCredentialId, replacementPublicKeySpkiSha256, requestedAt, administrationNonceBase64url]) signed by the current key; the replacement separately signs its enrollmentCommitment",
+        "revoke": "JSON.stringify([\"agent-mail-operator-revocation-v1\", authorityInstanceId, credentialId, requestedAt, administrationNonceBase64url]) signed by the credential being revoked",
+        "nonceAndTime": "administrationNonceBase64url is 32 cryptographically random bytes encoded without padding; requestedAt is the daemon canonical millisecond UTC clock and the signed administration request expires after 60 seconds",
+        "localizedReasons": {
+          "enroll": "Agent Mail ENROLL operator key",
+          "rotateCurrent": "Agent Mail ROTATE current operator key",
+          "rotateReplacement": "Agent Mail ENROLL replacement operator key",
+          "revoke": "Agent Mail REVOKE operator key",
+          "recover": "Agent Mail RECOVER operator authority",
+          "recoverReplacement": "Agent Mail ENROLL recovered operator key"
+        }
+      },
+      "procedure": [
+        "The local provisioning command requires an attached TTY, generates a 32-byte random enrollment nonce, displays the fixed operator principal and key fingerprint, and asks the OS for device-owner presence with an enrollment-specific reason.",
+        "The Secure Enclave key signs the exact enrollment commitment. The broker immediately verifies the signature with the exported public key.",
+        "The daemon provisioning adapter, under an owner-only configuration lock, validates the commitment/signature and atomically writes the public credential record; it never receives private key material.",
+        "A credential record is active only after a successful signed enrollment. Caller-supplied principal/profile values are not accepted; v1 uses the fixed principal:local-operator and operator-interactive profile."
+      ],
+      "configurationRecord": {
+        "path": "<privateRoot>/config/operator-credentials.v1.json",
+        "mode": "0600 in an owner-only directory",
+        "writeRule": "Decode strict JSON, require the privateRoot owner UID, hold the configuration/admission lock, write a same-directory 0600 temporary file, fsync it, rename atomically, fsync the owner-only directory, then complete required database invalidations before admission resumes.",
+        "strictFields": [
+          "schemaVersion=1",
+          "authorityInstanceId",
+          "configurationRevision positive integer incremented exactly once per successful mutation",
+          "updatedAt canonical millisecond UTC",
+          "credentials[].credentialId",
+          "credentials[].principalId=principal:local-operator",
+          "credentials[].profile=operator-interactive",
+          "credentials[].algorithm=ES256",
+          "credentials[].publicKeySpkiBase64url",
+          "credentials[].publicKeySpkiSha256",
+          "credentials[].status=active|revoked",
+          "credentials[].enrolledAt",
+          "credentials[].expiresAt=enrolledAt plus exactly 365 days",
+          "credentials[].revokedAt|null",
+          "credentials[].replacedByCredentialId|null"
+        ]
+      },
+      "credentialLifetime": {
+        "seconds": 31536000,
+        "rule": "Enrollment, rotation, and recovery set expiresAt to enrolledAt plus exactly 365 days using the daemon clock. A credential is current only while now < expiresAt; equality is expired. Expiry cannot be extended in place and immediately blocks challenges, sessions, approve, cancel, and consume validation of approvals signed by that credential.",
+        "rotation": "Rotation creates a replacement with its own new 365-day lifetime. An expired credential cannot sign rotation; recover is required and invalidates all live authority. No omitted, null, sentinel, or infinite expiry is accepted."
+      }
+    },
+    "nonApprovalOperatorSession": {
+      "purpose": "Authenticate operator-interactive create and inspect without reusing an approval ceremony or requiring presence for every read.",
+      "createRoute": {
+        "method": "POST",
+        "path": "/v1/operator-sessions",
+        "exposure": "loopback listener only; absent from Tailscale and the agent operation registry",
+        "strictBodyFieldsInOrder": ["requestedScopes"],
+        "body": "JSON.stringify({requestedScopes:['mail:action.create','mail:action.inspect']}) encoded once as UTF-8",
+        "authentication": "A fresh A1 open-session challenge bound to exact POST/path/raw body; no existing bearer is accepted",
+        "response": "{sessionId,token,tokenType:'Bearer',scopes:['mail:action.create','mail:action.inspect'],issuedAt,expiresAt}; token appears once only"
+      },
+      "challenge": {
+        "operation": "open-session",
+        "requestMethod": "POST",
+        "requestPath": "/v1/operator-sessions",
+        "displayCode": "Format the first 20 lowercase hex characters of SHA-256(JSON.stringify(['agent-mail-presence-display-v1','open-session',authorityInstanceId,'mail:action.create','mail:action.inspect'])) as five groups of four.",
+        "localizedReason": "Agent Mail START 10-minute CREATE and INSPECT session",
+        "atomicClosure": "Consume the challenge in BEGIN IMMEDIATE with authorityOutputKind operator-session and a daemon-created sessionId; only after commit install the token digest in memory and return the token. Crash before installation/response consumes the ceremony but creates no usable session."
+      },
+      "token": {
+        "sessionId": "operator-session:<UUIDv4 lowercase canonical text>",
+        "bytes": "32 cryptographically random bytes",
+        "wire": "base64url without padding in Authorization: Bearer <token>",
+        "storage": "Only SHA-256(token bytes), sessionId, principalId, credentialId, exact two-scope set, sessionAuthEventId, issuedAt, expiresAt, authorityInstanceId, and configurationRevision exist in daemon memory. Token bytes are never written to disk, argv, environment, logs, audit, errors, or structured output.",
+        "expiry": "min(issuedAt plus 600 seconds, credentialExpiresAt); equality is expired",
+        "restart": "All sessions disappear on ordinary restart, explicit restore, configuration revision change, credential revocation/expiry/rotation, or authority instance recovery.",
+        "authorization": "Bearer resolution from unknown must find the exact digest, active credential, matching authority instance/configuration revision, now before session and credential expiry, and exact scopes. The resulting profile is operator-interactive with presence kind a1-non-approval-session. Any approval/commit scope or operation rejects before body read."
+      }
+    },
+    "challenge": {
+      "issueTransport": "Owner-local broker RPC, not a public operation-registry route and not reachable through Tailscale. The daemon exposes it only on an owner-only 0600 Unix-domain socket under the configured runtime directory.",
+      "issueFraming": "One request per connection: canonical UTF-8 JSON followed by exactly one LF byte and then write-half close. The complete frame, including LF, is capped at 4096 bytes; CR, additional lines, trailing bytes, invalid UTF-8, missing LF, or a second request rejects. The daemon returns one canonical UTF-8 JSON line and closes. The socket parent is mode 0700, the socket is mode 0600, and getpeereid must equal the daemon/privateRoot owner UID.",
+      "issueRequest": {
+        "strictFieldsInOrder": [
+          "version",
+          "credentialId",
+          "operation",
+          "requestMethod",
+          "requestPath",
+          "requestBodyBase64url"
+        ],
+        "version": "agent-mail-macos-operator-presence-v1",
+        "operation": "open-session|approve|cancel-approval",
+        "requestBodyBase64url": "Canonical base64url without padding of the exact final raw UTF-8 HTTP body bytes the CLI will later transmit; decoded bytes are capped at 2048 and retained unchanged for the final request",
+        "maximumBytes": 4096
+      },
+      "identity": "operator-challenge:<UUIDv4 lowercase canonical text>",
+      "nonce": "32 cryptographically random bytes, base64url without padding",
+      "issuedAt": "daemon canonical millisecond UTC clock",
+      "expiresAt": "issuedAt plus 60 seconds",
+      "commitmentNamespace": "agent-mail-operator-challenge-v1",
+      "commitmentFieldsInOrder": [
+        "authorityInstanceId",
+        "challengeId",
+        "challengeNonceBase64url",
+        "credentialId",
+        "principalId",
+        "profile",
+        "operation",
+        "requestMethod",
+        "requestPath",
+        "requestBodySha256",
+        "operatorDisplayCode",
+        "operatorConfigurationRevision",
+        "issuedAt",
+        "expiresAt"
+      ],
+      "commitment": "JSON.stringify([commitmentNamespace, ...commitmentFieldsInOrder.map(field => challenge[field])])",
+      "operatorDisplayCode": "For approve/cancel, format the first 20 lowercase hex characters of SHA-256(JSON.stringify([\"agent-mail-presence-display-v1\", operation, planId, planVersion, previewDigest])) as five groups of four separated by hyphens. For open-session, use nonApprovalOperatorSession.challenge.displayCode.",
+      "successResponseFieldsInOrder": [
+        "version",
+        "challengeId",
+        "challengeCommitment",
+        "operatorDisplayCode",
+        "issuedAt",
+        "expiresAt",
+        "credentialId",
+        "algorithm"
+      ],
+      "successResponse": "JSON.stringify({version:'agent-mail-macos-operator-presence-v1',challengeId,challengeCommitment,operatorDisplayCode,issuedAt,expiresAt,credentialId,algorithm:'ES256'}) plus LF",
+      "errorResponse": "JSON.stringify({version:'agent-mail-macos-operator-presence-v1',error:{code,message}}) plus LF; code/message exactly reuse the matching public action.operator_presence_unsupported, action.operator_challenge_capacity, action.operator_assertion_invalid, or action.approval_forbidden entry and expose no path, key, signature, or biometric detail",
+      "limits": {
+        "globalAvailable": 128,
+        "perCredentialAvailable": 4,
+        "perCredentialIssuedPerRollingMinute": 10,
+        "ttlSeconds": 60
+      },
+      "issuanceRules": [
+        "The owner-only RPC validates its 4096-byte envelope and 2048-byte decoded-body caps before JSON parsing, decodes the strict request and final raw body, parses that body with the target operation's strict schema, resolves one active operator credential, and independently reconstructs the exact method/path/body SHA-256/display code.",
+        "Challenge principal/profile/instance/times/nonce come from daemon state, never the RPC request.",
+        "Expired available challenges are durably closed before capacity is counted. Capacity or rate overflow returns a bounded error and creates no challenge.",
+        "Challenge rows are immutable. One challenge is available, consumed, expired, or invalidated and can never return to available."
+      ]
+    },
+    "assertion": {
+      "authorizationHeaderScheme": "AgentMail-Operator",
+      "header": "Authorization: AgentMail-Operator <base64url(assertion JSON UTF-8 bytes)>",
+      "maximumHeaderBytes": 2048,
+      "strictJsonFieldsInOrder": ["version", "challengeId", "credentialId", "signatureBase64url"],
+      "version": "agent-mail-macos-operator-presence-v1",
+      "assertionCommitment": "The exact stored challenge commitment bytes; no client-selected field is appended.",
+      "humanConfirmation": "Before signing, the CLI renders the full plan/preview plus operatorDisplayCode. The fresh LAContext localizedReason is exactly 'Agent Mail <APPROVE|CANCEL> plan <planId> preview <previewDigest> code <operatorDisplayCode>'. The user must compare the plan ID, full preview digest, and code in the CLI and OS prompt; cancellation uses CANCEL and its own independently derived code.",
+      "verificationOrder": [
+        "Before reading the body, bounded admission parses only the <=2048-byte assertion envelope, resolves an available unexpired challenge and active credential, and checks expected method and concrete path. This is provisional admission, not an authenticated principal.",
+        "The HTTP boundary then reads at most the registered operation byte limit, updates SHA-256 incrementally for every raw body byte, and only after EOF parses the already bounded bytes with the strict operation schema.",
+        "The authority service independently reconstructs the exact operation method/path and compares the streamed raw-body digest with both the stored challenge and verified assertion context.",
+        "The daemon verifies the canonical low-S P1363 signature over the exact stored challenge commitment, checks instance/credential/profile/time/revocation, and constructs operator-interactive context only from the credential and challenge rows.",
+        "Challenge consumption and operator-session output ID, approval insertion, or cancellation closure/version update occur in the same BEGIN IMMEDIATE transaction. Signature success without transaction commit grants no authority.",
+        "Any mismatch, malformed signature, expired/revoked record, stale configuration revision, reused ceremony, transaction race, trailing body byte, alternate JSON whitespace, or body reserialization fails closed with no session/approval/cancellation authority."
+      ]
+    },
+    "lifecycle": {
+      "ordinaryRestart": "Available challenges and approvals may survive an ordinary restart only until their original expiry and only with the same authority instance and active unexpired credential/key configuration. Memory-only operator sessions never survive restart.",
+      "revocation": "Revoking or expiring a credential clears its memory-only sessions and atomically invalidates its available challenges and unconsumed approvals with one exact plan-version advance per affected still-pending plan before new admission. Consumed receipts remain audit facts.",
+      "rotation": "At most two active operator credentials may coexist. Enroll and verify the replacement first, mark replacedByCredentialId, then revoke the old credential; outstanding old-key challenges/approvals invalidate on revocation.",
+      "databaseRestore": "Every explicit database restore invalidates every restored available challenge and every restored unconsumed approval before service admission, regardless of whether the old credential, Secure Enclave private key, approval HMAC key, or matching config is still present.",
+      "machineRecovery": "ThisDeviceOnly private keys do not migrate. A replacement Mac requires fresh enrollment and invalidates all restored live authority; there is no key export or recovery bypass."
+    }
+  },
+  "approvalSealKeyring": {
+    "path": "<privateRoot>/secrets/action-approval-seal-keyring.v1.json",
+    "directoryMode": "0700",
+    "fileMode": "0600",
+    "format": {
+      "strictTopLevelFieldsInOrder": [
+        "schemaVersion",
+        "keyringRevision",
+        "updatedAt",
+        "activeKeyId",
+        "keys"
+      ],
+      "schemaVersion": 1,
+      "keyringRevision": "positive safe integer incremented exactly once per successful mutation",
+      "activeKeyId": "approval-seal-key:<UUIDv4 lowercase canonical text> naming exactly one active entry",
+      "keyFieldsInOrder": ["keyId", "status", "keyBase64url", "createdAt", "statusChangedAt"],
+      "keyId": "approval-seal-key:<UUIDv4 lowercase canonical text>",
+      "status": "active|verify-only",
+      "keyBase64url": "exactly 32 cryptographically random bytes encoded canonical base64url without padding",
+      "ordering": "keys sorted ascending by bytewise UTF-8 keyId; exactly one active key; no duplicate IDs or key bytes"
+    },
+    "generation": "On first configured startup with no database and no keyring, generate one 32-byte key with the operating-system CSPRNG and one UUIDv4 key ID. A missing keyring beside an existing database is never regenerated and blocks authority admission.",
+    "writeRule": "Under the exclusive authority configuration locks, write a same-directory mode-0600 temporary file with O_CREAT|O_EXCL and no symlink following, fsync the file, rename atomically, fsync the mode-0700 directory, reload/strictly validate, then complete required database invalidations before releasing admission.",
+    "rotation": "Rotation adds a new CSPRNG key as the only active key and changes the prior active key to verify-only in one atomic file replacement. New approvals use only the new key; existing approvals continue to verify with their referenced verify-only key and remain consumable.",
+    "removal": "Removal is allowed only for a verify-only key. While admission is exclusively locked, atomically remove it from the keyring first, then invalidate every unconsumed approval referencing it and advance each still-pending plan version exactly once in one BEGIN IMMEDIATE transaction. Startup performs the same invalidation if a referenced key is missing. Active-key removal is rejected; rotate first.",
+    "validation": "Every load rejects unknown fields, malformed/canonicality failures, wrong mode/owner/type, symlinks, revision regression, zero/multiple active keys, invalid IDs/status/time, wrong key length, or duplicate IDs/bytes. A seal mismatch or missing referenced key never falls back to another key.",
+    "backupExclusion": "The keyring path is categorically excluded from database backup inputs, backup manifests, restore payloads, diagnostic bundles, logs, errors, and telemetry. Backup verification fails if any keyring path, key ID-to-bytes mapping, key bytes, or operator credential private material is present.",
+    "commands": {
+      "rotate": "agent-mail-operator-broker seal-key rotate --private-root <canonical-absolute-privateRoot>",
+      "remove": "agent-mail-operator-broker seal-key remove --private-root <canonical-absolute-privateRoot> --key-id <verifyOnlyKeyId>"
+    },
+    "authorization": "Both commands require attached TTY, fresh Security.framework deviceOwnerAuthentication with localized reason 'Agent Mail ROTATE approval seal key' or 'Agent Mail REMOVE approval seal key', owner UID, and the exclusive authority configuration locks; no unattended, environment, JSON, or yes bypass exists."
+  },
+  "authorityLinearization": {
+    "lockFile": "<privateRoot>/runtime/action-authority.lock, regular owner-owned mode-0600 file opened without symlink following",
+    "order": [
+      "Acquire advisory flock shared for approve/cancel/consume/session authentication, exclusive for credential/key mutation, recovery, and explicit restore.",
+      "Acquire the matching in-process authority configuration read/write lock.",
+      "Read and strictly validate operator configuration revision, authorityInstanceId, credential record/expiry, seal keyring revision, active/reference keys, and file identity/digests.",
+      "Open SQLite BEGIN IMMEDIATE only after both locks; no code may acquire these resources in another order.",
+      "Immediately before commit, re-read the in-memory revisions and file identity/digests under the same locks; mismatch rolls back and returns no authority/capability.",
+      "For consume, commit the receipt/claim/plan update, construct and return the executor capability, and only then release the read locks. For configuration mutation, atomically replace the outside-DB file first, perform all DB closures/version/state changes, commit, reload memory, and only then release exclusive locks."
+    ],
+    "linearizationRule": "If consume holds the shared locks first, it commits and returns its executor capability before revocation/key removal can linearize. If an exclusive mutation holds first, it makes the outside-DB authority unusable, closes affected database authority, and releases before consume can validate; the later consume rejects. No ordering allows mutation to linearize first and a later consume to return a capability.",
+    "crashRule": "A crash after an outside-DB atomic replacement but before database closure is fail-closed. Startup takes exclusive locks and completes invalidations/version advances/quarantine from the stricter current files before listeners, session resolution, recovery, or challenge RPC start."
+  },
+  "trustedFieldSources": [
+    {
+      "field": "creator principal/credential/profile/authEvent",
+      "source": "authenticated create context: exact A1 non-approval operator session or agent-unattended credential",
+      "callerMaySupply": false
+    },
+    {
+      "field": "operator session principal/credential/profile/scopes/authEvent/times/configuration revision",
+      "source": "active A1 credential record, consumed open-session challenge, daemon clock/configuration, and memory-only token digest record",
+      "callerMaySupply": "only the opaque token is presented; every authority field is server-owned"
+    },
+    {
+      "field": "approver principal/credential/profile/authEvent/userPresence",
+      "source": "authenticated approve context",
+      "callerMaySupply": false
+    },
+    {
+      "field": "authorityInstanceId/challenge commitment/signature digest/operatorDisplayCode/request binding",
+      "source": "daemon configuration, durable challenge, verified A1 signature, strict target body, and streamed raw-body digest",
+      "callerMaySupply": "broker transports exact raw bytes and signature, but the service independently derives and verifies every trusted value"
+    },
+    {
+      "field": "committer principal/credential/profile/authEvent",
+      "source": "authenticated commit context",
+      "callerMaySupply": false
+    },
+    {
+      "field": "executor profile/instance",
+      "source": "daemon internal capability and process incarnation",
+      "callerMaySupply": false
+    },
+    {
+      "field": "planId",
+      "source": "server-created namespaced UUID and stored plan",
+      "callerMaySupply": "echo-only on approve and commit; exact path/body/store match required"
+    },
+    {
+      "field": "planVersion",
+      "source": "stored action_plans.version",
+      "callerMaySupply": "echo-only; exact match required"
+    },
+    {
+      "field": "previewDigest",
+      "source": "server canonicalization of stored plan",
+      "callerMaySupply": "echo-only; exact match and recomputation required"
+    },
+    {
+      "field": "frozen targets and targetDigest",
+      "source": "stored action_plan_targets canonicalized by server",
+      "callerMaySupply": false
+    },
+    {
+      "field": "normalizedIntent",
+      "source": "server canonicalization of stored action kind and target digest",
+      "callerMaySupply": false
+    },
+    { "field": "issuedAt", "source": "daemon clock after validation", "callerMaySupply": false },
+    {
+      "field": "expiresAt",
+      "source": "minimum of plan expiry, credential expiry, and issuedAt plus 600 seconds",
+      "callerMaySupply": false
+    },
+    {
+      "field": "nonce",
+      "source": "cryptographically secure server random 32 bytes",
+      "callerMaySupply": false
+    },
+    {
+      "field": "authorizationScope",
+      "source": "server constant mail:action.commit",
+      "callerMaySupply": false
+    },
+    {
+      "field": "sealKeyId/seal",
+      "source": "daemon secret keyring and HMAC-SHA-256",
+      "callerMaySupply": false
+    },
+    {
+      "field": "operatorConfigurationRevision/sealKeyringRevision/credentialExpiresAt",
+      "source": "strict owner-only operator configuration and seal keyring under authority locks",
+      "callerMaySupply": false
+    },
+    {
+      "field": "approvalId/receiptId/claimId",
+      "source": "server-created namespaced UUIDs",
+      "callerMaySupply": "approvalId is echo-only on commit; others never supplied"
+    },
+    {
+      "field": "consumedAt/cancelledAt/expiredAt/invalidatedAt",
+      "source": "daemon clock inside the closure transaction",
+      "callerMaySupply": false
+    }
+  ],
+  "canonicalization": {
+    "encoding": "UTF-8 JSON arrays with no whitespace; strings are existing strict NFC-safe identifiers; integers are JSON safe integers; timestamps are canonical millisecond UTC strings",
+    "targetOrder": "Sort ascending by bytewise UTF-8 comparison of accountId, then mailboxId, then uidValidity numeric, uid numeric, and precondition.modseq numeric.",
+    "canonicalTargetSet": "JSON.stringify([\"action-target-set-v1\", [[accountId,mailboxId,uidValidity,uid,modseq], ...]])",
+    "targetDigest": "lowercaseHex(SHA-256(canonicalTargetSet UTF-8 bytes))",
+    "normalizedIntent": "JSON.stringify([\"action-intent-v1\", action.kind, targetDigest])",
+    "previewBytes": "JSON.stringify([\"action-preview-v1\", planId, planVersion, action.kind, canonicalTargetSet, normalizedIntent, createdAt, planExpiresAt])",
+    "previewDigest": "lowercaseHex(SHA-256(previewBytes UTF-8 bytes))",
+    "approvalCommitmentNamespace": "action-approval-authority-v1",
+    "approvalCommitmentFieldsInOrder": [
+      "approvalId",
+      "approverPrincipalId",
+      "approverCredentialId",
+      "approverProfile",
+      "approverAuthEventId",
+      "ceremonyId",
+      "userPresenceVerifiedAt",
+      "presenceRequestMethod",
+      "presenceRequestPath",
+      "presenceRequestBodySha256",
+      "authorityInstanceId",
+      "operatorConfigurationRevision",
+      "challengeCommitmentSha256",
+      "assertionSignatureSha256",
+      "operatorDisplayCode",
+      "planId",
+      "planVersion",
+      "previewDigest",
+      "targetDigest",
+      "canonicalTargetSet",
+      "normalizedIntent",
+      "issuedAt",
+      "expiresAt",
+      "nonce",
+      "authorizationScope",
+      "sealKeyId",
+      "sealKeyringRevision",
+      "sealAlgorithm"
+    ],
+    "approvalCommitment": "JSON.stringify([approvalCommitmentNamespace, ...approvalCommitmentFieldsInOrder.map(field => approval[field])])",
+    "seal": "lowercaseHex(HMAC-SHA-256(key identified by sealKeyId, approvalCommitment UTF-8 bytes))",
+    "receiptCommitment": "JSON.stringify([\"action-approval-consumption-v1\", receiptId, approvalId, planId, planVersionBefore, planVersionAfter, claimId, committerPrincipalId, committerCredentialId, committerProfile, committerAuthEventId, consumedAt, approvalCommitmentSha256, executorProfile])"
+  },
+  "approvalArtifact": {
+    "namespace": "action-approval-authority-v1",
+    "identityShape": "approval:<UUIDv4 lowercase canonical text>",
+    "immutableFields": [
+      "approvalId",
+      "approverPrincipalId",
+      "approverCredentialId",
+      "approverProfile",
+      "approverAuthEventId",
+      "ceremonyId",
+      "userPresenceVerifiedAt",
+      "presenceRequestMethod",
+      "presenceRequestPath",
+      "presenceRequestBodySha256",
+      "authorityInstanceId",
+      "operatorConfigurationRevision",
+      "challengeCommitmentSha256",
+      "assertionSignatureSha256",
+      "operatorDisplayCode",
+      "planId",
+      "planVersion",
+      "previewDigest",
+      "targetDigest",
+      "canonicalTargetSet",
+      "normalizedIntent",
+      "issuedAt",
+      "expiresAt",
+      "nonce",
+      "authorizationScope",
+      "sealKeyId",
+      "sealKeyringRevision",
+      "sealAlgorithm",
+      "seal"
+    ],
+    "sealedFieldProjection": "Every immutable field except seal is included exactly once in approvalCommitmentFieldsInOrder; seal is the HMAC output and cannot include itself.",
+    "constants": {
+      "approverProfile": "operator-interactive",
+      "authorizationScope": "mail:action.commit",
+      "sealAlgorithm": "hmac-sha256"
+    },
+    "expiryRule": "expiresAt = min(plan.expiresAt, approver credentialExpiresAt, issuedAt + 600 seconds). If expiresAt <= issuedAt, no approval is issued.",
+    "availabilityRule": "Available means the immutable approval row exists, now < expiresAt, its seal and every recomputed binding match, its approver credential remains recognized and not revoked, and no consumption, expiration, cancellation, or invalidation row exists.",
+    "multiplicity": "At most one approval may be issued for a plan version. A cancelled, expired, or invalidated approval increments the still-pending plan version, forcing a new preview before a replacement approval."
+  },
+  "consumptionReceipt": {
+    "namespace": "action-approval-consumption-v1",
+    "identityShape": "approval-receipt:<UUIDv4 lowercase canonical text>",
+    "immutableFields": [
+      "receiptId",
+      "approvalId",
+      "planId",
+      "planVersionBefore",
+      "planVersionAfter",
+      "claimId",
+      "committerPrincipalId",
+      "committerCredentialId",
+      "committerProfile",
+      "committerAuthEventId",
+      "consumedAt",
+      "approvalCommitmentSha256",
+      "executorProfile",
+      "receiptCommitmentSha256"
+    ],
+    "constants": {
+      "committerProfile": "agent-unattended",
+      "executorProfile": "internal-action-executor"
+    },
+    "oneUseRule": "One approval ID has zero or one consumption receipt. action_approval_consumptions.(plan_id,claim_id) is the sole receipt-to-claim link and a composite foreign key to action_plan_claims; there is no separate link table or nullable evidence field. The receipt insert, claim insert, and pending-to-executing plan version update commit in one BEGIN IMMEDIATE transaction."
+  },
+  "stateMachine": {
+    "challengeStates": ["available", "consumed", "expired", "invalidated"],
+    "approvalStates": ["absent", "available", "consumed", "expired", "cancelled", "invalidated"],
+    "transitions": [
+      {
+        "id": "T-SESSION",
+        "from": "no operator session",
+        "event": "open-session",
+        "guard": "active unexpired operator credential; exact two-scope request; valid signed available A1 open-session challenge; current configuration revision",
+        "to": "memory-only operator session",
+        "atomicEffects": [
+          "consume challenge with operator-session output ID",
+          "after commit install only token digest and exact bounded session facts in daemon memory"
+        ]
+      },
+      {
+        "id": "T-ISSUE",
+        "from": "absent",
+        "event": "approve",
+        "guard": "pending trusted-v1 plan; exact recomputed bindings; operator-interactive scope; valid signed available A1 challenge bound to exact POST/path/raw body; no prior approval for version",
+        "to": "available",
+        "atomicEffects": ["insert challenge consumption", "insert immutable approval"]
+      },
+      {
+        "id": "T-CONSUME",
+        "from": "available",
+        "event": "commit",
+        "guard": "all consume validation succeeds and committer is distinct agent-unattended",
+        "to": "consumed",
+        "planTransition": "pending(version n) -> executing(version n+1)",
+        "atomicEffects": [
+          "insert consumption receipt",
+          "insert action claim",
+          "store the receipt row's composite (plan_id,claim_id) foreign key to the inserted claim",
+          "update plan"
+        ]
+      },
+      {
+        "id": "T-EXPIRE",
+        "from": "available",
+        "event": "clock reaches approval expiry before consume",
+        "guard": "now >= approval.expiresAt",
+        "to": "expired",
+        "planTransition": "pending(version n) -> pending(version n+1) unless plan itself expires",
+        "atomicEffects": [
+          "insert expiration",
+          "advance the still-pending plan exactly once to version n+1 and regenerate preview bindings, or transition the plan to expired when its own expiry has arrived"
+        ]
+      },
+      {
+        "id": "T-CANCEL",
+        "from": "available",
+        "event": "approver cancels with fresh presence",
+        "guard": "same approver principal; operator-interactive; valid signed available A1 challenge bound to exact DELETE/path/raw body; approval unconsumed",
+        "to": "cancelled",
+        "planTransition": "pending(version n) -> pending(version n+1)",
+        "atomicEffects": [
+          "insert challenge consumption",
+          "insert cancellation",
+          "increment plan version"
+        ]
+      },
+      {
+        "id": "T-INVALIDATE",
+        "from": "available",
+        "event": "seal/key/provenance/plan mismatch, credential revocation, configuration invalidation, or explicit database restore",
+        "guard": "approval cannot be safely verified, or restore policy invalidates it regardless of successful verification",
+        "to": "invalidated",
+        "planTransition": "pending(version n) -> pending(version n+1) unless plan is terminal",
+        "atomicEffects": [
+          "insert invalidation",
+          "advance the still-pending plan exactly once to version n+1 and regenerate preview bindings when possible"
+        ]
+      },
+      {
+        "id": "T-RESTORE-QUARANTINE",
+        "from": "consumed approval plus executing plan",
+        "event": "explicit database restore",
+        "guard": "restored snapshot contains a receipt/claim that could otherwise resume a new remote effect",
+        "to": "consumed approval plus restore-quarantined plan",
+        "planTransition": "executing(version n) -> restore-quarantined(version n+1), clearing the active claim pointer but preserving receipt and claim rows",
+        "atomicEffects": [
+          "insert immutable restore-quarantine terminal audit linked to receipt and claim",
+          "set no-new-effect state before any recovery scan"
+        ]
+      },
+      {
+        "id": "T-REPLAY",
+        "from": "consumed",
+        "event": "commit",
+        "guard": "receipt already exists",
+        "to": "consumed",
+        "atomicEffects": [],
+        "publicError": "action.approval_consumed"
+      },
+      {
+        "id": "T-EXECUTE",
+        "from": "consumed",
+        "event": "internal executor starts target",
+        "guard": "durable receipt, matching claim, current #202 dispatch authority, no prior unresolved target attempt",
+        "to": "consumed",
+        "atomicEffects": ["insert attempt authority before adapter permission"]
+      },
+      {
+        "id": "T-TERMINAL",
+        "from": "consumed",
+        "event": "plan completes, partially completes, fails, expires, is rejected, or becomes uncertain",
+        "guard": "existing action result/finalization rules",
+        "to": "consumed",
+        "atomicEffects": ["append terminal attribution linked to receipt and result digest"]
+      }
+    ],
+    "forbiddenTransitions": [
+      "absent -> consumed",
+      "expired|cancelled|invalidated -> available or consumed",
+      "consumed -> available",
+      "available -> consumed without the same transaction creating claim and receipt",
+      "any public state -> executor capability",
+      "partial|uncertain remote result -> reusable approval",
+      "explicitly restored executing plan -> recovery executor or new remote effect"
+    ]
+  },
+  "atomicConsume": {
+    "transaction": "BEGIN IMMEDIATE",
+    "orderedChecks": [
+      "Decode strict commit request and trusted authenticated context before opening the transaction.",
+      "Require agent-unattended profile, exact mail:action.commit scope, current authentication, active credential, and no forbidden scope combination.",
+      "While holding the authority shared file/process locks, read plan, proposal, creator, authority-version, approval, closure rows, current operator configuration revision, credential expiry/status, and referenced sealing-key metadata under the SQLite write lock.",
+      "If a consumption exists, return action.approval_consumed; if another closure exists, return its stable closure error.",
+      "Require plan pending, trusted-v1, exact path/body plan ID, exact plan version, and now before both plan and approval expiry.",
+      "Recompute canonical targets, target digest, normalized intent, preview bytes, preview digest, approval commitment, and seal; compare exact bytes in constant time where secrets or digests are compared.",
+      "Require approver profile operator-interactive, committer profile agent-unattended, distinct principal IDs, distinct credential IDs, active approver provenance, and exact mail:action.commit artifact scope.",
+      "Insert action_plan_claims, insert the consumption receipt whose composite (plan_id,claim_id) foreign key is the sole claim link, and update action_plans pending version n to executing version n+1 with an optimistic WHERE clause.",
+      "Recheck outside-DB revisions/file identities, commit, construct and return the internal executor capability containing plan ID, claim ID, receipt ID, plan version after, and executor profile, then release shared authority locks."
+    ],
+    "failureRule": "Any decode, lookup, scope, profile, provenance, closure, expiry, version, plan, target, intent, digest, seal, or optimistic-update failure rolls back and returns no executor capability and produces zero remote calls.",
+    "concurrencyRule": "SQLite write serialization plus unique approval_id on consumption and the plan version update permits exactly one winner. Every loser observes the committed receipt and returns action.approval_consumed.",
+    "replayRule": "A second commit never repeats execution and never changes the receipt. It returns HTTP 409 action.approval_consumed with only approvalId, planId, receiptId, and consumedAt.",
+    "cancellationRaceRule": "Consume and cancel use BEGIN IMMEDIATE and the same mutually exclusive closure guards. Exactly one closure commits; the loser returns consumed or cancelled and performs no other effect."
+  },
+  "restartAndEffects": [
+    {
+      "case": "restart-before-consume",
+      "rule": "An available sealed approval survives ordinary daemon restart when its key ID is present and all bindings still verify. Expiry is evaluated before any consume."
+    },
+    {
+      "case": "crash-before-consume-transaction-commit",
+      "rule": "Rollback leaves no receipt, claim, or executing plan; the approval remains available if unexpired."
+    },
+    {
+      "case": "crash-after-consume-before-dispatch",
+      "rule": "Receipt, claim, and executing plan are durable. Restart resumes through the matching receipt/claim; it cannot consume again and may start only an undispatched target after #202 fresh-authority checks."
+    },
+    {
+      "case": "crash-after-dispatch-before-result",
+      "rule": "Approval remains consumed. Existing uncertain/read-only reconciliation rules apply; no retry may mint or reuse authority."
+    },
+    {
+      "case": "partial-or-uncertain",
+      "rule": "Every result and terminal attribution remains linked to the original receipt. Partial, failed, expired, rejected, or uncertain outcomes never restore approval availability."
+    },
+    {
+      "case": "ordinary-reopen",
+      "rule": "Creator, approver, committer, executor, attempts, receipt, closure, and terminal result reconstruct byte-identically from durable rows."
+    },
+    {
+      "case": "backup-restore",
+      "rule": "Every explicit database restore, whether on the same host or another host and whether old credential/HMAC keys remain available or not, atomically invalidates every restored available operator challenge and every restored unconsumed approval. It advances each affected pending plan exactly once. Every restored consumed/executing plan becomes terminal restore-quarantined before recovery with its receipt/claim audit preserved, active claim pointer cleared, version advanced once, and zero executor/resume permission. This prevents pre-consume, pre-cancel, and post-consume/pre-dispatch snapshots from resurrecting effects."
+    },
+    {
+      "case": "key-rotation",
+      "rule": "The active key issues approvals; prior keys remain verify-only until every approval they signed is closed or expired. Removing a needed key first invalidates its unconsumed approvals."
+    }
+  ],
+  "storageSchema": {
+    "migrationName": "action-approval-authority-v1",
+    "placement": "After action-result-reconciliation in the dependency-complete action chain; the application registry assigns the next contiguous global schema version.",
+    "tablePolicy": "All 13 tables are SQLite STRICT tables. Every listed column is NOT NULL, every named primary/unique/foreign/check constraint is enforced with foreign_keys=ON, and no authority table uses delete/update cascades. There are no omitted nullable columns; terminal audit rows exist only for receipt-backed executing, terminal, or restore-quarantined plans.",
+    "tables": [
+      {
+        "name": "operator_presence_challenges",
+        "purpose": "Immutable daemon-issued A1 challenge",
+        "primaryKey": ["challenge_id"],
+        "unique": ["challenge_nonce_base64url"],
+        "columns": [
+          "challenge_id TEXT operator-challenge namespace",
+          "authority_instance_id TEXT",
+          "operator_configuration_revision INTEGER positive",
+          "challenge_nonce_base64url TEXT canonical 32-byte base64url",
+          "credential_id TEXT",
+          "principal_id TEXT CHECK principal:local-operator",
+          "profile TEXT CHECK operator-interactive",
+          "operation TEXT CHECK open-session|approve|cancel-approval",
+          "request_method TEXT CHECK POST|DELETE and operation match",
+          "request_path TEXT exact concrete route",
+          "request_body_sha256 TEXT 64 lowercase hex",
+          "operator_display_code TEXT canonical five groups of four lowercase hex",
+          "challenge_commitment TEXT exact JSON array",
+          "issued_at canonical UTC",
+          "expires_at canonical UTC CHECK issued+60s"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "operator_presence_challenge_consumptions",
+        "purpose": "One-use ceremony closure joined atomically to operator session, approval, or cancellation",
+        "primaryKey": ["challenge_id"],
+        "columns": [
+          "challenge_id TEXT FK operator_presence_challenges",
+          "consumed_at canonical UTC",
+          "operation TEXT CHECK open-session|approve|cancel-approval",
+          "authority_output_kind TEXT CHECK operator-session|approval|cancellation",
+          "authority_output_id TEXT namespaced operator-session or approval ID matching kind",
+          "signature_p1363_base64url TEXT canonical 64-byte low-S",
+          "signature_sha256 TEXT 64 lowercase hex"
+        ],
+        "immutability": "no update or delete; operation-specific trigger requires the matching operator-session output ID, approval issue, or cancellation closure in the same transaction"
+      },
+      {
+        "name": "operator_presence_challenge_expirations",
+        "purpose": "Durable challenge expiry closure",
+        "primaryKey": ["challenge_id"],
+        "columns": [
+          "challenge_id TEXT FK operator_presence_challenges",
+          "expired_at canonical UTC"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "operator_presence_challenge_invalidations",
+        "purpose": "Durable fail-closed challenge closure",
+        "primaryKey": ["challenge_id"],
+        "columns": [
+          "challenge_id TEXT FK operator_presence_challenges",
+          "invalidated_at canonical UTC",
+          "reason_code TEXT CHECK credential-revoked|instance-mismatch|database-restore|configuration-change"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "action_plan_authority_versions",
+        "purpose": "Fail-closed migration marker",
+        "primaryKey": ["plan_id"],
+        "columns": [
+          "plan_id TEXT FK action_plans",
+          "authority_version TEXT CHECK trusted-v1|legacy-untrusted",
+          "reason_code TEXT CHECK trusted-create|legacy-pre-authority",
+          "recorded_at canonical UTC"
+        ],
+        "immutability": "insert-only; CHECK exact pairs (trusted-v1,trusted-create) or (legacy-untrusted,legacy-pre-authority)"
+      },
+      {
+        "name": "action_plan_creators",
+        "purpose": "Trusted creator provenance",
+        "primaryKey": ["plan_id"],
+        "columns": [
+          "plan_id TEXT FK action_plans",
+          "principal_id TEXT 1..256 bytes",
+          "credential_id TEXT 1..256 bytes",
+          "profile TEXT CHECK operator-interactive|agent-unattended",
+          "auth_event_id TEXT 1..256 bytes",
+          "created_at canonical UTC"
+        ],
+        "immutability": "insert-only; created_at equals action_plans.created_at"
+      },
+      {
+        "name": "action_approvals",
+        "purpose": "Immutable sealed approval",
+        "primaryKey": ["approval_id"],
+        "unique": ["plan_id+plan_version", "nonce", "ceremony_id"],
+        "columns": [
+          "approval_id TEXT approval namespace",
+          "plan_id TEXT FK action_plans",
+          "plan_version INTEGER positive",
+          "preview_digest TEXT 64 lowercase hex",
+          "target_digest TEXT 64 lowercase hex",
+          "canonical_target_set TEXT JSON array 2..1048576 bytes",
+          "normalized_intent TEXT JSON array",
+          "approver_principal_id TEXT",
+          "approver_credential_id TEXT",
+          "approver_profile TEXT CHECK operator-interactive",
+          "approver_auth_event_id TEXT",
+          "ceremony_id TEXT",
+          "user_presence_verified_at canonical UTC",
+          "presence_request_method TEXT CHECK POST",
+          "presence_request_path TEXT exact concrete approve path",
+          "presence_request_body_sha256 TEXT 64 lowercase hex",
+          "authority_instance_id TEXT",
+          "operator_configuration_revision INTEGER positive",
+          "challenge_commitment_sha256 TEXT 64 lowercase hex",
+          "assertion_signature_sha256 TEXT 64 lowercase hex",
+          "operator_display_code TEXT canonical five groups of four lowercase hex",
+          "issued_at canonical UTC",
+          "expires_at canonical UTC",
+          "nonce TEXT 64 lowercase hex",
+          "authorization_scope TEXT CHECK mail:action.commit",
+          "seal_key_id TEXT",
+          "seal_keyring_revision INTEGER positive",
+          "seal_algorithm TEXT CHECK hmac-sha256",
+          "seal TEXT 64 lowercase hex"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "action_approval_consumptions",
+        "purpose": "One-use receipt and claim attribution",
+        "primaryKey": ["receipt_id"],
+        "unique": ["approval_id", "plan_id+claim_id", "receipt_id+plan_id+claim_id"],
+        "columns": [
+          "receipt_id TEXT approval-receipt namespace",
+          "approval_id TEXT FK action_approvals",
+          "plan_id TEXT",
+          "plan_version_before INTEGER",
+          "plan_version_after INTEGER CHECK before+1",
+          "claim_id TEXT",
+          "committer_principal_id TEXT",
+          "committer_credential_id TEXT",
+          "committer_profile TEXT CHECK agent-unattended",
+          "committer_auth_event_id TEXT",
+          "consumed_at canonical UTC",
+          "approval_commitment_sha256 TEXT 64 lowercase hex",
+          "executor_profile TEXT CHECK internal-action-executor",
+          "receipt_commitment_sha256 TEXT 64 lowercase hex"
+        ],
+        "foreignKeys": [
+          "approval_id -> action_approvals(approval_id)",
+          "(plan_id,claim_id) -> action_plan_claims(plan_id,claim_id); this is the sole receipt-to-claim link"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "action_approval_expirations",
+        "purpose": "Durable expiry closure",
+        "primaryKey": ["approval_id"],
+        "columns": [
+          "approval_id TEXT FK action_approvals",
+          "expired_at canonical UTC",
+          "plan_version_before INTEGER positive",
+          "plan_version_after INTEGER CHECK before+1",
+          "plan_disposition TEXT CHECK pending-advanced|plan-expired"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "action_approval_cancellations",
+        "purpose": "Durable operator cancellation closure",
+        "primaryKey": ["approval_id"],
+        "columns": [
+          "approval_id TEXT FK action_approvals",
+          "cancelled_at canonical UTC",
+          "canceller_principal_id TEXT",
+          "canceller_credential_id TEXT",
+          "canceller_profile TEXT CHECK operator-interactive",
+          "canceller_auth_event_id TEXT",
+          "ceremony_id TEXT UNIQUE",
+          "user_presence_verified_at canonical UTC",
+          "presence_request_method TEXT CHECK DELETE",
+          "presence_request_path TEXT exact concrete cancellation path",
+          "presence_request_body_sha256 TEXT 64 lowercase hex",
+          "authority_instance_id TEXT",
+          "operator_configuration_revision INTEGER positive",
+          "challenge_commitment_sha256 TEXT 64 lowercase hex",
+          "assertion_signature_sha256 TEXT 64 lowercase hex",
+          "operator_display_code TEXT canonical five groups of four lowercase hex",
+          "reason_code TEXT CHECK operator-cancelled",
+          "plan_version_before INTEGER positive",
+          "plan_version_after INTEGER CHECK before+1"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "action_approval_invalidations",
+        "purpose": "Durable fail-closed closure",
+        "primaryKey": ["approval_id"],
+        "columns": [
+          "approval_id TEXT FK action_approvals",
+          "invalidated_at canonical UTC",
+          "reason_code TEXT CHECK seal-mismatch|key-unavailable|credential-revoked|credential-expired|plan-mismatch|legacy-scope-only|configuration-change|database-restore",
+          "plan_version_before INTEGER positive",
+          "plan_version_after INTEGER CHECK before+1"
+        ],
+        "immutability": "no update or delete"
+      },
+      {
+        "name": "action_attempt_authorities",
+        "purpose": "Internal executor attribution per attempt",
+        "primaryKey": ["plan_id", "attempt_id"],
+        "columns": [
+          "plan_id+attempt_id FK action_attempts",
+          "receipt_id TEXT FK action_approval_consumptions",
+          "claim_id TEXT",
+          "executor_profile TEXT CHECK internal-action-executor",
+          "executor_instance_id TEXT 1..256 bytes",
+          "attributed_at canonical UTC"
+        ],
+        "immutability": "no update or delete; must exist before adapter permission"
+      },
+      {
+        "name": "action_plan_terminal_audit",
+        "purpose": "Stable closure attribution",
+        "primaryKey": ["plan_id"],
+        "columns": [
+          "plan_id TEXT FK action_plans",
+          "receipt_id TEXT FK action_approval_consumptions",
+          "claim_id TEXT",
+          "terminal_state TEXT CHECK completed|partial|failed|rejected|expired|uncertain|restore-quarantined",
+          "terminal_at canonical UTC",
+          "executor_disposition TEXT CHECK started|never-started-after-restore|unknown-after-restore",
+          "executor_instance_id TEXT actual namespaced ID when started; exact sentinel executor:not-started when never-started-after-restore; executor:unknown-after-restore otherwise",
+          "reason_code TEXT CHECK normal-finalization|explicit-database-restore",
+          "restore_event_id TEXT restore-event namespace for explicit restore; exact sentinel restore-event:none for normal finalization",
+          "result_digest TEXT 64 lowercase hex"
+        ],
+        "foreignKeys": [
+          "(receipt_id,plan_id,claim_id) -> action_approval_consumptions(receipt_id,plan_id,claim_id); this exact composite key prevents cross-plan or cross-claim terminal attribution"
+        ],
+        "immutability": "no update or delete"
+      }
+    ],
+    "crossTableConstraints": [
+      "Challenge closure triggers permit exactly one consumption, expiration, or invalidation row. A consumed challenge must match operation, method, path, raw-body digest, active unexpired credential, configuration revision, instance, signature, output kind/ID, and operator-session/approval/cancellation output committed in the same transaction.",
+      "A ceremony ID is the challenge ID and is unique across operator-session issue, approval issue, and cancellation; no challenge may authorize two operations or two authority writes.",
+      "Closure insert triggers forbid an approval ID already present in any other consumption, expiration, cancellation, or invalidation table.",
+      "Consumption trigger requires approver and committer IDs/profiles to satisfy the exact separation rule; action_approval_consumptions.(plan_id,claim_id) has the sole composite foreign key to action_plan_claims and must match the plan/version/binding rows. No separate receipt-claim link table exists.",
+      "Approval trigger requires trusted-v1 plan authority, creator provenance, pending plan, exact plan version, and no earlier approval for that plan version.",
+      "Expiration/invalidation/cancellation triggers advance a still-pending matching plan from version n to n+1 exactly once in the same transaction, unless plan expiry transitions it to expired; a closed approval never blocks an approval for the new version.",
+      "Attempt-authority trigger requires its receipt, plan, claim, and existing attempt identity to match. restore-quarantined plans reject attempt authority and recovery selection.",
+      "Terminal audit has an immediate composite foreign key (receipt_id,plan_id,claim_id) to the identically ordered unique consumption parent key; no receipt can attribute a terminal row to another plan or claim.",
+      "Every table has strict type, byte length, canonical timestamp, namespace, enum, foreign-key, and immutable update/delete guards."
+    ],
+    "legacyMigration": [
+      "Insert legacy-untrusted authority-version rows for every pre-migration action plan; do not synthesize creator, approver, committer, presence, seal, or receipt fields.",
+      "New plans atomically insert trusted-v1 with reason trusted-create plus creator provenance. Existing rows receive legacy-untrusted with reason legacy-pre-authority. A missing marker or creator row is legacy-untrusted.",
+      "Legacy pending plans cannot approve or commit and return action.legacy_authority. Legacy executing plans may perform no new undispatched remote effect; already-dispatched attempts may only use existing read-only reconciliation and terminal attribution is marked legacy-untrusted.",
+      "Legacy terminal rows remain inspectable with provenanceStatus legacy-untrusted. They never become evidence for a new claim.",
+      "Drop no legacy rows during migration. Remove scope-only acceptance code in the same deployment; there is no feature flag, compatibility route, dual read, or lazy upgrade."
+    ],
+    "restoreAdmissionTransaction": [
+      "After verified database replacement, take the exclusive authority file/process locks and before any listener, worker, recovery actor, session resolution, or challenge RPC starts, BEGIN IMMEDIATE on the restored database with one restore-event UUID/time.",
+      "Insert database-restore invalidations for every challenge with no consumption, expiry, or invalidation row and every approval with no consumption, expiry, cancellation, or invalidation row. Advance each distinct still-pending affected plan exactly once to version n+1 and regenerate its preview bindings, or expire it when its own expiry has arrived.",
+      "Do this regardless of matching authorityInstanceId, credential status, private-key availability, seal-key availability, or successful signature/seal verification.",
+      "For every restored action_plans row in executing state with a matching receipt/claim, preserve the receipt and claim rows, insert a terminal audit with state restore-quarantined, reason explicit-database-restore, the restore event ID, deterministic result digest SHA-256(JSON.stringify(['action-restore-quarantine-v1',restoreEventId,planId,receiptId,claimId,restoredAt])), and executor disposition derived only from durable attempt rows. Atomically clear the active claim pointer, set restore-quarantined, and advance version n to n+1.",
+      "Commit and assert zero available restored challenges/approvals and zero restored executing recovery candidates; any failure prevents service admission. Recovery queries categorically exclude restore-quarantined.",
+      "This covers backups made before later consume/cancel and backups made after consume but before dispatch whose original timeline later dispatched or completed. Restore can preserve audit and permit inspect only; it starts or resumes zero remote effects even when every old key remains present."
+    ]
+  },
+  "publicContract": {
+    "commonRules": [
+      "All request and response objects are strict.",
+      "Path planId must equal body planId.",
+      "Approve and cancel bodies are transmitted once as exact bounded UTF-8 bytes. The broker challenge and final assertion bind SHA-256 of those raw bytes; the CLI must reuse the identical byte buffer without reserialization.",
+      "No request identity, profile, scope, presence, time, nonce, target digest, normalized intent, or seal fields are accepted.",
+      "Safe public provenance exposes principalId and profile, never credentialId, authEventId, ceremonyId, nonce, key ID, seal, or bearer material."
+    ],
+    "operations": [
+      {
+        "key": "operator-sessions.create",
+        "method": "POST",
+        "route": "/v1/operator-sessions",
+        "cli": "internal broker flow; no agent command",
+        "scope": null,
+        "exposure": "loopback-only authentication route, absent from Tailscale and agent operation registry",
+        "request": "{requestedScopes:['mail:action.create','mail:action.inspect']}",
+        "response": "{sessionId,token,tokenType:'Bearer',scopes:['mail:action.create','mail:action.inspect'],issuedAt,expiresAt}; token is returned once and never logged/persisted"
+      },
+      {
+        "key": "action-plans.create",
+        "method": "POST",
+        "route": "/v1/action-plans",
+        "cli": "action-plans-create",
+        "scope": "mail:action.create",
+        "request": "existing create request with no identity fields",
+        "responseAdditions": [
+          "planVersion",
+          "previewDigest",
+          "targetDigest",
+          "normalizedIntent",
+          "creator:{principalId,profile}",
+          "approvalState:absent"
+        ]
+      },
+      {
+        "key": "action-plans.inspect",
+        "method": "GET",
+        "route": "/v1/action-plans/{planId}",
+        "cli": "action-plans-inspect",
+        "scope": "mail:action.inspect",
+        "request": "{planId}",
+        "responseAdditions": [
+          "planVersion",
+          "previewDigest",
+          "targetDigest",
+          "normalizedIntent",
+          "creator safe provenance",
+          "approval constructive state",
+          "safe approval provenance or closure/receipt",
+          "terminal audit"
+        ]
+      },
+      {
+        "key": "action-plans.approve",
+        "method": "POST",
+        "route": "/v1/action-plans/{planId}/approvals",
+        "cli": "action-plans-approve",
+        "scope": "mail:action.approve",
+        "request": "{planId,planVersion,previewDigest}",
+        "response": "{approval:{state:'available',approvalId,planId,planVersion,previewDigest,targetDigest,normalizedIntent,issuedAt,expiresAt,authorizationScope:'mail:action.commit',approver:{principalId,profile:'operator-interactive'}}}"
+      },
+      {
+        "key": "action-plans.cancel-approval",
+        "method": "DELETE",
+        "route": "/v1/action-plans/{planId}/approvals/{approvalId}",
+        "cli": "action-plans-approval-cancel",
+        "scope": "mail:action.approve",
+        "request": "{planId,approvalId,planVersion,previewDigest}",
+        "response": "{approval:{state:'cancelled',approvalId,planId,cancelledAt},planVersion}"
+      },
+      {
+        "key": "action-plans.commit",
+        "method": "POST",
+        "route": "/v1/action-plans/{planId}/commit",
+        "cli": "action-plans-commit",
+        "scope": "mail:action.commit",
+        "request": "{planId,planVersion,previewDigest,approvalId}",
+        "responseAddition": "consumptionReceipt:{receiptId,approvalId,planId,claimId,consumedAt,committer:{principalId,profile:'agent-unattended'},executorProfile:'internal-action-executor'}"
+      }
+    ],
+    "errors": [
+      {
+        "code": "action.approval_forbidden",
+        "http": 403,
+        "message": "request credentials cannot perform this approval operation",
+        "details": "{}"
+      },
+      {
+        "code": "action.approval_presence_required",
+        "http": 403,
+        "message": "fresh human-present authentication is required",
+        "details": "{}"
+      },
+      {
+        "code": "action.operator_presence_unsupported",
+        "http": 503,
+        "message": "secure operator presence is unavailable",
+        "details": "{}"
+      },
+      {
+        "code": "action.operator_challenge_capacity",
+        "http": 429,
+        "message": "operator challenge capacity is exhausted",
+        "details": "{}"
+      },
+      {
+        "code": "action.operator_challenge_not_found",
+        "http": 404,
+        "message": "operator challenge was not found",
+        "details": "{}"
+      },
+      {
+        "code": "action.operator_challenge_expired",
+        "http": 409,
+        "message": "operator challenge has expired",
+        "details": "{}"
+      },
+      {
+        "code": "action.operator_challenge_consumed",
+        "http": 409,
+        "message": "operator challenge was already consumed",
+        "details": "{}"
+      },
+      {
+        "code": "action.operator_assertion_invalid",
+        "http": 403,
+        "message": "operator presence assertion is invalid",
+        "details": "{}"
+      },
+      {
+        "code": "action.approval_not_found",
+        "http": 404,
+        "message": "action approval was not found",
+        "details": "{planId,approvalId}"
+      },
+      {
+        "code": "action.approval_mismatch",
+        "http": 409,
+        "message": "action approval does not match the frozen plan",
+        "details": "{planId,approvalId}"
+      },
+      {
+        "code": "action.approval_expired",
+        "http": 409,
+        "message": "action approval has expired",
+        "details": "{planId,approvalId,expiredAt}"
+      },
+      {
+        "code": "action.approval_cancelled",
+        "http": 409,
+        "message": "action approval was cancelled",
+        "details": "{planId,approvalId,cancelledAt}"
+      },
+      {
+        "code": "action.approval_invalidated",
+        "http": 409,
+        "message": "action approval is no longer valid",
+        "details": "{planId,approvalId,invalidatedAt}"
+      },
+      {
+        "code": "action.approval_consumed",
+        "http": 409,
+        "message": "action approval was already consumed",
+        "details": "{planId,approvalId,receiptId,consumedAt}"
+      },
+      {
+        "code": "action.plan_version_stale",
+        "http": 409,
+        "message": "action plan version is stale",
+        "details": "{planId,currentVersion}"
+      },
+      {
+        "code": "action.plan_not_pending",
+        "http": 409,
+        "message": "action plan is not pending",
+        "details": "{planId,state}"
+      },
+      {
+        "code": "action.plan_expired",
+        "http": 409,
+        "message": "action plan has expired",
+        "details": "{planId,expiredAt}"
+      },
+      {
+        "code": "action.legacy_authority",
+        "http": 409,
+        "message": "action plan lacks trusted approval authority",
+        "details": "{planId}"
+      }
+    ]
+  },
+  "interactiveCli": {
+    "operatorSessionFlow": [
+      "Before operator create or inspect, reuse an unexpired in-memory A1 non-approval session held by this CLI process; otherwise require attached TTY and request an open-session challenge for the exact fixed create/inspect scope pair.",
+      "Show the exact prompt 'Start a 10-minute operator session for action-plan create and inspect? [y/N]'. Only case-insensitive exact y or yes continues; EOF, non-TTY, timeout, empty/other input, structured mode, --yes/--force, environment, stdin, or saved answers create no challenge or session.",
+      "The fresh OS prompt is exactly 'Agent Mail START 10-minute CREATE and INSPECT session'. After signed challenge verification, receive the one-time session token over loopback response, retain it only in process memory, and send it only as Bearer authentication for create/inspect.",
+      "A session-expired/credential-expired/restarted daemon response causes one new interactive session ceremony, never silent fallback to an agent token or approval assertion. The session cannot invoke approve, cancel, commit, or any executor surface."
+    ],
+    "approveFlow": [
+      "Obtain/reuse the exact A1 non-approval operator session, fetch inspect using its mail:action.inspect scope, and render the exact plan ID, version, action, every frozen target and MODSEQ, preview digest, normalized intent, plan expiry, and the 600-second maximum approval lifetime through the shared human-safe output context.",
+      "Require an attached TTY and prompt exactly: Approve this frozen action plan for one unattended commit within 10 minutes and no later than <planExpiresAt>? [y/N]",
+      "EOF, non-TTY, timeout, empty input, or any value other than a case-insensitive exact y or yes declines locally and sends no approve request.",
+      "After yes, serialize the strict approve body once, retain those exact raw bytes, request the owner-local A1 challenge with their base64url encoding, render the returned operatorDisplayCode, and obtain a fresh zero-reuse Secure Enclave signature whose OS prompt shows the same plan ID, full preview digest, and code.",
+      "Send the retained byte buffer unchanged with the AgentMail-Operator assertion. The authenticator and approval service, not the CLI request schema, supply and verify operator principal/profile/presence.",
+      "No --yes, --force, environment variable, stdin pipe, agent-unattended credential, saved prompt answer, or JSON identity field may bypass the prompt plus authentication ceremony.",
+      "Structured JSON mode may display an approval but cannot mint one; approval creation is human mode only. Commit remains non-interactive and requires agent-unattended authentication plus approvalId."
+    ],
+    "cancelFlow": [
+      "Render the exact available approval, plan ID/version/preview digest, then prompt exactly: Cancel this one-use approval? [y/N]. The same fail-closed TTY and answer rules apply.",
+      "Serialize the strict cancellation body once, request a distinct cancel-approval challenge over exact DELETE/path/raw bytes, display its independently derived code, and require a fresh zero-reuse Secure Enclave signature with CANCEL in the OS reason.",
+      "Reuse of an approve ceremony for cancel, a cancel ceremony for approve, or any changed method/path/raw body rejects before cancellation."
+    ]
+  },
+  "audit": {
+    "chain": [
+      "creator",
+      "operator non-approval session challenge/consumption when used for create or inspect",
+      "authority instance and enrolled operator public credential",
+      "issued challenge and verified assertion",
+      "approver",
+      "committer",
+      "executor attempt",
+      "dispatch",
+      "per-target result",
+      "terminal result"
+    ],
+    "durableJoin": "planId -> creator and authority version -> approval -> challenge plus challenge-consumption signature proof -> one approval closure -> receipt and claim -> attempt authority -> dispatch/result -> terminal audit",
+    "safePublicFields": [
+      "principalId",
+      "profile",
+      "approvalId",
+      "receiptId",
+      "claimId",
+      "issuedAt",
+      "expiresAt",
+      "consumedAt",
+      "terminal state and time"
+    ],
+    "internalOnlyFields": [
+      "credentialId",
+      "authEventId",
+      "ceremonyId",
+      "authorityInstanceId",
+      "challengeCommitment",
+      "assertion signature and digest",
+      "operatorDisplayCode",
+      "nonce",
+      "sealKeyId",
+      "seal",
+      "executorInstanceId"
+    ],
+    "neverStored": [
+      "raw bearer",
+      "private signing key",
+      "HMAC key bytes",
+      "operator biometric or passcode data"
+    ],
+    "reopenRule": "A database reopen reconstructs the same actor IDs, profiles, bindings, closure, receipt, claim, attempts, and terminal result without consulting request logs or client state."
+  },
+  "surfaceClosure": [
+    {
+      "surface": "direct-service",
+      "entry": "ApprovalAuthorityService.openOperatorSession|approve|cancel|consume",
+      "strictBoundary": "Decode unknown request plus trusted authentication/request-binding object; reject extra identity or scope evidence.",
+      "onlyDelegate": "ApprovalAuthorityRepository",
+      "mayConsumeApproval": true,
+      "mayResumeExecution": false
+    },
+    {
+      "surface": "composed-http",
+      "entry": "registered action route plus two-phase HTTP admission",
+      "strictBoundary": "Exact method/path, capped assertion header, bounded streamed raw-body SHA-256, strict JSON, verified context.",
+      "onlyDelegate": "ApprovalAuthorityService",
+      "mayConsumeApproval": true,
+      "mayResumeExecution": false
+    },
+    {
+      "surface": "cli-http",
+      "entry": "action CLI exact byte buffer",
+      "strictBoundary": "CLI can request/sign a challenge and send the identical raw bytes; it has no storage/service import.",
+      "onlyDelegate": "composed-http",
+      "mayConsumeApproval": true,
+      "mayResumeExecution": false
+    },
+    {
+      "surface": "storage-repository",
+      "entry": "ApprovalAuthorityRepository atomic methods",
+      "strictBoundary": "Accepts prepared service authority only; no string scope, public request, caller principal, or transient authorization ID shape.",
+      "onlyDelegate": "SQLite BEGIN IMMEDIATE",
+      "mayConsumeApproval": true,
+      "mayResumeExecution": false
+    },
+    {
+      "surface": "restart-recovery",
+      "entry": "loadResumableActionExecution",
+      "strictBoundary": "Requires ordinary restart, already consumed receipt plus matching claim/executing plan, and #202 fresh dispatch authority; explicit-restore and restore-quarantined rows categorically reject.",
+      "onlyDelegate": "internal-action-executor",
+      "mayConsumeApproval": false,
+      "mayResumeExecution": true
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-SEPARATION",
+      "text": "No credential that can execute unattended mutation can mint the approval it consumes."
+    },
+    {
+      "id": "REQ-PROVENANCE",
+      "text": "Creator, approver, committer, and executor provenance comes only from trusted authentication or internal capability and remains durable."
+    },
+    {
+      "id": "REQ-BINDING",
+      "text": "Approval is sealed over exact plan identity/version, preview, targets, intent, time, nonce, scope, and approver authority."
+    },
+    {
+      "id": "REQ-ONE-USE",
+      "text": "Approval consumption and plan claim are one atomic exactly-once closure under replay and concurrency."
+    },
+    {
+      "id": "REQ-FAIL-CLOSED",
+      "text": "Stale, changed, tampered, expired, cancelled, invalidated, scope-only, or legacy authority produces zero new remote effects."
+    },
+    {
+      "id": "REQ-RESTART",
+      "text": "Restart before or after consumption preserves authority state and existing partial/uncertain effect rules without reuse."
+    },
+    {
+      "id": "REQ-AUDIT",
+      "text": "Audit reopen attributes creator through terminal result without storing or exposing credential secrets."
+    },
+    {
+      "id": "REQ-PUBLIC",
+      "text": "Direct service, HTTP, CLI, storage, executor, and recovery surfaces share one strict authority and stable errors."
+    },
+    {
+      "id": "REQ-MIGRATION",
+      "text": "Every scope-only or ceremony-only representation is retired in one fail-closed migration with no alternate acceptance path."
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D01",
+      "decision": "Adopt user-selected Policy A with a human-present operator approver and a distinct unattended agent committer."
+    },
+    {
+      "id": "D02",
+      "decision": "Separate profiles by construction and additionally compare principal and credential IDs at consume."
+    },
+    {
+      "id": "D03",
+      "decision": "Use user-selected A1: a macOS Secure Enclave P-256 key protected by Security.framework device-owner user presence, daemon challenge, native broker, and daemon public-key verification; a prompt alone is not authority."
+    },
+    {
+      "id": "D04",
+      "decision": "Rename the domain act and public operation from authorize to approve; reserve authorization for generic access control."
+    },
+    {
+      "id": "D05",
+      "decision": "Allow either accepted public profile to create; an operator uses only an A1-minted create/inspect session, and creation never implies approval."
+    },
+    {
+      "id": "D06",
+      "decision": "Use exact canonical arrays, SHA-256 digests, and HMAC-SHA-256 under a separate daemon key to make database tampering detectable."
+    },
+    {
+      "id": "D07",
+      "decision": "Limit approval to 600 seconds and to the earlier plan or credential expiry; reject at now >= expiry."
+    },
+    {
+      "id": "D08",
+      "decision": "Persist immutable approval and constructive closure rows; never reopen a closed approval."
+    },
+    {
+      "id": "D09",
+      "decision": "Consume, receipt, claim, and plan transition are one BEGIN IMMEDIATE transaction."
+    },
+    {
+      "id": "D10",
+      "decision": "Return stable 409 action.approval_consumed on every replay, including response-loss retry; inspect is the recovery path."
+    },
+    {
+      "id": "D11",
+      "decision": "Cancellation requires the same operator principal with fresh presence and races atomically with consume."
+    },
+    {
+      "id": "D12",
+      "decision": "Atomically advance each still-pending plan exactly once after approval expiry, cancellation, credential/key/config invalidation, or restore so replacement approval requires a regenerated preview."
+    },
+    {
+      "id": "D13",
+      "decision": "Keep the executor internal and require receipt-linked attempt attribution before adapter permission."
+    },
+    {
+      "id": "D14",
+      "decision": "Preserve consumed authority across partial and uncertain outcomes; reconciliation cannot reauthorize mutation."
+    },
+    {
+      "id": "D15",
+      "decision": "Distinguish ordinary restart from explicit database restore: restart may retain current authority, but every restore invalidates live unconsumed authority and quarantines every restored consumed/executing plan before recovery even when every old key remains present."
+    },
+    {
+      "id": "D16",
+      "decision": "Fail closed all legacy plans; never manufacture missing provenance or accept scope-only evidence."
+    },
+    {
+      "id": "D17",
+      "decision": "Expose safe principal/profile attribution publicly while keeping credential and seal material internal."
+    },
+    {
+      "id": "D18",
+      "decision": "Use one strict contract and one consume service for direct handler, HTTP, CLI, storage, and recovery composition."
+    },
+    {
+      "id": "D19",
+      "decision": "Bind approve POST and cancellation DELETE independently to exact concrete paths and SHA-256 of the final raw bounded HTTP body bytes; ceremony uniqueness spans both operations."
+    },
+    {
+      "id": "D20",
+      "decision": "Preserve authenticate-before-read admission with two-phase operator authentication: bounded assertion/challenge preflight before streaming, then strict body parse, raw digest comparison, signature verification, and atomic challenge consumption."
+    },
+    {
+      "id": "D21",
+      "decision": "Seal every approval immutable field except the seal output itself exactly once, including user-presence time, exact request binding, key ID, and algorithm, using a machine-checked ordered field projection."
+    },
+    {
+      "id": "D22",
+      "decision": "Mint a memory-only, at-most-600-second A1 operator session with exactly create and inspect scopes; it cannot approve, cancel, commit, or survive restart/configuration change."
+    },
+    {
+      "id": "D23",
+      "decision": "Give every A1 operator credential an exact 365-day lifetime; equality is expired, expiry cannot be extended, and rotation/recovery creates a new lifetime."
+    },
+    {
+      "id": "D24",
+      "decision": "Use the exact owner-only 32-byte approval seal keyring format and lifecycle; rotate active to verify-only, invalidate before removal, and categorically exclude it from backups and diagnostics."
+    },
+    {
+      "id": "D25",
+      "decision": "Linearize approve/cancel/consume/session and outside-DB credential/key changes under one ordered file lock, process RW lock, revision/file recheck, and SQLite transaction protocol."
+    },
+    {
+      "id": "D26",
+      "decision": "On explicit restore, convert every restored receipt-backed executing plan to terminal restore-quarantined before recovery; preserve audit but permit zero new remote effects."
+    },
+    {
+      "id": "D27",
+      "decision": "Freeze deterministic strict storage semantics: closed authority-version reason pairs, all NOT NULL columns, constructive closure versions, and the receipt row's composite claim foreign key as the only link."
+    }
+  ],
+  "rejectedAlternatives": [
+    {
+      "id": "R01",
+      "alternative": "Policy B: operator approval atomically commits",
+      "reason": "The user selected Policy A; B would remove the requested later unattended consume."
+    },
+    {
+      "id": "R02",
+      "alternative": "One bearer with separate approve and commit scopes",
+      "reason": "Scope partition is ceremony-only when one credential can hold both."
+    },
+    {
+      "id": "R03",
+      "alternative": "Same principal with two credentials",
+      "reason": "It does not satisfy the selected distinct unattended agent principal rule."
+    },
+    {
+      "id": "R04",
+      "alternative": "TTY prompt or --yes as human-presence proof",
+      "reason": "The daemon cannot independently verify a client-side ceremony."
+    },
+    {
+      "id": "R05",
+      "alternative": "Caller-supplied principal, profile, presence, issue time, expiry, scope, targets, or intent",
+      "reason": "The acting caller could manufacture trusted authority fields."
+    },
+    {
+      "id": "R06",
+      "alternative": "Unsealed database approval row",
+      "reason": "Database-field tampering would not be independently detectable."
+    },
+    {
+      "id": "R07",
+      "alternative": "Consume first and create the claim or receipt later",
+      "reason": "Crash and concurrency windows could reuse approval or execute without durable attribution."
+    },
+    {
+      "id": "R08",
+      "alternative": "Idempotently return commit success on replay",
+      "reason": "It obscures one-use consumption; inspect supplies recovery without authorizing another execution."
+    },
+    {
+      "id": "R09",
+      "alternative": "Reuse approval after partial, failure, cancellation, or uncertainty",
+      "reason": "Some remote effect may already exist and authority is one-use, not outcome-conditioned."
+    },
+    {
+      "id": "R10",
+      "alternative": "Constructively backfill scope-only legacy rows",
+      "reason": "Creator, approver, presence, binding, and consumption facts do not exist and cannot be inferred."
+    },
+    {
+      "id": "R11",
+      "alternative": "Back up approval HMAC secrets with the database",
+      "reason": "It couples data recovery to secret recovery and makes a stolen backup sufficient to preserve live mutation authority."
+    },
+    {
+      "id": "R12",
+      "alternative": "Public executor token or endpoint",
+      "reason": "It bypasses approval consumption and the existing executor isolation boundary."
+    },
+    {
+      "id": "R13",
+      "alternative": "WebAuthn/FIDO2 A2 authenticator",
+      "reason": "The user selected the macOS-native A1 mechanism; A2 adds RP/origin or CTAP provisioning and different portability/UX policy."
+    },
+    {
+      "id": "R14",
+      "alternative": "Software P-256 key, passphrase, static operator bearer, or prompt-only fallback when Secure Enclave/user presence is unavailable",
+      "reason": "Any fallback would let unattended same-user software obtain or replay approval authority without independently verified device-owner presence."
+    },
+    {
+      "id": "R15",
+      "alternative": "Bind a canonical reserialization instead of the transmitted HTTP body bytes",
+      "reason": "It would leave the authenticated assertion detached from byte-level ingress; A1 binds the exact bounded bytes actually parsed."
+    },
+    {
+      "id": "R16",
+      "alternative": "Require a fresh Secure Enclave presence ceremony for every operator create and inspect request",
+      "reason": "It is secure but adds avoidable friction; the exact short-lived non-approval session preserves separation without repeated prompts."
+    },
+    {
+      "id": "R17",
+      "alternative": "Give the A1 operator session approval or commit scope, or accept it as approval presence",
+      "reason": "A reusable bearer would become ceremony or mutation authority and recreate self-authorization risk."
+    },
+    {
+      "id": "R18",
+      "alternative": "Treat explicit database restore like ordinary restart for consumed executing work",
+      "reason": "A restored pre-dispatch snapshot can replay an effect already dispatched or completed on the original timeline."
+    },
+    {
+      "id": "R19",
+      "alternative": "Update credential/key files and approval rows under independent locks with eventual invalidation",
+      "reason": "Consume could validate stale outside-DB authority after revocation/removal linearized and still return an executor capability."
+    },
+    {
+      "id": "R20",
+      "alternative": "Allow omitted/infinite operator credential expiry or regenerate a missing seal keyring for an existing database",
+      "reason": "Both invent authority that cannot be derived from trusted durable state and therefore must fail closed."
+    }
+  ],
+  "retirements": [
+    {
+      "id": "RET-01",
+      "representation": "mail:action.authorize",
+      "replacement": "mail:action.approve restricted to operator-interactive"
+    },
+    {
+      "id": "RET-02",
+      "representation": "action-plans.authorize",
+      "replacement": "action-plans.approve"
+    },
+    {
+      "id": "RET-03",
+      "representation": "/v1/action-plans/{planId}/authorize",
+      "replacement": "/v1/action-plans/{planId}/approvals"
+    },
+    {
+      "id": "RET-04",
+      "representation": "action-plans-authorize",
+      "replacement": "action-plans-approve"
+    },
+    {
+      "id": "RET-05",
+      "representation": "ActionPlanAuthorizeRequest {planId,digest,intent}",
+      "replacement": "strict approve request {planId,planVersion,previewDigest}; intent is server-derived"
+    },
+    {
+      "id": "RET-06",
+      "representation": "ActionPlanAuthorizeResponse {plan,authorizationId,authorizedAt}",
+      "replacement": "constructive available ApprovalArtifact safe projection"
+    },
+    {
+      "id": "RET-07",
+      "representation": "ActionPlanCommitRequest authorizationId",
+      "replacement": "approvalId plus exact planVersion and previewDigest"
+    },
+    {
+      "id": "RET-08",
+      "representation": "claimPendingActionPlan authorizationEvidence string",
+      "replacement": "trusted authenticated commit context plus durable ApprovalArtifact consume"
+    },
+    {
+      "id": "RET-09",
+      "representation": "claimPendingActionPlan authorizationEvidence {scope}",
+      "replacement": "trusted authenticated commit context plus durable ApprovalArtifact consume"
+    },
+    {
+      "id": "RET-10",
+      "representation": "claimPendingActionPlan authorizationScope",
+      "replacement": "sealed server-owned approval authorizationScope"
+    },
+    {
+      "id": "RET-11",
+      "representation": "action_plan_proposals.authorization_scope as sufficient authority",
+      "replacement": "informational legacy field only; new approval authority is action_approvals"
+    },
+    {
+      "id": "RET-12",
+      "representation": "HttpPrincipal {subject,scopes} as complete action identity",
+      "replacement": "authenticated context with principalId, credentialId, profile, scopes, auth lifetime, auth event, and presence variant"
+    },
+    {
+      "id": "RET-13",
+      "representation": "single secrets/api-token credential policy for all action scopes",
+      "replacement": "non-composable credential-profile registry plus separate approval sealing keyring"
+    },
+    {
+      "id": "RET-14",
+      "representation": "authorizePlan service that can return a transient ID without durable provenance",
+      "replacement": "approve service that atomically persists sealed approval"
+    },
+    {
+      "id": "RET-15",
+      "representation": "commitPlan service/handler that relies on route scope plus authorization ID",
+      "replacement": "one approval consume service shared by direct and composed paths"
+    },
+    {
+      "id": "RET-16",
+      "representation": "restart candidate {plan,version,claim} without receipt authority",
+      "replacement": "restart candidate additionally linked to immutable consumption receipt and attempt authority"
+    }
+  ],
+  "probes": [
+    {
+      "id": "P-SAME-TOKEN",
+      "caseTags": ["same-token-self-approval", "direct", "http", "cli"],
+      "setup": "One credential or context attempts approve and commit.",
+      "expected": "Profile construction or operation authorization rejects; no approval consumption, claim, executor capability, or remote call."
+    },
+    {
+      "id": "P-SPOOFED-PRINCIPAL",
+      "caseTags": ["spoofed-principal", "schema", "http"],
+      "setup": "Caller adds principal/profile/presence fields or copies another principal into JSON.",
+      "expected": "Strict schema rejects 400, or fields never exist in schema; authenticated context remains authoritative."
+    },
+    {
+      "id": "P-CHANGED-BINDING",
+      "caseTags": [
+        "changed-digest",
+        "changed-targets",
+        "changed-intent",
+        "changed-version",
+        "storage"
+      ],
+      "setup": "Change each bound field independently after approval.",
+      "expected": "Consume rolls back with mismatch or stale error and zero remote calls."
+    },
+    {
+      "id": "P-EXPIRED",
+      "caseTags": ["expired-approval"],
+      "setup": "Consume at now equal to or later than approval expiry or plan expiry.",
+      "expected": "Durable expiry closure where applicable, stable 409, no claim or remote call."
+    },
+    {
+      "id": "P-CONCURRENT",
+      "caseTags": ["concurrent-double-consume"],
+      "setup": "Race two distinct agent-unattended commit requests against one approval.",
+      "expected": "One receipt and claim; one executing transition; loser gets action.approval_consumed; at most one executor starts."
+    },
+    {
+      "id": "P-RESTART-BEFORE",
+      "caseTags": ["restart-before-consume", "recovery"],
+      "setup": "Restart after approval commit but before consumption.",
+      "expected": "Approval reopens available only if unexpired and seal key/bindings verify."
+    },
+    {
+      "id": "P-RESTART-AFTER",
+      "caseTags": ["restart-after-consume", "recovery"],
+      "setup": "Crash after consume transaction commits but before first dispatch.",
+      "expected": "Receipt and claim reopen consumed/executing; restart resumes once without a second consume."
+    },
+    {
+      "id": "P-AUDIT-REOPEN",
+      "caseTags": ["audit-reopen", "backup-restore"],
+      "setup": "Complete or make uncertain an action and close/reopen the database.",
+      "expected": "Actor/result chain is byte-identical and consumed receipt stays closed across ordinary reopen."
+    },
+    {
+      "id": "P-PARITY",
+      "caseTags": ["direct", "http", "cli", "storage", "recovery"],
+      "setup": "Exercise distinct strict direct, composed HTTP, CLI-to-HTTP, storage repository, and recovery boundary functions with call tracing.",
+      "expected": "Direct/HTTP/CLI each delegate exactly once to ApprovalAuthorityService; the service alone delegates to the atomic repository; recovery never consumes and only resumes an existing matching receipt+claim; no boundary accepts scope-only or caller identity evidence."
+    },
+    {
+      "id": "P-CANCEL-RACE",
+      "caseTags": ["cancellation", "concurrency"],
+      "setup": "Bind cancellation to exact DELETE/path/raw body and race its independently signed fresh challenge with agent consumption.",
+      "expected": "Method/path/body/ceremony mutations reject; exactly one closure wins; cancellation winner causes zero effects, consumption winner remains consumed and cannot be undone."
+    },
+    {
+      "id": "P-PARTIAL-UNCERTAIN",
+      "caseTags": ["partial", "uncertain", "executor"],
+      "setup": "Crash or fail after one or more target dispatches.",
+      "expected": "Original receipt remains consumed and all attempts/results retain executor attribution; only read-only uncertainty reconciliation may continue."
+    },
+    {
+      "id": "P-LEGACY",
+      "caseTags": ["legacy-scope-only", "migration"],
+      "setup": "Open pending, executing, and terminal rows created before the authority migration.",
+      "expected": "Pending cannot approve/commit; executing starts no undispatched effect; terminal stays inspectable as legacy-untrusted; no row is upgraded by inference."
+    },
+    {
+      "id": "P-PRESENCE-BINDING",
+      "caseTags": [
+        "a1-crypto",
+        "request-method",
+        "request-path",
+        "raw-body-digest",
+        "ceremony-replay"
+      ],
+      "setup": "Generate an A1 P-256 assertion over a stored approve challenge, then independently mutate method, concrete path, one raw body byte/digest, signature, challenge instance, and reuse the ceremony for approve or cancel.",
+      "expected": "Only exact low-S P1363 signature plus method/path/raw-body/instance/current challenge passes; every mutation or cross-operation replay rejects and writes no approval/cancellation."
+    },
+    {
+      "id": "P-RESTORE-ROLLBACK",
+      "caseTags": ["backup-restore", "restore-with-key", "pre-consume-backup", "pre-cancel-backup"],
+      "setup": "Take a backup while approval/challenge is available, later consume or cancel it, then explicitly restore the older backup on the same host with all old credential and HMAC keys still present.",
+      "expected": "Restore admission invalidates every restored available challenge and unconsumed approval before listeners/recovery start; neither the pre-consume nor pre-cancel snapshot can execute or cancel."
+    },
+    {
+      "id": "P-OPERATOR-SESSION",
+      "caseTags": [
+        "operator-session",
+        "create-inspect",
+        "no-session-approval",
+        "credential-expiry"
+      ],
+      "setup": "Mint an A1 non-approval session, exercise create/inspect, then try approve/commit, extra scopes, restart/configuration change, and exact session/credential expiry.",
+      "expected": "Only create/inspect succeed while both expiries are current; session and its bearer can never approve/commit and every invalidation clears it."
+    },
+    {
+      "id": "P-RESTORE-CONSUMED",
+      "caseTags": [
+        "backup-restore",
+        "post-consume-backup",
+        "original-later-dispatch",
+        "restore-quarantine",
+        "terminal-attribution"
+      ],
+      "setup": "Back up after consume but before dispatch, let the original timeline dispatch/complete, then restore the consumed/executing snapshot with every old key.",
+      "expected": "Restore preserves the exact receipt/plan/claim link, restore-event ID/time, derived executor disposition/sentinel, and deterministic quarantine digest; cross-plan/cross-claim terminal attribution rejects; recovery and executor call counts remain zero."
+    },
+    {
+      "id": "P-CLOSURE-REAPPROVAL",
+      "caseTags": ["closure-version", "expiry", "revocation", "key-removal", "restore-reapproval"],
+      "setup": "Close an available approval independently by expiry, credential/config invalidation, seal-key removal, and explicit restore, then inspect and approve the regenerated version.",
+      "expected": "Each closure advances the pending plan exactly once; old artifact remains closed and one new-version approval succeeds with a different preview digest."
+    },
+    {
+      "id": "P-SEAL-KEYRING",
+      "caseTags": [
+        "seal-tamper",
+        "missing-seal-key",
+        "seal-key-rotation",
+        "seal-key-removal",
+        "active-key-removal",
+        "backup-key-exclusion"
+      ],
+      "setup": "Tamper approval/key bytes, omit a referenced key, reject active/missing removal, rotate active to verify-only, remove only verify-only under lock, and inspect database backup contents.",
+      "expected": "Active/missing removal is a mutation-free rejection; tamper/missing referenced key/verify-only removal fails closed; rotation preserves old verification; backup contains no key material."
+    },
+    {
+      "id": "P-CONFIG-RACES",
+      "caseTags": ["revoke-vs-consume", "key-removal-vs-consume", "linearization"],
+      "setup": "Deterministically run both lock orders for credential revocation versus consume and, after active-to-verify-only rotation, referenced seal-key removal versus consume.",
+      "expected": "Consume-first returns capability before mutation linearizes; mutation-first closes/increments before later consume, which returns no capability."
+    },
+    {
+      "id": "P-CHALLENGE-CAPACITY",
+      "caseTags": [
+        "challenge-rate-per-credential",
+        "expired-slot-reclamation",
+        "global-capacity",
+        "per-credential-capacity"
+      ],
+      "setup": "Issue challenges across two operator credentials, exact rolling-minute boundaries, expired rows, per-credential slots, and the 128-row global limit.",
+      "expected": "Rate and four-slot limits are independent per credential, expired rows close before counting, and the global limit counts only available rows."
+    }
+  ],
+  "implementationObligations": [
+    {
+      "id": "O-204-CONTRACTS",
+      "issue": 204,
+      "owners": [
+        "packages/contracts/src/action-operations.ts",
+        "packages/contracts/src/error-envelope.ts",
+        "operation registry/OpenAPI consumers"
+      ],
+      "must": "Implement exact loopback operator-session plus approve/cancel/commit schemas, safe projections including restore-quarantined, 409 transport support, errors, scope rename, and strict identity-field rejection."
+    },
+    {
+      "id": "O-204-AUTH",
+      "issue": 204,
+      "owners": [
+        "packages/daemon/src/http.ts",
+        "packages/daemon/src/config.ts",
+        "credential/profile implementation"
+      ],
+      "must": "Construct exact finite-lifetime A1 credentials, memory-only non-approval sessions, non-composable profiles, request-bound human presence, concrete seal keyring, ordered cross-resource locks/revision rechecks, and fail-closed startup reconciliation."
+    },
+    {
+      "id": "O-204-STORAGE",
+      "issue": 204,
+      "owners": ["packages/storage migrations and approval repositories"],
+      "must": "Add exact strict/NOT-NULL rows, closed reason pairs, composite receipt-claim FK, canonicalization, sealing, constructive closure/version triggers, atomic consume/claim, legacy migration, restore quarantine, reopen, and backup key exclusion/invalidation."
+    },
+    {
+      "id": "O-204-SERVICE",
+      "issue": 204,
+      "owners": ["action services and handlers"],
+      "must": "Use one session/approve/cancel/consume authority service for direct and HTTP composition under the frozen lock protocol; remove every transient or scope-only path."
+    },
+    {
+      "id": "O-204-RECOVERY",
+      "issue": 204,
+      "owners": ["attempt, dispatch, result, finalization, restart recovery"],
+      "must": "Carry receipt and executor attribution through attempts, #202 fresh-authority dispatch, partial/uncertain outcomes, terminal audit, ordinary restart, and explicit-restore quarantine with zero recovery effects."
+    },
+    {
+      "id": "O-CLI",
+      "issue": 158,
+      "owners": ["action CLI implementation"],
+      "must": "Implement the exact memory-only operator-session ceremony plus safe preview/approval prompts and no-bypass rules; consume registry metadata and shared output context."
+    },
+    {
+      "id": "O-LIVE-HARNESS",
+      "issue": 153,
+      "owners": ["disposable live remote-mutation harness"],
+      "must": "Extend the fail-closed disposable harness to provision A1-approved authority plus later distinct-agent consume, retained assertion/receipt evidence, sentinel preservation, and no same-token path without running live by default."
+    },
+    {
+      "id": "O-LIVE-QUALIFICATION",
+      "issue": 181,
+      "owners": ["opt-in disposable live mutation qualification"],
+      "must": "When explicitly authorized, run the #153 harness with A1 approval, distinct-agent consume, restart/uncertainty cases, exact postconditions, attribution reopen, and forbidden-expunge trace."
+    },
+    {
+      "id": "O-SECURITY",
+      "issue": 183,
+      "owners": ["security qualification"],
+      "must": "Rerun same-token, spoofing, tamper, replay, concurrency, expiry, cancellation, key loss, restore, direct reachability, and output-safety abuse cases."
+    },
+    {
+      "id": "O-CLOSURE",
+      "issue": 185,
+      "owners": ["finding closure"],
+      "must": "Verify the exact oracle digest, all retirements, original reproduction, adjacent cases, and bounded repair diff before closing SEC-R02."
+    },
+    {
+      "id": "O-GATE",
+      "issue": 208,
+      "owners": ["security coordination gate"],
+      "must": "Keep action CLI/live/security work blocked until #204 implements this exact digest with no alternate authority."
+    }
+  ],
+  "currentContradictions": [
+    {
+      "id": "C-SCOPE-ONLY",
+      "evidence": "ACTION-CLAIM",
+      "observed": "claimPendingActionPlan accepts authorizationEvidence or authorizationScope and reduces evidence to a scope string.",
+      "requiredRetirements": ["RET-08", "RET-09", "RET-10", "RET-11"]
+    },
+    {
+      "id": "C-TRANSIENT-AUTH",
+      "evidence": "ACTION-CONTRACTS",
+      "observed": "Authorize returns authorizationId and authorizedAt; commit accepts authorizationId without durable principal/profile/presence receipt.",
+      "requiredRetirements": [
+        "RET-01",
+        "RET-02",
+        "RET-03",
+        "RET-04",
+        "RET-05",
+        "RET-06",
+        "RET-07",
+        "RET-14",
+        "RET-15"
+      ]
+    },
+    {
+      "id": "C-PRINCIPAL-SHAPE",
+      "evidence": "HTTP-AUTH",
+      "observed": "HttpPrincipal contains only subject and scopes, so it cannot express credential profile or user presence.",
+      "requiredRetirements": ["RET-12"]
+    },
+    {
+      "id": "C-SINGLE-CREDENTIAL",
+      "evidence": "CREDENTIAL-CONFIG",
+      "observed": "Configuration reads one generic secrets/api-token and has no credential profile or approval seal keyring.",
+      "requiredRetirements": ["RET-13"]
+    },
+    {
+      "id": "C-RESTART-AUTHORITY",
+      "evidence": "DAEMON-RESTART",
+      "observed": "Restart carries plan/version/claim but no approval receipt or executor provenance.",
+      "requiredRetirements": ["RET-16"]
+    }
+  ],
+  "coverage": {
+    "REQ-SEPARATION": {
+      "decisions": ["D01", "D02", "D03", "D04", "D19", "D20", "D22", "D25"],
+      "probes": [
+        "P-SAME-TOKEN",
+        "P-SPOOFED-PRINCIPAL",
+        "P-PRESENCE-BINDING",
+        "P-OPERATOR-SESSION",
+        "P-CONFIG-RACES"
+      ],
+      "obligations": ["O-204-AUTH", "O-204-SERVICE", "O-SECURITY"]
+    },
+    "REQ-PROVENANCE": {
+      "decisions": ["D02", "D03", "D05", "D13", "D17", "D19", "D21", "D23", "D24", "D25", "D27"],
+      "probes": [
+        "P-SPOOFED-PRINCIPAL",
+        "P-PRESENCE-BINDING",
+        "P-AUDIT-REOPEN",
+        "P-PARITY",
+        "P-OPERATOR-SESSION",
+        "P-SEAL-KEYRING",
+        "P-CONFIG-RACES"
+      ],
+      "obligations": ["O-204-AUTH", "O-204-STORAGE", "O-204-RECOVERY"]
+    },
+    "REQ-BINDING": {
+      "decisions": ["D06", "D07", "D19", "D21", "D23", "D24", "D25"],
+      "probes": [
+        "P-CHANGED-BINDING",
+        "P-PRESENCE-BINDING",
+        "P-EXPIRED",
+        "P-SEAL-KEYRING",
+        "P-CONFIG-RACES"
+      ],
+      "obligations": ["O-204-CONTRACTS", "O-204-STORAGE"]
+    },
+    "REQ-ONE-USE": {
+      "decisions": ["D08", "D09", "D10", "D11", "D25", "D27"],
+      "probes": [
+        "P-CONCURRENT",
+        "P-PRESENCE-BINDING",
+        "P-CANCEL-RACE",
+        "P-RESTART-AFTER",
+        "P-CONFIG-RACES",
+        "P-CHALLENGE-CAPACITY"
+      ],
+      "obligations": ["O-204-STORAGE", "O-204-SERVICE"]
+    },
+    "REQ-FAIL-CLOSED": {
+      "decisions": ["D07", "D08", "D11", "D12", "D16", "D23", "D24", "D25", "D26", "D27"],
+      "probes": [
+        "P-CHANGED-BINDING",
+        "P-PRESENCE-BINDING",
+        "P-EXPIRED",
+        "P-CANCEL-RACE",
+        "P-RESTORE-ROLLBACK",
+        "P-LEGACY",
+        "P-RESTORE-CONSUMED",
+        "P-CLOSURE-REAPPROVAL",
+        "P-SEAL-KEYRING",
+        "P-CONFIG-RACES"
+      ],
+      "obligations": ["O-204-STORAGE", "O-204-SERVICE", "O-SECURITY"]
+    },
+    "REQ-RESTART": {
+      "decisions": ["D13", "D14", "D15", "D22", "D24", "D26"],
+      "probes": [
+        "P-RESTART-BEFORE",
+        "P-RESTART-AFTER",
+        "P-PARTIAL-UNCERTAIN",
+        "P-AUDIT-REOPEN",
+        "P-RESTORE-ROLLBACK",
+        "P-RESTORE-CONSUMED",
+        "P-SEAL-KEYRING"
+      ],
+      "obligations": ["O-204-RECOVERY", "O-LIVE-HARNESS", "O-LIVE-QUALIFICATION"]
+    },
+    "REQ-AUDIT": {
+      "decisions": ["D13", "D14", "D15", "D17", "D24", "D26", "D27"],
+      "probes": [
+        "P-AUDIT-REOPEN",
+        "P-PARTIAL-UNCERTAIN",
+        "P-RESTORE-ROLLBACK",
+        "P-RESTORE-CONSUMED",
+        "P-SEAL-KEYRING"
+      ],
+      "obligations": ["O-204-STORAGE", "O-204-RECOVERY", "O-CLOSURE"]
+    },
+    "REQ-PUBLIC": {
+      "decisions": ["D04", "D10", "D17", "D18", "D19", "D20", "D22", "D25"],
+      "probes": [
+        "P-SAME-TOKEN",
+        "P-SPOOFED-PRINCIPAL",
+        "P-PRESENCE-BINDING",
+        "P-PARITY",
+        "P-OPERATOR-SESSION",
+        "P-CONFIG-RACES"
+      ],
+      "obligations": ["O-204-CONTRACTS", "O-204-SERVICE", "O-CLI"]
+    },
+    "REQ-MIGRATION": {
+      "decisions": ["D04", "D16", "D18", "D26", "D27"],
+      "probes": ["P-LEGACY", "P-PARITY", "P-CLOSURE-REAPPROVAL", "P-RESTORE-CONSUMED"],
+      "obligations": [
+        "O-204-CONTRACTS",
+        "O-204-AUTH",
+        "O-204-STORAGE",
+        "O-204-SERVICE",
+        "O-GATE",
+        "O-CLOSURE"
+      ]
+    }
+  },
+  "remainingConsequentialChoices": []
+}
