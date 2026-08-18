@@ -2,7 +2,7 @@
 
 Normative oracle: `action-approval-authority-oracle.v1.json`
 
-Oracle SHA-256: `4042c52dfe8c9377f722cbde465b9d7a3eb0af3b995863d649c8f37754474768`
+Oracle SHA-256: `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`
 
 This is a checked decision and retirement view. The oracle is normative.
 
@@ -38,6 +38,7 @@ This is a checked decision and retirement view. The oracle is normative.
 | `D26` | On explicit restore, make every restored receipt-backed executing plan terminal `restore-quarantined` before recovery.                                 | Audit remains available, but the restored timeline has no path to a new remote effect.                                                                                  |
 | `D27` | Freeze strict reason pairs, constructive closure versions, receipt/claim linkage, and terminal receipt/plan/claim attribution.                         | #204 can implement DDL, triggers, and audit attribution without selecting storage semantics.                                                                            |
 | `D28` | Require a daemon-issued one-use A1 challenge for every seal-key rotation or removal, bound to exact target and expected revision.                      | Same UID and a client prompt are insufficient; only the current Secure Enclave operator key can authorize one mutation.                                                 |
+| `D29` | Separate terminal effect attribution from recovery finalization and commit the complete immutable effect-authority set.                                | Crash-after-result keeps effect executor A; read-only recovery B is a separate finalizer identity and gains no mutation authority.                                      |
 
 ## Rejected alternatives
 
@@ -64,6 +65,7 @@ This is a checked decision and retirement view. The oracle is normative.
 | `R19` | Update credential/key files and approval rows under independent locks     | Consume could validate stale authority after revocation/removal and still return a capability.                                   |
 | `R20` | Omit credential expiry or regenerate a missing keyring                    | Either invents authority not derivable from trusted durable state.                                                               |
 | `R21` | Accept a same-UID bare seal-key discriminant after a client-side prompt   | The daemon cannot verify that ceremony, so unattended same-UID software could cause rotation/removal denial of service.          |
+| `R22` | Relabel recovery finalizer B as terminal effect executor after a crash    | It erases the security-relevant identity that held adapter permission and falsely attributes A's remote effect to B.             |
 
 ## Retirement ledger
 

@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "4042c52dfe8c9377f722cbde465b9d7a3eb0af3b995863d649c8f37754474768";
+const EXPECTED_ORACLE_SHA256 = "8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7";
 const architectureDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(architectureDirectory, "../..");
 const oraclePath = join(architectureDirectory, "action-approval-authority-oracle.v1.json");
@@ -108,10 +108,10 @@ const forbiddenIds = uniqueIds(oracle.structurallyForbidden, "forbidden rules");
 
 for (const [label, actual, expected] of [
   ["requirements", requirementIds.size, 9],
-  ["decisions", decisionIds.size, 28],
-  ["rejected alternatives", rejectedIds.size, 21],
+  ["decisions", decisionIds.size, 29],
+  ["rejected alternatives", rejectedIds.size, 22],
   ["retirements", retirementIds.size, 16],
-  ["probes", probeIds.size, 20],
+  ["probes", probeIds.size, 21],
   ["implementation obligations", obligationIds.size, 11],
   ["current contradictions", contradictionIds.size, 5],
   ["transitions", transitionIds.size, 10],
@@ -187,6 +187,10 @@ const requiredCaseTags = new Set([
   "challenge-rate-per-credential",
   "expired-slot-reclamation",
   "global-capacity",
+  "crash-after-result",
+  "recovery-finalizer",
+  "effect-executor-attribution",
+  "multi-attempt",
 ]);
 const caseTags = new Set(oracle.probes.flatMap(({ caseTags = [] }) => caseTags));
 for (const tag of requiredCaseTags) assert(caseTags.has(tag), `missing required case ${tag}`);
@@ -283,6 +287,9 @@ const challengeConsumptionTable = oracle.storageSchema.tables.find(
 const terminalAuditTable = oracle.storageSchema.tables.find(
   ({ name }) => name === "action_plan_terminal_audit",
 );
+const attemptAuthorityTable = oracle.storageSchema.tables.find(
+  ({ name }) => name === "action_attempt_authorities",
+);
 assert(
   challengeConsumptionTable.columns.some((column) =>
     column.includes("operator-session|approval|cancellation|seal-key-rotation|seal-key-removal"),
@@ -307,6 +314,35 @@ assert(
       "(receipt_id,plan_id,claim_id) -> action_approval_consumptions(receipt_id,plan_id,claim_id); this exact composite key prevents cross-plan or cross-claim terminal attribution",
     ),
   "terminal audit is not tied to the exact receipt/plan/claim consumption",
+);
+assert(
+  attemptAuthorityTable.unique.includes("receipt_id+plan_id+claim_id+attempt_id") &&
+    attemptAuthorityTable.columns.some((column) =>
+      column.startsWith("executor_instance_id TEXT executor:* namespace"),
+    ) &&
+    terminalAuditTable.columns.some((column) => column.startsWith("effect_attempt_count ")) &&
+    terminalAuditTable.columns.some((column) =>
+      column.startsWith("effect_authority_set_digest "),
+    ) &&
+    terminalAuditTable.columns.some((column) => column.includes("executor:multiple")) &&
+    terminalAuditTable.columns.some((column) =>
+      column.startsWith(
+        "finalizer_kind TEXT CHECK effect-executor|ordinary-recovery|restore-admission",
+      ),
+    ) &&
+    terminalAuditTable.columns.some(
+      (column) =>
+        column.includes("executor:* for effect-executor") &&
+        column.includes("recovery-finalizer:* for ordinary-recovery") &&
+        column.includes("finalizer:restore-admission"),
+    ) &&
+    oracle.storageSchema.crossTableConstraints.some((rule) =>
+      rule.includes("action-terminal-effect-authority-set-v1"),
+    ) &&
+    oracle.storageSchema.crossTableConstraints.some(
+      (rule) => rule.includes("recovery-finalizer:*") && rule.includes("never replace"),
+    ),
+  "terminal effect executor/finalizer attribution drifted",
 );
 
 const expectedErrors = new Map([
@@ -584,7 +620,7 @@ const expectedSurfaceDelegates = new Map([
   ["composed-http", "ApprovalAuthorityService"],
   ["cli-http", "composed-http"],
   ["storage-repository", "SQLite BEGIN IMMEDIATE"],
-  ["restart-recovery", "internal-action-executor"],
+  ["restart-recovery", "internal-action-executor|read-only-recovery-finalizer"],
 ]);
 exactSet(
   new Set(oracle.surfaceClosure.map(({ surface }) => surface)),
@@ -598,8 +634,11 @@ for (const surface of oracle.surfaceClosure)
   );
 assert(
   oracle.surfaceClosure.find(({ surface }) => surface === "restart-recovery")
-    ?.mayConsumeApproval === false,
-  "recovery may consume approval",
+    ?.mayConsumeApproval === false &&
+    oracle.surfaceClosure
+      .find(({ surface }) => surface === "restart-recovery")
+      ?.postResultFinalizer.includes("no adapter permission"),
+  "recovery consume/finalizer closure drifted",
 );
 
 const downstreamWorktreeDrift = [];
@@ -798,6 +837,8 @@ function newStore() {
     },
     operatorSessions: new Map(),
     restoreEvents: [],
+    attemptAuthorities: [],
+    durableResults: new Map(),
     remoteCalls: 0,
     audit: [],
   };
@@ -1656,9 +1697,82 @@ function databaseBackup(store) {
   return backup;
 }
 
-function appendTerminalAudit(store, terminal) {
+function recordAttemptResult(
+  store,
+  attemptId,
+  executorInstanceId,
+  resultDigest,
+  attributedAt = "2026-08-18T00:12:00.000Z",
+) {
   const receipt = store.closure?.kind === "consumed" ? store.closure.receipt : null;
   if (
+    receipt === null ||
+    store.plan.state !== "executing" ||
+    store.claim?.receiptId !== receipt.receiptId ||
+    store.claim?.claimId !== receipt.claimId ||
+    !executorInstanceId.startsWith("executor:") ||
+    store.attemptAuthorities.some((row) => row.attemptId === attemptId)
+  )
+    return { kind: "rejected", code: "attempt-authority-mismatch" };
+  const authority = {
+    planId: receipt.planId,
+    attemptId,
+    receiptId: receipt.receiptId,
+    claimId: receipt.claimId,
+    executorProfile: "internal-action-executor",
+    executorInstanceId,
+    attributedAt,
+  };
+  store.attemptAuthorities.push(authority);
+  store.durableResults.set(attemptId, resultDigest);
+  store.audit.push({ actor: "executor-attempt", ...authority, resultDigest });
+  store.remoteCalls += 1;
+  return { kind: "persisted", authority };
+}
+
+function terminalEffectProjection(store, terminal) {
+  const rows = store.attemptAuthorities
+    .filter(
+      (row) =>
+        row.planId === terminal.planId &&
+        row.receiptId === terminal.receiptId &&
+        row.claimId === terminal.claimId,
+    )
+    .toSorted((left, right) =>
+      Buffer.compare(Buffer.from(left.attemptId, "utf8"), Buffer.from(right.attemptId, "utf8")),
+    )
+    .map((row) => [row.attemptId, row.executorProfile, row.executorInstanceId, row.attributedAt]);
+  const bytes = JSON.stringify([
+    "action-terminal-effect-authority-set-v1",
+    terminal.planId,
+    terminal.receiptId,
+    terminal.claimId,
+    rows,
+  ]);
+  return { rows, digest: sha256(bytes) };
+}
+
+function appendTerminalAudit(store, terminal) {
+  const receipt = store.closure?.kind === "consumed" ? store.closure.receipt : null;
+  const expectedKeys = [
+    "actor",
+    "planId",
+    "receiptId",
+    "claimId",
+    "state",
+    "terminalAt",
+    "executorDisposition",
+    "effectAttemptCount",
+    "effectAuthoritySetDigest",
+    "executorInstanceId",
+    "finalizerKind",
+    "finalizerInstanceId",
+    "reasonCode",
+    "restoreEventId",
+    "resultDigest",
+  ];
+  if (
+    !strictKeys(terminal, expectedKeys) ||
     receipt === null ||
     terminal.receiptId !== receipt.receiptId ||
     terminal.planId !== receipt.planId ||
@@ -1668,8 +1782,95 @@ function appendTerminalAudit(store, terminal) {
     store.claim?.receiptId !== terminal.receiptId
   )
     return { kind: "rejected", code: "terminal-attribution-mismatch" };
+  const effect = terminalEffectProjection(store, terminal);
+  const executorIds = new Set(effect.rows.map((row) => row[2]));
+  const hasUnattributedAttemptEvidence = store.audit.some(
+    (entry) =>
+      entry.actor === "executor-attempt" &&
+      entry.planId === terminal.planId &&
+      entry.receiptId === terminal.receiptId &&
+      !store.attemptAuthorities.some((row) => row.attemptId === entry.attemptId),
+  );
+  const expectedDisposition =
+    effect.rows.length > 0
+      ? "started"
+      : hasUnattributedAttemptEvidence
+        ? "unknown-after-restore"
+        : "never-started-after-restore";
+  const expectedExecutorId =
+    expectedDisposition === "never-started-after-restore"
+      ? "executor:not-started"
+      : expectedDisposition === "unknown-after-restore"
+        ? "executor:unknown-after-restore"
+        : executorIds.size === 1
+          ? [...executorIds][0]
+          : "executor:multiple";
+  if (
+    terminal.effectAttemptCount !== effect.rows.length ||
+    !equalHex(terminal.effectAuthoritySetDigest, effect.digest) ||
+    terminal.executorDisposition !== expectedDisposition ||
+    terminal.executorInstanceId !== expectedExecutorId
+  )
+    return { kind: "rejected", code: "terminal-effect-attribution-mismatch" };
+  if (terminal.reasonCode === "normal-finalization") {
+    if (
+      effect.rows.length === 0 ||
+      terminal.restoreEventId !== "restore-event:none" ||
+      effect.rows.some(([attemptId]) => !store.durableResults.has(attemptId)) ||
+      (terminal.finalizerKind === "effect-executor" &&
+        !executorIds.has(terminal.finalizerInstanceId)) ||
+      (terminal.finalizerKind === "ordinary-recovery" &&
+        !terminal.finalizerInstanceId.startsWith("recovery-finalizer:")) ||
+      !["effect-executor", "ordinary-recovery"].includes(terminal.finalizerKind)
+    )
+      return { kind: "rejected", code: "terminal-finalizer-mismatch" };
+  } else if (
+    terminal.reasonCode !== "explicit-database-restore" ||
+    terminal.finalizerKind !== "restore-admission" ||
+    terminal.finalizerInstanceId !== "finalizer:restore-admission" ||
+    !terminal.restoreEventId.startsWith("restore-event:")
+  )
+    return { kind: "rejected", code: "terminal-finalizer-mismatch" };
+  if (store.audit.some((entry) => entry.actor === "terminal"))
+    return { kind: "rejected", code: "terminal-already-exists" };
   store.audit.push(terminal);
+  if (terminal.reasonCode === "normal-finalization") {
+    store.plan.state = terminal.state;
+    store.activeClaimId = null;
+  }
   return { kind: "inserted" };
+}
+
+function normalTerminalAudit(
+  store,
+  state,
+  resultDigest,
+  finalizerKind,
+  finalizerInstanceId,
+  terminalAt = "2026-08-18T00:13:00.000Z",
+) {
+  const identity = {
+    planId: store.plan.planId,
+    receiptId: store.closure.receipt.receiptId,
+    claimId: store.claim.claimId,
+  };
+  const effect = terminalEffectProjection(store, identity);
+  const executorIds = new Set(effect.rows.map((row) => row[2]));
+  return {
+    actor: "terminal",
+    ...identity,
+    state,
+    terminalAt,
+    executorDisposition: "started",
+    effectAttemptCount: effect.rows.length,
+    effectAuthoritySetDigest: effect.digest,
+    executorInstanceId: executorIds.size === 1 ? [...executorIds][0] : "executor:multiple",
+    finalizerKind,
+    finalizerInstanceId,
+    reasonCode: "normal-finalization",
+    restoreEventId: "restore-event:none",
+    resultDigest,
+  };
 }
 
 function explicitDatabaseRestore(
@@ -1701,24 +1902,33 @@ function explicitDatabaseRestore(
     restored.plan.state = "restore-quarantined";
     restored.plan.version += 1;
     restored.activeClaimId = null;
-    const durableAttempt = restored.audit.find(
+    const unattributedDurableAttempt = restored.audit.find(
       (entry) =>
         entry.actor === "executor-attempt" &&
         entry.planId === restored.plan.planId &&
-        entry.receiptId === restored.closure.receipt.receiptId,
+        entry.receiptId === restored.closure.receipt.receiptId &&
+        !restored.attemptAuthorities.some((row) => row.attemptId === entry.attemptId),
     );
+    const effect = terminalEffectProjection(restored, {
+      planId: restored.plan.planId,
+      receiptId: restored.closure.receipt.receiptId,
+      claimId: restored.claim.claimId,
+    });
+    const executorIds = new Set(effect.rows.map((row) => row[2]));
     const executorDisposition =
-      durableAttempt === undefined
-        ? "never-started-after-restore"
-        : typeof durableAttempt.executorInstanceId === "string"
-          ? "started"
+      effect.rows.length > 0
+        ? "started"
+        : unattributedDurableAttempt === undefined
+          ? "never-started-after-restore"
           : "unknown-after-restore";
     const executorInstanceId =
       executorDisposition === "never-started-after-restore"
         ? "executor:not-started"
         : executorDisposition === "unknown-after-restore"
           ? "executor:unknown-after-restore"
-          : durableAttempt.executorInstanceId;
+          : executorIds.size === 1
+            ? [...executorIds][0]
+            : "executor:multiple";
     const terminal = {
       actor: "terminal",
       planId: restored.plan.planId,
@@ -1727,7 +1937,11 @@ function explicitDatabaseRestore(
       state: "restore-quarantined",
       terminalAt: restoredAt,
       executorDisposition,
+      effectAttemptCount: effect.rows.length,
+      effectAuthoritySetDigest: effect.digest,
       executorInstanceId,
+      finalizerKind: "restore-admission",
+      finalizerInstanceId: "finalizer:restore-admission",
       reasonCode: "explicit-database-restore",
       restoreEventId,
       resultDigest: sha256(
@@ -2017,12 +2231,20 @@ probe("P-AUDIT-REOPEN", () => {
   issueApproval(store);
   const request = commitRequest(store);
   consume(store, request);
-  store.audit.push({
-    actor: "executor",
-    profile: "internal-action-executor",
-    attemptId: "attempt:one",
-  });
-  store.audit.push({ actor: "terminal", state: "uncertain", resultDigest: "66".repeat(32) });
+  recordAttemptResult(store, "attempt:one", "executor:aaaaaaaa", "55".repeat(32));
+  assert(
+    appendTerminalAudit(
+      store,
+      normalTerminalAudit(
+        store,
+        "uncertain",
+        "66".repeat(32),
+        "effect-executor",
+        "executor:aaaaaaaa",
+      ),
+    ).kind === "inserted",
+    "terminal audit was not persisted",
+  );
   const reopened = cloneStore(store);
   assert(JSON.stringify(reopened.audit) === JSON.stringify(store.audit), "audit changed on reopen");
   assert(reopened.closure.kind === "consumed", "consumed receipt reopened available");
@@ -2178,8 +2400,21 @@ probe("P-PARTIAL-UNCERTAIN", () => {
     issueApproval(store);
     const request = commitRequest(store);
     consume(store, request);
+    recordAttemptResult(store, "attempt:one", "executor:aaaaaaaa", "55".repeat(32));
     store.plan.state = terminal;
-    store.audit.push({ actor: "terminal", state: terminal });
+    assert(
+      appendTerminalAudit(
+        store,
+        normalTerminalAudit(
+          store,
+          terminal,
+          "66".repeat(32),
+          "effect-executor",
+          "executor:aaaaaaaa",
+        ),
+      ).kind === "inserted",
+      `${terminal} terminal audit failed`,
+    );
     assert(
       consume(store, request).code === "action.approval_consumed",
       `${terminal} reopened approval`,
@@ -2492,7 +2727,11 @@ probe("P-RESTORE-CONSUMED", () => {
       "state",
       "terminalAt",
       "executorDisposition",
+      "effectAttemptCount",
+      "effectAuthoritySetDigest",
       "executorInstanceId",
+      "finalizerKind",
+      "finalizerInstanceId",
       "reasonCode",
       "restoreEventId",
       "resultDigest",
@@ -2502,7 +2741,14 @@ probe("P-RESTORE-CONSUMED", () => {
       terminal.claimId === restored.claim.claimId &&
       terminal.terminalAt === restoreEvent.restoredAt &&
       terminal.executorDisposition === "never-started-after-restore" &&
+      terminal.effectAttemptCount === 0 &&
+      equalHex(
+        terminal.effectAuthoritySetDigest,
+        terminalEffectProjection(restored, terminal).digest,
+      ) &&
       terminal.executorInstanceId === "executor:not-started" &&
+      terminal.finalizerKind === "restore-admission" &&
+      terminal.finalizerInstanceId === "finalizer:restore-admission" &&
       terminal.reasonCode === "explicit-database-restore" &&
       terminal.restoreEventId === restoreEvent.restoreEventId &&
       equalHex(terminal.resultDigest, expectedResultDigest),
@@ -2728,6 +2974,85 @@ probe("P-CONFIG-RACES", () => {
     "later verify-only key removal failed",
   );
   assert(removalAfter.closure.kind === "consumed", "later key removal erased executor capability");
+});
+
+probe("P-RECOVERY-FINALIZER", () => {
+  const original = newStore();
+  issueApproval(original);
+  assert(
+    consume(original, commitRequest(original)).kind === "consumed",
+    "recovery-finalizer setup did not consume",
+  );
+  assert(
+    recordAttemptResult(
+      original,
+      "attempt:00000001",
+      "executor:effect-a",
+      "71".repeat(32),
+      "2026-08-18T00:12:00.000Z",
+    ).kind === "persisted" &&
+      recordAttemptResult(
+        original,
+        "attempt:00000002",
+        "executor:effect-a",
+        "72".repeat(32),
+        "2026-08-18T00:12:30.000Z",
+      ).kind === "persisted",
+    "two durable effect attempts were not attributed to executor A",
+  );
+  const crashed = cloneStore(original);
+  const remoteCallsBeforeRecovery = crashed.remoteCalls;
+  const terminal = normalTerminalAudit(
+    crashed,
+    "completed",
+    sha256(JSON.stringify(["action-result-set-v1", "71".repeat(32), "72".repeat(32)])),
+    "ordinary-recovery",
+    "recovery-finalizer:process-b",
+  );
+  assert(
+    terminal.effectAttemptCount === 2 &&
+      terminal.executorInstanceId === "executor:effect-a" &&
+      terminal.finalizerInstanceId === "recovery-finalizer:process-b",
+    "recovery terminal did not distinguish effect executor A from finalizer B",
+  );
+  assert(
+    appendTerminalAudit(crashed, {
+      ...terminal,
+      executorInstanceId: "recovery-finalizer:process-b",
+    }).code === "terminal-effect-attribution-mismatch",
+    "recovery finalizer B was accepted as effect executor",
+  );
+  assert(
+    appendTerminalAudit(crashed, { ...terminal, effectAttemptCount: 1 }).code ===
+      "terminal-effect-attribution-mismatch" &&
+      appendTerminalAudit(crashed, {
+        ...terminal,
+        effectAuthoritySetDigest: "00".repeat(32),
+      }).code === "terminal-effect-attribution-mismatch",
+    "incomplete or changed effect-authority projection was accepted",
+  );
+  assert(
+    appendTerminalAudit(crashed, terminal).kind === "inserted" &&
+      crashed.remoteCalls === remoteCallsBeforeRecovery &&
+      crashed.plan.state === "completed" &&
+      crashed.activeClaimId === null,
+    "read-only recovery finalization created a new effect or failed terminalization",
+  );
+  assert(
+    recordAttemptResult(
+      crashed,
+      "attempt:00000003",
+      "recovery-finalizer:process-b",
+      "73".repeat(32),
+    ).kind === "rejected" && crashed.remoteCalls === remoteCallsBeforeRecovery,
+    "recovery finalizer gained post-terminal effect authority",
+  );
+  const reopened = cloneStore(crashed);
+  assert(
+    JSON.stringify(reopened.audit) === JSON.stringify(crashed.audit) &&
+      JSON.stringify(reopened.attemptAuthorities) === JSON.stringify(crashed.attemptAuthorities),
+    "effect/finalizer attribution changed on reopen",
+  );
 });
 
 probe("P-CHALLENGE-CAPACITY", () => {

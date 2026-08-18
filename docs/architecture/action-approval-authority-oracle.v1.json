@@ -1302,12 +1302,13 @@
         "name": "action_attempt_authorities",
         "purpose": "Internal executor attribution per attempt",
         "primaryKey": ["plan_id", "attempt_id"],
+        "unique": ["receipt_id+plan_id+claim_id+attempt_id"],
         "columns": [
           "plan_id+attempt_id FK action_attempts",
           "receipt_id TEXT FK action_approval_consumptions",
           "claim_id TEXT",
           "executor_profile TEXT CHECK internal-action-executor",
-          "executor_instance_id TEXT 1..256 bytes",
+          "executor_instance_id TEXT executor:* namespace, 1..256 bytes",
           "attributed_at canonical UTC"
         ],
         "immutability": "no update or delete; must exist before adapter permission"
@@ -1323,7 +1324,11 @@
           "terminal_state TEXT CHECK completed|partial|failed|rejected|expired|uncertain|restore-quarantined",
           "terminal_at canonical UTC",
           "executor_disposition TEXT CHECK started|never-started-after-restore|unknown-after-restore",
-          "executor_instance_id TEXT actual namespaced ID when started; exact sentinel executor:not-started when never-started-after-restore; executor:unknown-after-restore otherwise",
+          "effect_attempt_count INTEGER >=0 and equal to the exact committed effect-authority projection length",
+          "effect_authority_set_digest TEXT 64 lowercase hex; SHA-256 of the exact canonical effect-authority projection",
+          "executor_instance_id TEXT: when started, the one actual namespaced effect executor shared by all projected attempts or exact sentinel executor:multiple when the projection contains multiple distinct effect executors; exact sentinel executor:not-started when never-started-after-restore; executor:unknown-after-restore otherwise",
+          "finalizer_kind TEXT CHECK effect-executor|ordinary-recovery|restore-admission; audit role only and never mutation authority",
+          "finalizer_instance_id TEXT: executor:* for effect-executor; recovery-finalizer:* for ordinary-recovery; exact sentinel finalizer:restore-admission for restore-admission",
           "reason_code TEXT CHECK normal-finalization|explicit-database-restore",
           "restore_event_id TEXT restore-event namespace for explicit restore; exact sentinel restore-event:none for normal finalization",
           "result_digest TEXT 64 lowercase hex"
@@ -1342,6 +1347,8 @@
       "Approval trigger requires trusted-v1 plan authority, creator provenance, pending plan, exact plan version, and no earlier approval for that plan version.",
       "Expiration/invalidation/cancellation triggers advance a still-pending matching plan from version n to n+1 exactly once in the same transaction, unless plan expiry transitions it to expired; a closed approval never blocks an approval for the new version.",
       "Attempt-authority trigger requires its receipt, plan, claim, and existing attempt identity to match. restore-quarantined plans reject attempt authority and recovery selection.",
+      "The terminal effect-authority projection is JSON.stringify(['action-terminal-effect-authority-set-v1',planId,receiptId,claimId,rows]) where rows contains every exact matching action_attempt_authorities row as [attemptId,executorProfile,executorInstanceId,attributedAt], sorted by UTF-8 attemptId bytes. The terminal count and SHA-256 digest must match that projection. Normal finalization requires at least one projected row and durable results for every projected attempt.",
+      "Terminal executor_instance_id is derived only from projected effect-attempt authority: the one actual effect executor when all rows agree, or executor:multiple when they do not. A recovery process that only reconciles/finalizes is recorded separately as finalizer_kind ordinary-recovery plus its recovery-finalizer:* instance ID and can never replace executor_instance_id, create attempt authority, dispatch, or persist a new remote result. Inline finalization uses finalizer_kind effect-executor and a projected executor ID. Restore admission uses its exact finalizer sentinel and preserves the existing executor restore sentinels.",
       "Terminal audit has an immediate composite foreign key (receipt_id,plan_id,claim_id) to the identically ordered unique consumption parent key; no receipt can attribute a terminal row to another plan or claim.",
       "Every table has strict type, byte length, canonical timestamp, namespace, enum, foreign-key, and immutable update/delete guards."
     ],
@@ -1356,7 +1363,7 @@
       "After verified database replacement, take the exclusive authority file/process locks and before any listener, worker, recovery actor, session resolution, or challenge RPC starts, BEGIN IMMEDIATE on the restored database with one restore-event UUID/time.",
       "Insert database-restore invalidations for every challenge with no consumption, expiry, or invalidation row and every approval with no consumption, expiry, cancellation, or invalidation row. Advance each distinct still-pending affected plan exactly once to version n+1 and regenerate its preview bindings, or expire it when its own expiry has arrived.",
       "Do this regardless of matching authorityInstanceId, credential status, private-key availability, seal-key availability, or successful signature/seal verification.",
-      "For every restored action_plans row in executing state with a matching receipt/claim, preserve the receipt and claim rows, insert a terminal audit with state restore-quarantined, reason explicit-database-restore, the restore event ID, deterministic result digest SHA-256(JSON.stringify(['action-restore-quarantine-v1',restoreEventId,planId,receiptId,claimId,restoredAt])), and executor disposition derived only from durable attempt rows. Atomically clear the active claim pointer, set restore-quarantined, and advance version n to n+1.",
+      "For every restored action_plans row in executing state with a matching receipt/claim, preserve the receipt and claim rows, insert a terminal audit with state restore-quarantined, reason explicit-database-restore, the restore event ID, exact finalizer_kind restore-admission and finalizer_instance_id finalizer:restore-admission, deterministic result digest SHA-256(JSON.stringify(['action-restore-quarantine-v1',restoreEventId,planId,receiptId,claimId,restoredAt])), and executor disposition plus effect-authority count/digest derived only from durable attempt rows. Atomically clear the active claim pointer, set restore-quarantined, and advance version n to n+1.",
       "Commit and assert zero available restored challenges/approvals and zero restored executing recovery candidates; any failure prevents service admission. Recovery queries categorically exclude restore-quarantined.",
       "This covers backups made before later consume/cancel and backups made after consume but before dispatch whose original timeline later dispatched or completed. Restore can preserve audit and permit inspect only; it starts or resumes zero remote effects even when every old key remains present."
     ]
@@ -1588,7 +1595,7 @@
       "per-target result",
       "terminal result"
     ],
-    "durableJoin": "planId -> creator and authority version -> approval -> challenge plus challenge-consumption signature proof -> one approval closure -> receipt and claim -> attempt authority -> dispatch/result -> terminal audit",
+    "durableJoin": "planId -> creator and authority version -> approval -> challenge plus challenge-consumption signature proof -> one approval closure -> receipt and claim -> immutable attempt authority -> dispatch/result -> terminal effect-authority count/digest plus effect executor -> separately attributed non-authorizing finalizer",
     "safePublicFields": [
       "principalId",
       "profile",
@@ -1657,10 +1664,11 @@
     {
       "surface": "restart-recovery",
       "entry": "loadResumableActionExecution",
-      "strictBoundary": "Requires ordinary restart, already consumed receipt plus matching claim/executing plan, and #202 fresh dispatch authority; explicit-restore and restore-quarantined rows categorically reject.",
-      "onlyDelegate": "internal-action-executor",
+      "strictBoundary": "Requires ordinary restart and an already consumed receipt plus matching claim/executing plan. Before all results are durable, any effect path still requires #202 fresh dispatch authority. After all results are durable, selection is finalization-only. Explicit-restore and restore-quarantined rows categorically reject.",
+      "onlyDelegate": "internal-action-executor|read-only-recovery-finalizer",
       "mayConsumeApproval": false,
-      "mayResumeExecution": true
+      "mayResumeExecution": true,
+      "postResultFinalizer": "A distinct recovery-finalizer:* process identity may read/reconcile existing results and atomically finalize, but receives no adapter permission, creates no attempt authority/dispatch/result, and is stored separately from the projected effect executor."
     }
   ],
   "requirements": [
@@ -1670,7 +1678,7 @@
     },
     {
       "id": "REQ-PROVENANCE",
-      "text": "Creator, approver, committer, and executor provenance comes only from trusted authentication or internal capability and remains durable."
+      "text": "Creator, approver, committer, effect-executor, and recovery-finalizer provenance comes only from trusted authentication or internal process identity and remains durable without confusing finalization with mutation authority."
     },
     {
       "id": "REQ-BINDING",
@@ -1686,11 +1694,11 @@
     },
     {
       "id": "REQ-RESTART",
-      "text": "Restart before or after consumption preserves authority state and existing partial/uncertain effect rules without reuse."
+      "text": "Restart before or after consumption preserves authority state and existing partial/uncertain effect rules without reuse; recovery after durable results can reconcile/finalize but cannot perform another effect."
     },
     {
       "id": "REQ-AUDIT",
-      "text": "Audit reopen attributes creator through terminal result without storing or exposing credential secrets."
+      "text": "Audit reopen attributes creator through the complete effect-authority set, terminal result, and any distinct recovery finalizer without storing or exposing credential secrets."
     },
     {
       "id": "REQ-PUBLIC",
@@ -1813,6 +1821,10 @@
     {
       "id": "D28",
       "decision": "Authorize seal-key rotation and removal only with a daemon-issued one-use A1 administration challenge signed by the current Secure Enclave operator key and bound to exact operation, internal path, raw body, target, and expected keyring revision; same UID and a client prompt are transport/UX checks only."
+    },
+    {
+      "id": "D29",
+      "decision": "Keep terminal effect attribution and recovery finalization distinct: derive the terminal executor only from the immutable receipt/claim attempt-authority set, commit that complete set by count and digest, and record a read-only recovery finalizer under a separate non-authorizing identity."
     }
   ],
   "rejectedAlternatives": [
@@ -1920,6 +1932,11 @@
       "id": "R21",
       "alternative": "Accept a same-UID bare seal-key rotate/remove discriminant after a client-side TTY or Security.framework prompt",
       "reason": "The daemon cannot verify that ceremony; any same-UID unattended process could rotate or remove verify-only keys and cause authority denial of service."
+    },
+    {
+      "id": "R22",
+      "alternative": "Write the recovery finalizer process into terminal executor_instance_id after crash-after-result",
+      "reason": "It would relabel the actor that reconciled durable evidence as the actor authorized to perform the remote effect, destroying security-relevant executor attribution and hiding the immutable attempt authority."
     }
   ],
   "retirements": [
@@ -2162,6 +2179,18 @@
       ],
       "setup": "Issue challenges across two operator credentials, exact rolling-minute boundaries, expired rows, per-credential slots, and the 128-row global limit.",
       "expected": "Rate and four-slot limits are independent per credential, expired rows close before counting, and the global limit counts only available rows."
+    },
+    {
+      "id": "P-RECOVERY-FINALIZER",
+      "caseTags": [
+        "crash-after-result",
+        "recovery-finalizer",
+        "effect-executor-attribution",
+        "multi-attempt",
+        "audit-reopen"
+      ],
+      "setup": "Persist two receipt-linked attempt authorities and results under effect executor A, crash before terminal finalization, then let distinct recovery process B reconcile and finalize without adapter permission.",
+      "expected": "The terminal row commits both attempt authorities, preserves A as executor, records B only as ordinary-recovery finalizer, rejects B-as-executor and incomplete/cross-claim projections, performs zero new remote effects, and reopens byte-identically."
     }
   ],
   "implementationObligations": [
@@ -2189,7 +2218,7 @@
       "id": "O-204-STORAGE",
       "issue": 204,
       "owners": ["packages/storage migrations and approval repositories"],
-      "must": "Add exact strict/NOT-NULL rows, closed reason pairs, composite receipt-claim FK, canonicalization, sealing, constructive closure/version triggers, atomic consume/claim, legacy migration, restore quarantine, reopen, and backup key exclusion/invalidation."
+      "must": "Add exact strict/NOT-NULL rows, closed reason pairs, composite receipt-claim FK, canonicalization, sealing, constructive closure/version triggers, atomic consume/claim, legacy migration, restore quarantine, reopen, and backup key exclusion/invalidation; terminal storage must enforce the complete effect-authority count/digest projection, derived effect-executor value, and separate finalizer kind/instance constraints."
     },
     {
       "id": "O-204-SERVICE",
@@ -2201,7 +2230,7 @@
       "id": "O-204-RECOVERY",
       "issue": 204,
       "owners": ["attempt, dispatch, result, finalization, restart recovery"],
-      "must": "Carry receipt and executor attribution through attempts, #202 fresh-authority dispatch, partial/uncertain outcomes, terminal audit, ordinary restart, and explicit-restore quarantine with zero recovery effects."
+      "must": "Carry receipt and executor attribution through attempts, #202 fresh-authority dispatch, partial/uncertain outcomes, and ordinary restart; terminal rows must commit the complete effect-authority set, preserve effect executor identity across crash-after-result, record a distinct read-only recovery finalizer without granting it mutation authority, and retain explicit-restore quarantine with zero recovery effects."
     },
     {
       "id": "O-CLI",
@@ -2308,7 +2337,8 @@
         "D24",
         "D25",
         "D27",
-        "D28"
+        "D28",
+        "D29"
       ],
       "probes": [
         "P-SPOOFED-PRINCIPAL",
@@ -2317,7 +2347,8 @@
         "P-PARITY",
         "P-OPERATOR-SESSION",
         "P-SEAL-KEYRING",
-        "P-CONFIG-RACES"
+        "P-CONFIG-RACES",
+        "P-RECOVERY-FINALIZER"
       ],
       "obligations": ["O-204-AUTH", "O-204-STORAGE", "O-204-RECOVERY"]
     },
@@ -2361,7 +2392,7 @@
       "obligations": ["O-204-STORAGE", "O-204-SERVICE", "O-SECURITY"]
     },
     "REQ-RESTART": {
-      "decisions": ["D13", "D14", "D15", "D22", "D24", "D26"],
+      "decisions": ["D13", "D14", "D15", "D22", "D24", "D26", "D29"],
       "probes": [
         "P-RESTART-BEFORE",
         "P-RESTART-AFTER",
@@ -2369,18 +2400,20 @@
         "P-AUDIT-REOPEN",
         "P-RESTORE-ROLLBACK",
         "P-RESTORE-CONSUMED",
-        "P-SEAL-KEYRING"
+        "P-SEAL-KEYRING",
+        "P-RECOVERY-FINALIZER"
       ],
       "obligations": ["O-204-RECOVERY", "O-LIVE-HARNESS", "O-LIVE-QUALIFICATION"]
     },
     "REQ-AUDIT": {
-      "decisions": ["D13", "D14", "D15", "D17", "D24", "D26", "D27"],
+      "decisions": ["D13", "D14", "D15", "D17", "D24", "D26", "D27", "D29"],
       "probes": [
         "P-AUDIT-REOPEN",
         "P-PARTIAL-UNCERTAIN",
         "P-RESTORE-ROLLBACK",
         "P-RESTORE-CONSUMED",
-        "P-SEAL-KEYRING"
+        "P-SEAL-KEYRING",
+        "P-RECOVERY-FINALIZER"
       ],
       "obligations": ["O-204-STORAGE", "O-204-RECOVERY", "O-CLOSURE"]
     },

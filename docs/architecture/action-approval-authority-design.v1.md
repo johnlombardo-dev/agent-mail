@@ -4,7 +4,7 @@ Status: frozen design for issue #203
 
 Normative oracle: `action-approval-authority-oracle.v1.json`
 
-Oracle SHA-256: `4042c52dfe8c9377f722cbde465b9d7a3eb0af3b995863d649c8f37754474768`
+Oracle SHA-256: `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`
 
 The JSON oracle is normative. This document is a checked human view. Policy A is fully determined: a human-present operator approves one exact frozen preview, then a distinct unattended agent principal may consume that approval once and commit. No consequential product choice remains.
 
@@ -17,6 +17,7 @@ The JSON oracle is normative. This document is a checked human view. Policy A is
 | `TERM-APPROVER`  | Approver           | Human-present `operator-interactive` principal that verifies and approves the exact preview.                                                    |
 | `TERM-COMMITTER` | Committer          | Distinct `agent-unattended` principal that atomically consumes the approval and claims the plan.                                                |
 | `TERM-EXECUTOR`  | Executor           | Internal `internal-action-executor` daemon capability. It is not a public principal.                                                            |
+| `TERM-FINALIZER` | RecoveryFinalizer  | Internal read-only recovery process that may reconcile already durable results and close a plan. It receives no executor or mutation authority. |
 | `TERM-APPROVAL`  | ApprovalArtifact   | Immutable HMAC-sealed authority for one plan version, preview, target set, intent, time window, nonce, and commit scope.                        |
 | `TERM-RECEIPT`   | ConsumptionReceipt | Immutable proof that one committer consumed one approval in the same transaction that created the claim.                                        |
 | `TERM-PRESENCE`  | HumanPresence      | Fresh request-bound evidence verified by the authenticator from a non-exportable operator credential. A prompt or static token is not presence. |
@@ -48,6 +49,7 @@ Configuration rejects a credential mapped to more than one profile, either profi
 | Creator, approver, committer principal/credential/profile/auth event | Authenticated request context                                          | Never caller-supplied                     |
 | Operator human presence and ceremony                                 | Authenticator verification                                             | Never caller-supplied                     |
 | Executor profile and instance                                        | Internal daemon capability/process incarnation                         | No public representation                  |
+| Recovery finalizer kind and instance                                 | Internal recovery process incarnation                                  | No public representation or authority     |
 | Plan ID and version                                                  | Stored plan                                                            | Echo-only for stale/path checks           |
 | Preview digest                                                       | Server canonicalization of stored plan                                 | Echo-only; recomputed at consume          |
 | Frozen targets and target digest                                     | Stored targets, server canonicalization                                | Never caller-supplied                     |
@@ -156,23 +158,25 @@ Ordinary restart and explicit restore are distinct. Restart may preserve unexpir
 
 The logical migration is `action-approval-authority-v1`, after action-result-reconciliation in the dependency-complete action chain. Application assembly assigns its next contiguous global schema version. All 13 authority tables are SQLite `STRICT`; every listed column is `NOT NULL`, foreign keys stay enabled, and no authority table has an update/delete cascade. Terminal audit rows exist only for receipt-backed executing or terminal plans.
 
-| Table                                       | Key / uniqueness                                              | Required role                                                                                                                           |
-| ------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `operator_presence_challenges`              | `challenge_id`; unique nonce                                  | Immutable instance/credential/operation/method/path/raw-body/display-code challenge and commitment.                                     |
-| `operator_presence_challenge_consumptions`  | `challenge_id`                                                | One-use signature proof joined to operator session, approval, cancellation, or resulting seal-key revision.                             |
-| `operator_presence_challenge_expirations`   | `challenge_id`                                                | Durable 60-second expiry closure.                                                                                                       |
-| `operator_presence_challenge_invalidations` | `challenge_id`                                                | Durable revocation/instance/configuration/database-restore closure.                                                                     |
-| `action_plan_authority_versions`            | `plan_id`                                                     | Exact pairs `trusted-v1`/`trusted-create` or `legacy-untrusted`/`legacy-pre-authority`, with reason/time.                               |
-| `action_plan_creators`                      | `plan_id`                                                     | Immutable creator principal, credential, profile, auth event, and creation time.                                                        |
-| `action_approvals`                          | `approval_id`; unique plan+version, nonce, ceremony           | Exact immutable artifact fields, canonical targets, A1 instance/challenge/assertion/request provenance, times, scope, key ID, and seal. |
-| `action_approval_consumptions`              | `receipt_id`; unique approval, plan+claim, receipt+plan+claim | Immutable committer provenance and `(plan_id,claim_id)` composite FK, the sole receipt-to-claim link.                                   |
-| `action_approval_expirations`               | `approval_id`                                                 | Durable expiry closure and resulting version.                                                                                           |
-| `action_approval_cancellations`             | `approval_id`                                                 | Durable same-operator cancellation provenance and reason.                                                                               |
-| `action_approval_invalidations`             | `approval_id`                                                 | Durable seal/key/revocation/plan/legacy/restore invalidation reason.                                                                    |
-| `action_attempt_authorities`                | plan+attempt                                                  | Receipt, claim, fixed internal executor profile, instance, and attribution time before adapter permission.                              |
-| `action_plan_terminal_audit`                | `plan_id`; FK receipt+plan+claim to consumption               | Exact receipt/plan/claim attribution, terminal state/time, executor disposition/instance, restore event, and result digest.             |
+| Table                                       | Key / uniqueness                                              | Required role                                                                                                                                                    |
+| ------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operator_presence_challenges`              | `challenge_id`; unique nonce                                  | Immutable instance/credential/operation/method/path/raw-body/display-code challenge and commitment.                                                              |
+| `operator_presence_challenge_consumptions`  | `challenge_id`                                                | One-use signature proof joined to operator session, approval, cancellation, or resulting seal-key revision.                                                      |
+| `operator_presence_challenge_expirations`   | `challenge_id`                                                | Durable 60-second expiry closure.                                                                                                                                |
+| `operator_presence_challenge_invalidations` | `challenge_id`                                                | Durable revocation/instance/configuration/database-restore closure.                                                                                              |
+| `action_plan_authority_versions`            | `plan_id`                                                     | Exact pairs `trusted-v1`/`trusted-create` or `legacy-untrusted`/`legacy-pre-authority`, with reason/time.                                                        |
+| `action_plan_creators`                      | `plan_id`                                                     | Immutable creator principal, credential, profile, auth event, and creation time.                                                                                 |
+| `action_approvals`                          | `approval_id`; unique plan+version, nonce, ceremony           | Exact immutable artifact fields, canonical targets, A1 instance/challenge/assertion/request provenance, times, scope, key ID, and seal.                          |
+| `action_approval_consumptions`              | `receipt_id`; unique approval, plan+claim, receipt+plan+claim | Immutable committer provenance and `(plan_id,claim_id)` composite FK, the sole receipt-to-claim link.                                                            |
+| `action_approval_expirations`               | `approval_id`                                                 | Durable expiry closure and resulting version.                                                                                                                    |
+| `action_approval_cancellations`             | `approval_id`                                                 | Durable same-operator cancellation provenance and reason.                                                                                                        |
+| `action_approval_invalidations`             | `approval_id`                                                 | Durable seal/key/revocation/plan/legacy/restore invalidation reason.                                                                                             |
+| `action_attempt_authorities`                | plan+attempt; unique receipt+plan+claim+attempt               | Receipt, claim, fixed internal executor profile, instance, and attribution time before adapter permission.                                                       |
+| `action_plan_terminal_audit`                | `plan_id`; FK receipt+plan+claim to consumption               | Exact receipt/plan/claim, complete effect-authority count/digest, derived effect executor, separate non-authorizing finalizer, restore event, and result digest. |
 
 Every authority table has strict SQLite type, byte-length, namespace, enum, canonical-time, foreign-key, and update/delete immutability guards. Challenge triggers allow one consumption/expiry/invalidation and require the matching approval/cancellation write in the same transaction. Approval triggers allow one closure. Consumption rechecks actor separation and exact plan/claim/version bindings. Attempt attribution must match its receipt, claim, plan, and attempt.
+
+Terminal finalization never rewrites who performed an effect. It commits `SHA-256(JSON.stringify(["action-terminal-effect-authority-set-v1",planId,receiptId,claimId,rows]))`, where `rows` is every matching immutable attempt-authority row projected as `[attemptId,executorProfile,executorInstanceId,attributedAt]` and sorted by UTF-8 attempt ID. The stored count must equal the row count. One shared effect executor remains the terminal `executor_instance_id`; multiple distinct effect executors use the exact `executor:multiple` sentinel while their complete immutable set remains committed. A crash-after-result recovery process is stored separately as `ordinary-recovery` plus its `recovery-finalizer:*` instance ID. It may reconcile and finalize durable results, but cannot create attempt authority, dispatch, persist a new remote result, or replace the effect executor. Restore admission retains the existing `executor:not-started` and `executor:unknown-after-restore` sentinels and uses `finalizer:restore-admission`.
 
 Migration never invents provenance. Every existing plan gets `legacy-untrusted`; it gets no synthetic creator, approver, presence, seal, or receipt. Legacy pending plans cannot approve or commit. Legacy executing plans start no undispatched effect, although already-dispatched attempts may reconcile read-only. Legacy terminal plans remain inspectable with an explicit untrusted provenance status. The deployment removes scope-only reads at the same time: there is no feature flag, dual-read interval, lazy upgrade, or compatibility route.
 
@@ -201,13 +205,13 @@ Only exact case-insensitive `y` or `yes` proceeds. Non-TTY input, EOF, timeout, 
 
 ## Boundary closure
 
-| Surface            | Only allowed delegation       | Authority consequence                                                                    |
-| ------------------ | ----------------------------- | ---------------------------------------------------------------------------------------- |
-| Direct service     | `ApprovalAuthorityRepository` | Strictly decodes unknown request plus trusted binding; no caller identity/scope evidence |
-| Composed HTTP      | `ApprovalAuthorityService`    | Two-phase assertion admission and bounded raw-body hashing; no repository shortcut       |
-| CLI                | Composed HTTP                 | Retains exact bytes and has no service/storage import                                    |
-| Storage repository | SQLite `BEGIN IMMEDIATE`      | Accepts prepared service authority only; no public/scope-only shapes                     |
-| Restart recovery   | Internal executor             | Requires an existing matching consumed receipt and claim; never consumes an approval     |
+| Surface            | Only allowed delegation                  | Authority consequence                                                                                                                                                                                   |
+| ------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Direct service     | `ApprovalAuthorityRepository`            | Strictly decodes unknown request plus trusted binding; no caller identity/scope evidence                                                                                                                |
+| Composed HTTP      | `ApprovalAuthorityService`               | Two-phase assertion admission and bounded raw-body hashing; no repository shortcut                                                                                                                      |
+| CLI                | Composed HTTP                            | Retains exact bytes and has no service/storage import                                                                                                                                                   |
+| Storage repository | SQLite `BEGIN IMMEDIATE`                 | Accepts prepared service authority only; no public/scope-only shapes                                                                                                                                    |
+| Restart recovery   | Internal executor or read-only finalizer | Requires an existing matching consumed receipt and claim; never consumes an approval. After durable results, the finalizer can only reconcile/close and is audited separately from the effect executor. |
 
 Direct/HTTP/CLI do not merely return the same modeled result: the checker traces distinct boundary functions and proves their only delegate. Storage is the single atomic mutation boundary. Recovery is intentionally asymmetric and cannot manufacture a consume.
 
@@ -217,7 +221,8 @@ The durable chain is:
 
 ```text
 plan -> creator + authority-version -> approval -> instance + challenge + signed challenge consumption -> one closure
-     -> receipt + claim -> attempt authority -> dispatch/result -> terminal audit
+     -> receipt + claim -> attempt authority -> dispatch/result -> terminal effect-authority commitment + executor
+     -> separate non-authorizing recovery finalizer when one closes durable results
 ```
 
 The public safe projection includes principal IDs, profiles, approval/receipt/claim IDs, issue/expiry/consume times, and terminal state/time. Storage may retain opaque credential/auth-event/ceremony/key/executor-instance IDs for audit, but never bearer values, private signing keys, HMAC key bytes, or biometric/passcode data.
