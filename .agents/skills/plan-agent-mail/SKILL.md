@@ -13,7 +13,7 @@ Complement this repository's rigorous plan with Agent Mail-specific conformance 
 2. Confirm the plan still uses prototype evidence selectively: Sol's shared-contract skeleton and Sol-Luna's boundary parsing, per-target durability, and cleanup discipline, without inheriting either implementation wholesale.
 3. Read [references/failure-shields.md](references/failure-shields.md). Check that F01-F30 still have an invariant, planned control, faithful proof, owner, and honest status.
 4. Check the SEC-R05 Daybreak registry for the split F09-P/F09-R rows and distinct authority freshness, independent approval/principal durability, admission-before-allocation (including streaming), output-context safety, trusted intermediary provenance, integrity commitments, and dependency reachability/exception removal controls. Each row must have a demonstrated counterexample, invariant, planned control, faithful proof, owner issue, intervention timing, and honest evidence status.
-5. Check the #208 coordination order: hold dependent action/OpenAPI/human-output/final-security work; close #202, #203, #205, and #206 before dependent implementation; implement #204 only from an accepted #203 digest; then rerun #176, #180, #183, and #185. Preserve unresolved #203 product authority decisions as blockers.
+5. Check the #208 coordination order: hold dependent action/OpenAPI/human-output/final-security work until #202, #203, #204, #205, and #206 close with their original regressions; downstream work may then resume by seam, while #176, #180, #183, and #185 remain release blockers. Treat #203's accepted digest as authority and preserve any later consequential product decision as a blocker.
 6. Run `python3 .agents/skills/plan-agent-mail/scripts/check_plan.py` from the repository root and run the negative expired-undispatched-recovery fixture/probe.
 7. Report missing, weakened, contradicted, or unverified gates. Do not rewrite the plan merely to make the checker pass.
 
@@ -30,7 +30,7 @@ Complement this repository's rigorous plan with Agent Mail-specific conformance 
 - Define operational success as a postcondition: restored archive, absent plist, correct doctor diagnosis, exact Tailscale configuration, or equivalent observable outcome.
 - Keep live mail, launchd, Tailscale, and complete security-lane evidence marked unverified until actually exercised with authorization. Approved Daybreak access enables the complete lane but is not passing evidence.
 - Do not claim release readiness while any required traceability row lacks passing evidence.
-- Treat #203's unresolved approval/principal authority decision as a consequential planning blocker; do not invent policy to satisfy a structural check.
+- Treat #203's accepted approval/principal oracle digest as binding authority; do not widen it or invent a replacement policy to satisfy a structural check.
 
 ## Required output
 
