@@ -7,6 +7,7 @@ import {
   parseAccountId,
   parseMailboxId,
   parseUtcInstant,
+  type RemoteAttempt,
   type RemoteAttemptResult,
   type RemoteAttemptUncertain,
 } from "@agent-mail/core";
@@ -32,6 +33,15 @@ export type ActionAttemptRecoveryResult =
       readonly reason: "missing" | "inactive-claim";
     }>;
 
+export type ActionAttemptDispatchEvidence = Readonly<{
+  readonly attempt: RemoteAttempt;
+  readonly dispatchedAt: string;
+  readonly observationAt: string;
+  readonly observationUidValidity: number;
+  readonly observationUid: number;
+  readonly observationModseq: number;
+}>;
+
 type PreparedDispatch = Readonly<{
   readonly attemptId: string;
   readonly dispatchedAt: string;
@@ -44,6 +54,8 @@ type PreparedDispatch = Readonly<{
 }>;
 
 type DispatchEvidence = Readonly<{
+  readonly accountId: string;
+  readonly mailboxId: string;
   readonly dispatchedAt: string;
   readonly observationAt: string;
   readonly observationUidValidity: number;
@@ -64,7 +76,11 @@ export function markActionPlanAttemptDispatched(
     requireRecoverySchema(database);
     const attempt = readActionPlanAttempt(database, prepared.attemptId);
     if (attempt === undefined) {
-      return commit(database, { kind: "rejected", attemptId: prepared.attemptId, reason: "missing" });
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "missing",
+      });
     }
     if (!isActiveAttempt(database, prepared.attemptId, attempt.claimId)) {
       return commit(database, {
@@ -139,7 +155,11 @@ export function recoverUnresolvedActionPlanAttempt(
     requireRecoverySchema(database);
     const attempt = readActionPlanAttempt(database, prepared.attemptId);
     if (attempt === undefined) {
-      return commit(database, { kind: "rejected", attemptId: prepared.attemptId, reason: "missing" });
+      return commit(database, {
+        kind: "rejected",
+        attemptId: prepared.attemptId,
+        reason: "missing",
+      });
     }
     const existing = readExistingResult(database, prepared.attemptId);
     if (existing !== undefined) {
@@ -218,18 +238,25 @@ function prepareDispatch(value: unknown): PreparedDispatch {
   exactKeys(input, ["attemptId", "dispatchedAt", "observation"]);
   const observation = record(input.observation, "dispatch observation");
   exactKeys(observation, ["kind", "target", "observed"]);
-  if (observation.kind !== "satisfied") throw new TypeError("dispatch observation must be satisfied");
+  if (observation.kind !== "satisfied")
+    throw new TypeError("dispatch observation must be satisfied");
   const observed = record(observation.observed, "dispatch observed target");
   exactKeys(observed, ["uidValidity", "uid", "modseq"]);
   const observedTarget = record(observation.target, "dispatch observation target");
   exactKeys(observedTarget, ["accountId", "mailboxId", "uidValidity", "uid", "precondition"]);
-  const observedPrecondition = record(observedTarget.precondition, "dispatch observation precondition");
+  const observedPrecondition = record(
+    observedTarget.precondition,
+    "dispatch observation precondition",
+  );
   exactKeys(observedPrecondition, ["modseq"]);
   const observationAccountId = parseAccountId(observedTarget.accountId);
   const observationMailboxId = parseMailboxId(observedTarget.mailboxId);
   const observationUidValidity = createUidValidity(observedTarget.uidValidity);
   const observationUid = createRemoteUidValue(observedTarget.uid);
-  const observationModseq = parseNonNegativeInteger(observedPrecondition.modseq, "dispatch target MODSEQ");
+  const observationModseq = parseNonNegativeInteger(
+    observedPrecondition.modseq,
+    "dispatch target MODSEQ",
+  );
   if (
     createUidValidity(observed.uidValidity) !== observationUidValidity ||
     createRemoteUidValue(observed.uid) !== observationUid ||
@@ -250,22 +277,61 @@ function prepareDispatch(value: unknown): PreparedDispatch {
   };
 }
 
-function prepareRecovery(value: unknown): Readonly<{ readonly attemptId: string; readonly recoveredAt: string }> {
+function prepareRecovery(
+  value: unknown,
+): Readonly<{ readonly attemptId: string; readonly recoveredAt: string }> {
   const input = record(value, "action attempt recovery input");
   exactKeys(input, ["attemptId", "recoveredAt"]);
-  return { attemptId: parseAttemptId(input.attemptId), recoveredAt: parseUtcInstant(input.recoveredAt) };
+  return {
+    attemptId: parseAttemptId(input.attemptId),
+    recoveredAt: parseUtcInstant(input.recoveredAt),
+  };
 }
+
+/** Reopen one exact dispatch-crossed attempt without requesting any effect. */
+export function readActionAttemptDispatchEvidence(
+  database: Database,
+  attemptId: unknown,
+): ActionAttemptDispatchEvidence | undefined {
+  const id = parseAttemptId(attemptId);
+  requireRecoverySchema(database);
+  const executorInput = readActionPlanAttempt(database, id);
+  if (executorInput === undefined) return undefined;
+  const dispatch = readDispatchEvidence(database, id);
+  if (dispatch === undefined) return undefined;
+  if (
+    dispatch.accountId !== executorInput.attempt.target.accountId ||
+    dispatch.mailboxId !== executorInput.attempt.target.mailboxId ||
+    dispatch.observationUidValidity !== executorInput.attempt.target.uidValidity ||
+    dispatch.observationUid !== executorInput.attempt.target.uid ||
+    dispatch.observationModseq !== executorInput.attempt.target.precondition.modseq
+  ) {
+    throw new TypeError("dispatch evidence identity does not match the durable attempt");
+  }
+  return {
+    attempt: executorInput.attempt,
+    dispatchedAt: dispatch.dispatchedAt,
+    observationAt: dispatch.observationAt,
+    observationUidValidity: dispatch.observationUidValidity,
+    observationUid: dispatch.observationUid,
+    observationModseq: dispatch.observationModseq,
+  };
+}
+
+export const readUncertainActionAttempt = readActionAttemptDispatchEvidence;
 
 function readDispatchEvidence(database: Database, attemptId: string): DispatchEvidence | undefined {
   const value: unknown = database
     .query(
-      "SELECT dispatched_at, observation_at, observation_uid_validity, observation_uid, observation_modseq " +
+      "SELECT account_id, mailbox_id, dispatched_at, observation_at, observation_uid_validity, observation_uid, observation_modseq " +
         "FROM action_attempt_dispatches WHERE attempt_id = ?;",
     )
     .get(attemptId);
   if (value === null) return undefined;
   const row = record(value, "dispatch evidence row");
   return {
+    accountId: parseAccountId(row.account_id),
+    mailboxId: parseMailboxId(row.mailbox_id),
     dispatchedAt: parseUtcInstant(row.dispatched_at),
     observationAt: parseUtcInstant(row.observation_at),
     observationUidValidity: createUidValidity(row.observation_uid_validity),
@@ -274,36 +340,51 @@ function readDispatchEvidence(database: Database, attemptId: string): DispatchEv
   };
 }
 
-function readExistingResult(database: Database, attemptId: string): RemoteAttemptResult | undefined {
-  const row = database.query("SELECT 1 AS present FROM action_results WHERE attempt_id = ?;").get(attemptId);
+function readExistingResult(
+  database: Database,
+  attemptId: string,
+): RemoteAttemptResult | undefined {
+  const row = database
+    .query("SELECT 1 AS present FROM action_results WHERE attempt_id = ?;")
+    .get(attemptId);
   return row === null ? undefined : readActionPlanResult(database, attemptId);
 }
 
 function readTargetOrdinal(database: Database, attemptId: string): number {
   const row = record(
-    database.query("SELECT target_ordinal FROM action_attempts WHERE attempt_id = ?;").get(attemptId),
+    database
+      .query("SELECT target_ordinal FROM action_attempts WHERE attempt_id = ?;")
+      .get(attemptId),
     "action attempt row",
   );
-  if (typeof row.target_ordinal !== "number" || !Number.isSafeInteger(row.target_ordinal) || row.target_ordinal < 1) {
+  if (
+    typeof row.target_ordinal !== "number" ||
+    !Number.isSafeInteger(row.target_ordinal) ||
+    row.target_ordinal < 1
+  ) {
     throw new TypeError("action attempt target ordinal is invalid");
   }
   return row.target_ordinal;
 }
 
 function isActiveAttempt(database: Database, attemptId: string, claimId: string): boolean {
-  return database
-    .query(
-      "SELECT 1 AS active FROM action_attempts AS attempt " +
-        "JOIN action_plans AS plan ON plan.plan_id = attempt.plan_id " +
-        "JOIN action_plan_claims AS claim ON claim.plan_id = plan.plan_id AND claim.claim_id = attempt.claim_id " +
-        "WHERE attempt.attempt_id = ? AND attempt.claim_id = ? AND attempt.certainty = 'unresolved' " +
-        "AND plan.state = 'executing' AND plan.claim_id = attempt.claim_id AND plan.started_at = claim.claimed_at;",
-    )
-    .get(attemptId, claimId) !== null;
+  return (
+    database
+      .query(
+        "SELECT 1 AS active FROM action_attempts AS attempt " +
+          "JOIN action_plans AS plan ON plan.plan_id = attempt.plan_id " +
+          "JOIN action_plan_claims AS claim ON claim.plan_id = plan.plan_id AND claim.claim_id = attempt.claim_id " +
+          "WHERE attempt.attempt_id = ? AND attempt.claim_id = ? AND attempt.certainty = 'unresolved' " +
+          "AND plan.state = 'executing' AND plan.claim_id = attempt.claim_id AND plan.started_at = claim.claimed_at;",
+      )
+      .get(attemptId, claimId) !== null
+  );
 }
 
 function sameDispatch(left: DispatchEvidence, right: PreparedDispatch): boolean {
   return (
+    left.accountId === right.observationAccountId &&
+    left.mailboxId === right.observationMailboxId &&
     left.dispatchedAt === right.dispatchedAt &&
     left.observationAt === right.observationAt &&
     left.observationUidValidity === right.observationUidValidity &&
@@ -329,7 +410,9 @@ function dispatchDetail(
 
 function requireRecoverySchema(database: Database): void {
   const tables = ["action_attempt_dispatches", "action_results"].map((name) =>
-    database.query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?;").get(name),
+    database
+      .query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = ?;")
+      .get(name),
   );
   if (tables.some((table) => table === null)) {
     throw new Error("action attempt dispatch migration is required before recovery use");
@@ -369,7 +452,10 @@ function parseNonNegativeInteger(value: unknown, label: string): number {
 function exactKeys(value: Readonly<Record<string, unknown>>, keys: readonly string[]): void {
   const allowed = new Set(keys);
   const ownKeys = Reflect.ownKeys(value);
-  if (ownKeys.length !== keys.length || ownKeys.some((key) => typeof key !== "string" || !allowed.has(key))) {
+  if (
+    ownKeys.length !== keys.length ||
+    ownKeys.some((key) => typeof key !== "string" || !allowed.has(key))
+  ) {
     throw new TypeError("action attempt recovery input has missing or unknown fields");
   }
 }

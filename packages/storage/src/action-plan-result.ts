@@ -314,6 +314,119 @@ export const finalizeStaleActionAttempt = recordStaleActionPlanResult;
 export const reopenActionPlanResult = readActionPlanResult;
 export const readActionPlanAttemptResult = readActionPlanResult;
 
+export type ActionPlanReconciliationResult =
+  | Readonly<{
+      readonly kind: "recorded";
+      readonly result: RemoteAttemptResult;
+      readonly journalId: string;
+    }>
+  | Readonly<{
+      readonly kind: "rejected";
+      readonly attemptId: string;
+      readonly reason:
+        | "missing"
+        | "inactive-claim"
+        | "identity"
+        | "not-dispatched"
+        | "result-conflict"
+        | "migration";
+    }>;
+
+/**
+ * Atomically persist one read-only reconciliation result and its journal
+ * event. A durable uncertain marker from P5-C13 may transition once to a
+ * definite read-only result; no remote capability is available here.
+ */
+export function recordActionPlanReconciliationResult(
+  database: Database,
+  input: unknown,
+): ActionPlanReconciliationResult {
+  const result = parseReconciliationResultInput(input);
+  const attemptId = result.attemptId;
+  let transactionStarted = false;
+  try {
+    database.exec("BEGIN IMMEDIATE;");
+    transactionStarted = true;
+    requireResultSchema(database, true);
+    requireReconciliationSchema(database);
+
+    const attempt = readAttempt(database, attemptId);
+    if (attempt === undefined) {
+      return commitReconciliationResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "missing",
+      });
+    }
+    if (!isActiveUnresolvedAttempt(database, attempt)) {
+      return commitReconciliationResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "inactive-claim",
+      });
+    }
+    if (!matchesAttemptIdentity(attempt, result)) {
+      return commitReconciliationResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "identity",
+      });
+    }
+    if (
+      database
+        .query("SELECT 1 AS present FROM action_attempt_dispatches WHERE attempt_id = ?;")
+        .get(attemptId) === null
+    ) {
+      return commitReconciliationResult(database, {
+        kind: "rejected",
+        attemptId,
+        reason: "not-dispatched",
+      });
+    }
+
+    const existing = readActionPlanResult(database, attemptId);
+    if (existing !== undefined) {
+      if (sameResult(existing, result)) {
+        const journalId = actionResultJournalId(attemptId);
+        insertReconciliationJournal(database, journalId, existing);
+        return commitReconciliationResult(database, {
+          kind: "recorded",
+          result: existing,
+          journalId,
+        });
+      }
+      if (existing.certainty !== "uncertain" || result.certainty !== "definite") {
+        return commitReconciliationResult(database, {
+          kind: "rejected",
+          attemptId,
+          reason: "result-conflict",
+        });
+      }
+      updateStoredReconciliationResult(database, attempt, result);
+    } else {
+      insertStoredReconciliationResult(database, attempt, result);
+    }
+    const journalId = actionResultJournalId(attemptId);
+    insertReconciliationJournal(database, journalId, result);
+    database.exec("COMMIT;");
+    transactionStarted = false;
+    return { kind: "recorded", result, journalId };
+  } catch (error: unknown) {
+    if (transactionStarted) rollback(database, error);
+    throw error;
+  }
+}
+
+export const recordUncertainReconciliationResult = recordActionPlanReconciliationResult;
+export const recordReconciledActionPlanResult = recordActionPlanReconciliationResult;
+export const reconcileActionPlanAttemptResult = recordActionPlanReconciliationResult;
+
+/** Exported for focused migration composition without broad registry changes. */
+export {
+  actionResultReconciliationMigration,
+  actionResultReconciliationMigrations,
+} from "./migrations/0007-action-result-reconciliation";
+
 /** Stable, bounded JSON retained as the stale result's operator detail. */
 export function serializeStalePreconditionObservation(observation: unknown): string {
   const parsed = parseObservation(observation);
@@ -473,7 +586,7 @@ function parseDefiniteResultInput(value: unknown): DefiniteResult {
   return result;
 }
 
-function matchesAttemptIdentity(attempt: AttemptRow, result: DefiniteResult): boolean {
+function matchesAttemptIdentity(attempt: AttemptRow, result: RemoteAttemptResult): boolean {
   return (
     result.attemptId === attempt.attemptId &&
     result.planId === attempt.planId &&
@@ -614,7 +727,11 @@ function storedResultFields(result: DefiniteResult): StoredResultFields {
   }
 }
 
-function insertActionResultJournal(database: Database, journalId: string, result: DefiniteResult): void {
+function insertActionResultJournal(
+  database: Database,
+  journalId: string,
+  result: DefiniteResult,
+): void {
   const payloadJson = serializeActionResultJournalPayload(result);
   database
     .query(
@@ -665,7 +782,11 @@ function serializeActionResultJournalPayload(result: DefiniteResult): string {
     case "rejected":
       return JSON.stringify({ ...base, detail: result.detail });
     case "failed":
-      return JSON.stringify({ ...base, failureReason: result.failureReason, detail: result.detail });
+      return JSON.stringify({
+        ...base,
+        failureReason: result.failureReason,
+        detail: result.detail,
+      });
     default: {
       const exhaustive: never = result;
       return exhaustive;
@@ -677,7 +798,7 @@ function actionResultJournalId(attemptId: string): string {
   return `event:action-result:${attemptId}`;
 }
 
-function sameResult(left: RemoteAttemptResult, right: DefiniteResult): boolean {
+function sameResult(left: RemoteAttemptResult, right: RemoteAttemptResult): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -696,9 +817,15 @@ function decodeStoredResult(
   };
   switch (row.result_kind) {
     case "success": {
-      if (row.certainty !== "definite") throw new TypeError("stored success result is not definite");
+      if (row.certainty !== "definite")
+        throw new TypeError("stored success result is not definite");
       const postcondition = decodeStoredPostcondition(row);
-      return createRemoteAttemptSuccess({ ...base, kind: "success", certainty: "definite", postcondition });
+      return createRemoteAttemptSuccess({
+        ...base,
+        kind: "success",
+        certainty: "definite",
+        postcondition,
+      });
     }
     case "stale":
       if (row.certainty !== "definite") throw new TypeError("stored stale result is not definite");
@@ -709,7 +836,8 @@ function decodeStoredResult(
         detail: requireText(row.detail),
       });
     case "rejected":
-      if (row.certainty !== "definite") throw new TypeError("stored rejected result is not definite");
+      if (row.certainty !== "definite")
+        throw new TypeError("stored rejected result is not definite");
       return createRemoteAttemptRejected({
         ...base,
         kind: "rejected",
@@ -726,7 +854,8 @@ function decodeStoredResult(
         detail: requireText(row.detail),
       });
     case "uncertain":
-      if (row.certainty !== "uncertain") throw new TypeError("stored uncertain result has invalid certainty");
+      if (row.certainty !== "uncertain")
+        throw new TypeError("stored uncertain result has invalid certainty");
       return createRemoteAttemptUncertain({
         ...base,
         kind: "uncertain",
@@ -777,7 +906,10 @@ function parseFlagsJson(value: unknown): readonly string[] {
   return parsed;
 }
 
-function commitDefiniteResult(database: Database, result: ActionPlanDefiniteResult): ActionPlanDefiniteResult {
+function commitDefiniteResult(
+  database: Database,
+  result: ActionPlanDefiniteResult,
+): ActionPlanDefiniteResult {
   database.exec("COMMIT;");
   return result;
 }
@@ -826,9 +958,15 @@ function requireResultSchema(database: Database, requiresJournal = false): void 
     [...requiredAttempt].some((column) => !names(attemptColumns).has(column)) ||
     (requiresJournal &&
       (journalColumns.length === 0 ||
-        ["id", "occurred_at", "category", "subject_id", "correlation_id", "payload_version", "payload_json"].some(
-          (column) => !names(journalColumns).has(column),
-        )))
+        [
+          "id",
+          "occurred_at",
+          "category",
+          "subject_id",
+          "correlation_id",
+          "payload_version",
+          "payload_json",
+        ].some((column) => !names(journalColumns).has(column))))
   ) {
     throw new Error("action result migration is required before result use");
   }
@@ -902,4 +1040,232 @@ function exactKeys(value: Readonly<Record<string, unknown>>, keys: readonly stri
   if (actual.length !== keys.length || actual.some((key) => !expected.has(key))) {
     throw new TypeError("stale action result input has missing or unknown fields");
   }
+}
+
+function parseReconciliationResultInput(value: unknown): RemoteAttemptResult {
+  const input = record(value, "reconciliation action result input");
+  exactKeys(input, ["result"]);
+  const result = createRemoteAttemptResult(input.result);
+  if (result.kind === "failed") {
+    throw new TypeError(
+      "uncertain reconciliation must classify applied, not-applied, stale, or still-uncertain",
+    );
+  }
+  return result;
+}
+
+type StoredReconciliationFields = Readonly<{
+  readonly resultKind: RemoteAttemptResult["kind"];
+  readonly certainty: RemoteAttemptResult["certainty"];
+  readonly uncertainReason: string | null;
+  readonly failureReason: string | null;
+  readonly detail: string | null;
+  readonly postconditionKind: "flags" | "mailbox" | null;
+  readonly postconditionObservedAt: string | null;
+  readonly postconditionModseq: number | null;
+  readonly postconditionFlags: string | null;
+  readonly postconditionMailboxId: string | null;
+  readonly postconditionUidValidity: number | null;
+  readonly postconditionUid: number | null;
+}>;
+
+function storedReconciliationFields(result: RemoteAttemptResult): StoredReconciliationFields {
+  if (result.kind === "uncertain") {
+    return {
+      resultKind: result.kind,
+      certainty: result.certainty,
+      uncertainReason: result.uncertainReason,
+      failureReason: null,
+      detail: result.detail,
+      postconditionKind: null,
+      postconditionObservedAt: null,
+      postconditionModseq: null,
+      postconditionFlags: null,
+      postconditionMailboxId: null,
+      postconditionUidValidity: null,
+      postconditionUid: null,
+    };
+  }
+  const fields = storedResultFields(result);
+  return {
+    resultKind: fields.resultKind,
+    certainty: "definite",
+    uncertainReason: null,
+    failureReason: fields.failureReason,
+    detail: fields.detail,
+    postconditionKind: fields.postconditionKind,
+    postconditionObservedAt: fields.postconditionObservedAt,
+    postconditionModseq: fields.postconditionModseq,
+    postconditionFlags: fields.postconditionFlags,
+    postconditionMailboxId: fields.postconditionMailboxId,
+    postconditionUidValidity: fields.postconditionUidValidity,
+    postconditionUid: fields.postconditionUid,
+  };
+}
+
+function insertStoredReconciliationResult(
+  database: Database,
+  attempt: AttemptRow,
+  result: RemoteAttemptResult,
+): void {
+  const fields = storedReconciliationFields(result);
+  database
+    .query(
+      "INSERT INTO action_results " +
+        "(attempt_id, plan_id, target_ordinal, account_id, mailbox_id, uid_validity, uid, " +
+        "idempotency_key, started_at, result_at, result_kind, certainty, uncertain_reason, " +
+        "failure_reason, detail, postcondition_kind, postcondition_observed_at, " +
+        "postcondition_modseq, postcondition_flags, postcondition_mailbox_id, " +
+        "postcondition_uid_validity, postcondition_uid) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+    )
+    .run(
+      attempt.attemptId,
+      attempt.planId,
+      attempt.targetOrdinal,
+      attempt.target.accountId,
+      attempt.target.mailboxId,
+      attempt.target.uidValidity,
+      attempt.target.uid,
+      attempt.idempotencyKey,
+      attempt.startedAt,
+      result.resultAt,
+      fields.resultKind,
+      fields.certainty,
+      fields.uncertainReason,
+      fields.failureReason,
+      fields.detail,
+      fields.postconditionKind,
+      fields.postconditionObservedAt,
+      fields.postconditionModseq,
+      fields.postconditionFlags,
+      fields.postconditionMailboxId,
+      fields.postconditionUidValidity,
+      fields.postconditionUid,
+    );
+}
+
+function updateStoredReconciliationResult(
+  database: Database,
+  attempt: AttemptRow,
+  result: Exclude<RemoteAttemptResult, { readonly certainty: "uncertain" }>,
+): void {
+  const fields = storedReconciliationFields(result);
+  database
+    .query(
+      "UPDATE action_results SET result_at = ?, result_kind = ?, certainty = ?, uncertain_reason = ?, " +
+        "failure_reason = ?, detail = ?, postcondition_kind = ?, postcondition_observed_at = ?, " +
+        "postcondition_modseq = ?, postcondition_flags = ?, postcondition_mailbox_id = ?, " +
+        "postcondition_uid_validity = ?, postcondition_uid = ? WHERE attempt_id = ?;",
+    )
+    .run(
+      result.resultAt,
+      fields.resultKind,
+      fields.certainty,
+      fields.uncertainReason,
+      fields.failureReason,
+      fields.detail,
+      fields.postconditionKind,
+      fields.postconditionObservedAt,
+      fields.postconditionModseq,
+      fields.postconditionFlags,
+      fields.postconditionMailboxId,
+      fields.postconditionUidValidity,
+      fields.postconditionUid,
+      attempt.attemptId,
+    );
+}
+
+function insertReconciliationJournal(
+  database: Database,
+  journalId: string,
+  result: RemoteAttemptResult,
+): void {
+  const payloadJson = serializeReconciliationJournalPayload(result);
+  database
+    .query(
+      "INSERT INTO operational_journal " +
+        "(id, occurred_at, category, subject_id, correlation_id, payload_version, payload_json) " +
+        "VALUES (?, ?, 'action', ?, ?, 1, ?) ON CONFLICT(id) DO NOTHING;",
+    )
+    .run(journalId, result.resultAt, result.attemptId, result.planId, payloadJson);
+  const row: unknown = database
+    .query(
+      "SELECT occurred_at, category, subject_id, correlation_id, payload_version, payload_json " +
+        "FROM operational_journal WHERE id = ?;",
+    )
+    .get(journalId);
+  const stored = record(row, "reconciliation action journal row");
+  if (
+    stored.occurred_at !== result.resultAt ||
+    stored.category !== "action" ||
+    stored.subject_id !== result.attemptId ||
+    stored.correlation_id !== result.planId ||
+    stored.payload_version !== 1 ||
+    stored.payload_json !== payloadJson
+  ) {
+    throw new TypeError("reconciliation action journal identity conflicts with the result");
+  }
+}
+
+function serializeReconciliationJournalPayload(result: RemoteAttemptResult): string {
+  const base = {
+    version: 1,
+    kind: result.kind,
+    attemptId: result.attemptId,
+    planId: result.planId,
+    action: result.action.kind,
+    resultAt: result.resultAt,
+  };
+  switch (result.kind) {
+    case "success":
+      return JSON.stringify({ ...base, postcondition: result.postcondition });
+    case "stale":
+    case "rejected":
+      return JSON.stringify({ ...base, detail: result.detail });
+    case "failed":
+      return JSON.stringify({
+        ...base,
+        failureReason: result.failureReason,
+        detail: result.detail,
+      });
+    case "uncertain":
+      return JSON.stringify({
+        ...base,
+        uncertainReason: result.uncertainReason,
+        detail: result.detail,
+      });
+    default: {
+      const exhaustive: never = result;
+      return exhaustive;
+    }
+  }
+}
+
+function requireReconciliationSchema(database: Database): void {
+  const dispatchTable = database
+    .query(
+      "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'action_attempt_dispatches';",
+    )
+    .get();
+  if (dispatchTable === null) {
+    throw new Error("action attempt dispatch migration is required before reconciliation use");
+  }
+  const row: unknown = database
+    .query(
+      "SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'action_result_immutable';",
+    )
+    .get();
+  const sql = record(row, "action result reconciliation migration row").sql;
+  if (typeof sql !== "string" || !sql.includes("OLD.result_kind = 'uncertain'")) {
+    throw new Error("action result reconciliation migration is required before reconciliation use");
+  }
+}
+
+function commitReconciliationResult(
+  database: Database,
+  result: ActionPlanReconciliationResult,
+): ActionPlanReconciliationResult {
+  database.exec("COMMIT;");
+  return result;
 }

@@ -6,3 +6,4 @@ export * from "./mime-parser";
 export * from "./metadata-batch";
 export * from "./raw-download";
 export * from "./seen-mutation";
+export * from "./uncertain-reconciliation";
