@@ -233,7 +233,7 @@ export const hydratedMessageSchema = z.strictObject({
 });
 export type HydratedMessage = z.infer<typeof hydratedMessageSchema>;
 
-const safeNonnegativeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const safePositiveInteger = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 export const threadSchema = z
   .strictObject({
@@ -242,9 +242,9 @@ export const threadSchema = z
     subject: text("subject", 1, 998).nullable(),
     participants: z.array(emailAddressSchema).max(256),
     participantsTruncated: z.boolean(),
-    messageCount: safeNonnegativeInteger,
-    messageIds: z.array(messageIdSchema).min(1).max(100),
-    messages: z.array(hydratedMessageSchema).min(1).max(100),
+    messageCount: safePositiveInteger,
+    messageIds: z.array(messageIdSchema).max(100),
+    messages: z.array(hydratedMessageSchema).max(100),
     firstReceivedAt: retrievalInstantSchema,
     lastReceivedAt: retrievalInstantSchema,
     nextCursor: opaqueThreadCursorSchema.nullable(),
@@ -261,6 +261,12 @@ export const threadSchema = z
         code: "custom",
         path: ["messages"],
         message: "messageIds and messages must have the same length",
+      });
+    if (thread.messageIds.length === 0 && thread.nextCursor !== null)
+      context.addIssue({
+        code: "custom",
+        path: ["nextCursor"],
+        message: "an empty page must not have a next cursor",
       });
     if (thread.messageCount < thread.messageIds.length)
       context.addIssue({
@@ -351,8 +357,11 @@ export const messageResponseSchema = z.union([
 ]);
 export type MessageResponse = z.infer<typeof messageResponseSchema>;
 
+export const threadSuccessResponseSchema = z.strictObject({ thread: threadSchema });
+export type ThreadSuccessResponse = z.infer<typeof threadSuccessResponseSchema>;
+
 export const threadResponseSchema = z.union([
-  z.strictObject({ thread: threadSchema }),
+  threadSuccessResponseSchema,
   threadNotFoundErrorSchema,
   threadInvalidCursorErrorSchema,
 ]);
@@ -390,6 +399,46 @@ export const threadRequestSchema = z.strictObject({
   cursor: opaqueThreadCursorSchema.optional(),
 });
 export type ThreadRequest = z.infer<typeof threadRequestSchema>;
+
+/**
+ * Validate the request-dependent part of a parsed thread success response.
+ *
+ * Callers must parse untrusted request and response data with
+ * `threadRequestSchema` and `threadSuccessResponseSchema` first. This typed
+ * boundary then applies the live pagination rule shared by storage, HTTP, and
+ * CLI consumers without coupling the contract to any transport.
+ */
+export function validateThreadSuccess(
+  request: ThreadRequest,
+  response: ThreadSuccessResponse,
+): ThreadSuccessResponse {
+  const pageLength = response.thread.messageIds.length;
+  if (pageLength > request.limit)
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: ["thread", "messageIds"],
+        message: "thread page must not exceed the requested limit",
+      },
+    ]);
+  if (request.cursor === undefined && pageLength === 0)
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: ["thread", "messageIds"],
+        message: "an initial thread page must not be empty",
+      },
+    ]);
+  if (pageLength === 0 && response.thread.nextCursor !== null)
+    throw new z.ZodError([
+      {
+        code: "custom",
+        path: ["thread", "nextCursor"],
+        message: "an empty page must not have a next cursor",
+      },
+    ]);
+  return response;
+}
 export const rawMessageRequestSchema = z.strictObject({ messageId: messageIdSchema });
 export const attachmentRequestSchema = z.strictObject({ attachmentId: attachmentIdSchema });
 

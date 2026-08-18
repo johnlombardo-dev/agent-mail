@@ -4,7 +4,10 @@ import {
   publicErrorEnvelopeSchema,
   retrievalInstantSchema,
   streamMetadataSchema,
+  threadRequestSchema,
+  threadSuccessResponseSchema,
   utcInstantSchema,
+  validateThreadSuccess,
 } from "../src/index";
 import { cliCommandRegistry, publicCliOperations } from "../../cli/src/command-registry";
 import {
@@ -32,8 +35,11 @@ describe("public operation corpus", () => {
     for (const operation of publicCliOperations) {
       const entry = operationCorpus[operation.key];
       if (entry === undefined) throw new Error(`missing corpus entry for ${operation.key}`);
-      const requestCanonical = operation.request.parse(entry.request);
-      expect(operation.request.parse(jsonRoundTrip(requestCanonical))).toEqual(requestCanonical);
+      const requests = [entry.request, ...(entry.requestVariants ?? [])];
+      for (const request of requests) {
+        const requestCanonical = operation.request.parse(request);
+        expect(operation.request.parse(jsonRoundTrip(requestCanonical))).toEqual(requestCanonical);
+      }
 
       const successVariants = [entry.success, ...(entry.successVariants ?? [])];
       for (const success of successVariants) {
@@ -59,6 +65,19 @@ describe("public operation corpus", () => {
         }
       }
     }
+
+    const threadEntry = operationCorpus["threads.get"];
+    if (threadEntry === undefined) throw new Error("threads.get corpus fixture is missing");
+    const continuationFixture = threadEntry.requestVariants?.[0];
+    const emptyFixture = threadEntry.successVariants?.[1];
+    if (continuationFixture === undefined || emptyFixture === undefined)
+      throw new Error("threads.get empty continuation fixtures are missing");
+    expect(
+      validateThreadSuccess(
+        threadRequestSchema.parse(continuationFixture),
+        threadSuccessResponseSchema.parse(emptyFixture),
+      ),
+    ).toEqual(emptyFixture);
   });
 
   it("fails completeness for an adjacent operation without a success fixture", () => {

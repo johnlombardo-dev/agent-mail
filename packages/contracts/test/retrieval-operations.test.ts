@@ -18,9 +18,11 @@ import {
   threadInvalidCursorErrorSchema,
   threadErrorRegistry,
   threadRequestSchema,
+  threadSuccessResponseSchema,
   opaqueThreadCursorSchema,
   threadOperation,
   threadResponseSchema,
+  validateThreadSuccess,
 } from "../src/retrieval-operations";
 
 const instant = "2026-01-01T00:00:00Z";
@@ -167,6 +169,59 @@ describe("retrieval operation contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts a truthful empty continuation and rejects request-incompatible pages", () => {
+    const emptyContinuation = {
+      thread: {
+        threadId,
+        resolvedFromThreadId: null,
+        subject: null,
+        participants: [],
+        participantsTruncated: false,
+        messageCount: 3,
+        messageIds: [],
+        messages: [],
+        firstReceivedAt: instant,
+        lastReceivedAt: instant,
+        nextCursor: null,
+      },
+    };
+    const structural = threadSuccessResponseSchema.parse(emptyContinuation);
+    expect(threadResponseSchema.parse(emptyContinuation)).toEqual(emptyContinuation);
+
+    const continuationRequest = threadRequestSchema.parse({
+      threadId,
+      limit: 2,
+      cursor: threadCursor(),
+    });
+    expect(validateThreadSuccess(continuationRequest, structural)).toEqual(structural);
+
+    expect(() => validateThreadSuccess(threadRequestSchema.parse({ threadId }), structural)).toThrow(
+      /initial thread page must not be empty/,
+    );
+    expect(() =>
+      threadResponseSchema.parse({
+        thread: { ...emptyContinuation.thread, nextCursor: threadCursor() },
+      }),
+    ).toThrow(/empty page must not have a next cursor/);
+
+    const twoMessagePage = threadSuccessResponseSchema.parse({
+      thread: {
+        ...emptyContinuation.thread,
+        messageCount: 3,
+        messageIds: [message.messageId, "message:msg-2"],
+        messages: [message, { ...message, messageId: "message:msg-2" }],
+      },
+    });
+    const narrowContinuationRequest = threadRequestSchema.parse({
+      threadId,
+      limit: 1,
+      cursor: threadCursor(),
+    });
+    expect(() => validateThreadSuccess(narrowContinuationRequest, twoMessagePage)).toThrow(
+      /must not exceed the requested limit/,
+    );
+  });
+
   it("applies bounded thread request and cursor contracts", () => {
     expect(threadRequestSchema.parse({ threadId })).toEqual({ threadId, limit: 50 });
     expect(threadRequestSchema.parse({ threadId, limit: 100, cursor: threadCursor() })).toEqual({
@@ -282,7 +337,11 @@ describe("retrieval operation contracts", () => {
     };
     expect(threadResponseSchema.parse({ thread: validThread })).toEqual({ thread: validThread });
     expect(threadResponseSchema.safeParse({ thread: { ...validThread, unknown: true } }).success).toBe(false);
-    expect(threadResponseSchema.safeParse({ thread: { ...validThread, messageIds: [] } }).success).toBe(false);
+    expect(
+      threadResponseSchema.safeParse({
+        thread: { ...validThread, messageIds: [], messages: [], nextCursor: null },
+      }).success,
+    ).toBe(true);
     expect(
       threadResponseSchema.safeParse({ thread: { ...validThread, messages: [{ ...message, messageId: "message:other" }] } }).success,
     ).toBe(false);

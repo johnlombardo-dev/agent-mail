@@ -25,6 +25,7 @@ export type OperationStreamFixture = Readonly<{
 
 export type OperationCorpusEntry = Readonly<{
   readonly request: unknown;
+  readonly requestVariants?: readonly unknown[];
   readonly success: unknown;
   /** Additional success variants exercise terminal-state unions without adding operations. */
   readonly successVariants?: readonly unknown[];
@@ -94,6 +95,29 @@ const invalidThreadCursor = {
   correlationId: "correlation:thread-cursor-例",
   details: { resource: "thread" },
 };
+
+function encodeBase64Url(value: string): string {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
+}
+
+const threadCursor = encodeBase64Url(
+  JSON.stringify([
+    "thread-cursor-v1",
+    JSON.stringify({
+      registryVersion: 1,
+      cursorKeyId: "active-key",
+      accountScopeDigest: "a".repeat(64),
+      requestedThreadHandle: threadId,
+      lastSentAtMissingRank: 0,
+      lastSentAt: instant,
+      lastMessageId: `message:${"b".repeat(64)}`,
+    }),
+    "c".repeat(64),
+  ]),
+);
 
 const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
   const details = {
@@ -282,6 +306,7 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
   },
   "threads.get": {
     request: { threadId },
+    requestVariants: [{ threadId, limit: 100, cursor: threadCursor }],
     success: {
       thread: {
         threadId,
@@ -297,6 +322,38 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
         nextCursor: null,
       },
     },
+    successVariants: [
+      {
+        thread: {
+          threadId,
+          resolvedFromThreadId: `thread:${"f".repeat(64)}`,
+          subject: "Réunion — résumé 例",
+          participants: [sender],
+          participantsTruncated: false,
+          messageCount: 2,
+          messageIds: [messageId],
+          messages: [hydratedMessage],
+          firstReceivedAt: retrievalBefore,
+          lastReceivedAt: retrievalBefore,
+          nextCursor: null,
+        },
+      },
+      {
+        thread: {
+          threadId,
+          resolvedFromThreadId: null,
+          subject: "Réunion — résumé 例",
+          participants: [sender],
+          participantsTruncated: false,
+          messageCount: 2,
+          messageIds: [],
+          messages: [],
+          firstReceivedAt: retrievalBefore,
+          lastReceivedAt: retrievalBefore,
+          nextCursor: null,
+        },
+      },
+    ],
     errors: [
       { code: "invalid_cursor", response: invalidThreadCursor },
       { code: "not_found", response: notFound("thread", threadId) },
