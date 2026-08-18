@@ -1,18 +1,80 @@
 {
   "format": "agent-mail.sync-statechart/v1",
   "schemaVersion": 1,
-  "modelVersion": "1.0.0-candidate.6",
+  "modelVersion": "1.0.0-candidate.7",
   "status": "candidate-awaiting-independent-review",
   "oracle": {
     "normative": true,
     "description": "This file is the single normative lifecycle oracle. The accompanying Markdown files are checked views and rationale, not a second model.",
     "transitionExpansion": "A transition whose source is an array expands to one identical transition per listed atomic source configuration. @source in stoppedActors expands to the invokedActors of that source. @target in startedActors expands to the invokedActors of the target.",
     "eventSelection": "For one dequeued event, evaluate transitions from the active atomic state in listed priority order. Take the first transition whose guards all pass. If no state transition passes, apply globalEventPolicy.",
-    "checkedViewRule": "Every checked-view global-policy row must equal its globalEventPolicy oracle object in all five fields: id, ordered events, literal when condition, ordered actions, and literal result. Omitting an action column or paraphrasing GEP04/GEP05/GEP06 is a projection failure.",
-    "actionOrder": "Installed XState 5.32.5 orders a selected external transition as source exit actions, transition actions, target entry actions, target invoke input evaluation, source fromCallback disposal or fromPromise abort notification, then target invoke start. Every possibly surviving resource is therefore covered before acquisition/start by either its own deduplicated release slot or the exact P3-C07 queue subtree's one parent-owned composite slot. beginOrPromoteCleanup freezes that already-complete slot set in its transition action; a disposer or abort handler can only trigger an existing idempotent release.",
+    "checkedViewRule": "Every checked-view global-policy row must equal its globalEventPolicy oracle object in all five fields: id, ordered events, literal when condition, ordered actions, and literal result. Every checked CleanupCertificate, terminal-contract, slot-lifecycle, retention-bound, and churn row must likewise equal its named oracle object. Omitting an action column, paraphrasing GEP04/GEP05/GEP06, or copying a partial certificate field inventory is a projection failure.",
+    "actionOrder": "Installed XState 5.32.5 orders a selected external transition as source exit actions, transition actions, target entry actions, target invoke input evaluation, source fromCallback disposal or fromPromise abort notification, then target invoke start. Every possibly surviving resource is therefore covered before acquisition/start by either its own deduplicated release slot or the exact P3-C07 queue subtree's one parent-owned composite slot. beginOrPromoteCleanup revokes acquisition, captures the complete immutable source-tree snapshot, and creates the selected immutable phase snapshot in its transition action; a disposer or abort handler can only trigger an existing idempotent release. Slot retirement may delete registry entries only after terminal evidence reaches every referencing snapshot.",
     "versionRule": "Only advanceVersion changes context.version. Ignored, stale, duplicate, rejected, and idempotent no-op events leave it unchanged. Public observations are ordered by version only when their required incarnationId values match; different incarnations are unordered.",
-    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release and every acquisition-time release-slot terminal settles. The exact P3-C07 queue subtree is covered transitively by one parent-owned composite slot whose release is exact queue.stop() and whose terminal adopts that exact promise; the frozen queue and private job receive no registry capability and register no separate slots. cleanupBarrier is a per-invoke bounded fromPromise over a frozen registry phase terminal. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity, the frozen release-set identity, and zero live or unresolved resources. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation.",
-    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-01 through R189-17 are dispositioned as resolved in this candidate; independent exact-digest review remains required."
+    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release and every acquisition-time release-slot terminal settles. The exact P3-C07 queue subtree is covered transitively by one parent-owned composite slot whose release is exact queue.stop() and whose terminal adopts that exact promise; the frozen queue and private job receive no registry capability and register no separate slots. cleanupBarrier is a per-invoke bounded fromPromise over a frozen registry phase terminal. Both terminal events carry the one exact CleanupCertificate type. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity, the frozen release-set identity, and zero live or unresolved resources. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation. Slot retirement cannot erase phase evidence or allow a new acquisition to reuse a settled closure.",
+    "cleanupTerminalFieldSetClosure": {
+      "authority": "types.CleanupCertificate",
+      "terminalContracts": {
+        "xstate.done.actor.cleanupBarrier.output": "CleanupCertificate",
+        "xstate.error.actor.cleanupBarrier.error.releaseCertificate": "CleanupCertificate"
+      },
+      "consumers": {
+        "actors.cleanupBarrier.successType": "CleanupCertificate.*",
+        "actors.cleanupBarrier.errorReleaseCertificateType": "CleanupCertificate.*",
+        "faultType.WorkflowFault.releaseCertificate": "CleanupCertificate.*",
+        "guards.cleanupCertificateCoversState.certificateType": "CleanupCertificate.*",
+        "guards.cleanupFailureCertificateCoversState.certificateType": "CleanupCertificate.*",
+        "actions.appendCleanupDiagnostics.certificateType": "CleanupCertificate.*",
+        "globalEventPolicy.GEP05.certificateType": "CleanupCertificate.*",
+        "cleanupProtocol.admissionType": "CleanupCertificate.*"
+      },
+      "guardAndPolicyReads": {
+        "guards.cleanupCertificateCoversState": [
+          "certificateId",
+          "cleanupEpoch",
+          "cleanupPhase",
+          "invokeLease",
+          "effectiveScope",
+          "frozenReleaseSetId",
+          "released",
+          "authoritativeAudit.scope",
+          "authoritativeAudit.frozenReleaseSetId",
+          "authoritativeAudit.liveResourceCount",
+          "authoritativeAudit.unresolvedReleaseCount",
+          "authoritativeAudit.digest"
+        ],
+        "guards.cleanupFailureCertificateCoversState": [
+          "certificateId",
+          "cleanupEpoch",
+          "cleanupPhase",
+          "invokeLease",
+          "effectiveScope",
+          "frozenReleaseSetId",
+          "released",
+          "authoritativeAudit.scope",
+          "authoritativeAudit.frozenReleaseSetId",
+          "authoritativeAudit.liveResourceCount",
+          "authoritativeAudit.unresolvedReleaseCount",
+          "authoritativeAudit.digest"
+        ],
+        "globalEventPolicy.GEP05": [
+          "certificateId",
+          "cleanupEpoch",
+          "cleanupPhase",
+          "invokeLease",
+          "effectiveScope",
+          "frozenReleaseSetId",
+          "released",
+          "authoritativeAudit.scope",
+          "authoritativeAudit.frozenReleaseSetId",
+          "authoritativeAudit.liveResourceCount",
+          "authoritativeAudit.unresolvedReleaseCount",
+          "authoritativeAudit.digest"
+        ]
+      },
+      "structuralCheck": "Resolve CleanupCertificate.* to the authority's exact leafFields. Both terminal event references and every consumer reference must resolve to that same type. Every ordered guardAndPolicyReads leaf must exist in the authority and therefore in both terminal contracts; duplicates, extra, missing, renamed, or separately enumerated terminal fields fail."
+    },
+    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-01 through R189-19 are dispositioned as resolved in this candidate; independent exact-digest review remains required."
   },
   "frozenInputs": [
     {
@@ -111,6 +173,12 @@
       "type": "positive-safe-integer",
       "required": true,
       "constraint": "maxControlIdempotencyEntries <= 10000"
+    },
+    {
+      "id": "maxReleaseSlotEntries",
+      "type": "positive-safe-integer",
+      "required": true,
+      "constraint": "maxReleaseSlotEntries <= 4096; new-slot registration rejects before acquisition when the bound is full"
     }
   ],
   "context": [
@@ -259,10 +327,82 @@
       "restartUse": "P3-C10 and P3-C11 share this row. P3-C10 already-complete uses non-CAS save; completed backfill and completed recurring sweep use completions.complete with the checkpoint transaction."
     }
   ],
+  "types": [
+    {
+      "id": "CleanupCertificate",
+      "kind": "exact-object",
+      "sealed": true,
+      "leafFields": [
+        {
+          "path": "certificateId",
+          "type": "trimmed-opaque-nonempty-string<=256"
+        },
+        {
+          "path": "cleanupEpoch",
+          "type": "positive-safe-integer"
+        },
+        {
+          "path": "cleanupPhase",
+          "type": "positive-safe-integer"
+        },
+        {
+          "path": "invokeLease",
+          "type": "positive-safe-integer"
+        },
+        {
+          "path": "effectiveScope",
+          "type": "watch|workflow"
+        },
+        {
+          "path": "frozenReleaseSetId",
+          "type": "trimmed-opaque-nonempty-string<=256"
+        },
+        {
+          "path": "released",
+          "type": "literal-true"
+        },
+        {
+          "path": "authoritativeAudit.scope",
+          "type": "watch|workflow"
+        },
+        {
+          "path": "authoritativeAudit.frozenReleaseSetId",
+          "type": "trimmed-opaque-nonempty-string<=256"
+        },
+        {
+          "path": "authoritativeAudit.liveResourceCount",
+          "type": "literal-0"
+        },
+        {
+          "path": "authoritativeAudit.unresolvedReleaseCount",
+          "type": "literal-0"
+        },
+        {
+          "path": "authoritativeAudit.digest",
+          "type": "trimmed-opaque-nonempty-string<=256"
+        },
+        {
+          "path": "diagnostics",
+          "type": "SyncDiagnostic[0..32]"
+        }
+      ],
+      "constraints": [
+        "authoritativeAudit.scope === effectiveScope",
+        "authoritativeAudit.frozenReleaseSetId === frozenReleaseSetId",
+        "certificateId and authoritativeAudit.digest equal the selected immutable phase snapshot",
+        "diagnostics are bounded, redacted, and copied from the selected immutable phase snapshot"
+      ],
+      "authority": "This is the only cleanup success/error certificate field and constraint inventory. Consumers reference CleanupCertificate or CleanupCertificate.* and may not restate a narrower structural type."
+    }
+  ],
   "faultType": {
     "id": "WorkflowFault",
     "categories": ["authentication", "transient", "permanent", "invariant"],
     "safeFields": ["category", "code", "safeMessage", "authReason"],
+    "releaseCertificate": {
+      "type": "CleanupCertificate",
+      "presence": "required exactly on xstate.error.actor.cleanupBarrier; forbidden on every other WorkflowFault"
+    },
     "forbiddenFields": [
       "cause",
       "providerPayload",
@@ -408,23 +548,12 @@
     {
       "id": "xstate.done.actor.cleanupBarrier",
       "origin": "cleanupBarrier",
-      "payload": [
-        "output.certificateId",
-        "output.cleanupEpoch",
-        "output.cleanupPhase",
-        "output.invokeLease",
-        "output.effectiveScope",
-        "output.released",
-        "output.authoritativeAudit.scope",
-        "output.authoritativeAudit.liveResourceCount",
-        "output.authoritativeAudit.digest",
-        "output.diagnostics"
-      ]
+      "payload": ["output:CleanupCertificate"]
     },
     {
       "id": "xstate.error.actor.cleanupBarrier",
       "origin": "cleanupBarrier",
-      "payload": ["error:WorkflowFault", "error.releaseCertificate"]
+      "payload": ["error:WorkflowFault", "error.releaseCertificate:CleanupCertificate"]
     }
   ],
   "guards": [
@@ -506,10 +635,16 @@
     },
     {
       "id": "cleanupCertificateCoversState",
-      "predicate": "Literal conjunction: XState terminal is from the current cleanupBarrier invoke; certificate.invokeLease === context.cleanupInvokeLease; certificate.cleanupEpoch === context.cleanupEpoch === registry.currentEpoch; certificate.cleanupPhase === context.cleanupPhase === registry.currentPhase; certificate.effectiveScope === context.effectiveCleanupScope === registry.effectiveScope; certificate.frozenReleaseSetId === registry.currentPhase.frozenReleaseSetId === certificate.authoritativeAudit.frozenReleaseSetId; scopeDominates(certificate.effectiveScope, activeState.cleanupRequirement.minimumScope); certificate.authoritativeAudit.scope === certificate.effectiveScope; certificate.authoritativeAudit.liveResourceCount === 0; certificate.authoritativeAudit.unresolvedReleaseCount === 0; certificate.certificateId and audit digest equal registry.currentPhaseTerminal/currentAudit. No event field selects the registry audit or release set."
+      "certificateType": "CleanupCertificate",
+      "certificatePath": "event.output",
+      "certificateReadSet": "CleanupCertificate.*",
+      "predicate": "Literal conjunction: XState terminal is from the current cleanupBarrier invoke; certificate.invokeLease === context.cleanupInvokeLease; certificate.cleanupEpoch === context.cleanupEpoch === registry.currentEpoch; certificate.cleanupPhase === context.cleanupPhase === registry.currentPhase; certificate.effectiveScope === context.effectiveCleanupScope === registry.effectiveScope; certificate.frozenReleaseSetId === registry.currentPhase.frozenReleaseSetId === certificate.authoritativeAudit.frozenReleaseSetId; certificate.released === true; scopeDominates(certificate.effectiveScope, activeState.cleanupRequirement.minimumScope); certificate.authoritativeAudit.scope === certificate.effectiveScope; certificate.authoritativeAudit.liveResourceCount === 0; certificate.authoritativeAudit.unresolvedReleaseCount === 0; certificate.certificateId and audit digest equal registry.currentPhaseTerminal/currentAudit. No event field selects the registry audit or release set."
     },
     {
       "id": "cleanupFailureCertificateCoversState",
+      "certificateType": "CleanupCertificate",
+      "certificatePath": "event.error.releaseCertificate",
+      "certificateReadSet": "CleanupCertificate.*",
       "predicate": "The current-invoke error carries a release certificate satisfying every literal equality and zero-audit clause in cleanupCertificateCoversState; fault.category is then evaluated separately. Otherwise no cleanup error transition is enabled."
     },
     {
@@ -576,7 +711,9 @@
     },
     {
       "id": "appendCleanupDiagnostics",
-      "effect": "Append bounded cleanup diagnostics only after cleanupCertificateCoversState or cleanupFailureCertificateCoversState passes; audit scope comes from the registry certificate."
+      "certificateType": "CleanupCertificate",
+      "certificateReadSet": "CleanupCertificate.*",
+      "effect": "Append bounded cleanup diagnostics from the terminal event's immutable CleanupCertificate only after cleanupCertificateCoversState or cleanupFailureCertificateCoversState passes; audit scope comes from that certificate. The event value remains valid after finishCleanupScope purges registry snapshots."
     },
     {
       "id": "emitControlAccepted",
@@ -628,11 +765,11 @@
     },
     {
       "id": "beginOrPromoteCleanup",
-      "effect": "Atomically call resourceRegistry.requestPhase(targetState.minimumScope) during the transition action. First revoke every acquisition capability in the exiting source ownership tree, freeze the complete eligible set of release slots registered before resource acquisition/start, including any one parent-owned P3-C07 composite queue slot, and capture its identity. Registration after this first freeze is structurally unavailable. Then: if no session, increment cleanupEpoch and cleanupPhase and create it; on every cleanup-state entry increment cleanupInvokeLease; on watch-to-workflow promotion increment cleanupPhase and install a fresh workflow terminal over the broader subset of the same pre-registered source-tree slots before returning even if the watch phase already settled; on equal/broader existing scope retain the phase and expose its pending/cached terminal through a new per-invoke promise. Trigger every frozen idempotent release and copy returned epoch/phase/lease/effectiveScope to context. A composite queue trigger calls exact queue.stop() once and its slot terminal adopts that promise. Never downgrade or trust event material."
+      "effect": "Atomically call resourceRegistry.requestPhase(targetState.minimumScope) during the transition action. First revoke every acquisition capability in the exiting source ownership tree, capture one immutable complete source-tree snapshot, select the eligible set of release slots registered before resource acquisition/start including any one parent-owned P3-C07 composite queue slot, and create the immutable phase snapshot/release-set identity. Registration after this first freeze is structurally unavailable. Then: if no session, increment cleanupEpoch and cleanupPhase and create it; on every cleanup-state entry increment cleanupInvokeLease; on watch-to-workflow promotion increment cleanupPhase and install a fresh immutable workflow phase over the broader subset of the source-tree snapshot before returning even if the watch phase already settled; on equal/narrower scope retain the phase and expose its pending/cached terminal through a new per-invoke promise. Trigger every still-live frozen idempotent release and copy returned epoch/phase/lease/effectiveScope to context. A composite queue trigger calls exact queue.stop() once and its slot terminal adopts that promise. Retired slots contribute snapshot-owned immutable evidence, not a registry lookup. Never downgrade or trust event material."
     },
     {
       "id": "finishCleanupScope",
-      "effect": "After the current certificate passes every epoch/phase/lease/scope/audit equality, close the registry cleanup session and set effectiveCleanupScope to null. Retain epoch/phase/lease counters so later terminals are stale. This is the only final cleanup owner."
+      "effect": "After the current CleanupCertificate passes every epoch/phase/lease/scope/release-set/audit equality, atomically close the registry cleanup session; drop its source-tree/current/superseded phase snapshots, cached terminals, audits, and diagnostic evidence; and set effectiveCleanupScope to null. Retain scalar epoch/phase/lease/slotGeneration high-water marks so later terminals and identifiers are stale. The terminal event retains its own immutable certificate for following actions. This is the only final cleanup owner."
     }
   ],
   "actors": [
@@ -761,8 +898,11 @@
         "phaseTerminal: a fresh per-invoke promise returned by resourceRegistry.awaitPhase(epoch, phase)",
         "resource registry"
       ],
-      "success": "One invocation-scoped CleanupCertificate {certificateId, cleanupEpoch, cleanupPhase, invokeLease, effectiveScope, frozenReleaseSetId, released:true, authoritativeAudit, diagnostics}. The wrapper awaits the selected registry phase terminal and every frozen slot terminal, then binds it to its immutable invokeLease. A cached equal-scope terminal resolves the new wrapper promise; a promotion selects a fresh phase terminal.",
-      "error": "One invocation-scoped invariant WorkflowFault plus the same certificate fields. The registry can create an error terminal only after every frozen slot terminal settled and the selected phase has a zero authoritative audit. Synthetic wrong scope/phase/lease/epoch/release-set/audit material fails the literal guard; an exited invoke terminal is ignored by XState identity.",
+      "successType": "CleanupCertificate",
+      "success": "One invocation-scoped CleanupCertificate. The wrapper awaits the selected immutable registry phase snapshot terminal and every frozen slot terminal, then binds the resulting certificate to its immutable invokeLease. A cached equal-scope terminal resolves the new wrapper promise; a promotion selects a fresh phase terminal.",
+      "errorType": "WorkflowFault",
+      "errorReleaseCertificateType": "CleanupCertificate",
+      "error": "One invocation-scoped invariant WorkflowFault with required releaseCertificate:CleanupCertificate. The registry can create an error terminal only after every frozen slot terminal settled and the selected phase has a zero authoritative audit. Synthetic wrong scope/phase/lease/epoch/release-set/audit material fails the literal guard; an exited invoke terminal is ignored by XState identity.",
       "scopePromotion": "resourceRegistry.requestPhase is the linearization point. A watch-to-workflow request atomically updates effective scope, increments cleanupPhase, installs a fresh pending workflow phase terminal, and only then returns replacement invoke input. It does this whether the watch phase is open or settled. Old watch terminals can settle only old-phase wrappers and cannot satisfy the new phase.",
       "cancellation": "A cleanup-state replacement exits the old wrapper and increments cleanupInvokeLease. Equal-scope replacement receives a new wrapper promise over the current phase, resolving from its cached immutable terminal when already settled. Promotion receives the newly created workflow phase. Release handles remain owned and deduplicated by the one registry session; no wrapper starts a second close job.",
       "cleanupOwner": "resourceRegistry.cleanupSession is the sole release owner; cleanupBarrier is an awaited phase adapter",
@@ -2810,7 +2950,9 @@
     {
       "id": "GEP05",
       "events": ["xstate.done.actor.cleanupBarrier", "xstate.error.actor.cleanupBarrier"],
-      "when": "Terminal is from an exited invoke, or certificate effectiveScope/cleanupEpoch/cleanupPhase/invokeLease/frozenReleaseSetId/certificateId/audit digest differs from current registry/context, or authoritative audit scope/frozenReleaseSetId differs, or liveResourceCount or unresolvedReleaseCount is nonzero.",
+      "certificateType": "CleanupCertificate",
+      "certificateReadSet": "CleanupCertificate.*",
+      "when": "Terminal is from an exited invoke, or certificate effectiveScope/cleanupEpoch/cleanupPhase/invokeLease/frozenReleaseSetId/certificateId/audit digest differs from current registry/context, or released is not literal true, or authoritative audit scope/frozenReleaseSetId differs, or liveResourceCount or unresolvedReleaseCount is nonzero.",
       "actions": [],
       "result": "Exited-invoke terminals are ignored by XState. Synthetic invalid current-invoke material cannot pass a transition. The current registry phase remains authoritative; promotion has its own fresh terminal and equal-scope replacement has a new wrapper promise over the cached/current phase."
     },
@@ -3372,6 +3514,10 @@
     {
       "id": "I21",
       "statement": "Every external handle or descendant subtree that may survive source exit is covered synchronously before acquisition/start by exactly one deduplicated awaited terminal: its own direct release slot, or only for the exact frozen P3-C07 queue subtree, one parent-owned workflow composite slot registered before queue construction whose trigger calls exact queue.stop() and whose terminal adopts that promise. requestPhase freezes the complete covering slot set before XState disposal/abort; disposers and abort handlers can only trigger existing idempotent releases, no registration capability exists after freeze, and the frozen queue/private job receives no registry capability or separate job/listener/response/staging slot."
+    },
+    {
+      "id": "I22",
+      "statement": "The incarnation registry retains at most configuration.maxReleaseSlotEntries unretired slot entries, one immutable source-tree snapshot, and two immutable phase snapshots. Slot settlement publishes terminal/audit/diagnostic evidence to every referencing snapshot before registry-owned retirement deletes the entry and release closure. New resources receive never-reused generations; capacity or generation exhaustion faults before acquisition; retired entries cannot be reused and snapshot-owned current/cached/promotion/equal-scope certificates cannot change."
     }
   ],
   "unreachableStateAccount": {
@@ -3515,6 +3661,17 @@
           "cleanup phase settlement requires every frozen terminal settled and zero unresolved/live resources",
           "fromCallback disposal and fromPromise abort can trigger but cannot register release work; the composite trigger calls exact queue.stop()",
           "the exact queue reaches stopped and resolves stop waiters only after its active invoke and adapter cleanup settle"
+        ]
+      },
+      {
+        "id": "U17",
+        "configuration": "registry slotEntryCount above maxReleaseSlotEntries, a new resource deduplicated onto a retired slot/closure, a reused or wrapped slotGeneration, more than one source-tree or two phase snapshots, or a current/cached/promoted/equal-scope certificate changed by slot retirement",
+        "excludedBy": [
+          "registration capacity and generation admission fail before identity allocation or resource acquisition",
+          "registry-owned terminal-settled to retired linearization deletes the entry and acquisition key only after immutable evidence is published to every snapshot",
+          "new acquisitions receive registry-allocated never-reused generations and old handles never consult the registry",
+          "one source-tree snapshot and the two-level watch/workflow lattice bound phase snapshots to current plus one superseded watch phase",
+          "all terminal, release-set, diagnostic, audit, and certificate evidence is phase-snapshot owned independently of retired entries"
         ]
       }
     ]
@@ -3698,7 +3855,7 @@
       },
       {
         "id": "PROP-02",
-        "statement": "I03 through I07 and I21 hold under virtual time, delayed release, fromCallback disposal, fromPromise abort, open/settled watch promotion, old terminal delivery, same-scope replacement, cached current-phase settlement, and every release success/error ordering."
+        "statement": "I03 through I07, I21, and I22 hold under virtual time, delayed release, fromCallback disposal, fromPromise abort, open/settled watch promotion, old terminal delivery, same-scope replacement, cached current-phase settlement, slot retirement, and every release success/error ordering."
       },
       {
         "id": "PROP-03",
@@ -3722,7 +3879,7 @@
       },
       {
         "id": "PROP-08",
-        "statement": "Every U01-U16 forbidden configuration remains unreachable; the generator invokes the construction attempt recorded for each U01 through U16 row."
+        "statement": "Every U01-U17 forbidden configuration remains unreachable; the generator invokes the construction attempt recorded for each U01 through U17 row."
       },
       {
         "id": "PROP-09",
@@ -3751,8 +3908,40 @@
       {
         "id": "PROP-15",
         "statement": "Under installed XState 5.32.5 ordering, every source fromCallback disposer and fromPromise abort observes a covering release set frozen from acquisition-time direct slots plus, when a workflow owns the exact P3-C07 subtree, its one parent composite queue slot; no late registration is possible, the composite trigger calls exact queue.stop() and adopts its promise, every current/cached/promotion/equal-scope/replacement success/error ordering settles exactly once across all eight phase cases, T097 reenters, and paused/stopped.clean/stopped.failed/stopped.shutdown have no unresolved close."
+      },
+      {
+        "id": "PROP-16",
+        "statement": "Across 10000 normal recurring-sweep/composite-queue plus direct-resource replacement cycles in one incarnation, slotEntryCount never exceeds the configured bound and returns to zero after each cycle; every slotGeneration is unique and increasing; every release call reaches only its own generation; source-tree snapshots stay at most one and phase snapshots at most two; retiring versus non-retiring reference registries produce byte-identical current-pending/current-cached/watch-to-workflow/equal-scope success/error CleanupCertificates; capacity and generation exhaustion return their exact safe WorkflowFault before identity allocation or resource acquisition and leak no slot, closure, audit unit, or snapshot."
       }
     ],
+    "registryChurn": {
+      "id": "REGISTRY-CHURN-10000",
+      "cycles": 10000,
+      "fixture": {
+        "maxReleaseSlotEntries": 8,
+        "perCycle": "register and settle one rawDownloadQueue:<parentInvokeIdentity>:0 composite slot, then register and settle one direct replacement slot; every parent invoke identity and registry generation is fresh",
+        "phaseCases": [
+          "current pending success",
+          "current pending error",
+          "current cached success",
+          "current cached error",
+          "watch-to-workflow promotion success",
+          "watch-to-workflow promotion error",
+          "equal-scope replacement success",
+          "equal-scope replacement error"
+        ]
+      },
+      "assertions": [
+        "peak slotEntryCount is 1 for the sequential fixture and never exceeds maxReleaseSlotEntries; end-of-cycle slotEntryCount is 0",
+        "20000 allocated slotGeneration values are unique, strictly increasing, and never reused after entry retirement",
+        "each release closure is called exactly once by its matching slotInstanceId; retired handles cannot call or deduplicate onto any later closure",
+        "sourceTreeSnapshotCount is at most 1, phaseSnapshotCount is at most 2, and both return to 0 after finishCleanupScope",
+        "for all eight phase cases, retiring and non-retiring reference registries emit byte-identical CleanupCertificate values for the same epoch, phase, lease, scope, ordered release set, terminal outcomes, diagnostics, and audit",
+        "with 8 unresolved entries, a ninth distinct-key new-slot registration returns the exact sync.release-slot-capacity transient WorkflowFault before generation allocation or acquisition and leaves counts unchanged; after settlement all 8 entries retire",
+        "with slotGeneration at Number.MAX_SAFE_INTEGER, the next registration returns the exact sync.release-slot-generation-exhausted invariant WorkflowFault before identity allocation or acquisition and never wraps or reuses a generation"
+      ],
+      "postcondition": "Incarnation duration and completed-cycle count do not increase retained registry entries, release closures, source-tree snapshots, or phase caches; certificate semantics are independent of slot-entry retirement."
+    },
     "requiredFailureArtifacts": [
       "seed",
       "shrunk event trace",
@@ -3765,7 +3954,8 @@
       "credential latest/attempt/fault revisions",
       "control cache fingerprint/retention/capacity state",
       "process incarnation identity",
-      "cleanup phase and invoke lease plus phase-terminal identity"
+      "cleanup phase and invoke lease plus phase-terminal identity",
+      "release-slot generation/high-water mark, retained-entry count, source-tree/phase snapshot counts, and retirement evidence"
     ]
   },
   "traceability": [
@@ -3798,9 +3988,9 @@
     {
       "id": "F17",
       "transitions": ["T022", "T024", "T121", "T122", "T140", "T141", "T143", "T160"],
-      "invariants": ["I04", "I05", "I16", "I21"],
-      "failureInjection": "Run thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners, timers, acquisition-time direct slots, the parent P3-C07 composite slot, and unresolved terminals; exercise installed fromCallback disposal ordering plus exact queue.stop() with queued and active jobs.",
-      "postcondition": "Every settled callback actor owns zero listeners, timers, or unresolved release terminals; disposal only triggers pre-registered direct slots. For the exact P3-C07 subtree, queued jobs own no external handles, the active job aborts and finishes adapter response/staging/finally cleanup, and the parent composite queue.stop() terminal settles before the workflow terminal; counts remain bounded."
+      "invariants": ["I04", "I05", "I16", "I21", "I22"],
+      "failureInjection": "Run REGISTRY-CHURN-10000 plus thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners, timers, acquisition-time direct slots, retired entries, source-tree/phase snapshots, the parent P3-C07 composite slot, and unresolved terminals; exercise installed fromCallback disposal ordering, capacity/generation admission, and exact queue.stop() with queued and active jobs.",
+      "postcondition": "Every settled callback actor owns zero listeners, timers, unresolved release terminals, or registry entries; disposal only triggers pre-registered direct slots. For the exact P3-C07 subtree, queued jobs own no external handles, the active job aborts and finishes adapter response/staging/finally cleanup, and the parent composite queue.stop() terminal settles before its entry retires and the workflow terminal completes. Entry/snapshot counts remain within exact bounds, no generation/closure is reused, and capacity/generation exhaustion starts no resource."
     },
     {
       "id": "F18",
@@ -3821,9 +4011,9 @@
         "T184",
         "T185"
       ],
-      "invariants": ["I06", "I07", "I15", "I21"],
+      "invariants": ["I06", "I07", "I15", "I21", "I22"],
       "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while callback disposal/promise abort, direct closes, and exact P3-C07 queue.stop() are delayed; permute direct/composite release success/error with current/cached/promotion/equal-scope/replacement settlement across all eight source-exit phase cases; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
-      "postcondition": "One registry session owns acquisition-time direct slots and at most one workflow-scoped P3-C07 composite queue slot; phase freeze precedes source disposal/abort; the composite slot terminal is the exact queue.stop() promise and settles only after active adapter cleanup; promotion installs a fresh versioned workflow terminal; equal-scope replacement settles from a new wrapper over the current phase; exact scope/release-set/audit identity and zero live/unresolved counts gate paused/stopped; shutdown never restarts its incarnation."
+      "postcondition": "One registry session owns acquisition-time direct slots and at most one workflow-scoped P3-C07 composite queue slot; phase freeze precedes source disposal/abort; the composite slot terminal is the exact queue.stop() promise and settles only after active adapter cleanup. Terminal evidence enters immutable source-tree/phase snapshots before the slot entry retires; promotion installs a fresh versioned workflow terminal from that snapshot; equal-scope replacement settles from a new wrapper over the current phase; exact CleanupCertificate scope/release-set/audit identity and zero live/unresolved counts gate paused/stopped; retirement cannot change the certificate; shutdown never restarts its incarnation."
     },
     {
       "id": "F19",
@@ -3890,7 +4080,8 @@
         "I18",
         "I19",
         "I20",
-        "I21"
+        "I21",
+        "I22"
       ],
       "failureInjection": "Generate controls and actor outcomes at every state, guard branch, callback-disposal/promise-abort cancellation edge, timer edge, cleanup epoch/phase/lease/release-set race, and restart boundary.",
       "postcondition": "The active state names current work, owns every effect, and controls report only observed transitions."
@@ -3942,27 +4133,53 @@
   },
   "cleanupProtocol": {
     "scopeOrder": ["watch", "workflow"],
-    "owner": "one resource-registry cleanup session per actor incarnation; release handles are deduplicated and idempotent across versioned phases",
+    "owner": "one resource registry per actor incarnation; at most one cleanup session is open, release triggers are idempotent across versioned phases, and registry-owned slot retirement keeps incarnation lifetime bounded",
     "state": {
       "absent": "effectiveCleanupScope is null; no phase terminal is current",
       "open": "one current {epoch, phase, effectiveScope} owns a pending terminal and continues release/audit",
       "settled": "the current phase owns one immutable terminal/certificate and cached audit; the session remains promotable until finishCleanupScope"
     },
     "releaseSlotProtocol": {
-      "register": "Except for the exact frozen P3-C07 queue subtree covered by compositeQueueSlotProtocol, before an actor or descendant acquires/starts each external resource it synchronously calls registerReleaseSlot(ownerScope, stableResourceId, release). The registry deduplicates by ownerScope plus stableResourceId and immediately creates one pending terminal. Registration completes before the resource becomes live or externally reachable; a failed acquisition settles that same slot.",
+      "register": "Except for the exact frozen P3-C07 queue subtree covered by compositeQueueSlotProtocol, before an actor or descendant acquires/starts each external resource it synchronously calls registerReleaseSlot(ownerScope, ownerInvokeIdentity, resourceOrdinal, stableResourceId, release). The registry allocates one never-reused slotGeneration, creates slotInstanceId=<incarnationId>:<slotGeneration>, and immediately creates one pending terminal. The exact unretired acquisition key deduplicates only callers for that same resource acquisition. Registration completes before the resource becomes live or externally reachable; a failed acquisition settles and retires that same slot.",
       "capabilities": "Direct-resource acquisition code receives a register capability only while its owner source tree is active. initialBackfill or recurringSweep uses that parent capability once to pre-register the P3-C07 composite slot, but the exact queue and private job receive only their frozen adapter/request/capacity inputs and never receive the registry or any register/trigger capability. A disposer or AbortSignal handler receives only triggerRelease(slotId). The first requestPhase synchronously revokes every register capability in the exiting source ownership tree and freezes the eligible covering subset; later promotion can select a broader subset only from that same already-registered tree. The type/state boundary exposes no register operation after the first freeze.",
       "trigger": "triggerRelease is idempotent and may run from requestPhase, fromCallback disposal, fromPromise abort, normal completion, or descendant shutdown. Every caller addresses the same slot and same terminal; no caller creates a close promise.",
-      "settle": "A slot terminal settles success or error exactly once after the owned handle is closed/removed. Release error is diagnostic material, not permission to skip the remaining slots. A phase terminal cannot settle until all frozen slot terminals have settled and the authoritative audit reports zero live and zero unresolved resources.",
+      "settle": "A slot terminal settles success or error exactly once after the owned handle is closed/removed. Release error is diagnostic material, not permission to skip the remaining slots. The terminal yields immutable SlotTerminalEvidence before registry retirement. A phase terminal cannot settle until all phase-local frozen terminal references have yielded evidence and the phase-local authoritative audit reports zero live and zero unresolved resources.",
       "descendants": "All descendants use direct acquisition-time slots except the exact frozen P3-C07 queue subtree. For that sole exception, initialBackfill or recurringSweep owns one parent composite slot before queue construction; the queue and private rawDownloadJob register nothing, receive no registry capability, and own no separate job/listener/response/staging slots. The parent workflow terminal awaits the composite queue.stop() terminal.",
-      "lateRegistration": "Impossible by construction: JavaScript cannot interleave requestPhase with synchronous registration, requestPhase revokes the only register capability before freezing, and source disposer/abort closures never possess it. An implementation exposing registration to disposal/abort violates I21 before runtime."
+      "lateRegistration": "Impossible by construction: JavaScript cannot interleave requestPhase with synchronous registration, requestPhase revokes the only register capability before freezing, and source disposer/abort closures never possess it. An implementation exposing registration to disposal/abort violates I21 before runtime.",
+      "capacityAdmission": "Registration first resolves an exact unretired acquisition-key deduplication without allocating an identity or acquiring another resource. For a new key, if retained slotEntryCount equals configuration.maxReleaseSlotEntries, registration returns WorkflowFault {category:transient, code:sync.release-slot-capacity, safeMessage:Release-slot capacity exhausted.} before allocating an identity, invoking release, acquiring a resource, or changing the live/unresolved audit. The actor follows its typed fault path and cleanup covers only entries that already exist.",
+      "generationAdmission": "After deduplication and capacity admission for a new key, the registry allocates slotGeneration as a monotonically increasing positive safe integer. It never wraps, resets, or reuses the value inside an incarnation. If allocating the next generation would exceed Number.MAX_SAFE_INTEGER, registration returns WorkflowFault {category:invariant, code:sync.release-slot-generation-exhausted, safeMessage:Release-slot generation exhausted.} before identity allocation or resource acquisition; the incarnation follows terminal failure."
+    },
+    "slotLifecycle": {
+      "states": ["registered", "release-triggered", "terminal-settled", "retired"],
+      "identity": "slotInstanceId is <incarnationId>:<slotGeneration>. slotGeneration is registry-allocated, monotonic, positive, and never reused. stableResourceId remains diagnostic/audit metadata; the P3-C07 value remains rawDownloadQueue:<parentInvokeIdentity>:0. A new resource always receives a new generation even if its stableResourceId text repeats.",
+      "deduplication": "Only the exact unretired acquisition key {ownerScope, ownerInvokeIdentity, resourceOrdinal} can return its existing slot handle. This lookup precedes new-slot capacity and generation admission and allocates or acquires nothing. The key is single-resource and capability-bound. Retirement revokes it. An old key or handle can only observe its captured settled terminal; it cannot address a new slot, and a new acquisition cannot deduplicate onto an old settled terminal or release closure.",
+      "normalOrAcquisitionFailureLinearization": "When a slot that no cleanup snapshot references settles normally or as acquisition failure, the registry atomically creates immutable SlotTerminalEvidence, updates live/unresolved counts, appends at most one bounded safe diagnostic, and revokes the acquisition key and registry trigger handle. The terminal-settled to retired transition linearizes at deletion of the slot entry in that same turn; only then may the owning actor terminal or a replacement acquisition proceed. No tombstone or release closure remains in the registry.",
+      "phaseReferencedLinearization": "When a slot referenced by the immutable source-tree snapshot or any open, promoted, settled, or cached phase settles, the registry atomically creates immutable SlotTerminalEvidence; resolves the already-captured terminal reference in the source-tree snapshot and every referencing phase snapshot; creates replacement immutable phase audit/diagnostic records; and revokes the acquisition key and registry trigger handle. The terminal-settled to retired transition linearizes at deletion of the slot entry in that same turn. Any phase that becomes complete then creates its immutable success/error terminal from its own records. No phase performs a later slot-map lookup.",
+      "oldHandleAfterRetirement": "The acquisition owner may retain a local settled promise until its actor terminal. Repeated trigger calls return that same local settled result and never consult the registry. Actor terminal/cancellation drops the handle. Registry entry count and dedup state remain zero for that retired slot.",
+      "retirementAuthority": "Only the registry performs terminal-settled to retired. There is no actor-visible unregister, purge, delete, revive, or reuse operation."
+    },
+    "immutableSnapshots": {
+      "sourceTree": "The first requestPhase atomically revokes acquisition and captures one immutable source-tree snapshot containing every then-unretired covering slot's slotInstanceId, stableResourceId, ownerScope, immutable terminal reference, and diagnostic seed. Later promotion selects from this snapshot even after corresponding registry entries retire.",
+      "openPhase": "Each new phase is one immutable value {cleanupEpoch, cleanupPhase, effectiveScope, ordered frozen slot references, frozenReleaseSetId, terminal}. The ordered release set and identity never change. Equal/narrower replacement creates no phase; it creates only a new invoke wrapper/lease over this value.",
+      "settledPhase": "Settlement atomically replaces the open value with one immutable settled value that additionally owns every SlotTerminalEvidence, bounded diagnostics, authoritativeAudit, certificateId, and success/error terminal. Cached wrappers and GEP05 read only this value, never retired registry entries.",
+      "promotion": "At most one watch-to-workflow promotion creates a fresh immutable workflow phase from the source-tree snapshot. It retains the prior watch phase as the sole superseded snapshot until finishCleanupScope, so open or cached watch evidence remains byte-identical while the current workflow certificate is independent.",
+      "independence": "Slot-entry retirement cannot change a current, cached, promoted, or equal-scope certificate because terminal evidence, ordered release-set identity, diagnostics, audit, certificate ID, and terminal outcome are snapshot-owned values."
+    },
+    "retentionBounds": {
+      "slotEntries": "0 <= slotEntryCount <= configuration.maxReleaseSlotEntries <= 4096. Only registered/release-triggered/terminal-settled-during-the-current-atomic-linearization entries count; retirement deletes each entry and release closure in the same turn.",
+      "sourceTreeSnapshots": "0 when no cleanup session is open; exactly 1 after first requestPhase until finishCleanupScope. It contains at most maxReleaseSlotEntries terminal references/evidence records.",
+      "phaseSnapshots": "0 when no cleanup session is open; otherwise at most 2: one current phase plus at most one superseded watch phase. Equal/narrower replacement allocates no phase snapshot. Each phase contains at most maxReleaseSlotEntries terminal references/evidence records.",
+      "cachedPhases": "A settled current phase is cached only until literal certificate admission and finishCleanupScope. A superseded watch phase is retained only until the same finish. No prior cleanup session phase is retained afterward.",
+      "finishCleanupScope": "After the current CleanupCertificate is admitted, atomically close the session and drop its source-tree snapshot, current/superseded phase snapshots, cached terminals, audits, and diagnostic evidence. The terminal event retains its own immutable certificate, so a following appendCleanupDiagnostics action can copy bounded diagnostics after the purge. Exited invoke events carry their own immutable values and are rejected by XState identity.",
+      "total": "At every instant, registry-owned slot entries plus source-tree/phase terminal-reference records are at most 4 * maxReleaseSlotEntries <= 16384; the one source-tree plus at most two phase envelopes add at most 3, so total retained registry/session units are at most 16387. Incarnation churn changes only scalar epoch/phase/lease/slotGeneration high-water marks."
     },
     "compositeQueueSlotProtocol": {
       "owner": "The active initialBackfill or recurringSweep parent invoke owns exactly one workflow-scoped registry slot for its exact frozen P3-C07 queue subtree.",
-      "input": "registerReleaseSlot receives ownerScope=workflow, stableResourceId=rawDownloadQueue:<parentInvokeIdentity>:0, and one idempotent release closure capturing a queue variable that is unbound until construction. The exact queue constructor still receives only the production download adapter and positive capacity.",
+      "input": "registerReleaseSlot receives ownerScope=workflow, ownerInvokeIdentity=<parentInvokeIdentity>, resourceOrdinal=0, stableResourceId=rawDownloadQueue:<parentInvokeIdentity>:0, and one idempotent release closure capturing a queue variable that is unbound until construction. The registry adds its never-reused slotGeneration. The exact queue constructor still receives only the production download adapter and positive capacity.",
       "linearizationPoint": "The parent synchronously registers rawDownloadQueue:<parentInvokeIdentity>:0 before constructing the queue, then constructs and binds the exact queue in the same JavaScript turn in which neither XState nor requestPhase can interleave. If construction throws, the parent settles that already-registered slot as an acquisition failure before propagating the fault.",
       "releaseTrigger": "The slot's idempotent trigger calls exact queue.stop() once after binding. All requestPhase, parent abort, and normal-completion callers address this same trigger; none constructs a second close job.",
       "terminal": "The registry slot terminal aliases/adopts the exact promise returned by queue.stop(); it is not a parallel wrapper close. The terminal settles with that promise only after the queue reaches stopped.",
-      "auditIdentity": "rawDownloadQueue:<parentInvokeIdentity>:0 is one member of the workflow phase frozen release set, participates once in frozenReleaseSetId, and contributes one liveResourceCount/unresolvedReleaseCount unit until the exact queue.stop() promise settles.",
+      "auditIdentity": "rawDownloadQueue:<parentInvokeIdentity>:0 plus its registry slotGeneration is one member of the workflow phase frozen release set, participates once in frozenReleaseSetId, and contributes one liveResourceCount/unresolvedReleaseCount unit until the exact queue.stop() promise settles. The accepted stableResourceId text and queue API are unchanged.",
       "slotScope": "workflow",
       "transitiveProof": [
         "Queued P3-C07 jobs hold only request/deferred/flags and no acquired external handle; stop rejects each queued promise synchronously.",
@@ -3981,15 +4198,17 @@
       "target cleanupBarrier fromPromise starts and awaits those frozen slot terminals"
     ],
     "requestPhaseLinearization": [
-      "The first request revokes every acquisition capability in the exiting source ownership tree, freezes the complete eligible covering subset of its pre-registered direct slots plus any parent P3-C07 composite queue slot, assigns frozenReleaseSetId, and triggers each selected slot idempotently before source disposal/abort can run. Later requests cannot register anything.",
-      "No session: allocate epoch+1, phase+1, lease+1, effective minimum scope, pending phase terminal over the frozen set, and idempotently request releases.",
+      "The first request revokes every acquisition capability in the exiting source ownership tree, captures the one immutable complete source-tree snapshot, selects the eligible covering subset of its pre-registered direct slots plus any parent P3-C07 composite queue slot, creates the immutable phase snapshot and frozenReleaseSetId, and triggers each selected slot idempotently before source disposal/abort can run. Later requests cannot register anything.",
+      "No session: allocate epoch+1, phase+1, lease+1, effective minimum scope, one source-tree snapshot, and one pending immutable phase snapshot over the selected set, then idempotently request releases.",
       "Equal or narrower request: keep epoch/phase/effective scope and its frozen set, allocate lease+1, and return a new per-invoke promise over the current pending or cached immutable terminal.",
-      "Broader watch-to-workflow request: before replacement invoke creation, atomically select/freeze the broader subset of the same pre-registered source-tree covering slots, including any workflow composite queue slot, set workflow, allocate phase+1 and lease+1, install a fresh pending workflow terminal over that union, reuse/deduplicate releases, and run a fresh workflow audit. No acquisition capability is reopened. This rule is identical for open and settled watch phases.",
-      "finishCleanupScope: only after literal certificate admission, close the session; later cleanup allocates a new epoch."
+      "Broader watch-to-workflow request: before replacement invoke creation, atomically select the broader subset of the immutable source-tree snapshot, including terminal evidence for already-retired members and any workflow composite queue slot, set workflow, allocate phase+1 and lease+1, install a fresh pending immutable workflow phase over that union, reuse/deduplicate only still-live release triggers, and run a fresh snapshot-local workflow audit. No acquisition capability is reopened. This rule is identical for open and settled watch phases.",
+      "finishCleanupScope: only after literal CleanupCertificate admission, close the session and purge its one source-tree plus at most two phase snapshots; the event-owned immutable certificate remains available to following actions, and later cleanup allocates a new epoch."
     ],
-    "phaseSettlement": "Only the registry may settle a phase. It snapshots the phase effective scope and frozen release-set identity, awaits every slot terminal even when one rejects, performs the audit for exactly that scope/set, and creates a success or error certificate only at liveResourceCount zero and unresolvedReleaseCount zero. A superseded phase may finish for its old wrapper, but cannot mutate or settle the current phase.",
-    "invokeAdapter": "Each cleanupBarrier fromPromise awaits resourceRegistry.awaitPhase(epoch, phase), which always returns a new promise for that invocation. If the same phase is already settled, the registry resolves the new promise from the cached immutable phase terminal and the wrapper binds the current lease. It never reuses an old invocation output. If scope promoted, the wrapper awaits the fresh workflow phase, never the old settled watch promise.",
-    "admission": "Current XState invoke plus exact certificate/context/registry epoch, phase, invoke lease, effective-scope, and frozenReleaseSetId equality; scope dominance; audit scope and release-set equality; zero live and unresolved counts; current certificate/audit digest equality.",
+    "phaseSettlement": "Only the registry may settle a phase. The immutable phase snapshot already owns its effective scope, ordered frozen release set, release-set identity, and terminal references. It awaits every reference even when one rejects, replaces the open snapshot with an immutable settled snapshot containing every terminal evidence/diagnostic/audit fact, and creates a CleanupCertificate success or WorkflowFault plus CleanupCertificate error only at literal liveResourceCount=0 and unresolvedReleaseCount=0. A superseded phase may finish for its old wrapper but cannot mutate or settle the current phase. Retired slot entries are never consulted.",
+    "invokeAdapter": "Each cleanupBarrier fromPromise awaits resourceRegistry.awaitPhase(epoch, phase), which always returns a new promise for that invocation over the immutable phase snapshot. If the same phase is already settled, the registry resolves the new promise from its cached immutable terminal and the wrapper binds the current lease. It never reuses an old invocation output. If scope promoted, the wrapper awaits the fresh workflow phase, never the old settled watch promise. Slot retirement has no effect on either result.",
+    "admissionType": "CleanupCertificate",
+    "admissionReadSet": "CleanupCertificate.*",
+    "admission": "Parse the success output or WorkflowFault.releaseCertificate through the exact CleanupCertificate authority, then require current XState invoke plus exact certificate/context/registry epoch, phase, invoke lease, effective-scope, and frozenReleaseSetId equality; scope dominance; audit scope and release-set equality; literal released=true; literal zero live and unresolved counts; and current immutable phase certificate/audit digest equality.",
     "invalidMaterial": "Wrong scope, stale phase/epoch/lease, replaced invoke, wrong frozen release set, wrong certificate ID/digest, or nonzero live/unresolved audit cannot transition. Old-invoke events are ignored; synthetic current-invoke invalid material leaves the current phase pending/settled and observable as an invariant fault at the adapter boundary.",
     "sourceExitTraces": [
       {
@@ -4262,7 +4481,7 @@
     {
       "id": "R189-13",
       "disposition": "resolved",
-      "oracle": ["PROP-08 covers U01-U16"]
+      "oracle": ["PROP-08 covers U01-U17"]
     },
     {
       "id": "R189-14",
@@ -4317,6 +4536,39 @@
         "globalEventPolicy.GEP04",
         "globalEventPolicy.GEP05",
         "globalEventPolicy.GEP06"
+      ]
+    },
+    {
+      "id": "R189-18",
+      "disposition": "resolved",
+      "oracle": [
+        "types.CleanupCertificate",
+        "faultType.WorkflowFault.releaseCertificate",
+        "events.xstate.done.actor.cleanupBarrier",
+        "events.xstate.error.actor.cleanupBarrier",
+        "actors.cleanupBarrier.successType",
+        "actors.cleanupBarrier.errorReleaseCertificateType",
+        "guards.cleanupCertificateCoversState.certificateType",
+        "guards.cleanupFailureCertificateCoversState.certificateType",
+        "globalEventPolicy.GEP05.certificateType",
+        "cleanupProtocol.admissionType",
+        "oracle.cleanupTerminalFieldSetClosure"
+      ]
+    },
+    {
+      "id": "R189-19",
+      "disposition": "resolved",
+      "oracle": [
+        "configuration.maxReleaseSlotEntries",
+        "cleanupProtocol.slotLifecycle",
+        "cleanupProtocol.immutableSnapshots",
+        "cleanupProtocol.retentionBounds",
+        "coverage.registryChurn",
+        "I22",
+        "U17",
+        "PROP-16",
+        "F17",
+        "F18"
       ]
     }
   ]
