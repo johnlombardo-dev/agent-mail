@@ -1,17 +1,18 @@
 {
   "format": "agent-mail.sync-statechart/v1",
   "schemaVersion": 1,
-  "modelVersion": "1.0.0-candidate.5",
+  "modelVersion": "1.0.0-candidate.6",
   "status": "candidate-awaiting-independent-review",
   "oracle": {
     "normative": true,
     "description": "This file is the single normative lifecycle oracle. The accompanying Markdown files are checked views and rationale, not a second model.",
     "transitionExpansion": "A transition whose source is an array expands to one identical transition per listed atomic source configuration. @source in stoppedActors expands to the invokedActors of that source. @target in startedActors expands to the invokedActors of the target.",
     "eventSelection": "For one dequeued event, evaluate transitions from the active atomic state in listed priority order. Take the first transition whose guards all pass. If no state transition passes, apply globalEventPolicy.",
-    "actionOrder": "Installed XState 5.32.5 orders a selected external transition as source exit actions, transition actions, target entry actions, target invoke input evaluation, source fromCallback disposal or fromPromise abort notification, then target invoke start. Every possibly surviving resource therefore has a deduplicated release slot and awaited terminal registered synchronously before acquisition/start. beginOrPromoteCleanup freezes that already-complete slot set in its transition action; a disposer or abort handler can only trigger an existing idempotent release.",
+    "checkedViewRule": "Every checked-view global-policy row must equal its globalEventPolicy oracle object in all five fields: id, ordered events, literal when condition, ordered actions, and literal result. Omitting an action column or paraphrasing GEP04/GEP05/GEP06 is a projection failure.",
+    "actionOrder": "Installed XState 5.32.5 orders a selected external transition as source exit actions, transition actions, target entry actions, target invoke input evaluation, source fromCallback disposal or fromPromise abort notification, then target invoke start. Every possibly surviving resource is therefore covered before acquisition/start by either its own deduplicated release slot or the exact P3-C07 queue subtree's one parent-owned composite slot. beginOrPromoteCleanup freezes that already-complete slot set in its transition action; a disposer or abort handler can only trigger an existing idempotent release.",
     "versionRule": "Only advanceVersion changes context.version. Ignored, stale, duplicate, rejected, and idempotent no-op events leave it unchanged. Public observations are ordered by version only when their required incarnationId values match; different incarnations are unordered.",
-    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release and every acquisition-time release-slot terminal settles. cleanupBarrier is a per-invoke bounded fromPromise over a frozen registry phase terminal. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity, the frozen release-set identity, and zero live or unresolved resources. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation.",
-    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-01 through R189-15 are dispositioned as resolved in this candidate; independent exact-digest review remains required."
+    "terminalActorRule": "Every actor terminal event is emitted only after its own handles release and every acquisition-time release-slot terminal settles. The exact P3-C07 queue subtree is covered transitively by one parent-owned composite slot whose release is exact queue.stop() and whose terminal adopts that exact promise; the frozen queue and private job receive no registry capability and register no separate slots. cleanupBarrier is a per-invoke bounded fromPromise over a frozen registry phase terminal. Admission requires current invoke plus exact epoch/phase/lease/effective-scope/certificate/audit identity, the frozen release-set identity, and zero live or unresolved resources. Watch-to-workflow promotion always installs a fresh workflow phase terminal before replacement invocation.",
+    "reviewStatus": "Issue #196 accepts public (incarnationId, version), the six fixed-message non-success envelopes, and the exhaustive 85-cell resolver. R189-01 through R189-17 are dispositioned as resolved in this candidate; independent exact-digest review remains required."
   },
   "frozenInputs": [
     {
@@ -627,7 +628,7 @@
     },
     {
       "id": "beginOrPromoteCleanup",
-      "effect": "Atomically call resourceRegistry.requestPhase(targetState.minimumScope) during the transition action. First revoke every acquisition capability in the exiting source ownership tree, freeze the complete eligible set of release slots that were synchronously registered before resource acquisition/start, and capture its identity. Registration after this first freeze is structurally unavailable. Then: if no session, increment cleanupEpoch and cleanupPhase and create it; on every cleanup-state entry increment cleanupInvokeLease; on watch-to-workflow promotion increment cleanupPhase and install a fresh workflow terminal over the broader subset of the same pre-registered source-tree slots before returning even if the watch phase already settled; on equal/broader existing scope retain the phase and expose its pending/cached terminal through a new per-invoke promise. Trigger every frozen idempotent release and copy returned epoch/phase/lease/effectiveScope to context. Never downgrade or trust event material."
+      "effect": "Atomically call resourceRegistry.requestPhase(targetState.minimumScope) during the transition action. First revoke every acquisition capability in the exiting source ownership tree, freeze the complete eligible set of release slots registered before resource acquisition/start, including any one parent-owned P3-C07 composite queue slot, and capture its identity. Registration after this first freeze is structurally unavailable. Then: if no session, increment cleanupEpoch and cleanupPhase and create it; on every cleanup-state entry increment cleanupInvokeLease; on watch-to-workflow promotion increment cleanupPhase and install a fresh workflow terminal over the broader subset of the same pre-registered source-tree slots before returning even if the watch phase already settled; on equal/broader existing scope retain the phase and expose its pending/cached terminal through a new per-invoke promise. Trigger every frozen idempotent release and copy returned epoch/phase/lease/effectiveScope to context. A composite queue trigger calls exact queue.stop() once and its slot terminal adopts that promise. Never downgrade or trust event material."
     },
     {
       "id": "finishCleanupScope",
@@ -667,8 +668,8 @@
       ],
       "success": "InitialBackfillLoopResult with completed or already-complete, committed completion facts, and the next validated watch strategy.",
       "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
-      "cancellation": "The fromPromise abort handler only triggers acquisition-time registered release slots, including the rawDownloadQueue descendant slot; the actor awaits every slot terminal before its cancelled result, which remains late and ignored after exit.",
-      "resourceRegistration": "Before each external handle or rawDownloadQueue is acquired, synchronously register its deduplicated release slot and awaited terminal; no registration capability remains after cleanup freeze.",
+      "cancellation": "The fromPromise abort handler only triggers acquisition-time registered releases. For the rawDownloadQueue it triggers the one parent-owned composite slot; that slot calls exact queue.stop(), and the registry phase awaits that exact stop promise before it can settle. The actor awaits every direct or composite slot terminal before its cancelled result, which remains late and ignored after exit.",
+      "resourceRegistration": "Before each direct external handle is acquired, synchronously register its deduplicated release slot and awaited terminal. Before constructing the exact P3-C07 queue, synchronously register one workflow-scoped parent composite slot keyed by this parent invoke identity plus the fixed queue ordinal; its release closure captures a not-yet-bound queue variable. Construct and bind the queue in the same non-interleavable JavaScript turn; construction failure settles that pre-existing slot. The queue receives only adapter and capacity, never the registry. No registration capability remains after cleanup freeze.",
       "retryOwner": "syncLifecycle",
       "durableTerminal": {
         "completed": "completions.complete transaction: checkpoint uidNext/modseq/sweepCursor/backfillCompleted/observedVersion plus all InitialBackfillCompletion fields",
@@ -717,8 +718,8 @@
       ],
       "success": "RecurringMailboxSweepResult with completed or not-eligible, committed progress, and the next validated watch strategy.",
       "error": "WorkflowFault carrying attemptedCredentialRevision for authentication faults after all actor-owned resources close.",
-      "cancellation": "The fromPromise abort handler only triggers acquisition-time registered release slots, including the rawDownloadQueue descendant slot; the actor awaits every slot terminal before its cancelled result, which remains late and ignored after exit.",
-      "resourceRegistration": "Before each external handle or rawDownloadQueue is acquired, synchronously register its deduplicated release slot and awaited terminal; no registration capability remains after cleanup freeze.",
+      "cancellation": "The fromPromise abort handler only triggers acquisition-time registered releases. For the rawDownloadQueue it triggers the one parent-owned composite slot; that slot calls exact queue.stop(), and the registry phase awaits that exact stop promise before it can settle. The actor awaits every direct or composite slot terminal before its cancelled result, which remains late and ignored after exit.",
+      "resourceRegistration": "Before each direct external handle is acquired, synchronously register its deduplicated release slot and awaited terminal. Before constructing the exact P3-C07 queue, synchronously register one workflow-scoped parent composite slot keyed by this parent invoke identity plus the fixed queue ordinal; its release closure captures a not-yet-bound queue variable. Construct and bind the queue in the same non-interleavable JavaScript turn; construction failure settles that pre-existing slot. The queue receives only adapter and capacity, never the registry. No registration capability remains after cleanup freeze.",
       "retryOwner": "syncLifecycle",
       "durableTerminal": {
         "completed": "completions.complete transaction using InitialBackfillCompletionRepository: checkpoint uidNext/modseq/sweepCursor/backfillCompleted/observedVersion plus all completion fields",
@@ -819,23 +820,31 @@
       "id": "rawDownloadQueue",
       "kind": "xstate-v5-child-machine",
       "owner": "initialBackfill|recurringSweep",
-      "input": [
-        "one production download adapter",
-        "positive queue capacity",
-        "parent resource registry"
-      ],
+      "input": ["one production download adapter", "positive queue capacity"],
       "success": "Serial FIFO job results with typed overflow; at most one rawDownloadJob is active.",
       "error": "A job error rejects only that job and leaves the queue able to process or stop according to its accepted machine.",
-      "cancellation": "The parent abort handler only triggers the queue release slot registered before child start. queue.stop triggers pre-registered queued-job/active-job slots and acknowledges only after every existing adapter, response-stream, and staging terminal settles.",
-      "resourceRegistration": "The parent registers the queue descendant slot before start. The queue registers each job slot before admission; the active job registers every response/staging handle slot before acquisition.",
+      "cancellation": "The parent-owned composite release trigger calls exact queue.stop() once. The frozen queue synchronously rejects every queued job, aborts the one active fromPromise controller, and resolves stop waiters only after that invoke settles. The invoke settles only after adapter.download fulfills or rejects and its finally removes the caller abort listener; the production adapter settles only after response/staging cleanup. The registry therefore observes the whole queue subtree through the one queue.stop() terminal.",
+      "resourceRegistration": "None inside the frozen queue. The parent registers one workflow-scoped composite queue slot before queue construction; the exact queue and private rawDownloadJob receive no registry or capability and register no job, listener, response, or staging slots.",
       "children": ["rawDownloadJob"],
-      "note": "Exactly one instance may exist because backfill and sweep are mutually exclusive. It cannot survive its owning bounded actor.",
+      "note": "Exactly one instance may exist because backfill and sweep are mutually exclusive. Queued jobs contain request/deferred state only and own no acquired external handles. The composite terminal is the exact queue.stop() promise, so the queue subtree cannot survive its owning bounded actor.",
       "acceptedArtifact": {
         "issue": 98,
         "planItem": "P3-C07",
         "gitCommit": "e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae",
         "path": "packages/imap/src/raw-download-queue.ts",
         "sha256": "b676dee263b51eaac88846d03a109e6a77ad428959cfbc54de491b076d4cdd67"
+      },
+      "acceptedTests": {
+        "issue": 98,
+        "gitCommit": "e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae",
+        "path": "packages/imap/test/raw-download-queue-p3-c07.test.ts",
+        "sha256": "53146a3be9ddb66fa9374ad04ed59fca533601c0daa8f07e51925292c68f583f"
+      },
+      "transitiveAdapterEvidence": {
+        "gitCommit": "e3dd0462a3fc8b1d5770293fc2f270b5c0a76dae",
+        "path": "packages/imap/src/raw-download.ts",
+        "sha256": "373be897143cac27423c4857db9f2f8d7a8b96239034a8ad72444d56d579b9a2",
+        "terminalContract": "createRawMessageDownloadAdapter.download fulfills or rejects only after its response close/error path, awaited stage promise, and abort-listener finally cleanup complete."
       }
     },
     {
@@ -847,10 +856,10 @@
         "actor-owned AbortSignal",
         "production download adapter"
       ],
-      "success": "One raw download result after response and staging resources settle.",
-      "error": "One typed download/cancellation error after the exact caller abort listener is removed.",
-      "cancellation": "Queue stop or job cancel only triggers the job's existing idempotent release slots; the queue cannot acknowledge stopped before the abort-listener, response-stream, and staging terminals settle.",
-      "resourceRegistration": "fromPromise start registers the abort-listener slot, and registers response/staging slots synchronously before each acquisition. Failure before acquisition settles the already-registered slot without a live handle."
+      "success": "One raw download result after adapter.download and its response/staging cleanup settle, followed by removal of the exact caller abort listener in the queue actor's finally.",
+      "error": "One typed download/cancellation error after adapter.download rejects and the exact caller abort listener is removed in finally.",
+      "cancellation": "Queue stop aborts the active job controller. The private fromPromise does not settle until adapter.download fulfills or rejects and its finally removes the caller abort listener; only then may the queue enter stopped and resolve stop waiters.",
+      "resourceRegistration": "None. This private actor receives no registry capability. Its cleanup is transitively owned by the parent's one composite queue slot and exact queue.stop() terminal."
     }
   ],
   "states": [
@@ -2801,7 +2810,7 @@
     {
       "id": "GEP05",
       "events": ["xstate.done.actor.cleanupBarrier", "xstate.error.actor.cleanupBarrier"],
-      "when": "Terminal is from an exited invoke, or certificate scope/epoch/phase/invokeLease/certificateId/audit digest differs from current registry/context, or audit scope differs, or liveResourceCount is nonzero.",
+      "when": "Terminal is from an exited invoke, or certificate effectiveScope/cleanupEpoch/cleanupPhase/invokeLease/frozenReleaseSetId/certificateId/audit digest differs from current registry/context, or authoritative audit scope/frozenReleaseSetId differs, or liveResourceCount or unresolvedReleaseCount is nonzero.",
       "actions": [],
       "result": "Exited-invoke terminals are ignored by XState. Synthetic invalid current-invoke material cannot pass a transition. The current registry phase remains authoritative; promotion has its own fresh terminal and equal-scope replacement has a new wrapper promise over the cached/current phase."
     },
@@ -3362,7 +3371,7 @@
     },
     {
       "id": "I21",
-      "statement": "Every external or descendant resource that may survive source exit has exactly one deduplicated release slot and awaited terminal registered synchronously before acquisition/start. requestPhase freezes that complete slot set before XState disposal/abort; disposers and abort handlers can only trigger existing idempotent releases, and no registration capability exists after freeze."
+      "statement": "Every external handle or descendant subtree that may survive source exit is covered synchronously before acquisition/start by exactly one deduplicated awaited terminal: its own direct release slot, or only for the exact frozen P3-C07 queue subtree, one parent-owned workflow composite slot registered before queue construction whose trigger calls exact queue.stop() and whose terminal adopts that promise. requestPhase freezes the complete covering slot set before XState disposal/abort; disposers and abort handlers can only trigger existing idempotent releases, no registration capability exists after freeze, and the frozen queue/private job receives no registry capability or separate job/listener/response/staging slot."
     }
   ],
   "unreachableStateAccount": {
@@ -3499,12 +3508,13 @@
       },
       {
         "id": "U16",
-        "configuration": "paused, stopped.clean, stopped.failed, or stopped.shutdown with an unresolved source close or release-slot terminal",
+        "configuration": "paused, stopped.clean, stopped.failed, or stopped.shutdown with an unresolved source close, direct release-slot terminal, or exact P3-C07 composite queue.stop() terminal",
         "excludedBy": [
-          "resource slots and terminals are registered synchronously before acquisition/start",
-          "requestPhase freezes the complete eligible release set before source disposer or abort notification",
+          "direct resource slots and the parent P3-C07 composite queue slot are registered synchronously before acquisition/start",
+          "requestPhase freezes the complete eligible covering set before source disposer or abort notification",
           "cleanup phase settlement requires every frozen terminal settled and zero unresolved/live resources",
-          "fromCallback disposal and fromPromise abort can trigger but cannot register release work"
+          "fromCallback disposal and fromPromise abort can trigger but cannot register release work; the composite trigger calls exact queue.stop()",
+          "the exact queue reaches stopped and resolves stop waiters only after its active invoke and adapter cleanup settle"
         ]
       }
     ]
@@ -3740,7 +3750,7 @@
       },
       {
         "id": "PROP-15",
-        "statement": "Under installed XState 5.32.5 ordering, every source fromCallback disposer and fromPromise abort observes a release set frozen from acquisition-time slots; no late registration is possible, every current/cached/promotion/equal-scope/replacement success/error ordering settles exactly once, T097 reenters, and paused/stopped.clean/stopped.failed/stopped.shutdown have no unresolved close."
+        "statement": "Under installed XState 5.32.5 ordering, every source fromCallback disposer and fromPromise abort observes a covering release set frozen from acquisition-time direct slots plus, when a workflow owns the exact P3-C07 subtree, its one parent composite queue slot; no late registration is possible, the composite trigger calls exact queue.stop() and adopts its promise, every current/cached/promotion/equal-scope/replacement success/error ordering settles exactly once across all eight phase cases, T097 reenters, and paused/stopped.clean/stopped.failed/stopped.shutdown have no unresolved close."
       }
     ],
     "requiredFailureArtifacts": [
@@ -3789,8 +3799,8 @@
       "id": "F17",
       "transitions": ["T022", "T024", "T121", "T122", "T140", "T141", "T143", "T160"],
       "invariants": ["I04", "I05", "I16", "I21"],
-      "failureInjection": "Run thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners, timers, acquisition-time slots, and unresolved terminals; exercise installed fromCallback disposal ordering.",
-      "postcondition": "Every settled callback actor owns zero listeners, timers, or unresolved release terminals; disposal only triggers pre-registered slots and counts remain bounded."
+      "failureInjection": "Run thousands of virtual-clock start, tick, cancel, error, pause, and resume cycles while counting exact listeners, timers, acquisition-time direct slots, the parent P3-C07 composite slot, and unresolved terminals; exercise installed fromCallback disposal ordering plus exact queue.stop() with queued and active jobs.",
+      "postcondition": "Every settled callback actor owns zero listeners, timers, or unresolved release terminals; disposal only triggers pre-registered direct slots. For the exact P3-C07 subtree, queued jobs own no external handles, the active job aborts and finishes adapter response/staging/finally cleanup, and the parent composite queue.stop() terminal settles before the workflow terminal; counts remain bounded."
     },
     {
       "id": "F18",
@@ -3812,8 +3822,8 @@
         "T185"
       ],
       "invariants": ["I06", "I07", "I15", "I21"],
-      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while callback disposal/promise abort and child closes are delayed; permute release success/error with current/cached/promotion/equal-scope/replacement settlement; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
-      "postcondition": "One registry session owns acquisition-time release slots; phase freeze precedes source disposal/abort; promotion installs a fresh versioned workflow terminal; equal-scope replacement settles from a new wrapper over the current phase; exact scope/release-set/audit identity and zero unresolved closes gate paused/stopped; shutdown never restarts its incarnation."
+      "failureInjection": "Concurrently send stop, restart, signal shutdown, and actor failure while callback disposal/promise abort, direct closes, and exact P3-C07 queue.stop() are delayed; permute direct/composite release success/error with current/cached/promotion/equal-scope/replacement settlement across all eight source-exit phase cases; settle watch immediately before/after promotion processing; replace a settled equal-scope wrapper.",
+      "postcondition": "One registry session owns acquisition-time direct slots and at most one workflow-scoped P3-C07 composite queue slot; phase freeze precedes source disposal/abort; the composite slot terminal is the exact queue.stop() promise and settles only after active adapter cleanup; promotion installs a fresh versioned workflow terminal; equal-scope replacement settles from a new wrapper over the current phase; exact scope/release-set/audit identity and zero live/unresolved counts gate paused/stopped; shutdown never restarts its incarnation."
     },
     {
       "id": "F19",
@@ -3939,26 +3949,42 @@
       "settled": "the current phase owns one immutable terminal/certificate and cached audit; the session remains promotable until finishCleanupScope"
     },
     "releaseSlotProtocol": {
-      "register": "Before an actor or descendant acquires/starts each external resource, it synchronously calls registerReleaseSlot(ownerScope, stableResourceId, release). The registry deduplicates by ownerScope plus stableResourceId and immediately creates one pending terminal. Registration completes before the resource becomes live or externally reachable; a failed acquisition settles that same slot.",
-      "capabilities": "Acquisition code receives a register capability only while its owner source tree is active. A disposer or AbortSignal handler receives only triggerRelease(slotId). The first requestPhase synchronously revokes every register capability in the exiting source ownership tree and freezes the eligible slot subset; later promotion can select a broader subset only from that same already-registered tree. The type/state boundary exposes no register operation after the first freeze.",
+      "register": "Except for the exact frozen P3-C07 queue subtree covered by compositeQueueSlotProtocol, before an actor or descendant acquires/starts each external resource it synchronously calls registerReleaseSlot(ownerScope, stableResourceId, release). The registry deduplicates by ownerScope plus stableResourceId and immediately creates one pending terminal. Registration completes before the resource becomes live or externally reachable; a failed acquisition settles that same slot.",
+      "capabilities": "Direct-resource acquisition code receives a register capability only while its owner source tree is active. initialBackfill or recurringSweep uses that parent capability once to pre-register the P3-C07 composite slot, but the exact queue and private job receive only their frozen adapter/request/capacity inputs and never receive the registry or any register/trigger capability. A disposer or AbortSignal handler receives only triggerRelease(slotId). The first requestPhase synchronously revokes every register capability in the exiting source ownership tree and freezes the eligible covering subset; later promotion can select a broader subset only from that same already-registered tree. The type/state boundary exposes no register operation after the first freeze.",
       "trigger": "triggerRelease is idempotent and may run from requestPhase, fromCallback disposal, fromPromise abort, normal completion, or descendant shutdown. Every caller addresses the same slot and same terminal; no caller creates a close promise.",
       "settle": "A slot terminal settles success or error exactly once after the owned handle is closed/removed. Release error is diagnostic material, not permission to skip the remaining slots. A phase terminal cannot settle until all frozen slot terminals have settled and the authoritative audit reports zero live and zero unresolved resources.",
-      "descendants": "initialBackfill and recurringSweep register rawDownloadQueue before child start; the queue registers each rawDownloadJob before admission; the job registers abort-listener, response-stream, and staging slots before acquisition. Parent terminal output awaits descendant slot terminals.",
+      "descendants": "All descendants use direct acquisition-time slots except the exact frozen P3-C07 queue subtree. For that sole exception, initialBackfill or recurringSweep owns one parent composite slot before queue construction; the queue and private rawDownloadJob register nothing, receive no registry capability, and own no separate job/listener/response/staging slots. The parent workflow terminal awaits the composite queue.stop() terminal.",
       "lateRegistration": "Impossible by construction: JavaScript cannot interleave requestPhase with synchronous registration, requestPhase revokes the only register capability before freezing, and source disposer/abort closures never possess it. An implementation exposing registration to disposal/abort violates I21 before runtime."
+    },
+    "compositeQueueSlotProtocol": {
+      "owner": "The active initialBackfill or recurringSweep parent invoke owns exactly one workflow-scoped registry slot for its exact frozen P3-C07 queue subtree.",
+      "input": "registerReleaseSlot receives ownerScope=workflow, stableResourceId=rawDownloadQueue:<parentInvokeIdentity>:0, and one idempotent release closure capturing a queue variable that is unbound until construction. The exact queue constructor still receives only the production download adapter and positive capacity.",
+      "linearizationPoint": "The parent synchronously registers rawDownloadQueue:<parentInvokeIdentity>:0 before constructing the queue, then constructs and binds the exact queue in the same JavaScript turn in which neither XState nor requestPhase can interleave. If construction throws, the parent settles that already-registered slot as an acquisition failure before propagating the fault.",
+      "releaseTrigger": "The slot's idempotent trigger calls exact queue.stop() once after binding. All requestPhase, parent abort, and normal-completion callers address this same trigger; none constructs a second close job.",
+      "terminal": "The registry slot terminal aliases/adopts the exact promise returned by queue.stop(); it is not a parallel wrapper close. The terminal settles with that promise only after the queue reaches stopped.",
+      "auditIdentity": "rawDownloadQueue:<parentInvokeIdentity>:0 is one member of the workflow phase frozen release set, participates once in frozenReleaseSetId, and contributes one liveResourceCount/unresolvedReleaseCount unit until the exact queue.stop() promise settles.",
+      "slotScope": "workflow",
+      "transitiveProof": [
+        "Queued P3-C07 jobs hold only request/deferred/flags and no acquired external handle; stop rejects each queued promise synchronously.",
+        "The one active P3-C07 fromPromise job owns an AbortController; stop aborts it and waits for its terminal event.",
+        "The active invoke awaits adapter.download and its finally removes the caller abort listener; the frozen production adapter fulfills or rejects only after its response close/error, awaited staging, and its own finally cleanup.",
+        "The queue enters stopped and resolves stop waiters only after the active invoke settles, so the exact queue.stop() terminal transitively covers the private job, listener, response, and staging cleanup without separate registry slots."
+      ],
+      "capabilityBoundary": "The exact P3-C07 queue source/API remains unmodified: its constructor input is adapter plus capacity, its job input is request plus signal plus adapter, and neither level receives the registry, a registry capability, or a slot identity."
     },
     "xstateExitOrder": [
       "source exit actions",
-      "selected transition actions; beginOrPromoteCleanup freezes the pre-registered slot set here",
+      "selected transition actions; beginOrPromoteCleanup freezes the pre-registered covering set of direct slots plus any parent P3-C07 composite queue slot here",
       "target entry actions",
       "target cleanupBarrier invoke input captures epoch, phase, lease, effective scope, frozenReleaseSetId, and phase terminal",
-      "source fromCallback disposer or fromPromise AbortSignal handler only triggers existing slots",
+      "source fromCallback disposer or fromPromise AbortSignal handler only triggers existing slots; the queue composite trigger calls exact queue.stop()",
       "target cleanupBarrier fromPromise starts and awaits those frozen slot terminals"
     ],
     "requestPhaseLinearization": [
-      "The first request revokes every acquisition capability in the exiting source ownership tree, freezes the complete eligible subset of its pre-registered slots, assigns frozenReleaseSetId, and triggers each selected slot idempotently before source disposal/abort can run. Later requests cannot register anything.",
+      "The first request revokes every acquisition capability in the exiting source ownership tree, freezes the complete eligible covering subset of its pre-registered direct slots plus any parent P3-C07 composite queue slot, assigns frozenReleaseSetId, and triggers each selected slot idempotently before source disposal/abort can run. Later requests cannot register anything.",
       "No session: allocate epoch+1, phase+1, lease+1, effective minimum scope, pending phase terminal over the frozen set, and idempotently request releases.",
       "Equal or narrower request: keep epoch/phase/effective scope and its frozen set, allocate lease+1, and return a new per-invoke promise over the current pending or cached immutable terminal.",
-      "Broader watch-to-workflow request: before replacement invoke creation, atomically select/freeze the broader subset of the same pre-registered source-tree slots, set workflow, allocate phase+1 and lease+1, install a fresh pending workflow terminal over that union, reuse/deduplicate releases, and run a fresh workflow audit. No acquisition capability is reopened. This rule is identical for open and settled watch phases.",
+      "Broader watch-to-workflow request: before replacement invoke creation, atomically select/freeze the broader subset of the same pre-registered source-tree covering slots, including any workflow composite queue slot, set workflow, allocate phase+1 and lease+1, install a fresh pending workflow terminal over that union, reuse/deduplicate releases, and run a fresh workflow audit. No acquisition capability is reopened. This rule is identical for open and settled watch phases.",
       "finishCleanupScope: only after literal certificate admission, close the session; later cleanup allocates a new epoch."
     ],
     "phaseSettlement": "Only the registry may settle a phase. It snapshots the phase effective scope and frozen release-set identity, awaits every slot terminal even when one rejects, performs the audit for exactly that scope/set, and creates a success or error certificate only at liveResourceCount zero and unresolvedReleaseCount zero. A superseded phase may finish for its old wrapper, but cannot mutate or settle the current phase.",
@@ -3970,49 +3996,49 @@
         "id": "SOURCE-EXIT-01",
         "phase": "current pending",
         "release": "success",
-        "postcondition": "callback disposal or promise abort triggers the frozen slot; the current phase settles once after its terminal."
+        "postcondition": "callback disposal or promise abort triggers every frozen direct slot and, when present, the parent composite trigger calls exact queue.stop(); the current phase settles once after all direct terminals and that exact stop promise settle."
       },
       {
         "id": "SOURCE-EXIT-02",
         "phase": "current pending",
         "release": "error",
-        "postcondition": "all frozen terminals settle, zero-resource error certificate settles once, and stopped.failed/shutdown has no unresolved close."
+        "postcondition": "all frozen direct terminals and any exact composite queue.stop() terminal settle, zero-live/zero-unresolved error certificate settles once, and stopped.failed/shutdown has no unresolved close."
       },
       {
         "id": "SOURCE-EXIT-03",
         "phase": "current cached",
         "release": "success",
-        "postcondition": "replacement wrapper receives a new lease over the cached terminal; no release or terminal is duplicated."
+        "postcondition": "replacement wrapper receives a new lease over the cached terminal that already covers every direct slot and any exact composite queue.stop() terminal; no release or terminal is duplicated."
       },
       {
         "id": "SOURCE-EXIT-04",
         "phase": "current cached",
         "release": "error",
-        "postcondition": "replacement wrapper receives the cached zero-resource error terminal; no unresolved close remains."
+        "postcondition": "replacement wrapper receives the cached zero-live/zero-unresolved error terminal covering every direct slot and any exact composite queue.stop() terminal; no unresolved close remains."
       },
       {
         "id": "SOURCE-EXIT-05",
         "phase": "watch-to-workflow promotion",
         "release": "success",
-        "postcondition": "the fresh workflow phase freezes the union of pre-registered slots and reaches paused only after all settle."
+        "postcondition": "the fresh workflow phase freezes the union of pre-registered direct slots plus any parent composite queue slot and reaches paused only after all terminals, including exact queue.stop(), settle."
       },
       {
         "id": "SOURCE-EXIT-06",
         "phase": "watch-to-workflow promotion",
         "release": "error",
-        "postcondition": "the fresh workflow phase reports a zero-resource error only after all union terminals settle."
+        "postcondition": "the fresh workflow phase reports a zero-live/zero-unresolved error only after every union terminal, including any exact composite queue.stop() terminal, settles."
       },
       {
         "id": "SOURCE-EXIT-07",
         "phase": "equal-scope replacement",
         "release": "success",
-        "postcondition": "idempotent trigger and a new wrapper lease settle once from the same frozen set."
+        "postcondition": "idempotent direct and composite triggers plus a new wrapper lease settle once from the same frozen set; any composite terminal remains the exact queue.stop() promise."
       },
       {
         "id": "SOURCE-EXIT-08",
         "phase": "equal-scope replacement",
         "release": "error",
-        "postcondition": "the new wrapper observes the same settled error after all closes; no late registration or hang is possible."
+        "postcondition": "the new wrapper observes the same settled error after all direct closes and any exact queue.stop() terminal; no late registration, duplicate queue stop, or hang is possible."
       }
     ],
     "raceTraces": [
@@ -4253,6 +4279,7 @@
       "oracle": [
         "oracle.actionOrder",
         "cleanupProtocol.releaseSlotProtocol",
+        "cleanupProtocol.compositeQueueSlotProtocol",
         "cleanupProtocol.xstateExitOrder",
         "cleanupProtocol.sourceExitTraces",
         "actors[*].resourceRegistration",
@@ -4263,6 +4290,33 @@
         "PROP-15",
         "F17",
         "F18"
+      ]
+    },
+    {
+      "id": "R189-16",
+      "disposition": "resolved",
+      "oracle": [
+        "frozenInputs.P3-C07",
+        "actors.initialBackfill.resourceRegistration",
+        "actors.recurringSweep.resourceRegistration",
+        "actors.rawDownloadQueue",
+        "actors.rawDownloadJob",
+        "cleanupProtocol.compositeQueueSlotProtocol",
+        "I21",
+        "U16",
+        "PROP-15",
+        "F17",
+        "F18"
+      ]
+    },
+    {
+      "id": "R189-17",
+      "disposition": "resolved",
+      "oracle": [
+        "oracle.checkedViewRule",
+        "globalEventPolicy.GEP04",
+        "globalEventPolicy.GEP05",
+        "globalEventPolicy.GEP06"
       ]
     }
   ]
