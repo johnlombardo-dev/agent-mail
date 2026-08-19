@@ -2,7 +2,7 @@
 
 Status: **frozen design for issue #233**. Implementation belongs to issue #234.
 
-Oracle SHA-256: `58bb3aefde5dc4a89c23df2014cf303d2ef843b90acb4bac61f8c2e716c84acc`.
+Oracle SHA-256: `3ee883873b8f56f2e69bc808e5c7eedebb0e23ae74c4e7fb64e0ad5ee43a698e`.
 
 This checked view is generated from `database-migration-registry-oracle.v1.json`.
 
@@ -277,6 +277,8 @@ Exact implementation allowlist: 111 paths, including a 27-path semantic subunion
 Capacity execution roots: `scripts/capacity/benchmark-search.ts`, `scripts/capacity/generate-search-corpus.ts`.
 
 Current-tree acceptance modes: `--implementation-check` and tracked-only `--implementation-scope-check`. The tracked-only scope observation subtracts exactly the five issue 233 database-migration-registry authority artifact paths before evaluating the concurrent issue 234 tracked endpoints. Those artifacts are not added to the 111-path implementation allowlist, and full --implementation-check never subtracts them. First parse git diff --name-status -z --find-renames HEAD, retaining every deletion and both source and destination endpoints of renames/copies as virtual change records; union git ls-files --others --exclude-standard -z; normalize and enforce protected/allowed/unknown scope before any filesystem inspection. Only then enumerate existing tracked/untracked paths, reject symlinks, and scan every TypeScript file outside exact generated exclusions node_modules/, package dist/, **pycache**/, and *.pyc.. Any added, modified, deleted, renamed, or copied tracked endpoint or untracked source/test/script path outside allowedMutationPaths fails. Any protected path or prefix change fails even if another rule would allow it. Scope is enforced against virtual Git change records before lstat, so deletion cannot disappear and rename/copy cannot hide either endpoint. Exact generated dependency/build/cache paths are excluded from source scanning but never become implementation evidence.
+
+Production-source DDL classifier: A TypeScript file is a production source only when its normalized repository path matches productionSourcePattern and its path relative to the package src root contains no complete test, tests, spec, specs, fixture, fixtures, or support role token separated by slash, dot, underscore, or hyphen. Role-tagged test/spec/fixture/support files remain scanned for canonical semantic SQL bypasses and applyMigrations bypasses, but local fixture DDL is not durable production DDL. Accepted adjacent inventory: 18 files at `547f70dd67959541324688b7b737749bc43791ab`, digest `696c885ded011c2ffdfe45b0e756c92923a3f1fb50b829e75b881b96f44233b1`; forms `.test.ts`=15, `.fixtures.ts`=2, `-fixtures.ts`=1. Positive fixture `packages/cli/src/selected-export-command.test.ts` is byte-identical to accepted SHA-256 `5a08ed01cf2b9b837ed045eb261d66f9ba9df08e7ccb1f09a31bd7f04654e0ae`, contains 12 local DDL statements, and remains outside the 111-path mutation, canonical-DDL, and direct-SQL allowlists.
 
 Implemented registry proof: Import packages/storage/src/migration-registry.ts and require frozen exports canonicalDatabaseMigrations, CANONICAL_DATABASE_SCHEMA_VERSION, and NEXT_DATABASE_MIGRATION_VERSION to project exactly to the oracle.
 

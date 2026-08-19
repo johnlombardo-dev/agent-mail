@@ -1450,7 +1450,7 @@
     },
     {
       "id": "DEC-CURRENT-TREE",
-      "text": "Issue 234 acceptance scans all tracked and untracked source roots against an exact 111-path allow/protected/unknown boundary whose 27-path semantic subunion equals canonicalRegistry.migrations[].source; authorized aggregate/lazy export retirement is accepted only when runtime semantic projection, the real registry/converter, and every execution-root bypass check remain exact."
+      "text": "Issue 234 acceptance scans all tracked and untracked source roots against an exact 111-path allow/protected/unknown boundary whose 27-path semantic subunion equals canonicalRegistry.migrations[].source; authorized aggregate/lazy export retirement is accepted only when runtime semantic projection, the real registry/converter, and every execution-root bypass check remain exact. Durable-DDL closure uses the frozen package-src production-source predicate, excluding complete test/spec/fixture/support role tokens without exempting those files from semantic-SQL or applyMigrations bypass scans."
     },
     {
       "id": "DEC-REPORT-28",
@@ -1553,7 +1553,7 @@
     {
       "id": "PROOF-CURRENT-TREE",
       "kind": "source-mutation",
-      "postcondition": "the exact 111-path union contains all and only the 27 canonical semantic source paths plus the frozen production/test/execution/corpus/relocation sets; current tracked #234 endpoints have no unknown member; deletions and both rename endpoints precede filesystem inspection; runtime semantic projection and real registry/converter imports match the oracle despite authorized wrapper/export retirement; protected #231, unrelated source/test/deletion/rename, and remove/duplicate/change/new-DDL/all-27 migration-object/slot-20-sql-constant/import-alias/registry-index/direct-bracket-at-find-destructuring/bypass mutations each reject"
+      "postcondition": "the exact 111-path union contains all and only the 27 canonical semantic source paths plus the frozen production/test/execution/corpus/relocation sets; current tracked #234 endpoints have no unknown member; deletions and both rename endpoints precede filesystem inspection; runtime semantic projection and real registry/converter imports match the oracle despite authorized wrapper/export retirement; the accepted 18-file package-src test/fixture naming inventory is classified by the frozen production-source predicate and unchanged selected-export local DDL is accepted without entering any mutation or SQL allowlist; protected #231, unrelated source/test/deletion/rename, and remove/duplicate/change/new-production-DDL/all-27 migration-object/slot-20-sql-constant/import-alias/registry-index/direct-bracket-at-find-destructuring/bypass mutations each reject"
     },
     {
       "id": "PROOF-REPORT-SLOT",
@@ -1766,6 +1766,48 @@
         "packages/storage/src/migrations/0011-seal-key-administration.ts"
       ],
       "semanticByteValidation": "Path authorization permits only issue 234 aggregate/lazy export retirement and the frozen slot-20/backfill relocations. It never authorizes semantic drift: import each canonical semantic export or its one registrySource relocation and require the exact canonical slot, name, declared version, SQL bytes through migrationContentHash, requiresForeignKeysOff mode, and content checksum before scope acceptance. Whole-file wrapper/export bytes may differ only because those named retirements are intentionally required; sourceDrift is the enforced semantic result while acceptedFileDrift remains informational evidence of authorized wrapper/export edits; durable-DDL closure, direct-SQL closure, registry import, and source mutations remain fail closed.",
+      "productionSourceClassification": {
+        "productionSourcePattern": "^packages/[^/]+/src/(?:[^/]+/)*[^/]+\\.ts$",
+        "nonProductionRoleTokenPattern": "(?:^|[./_-])(?:test|tests|spec|specs|fixture|fixtures|support)(?=$|[./_-])",
+        "rule": "A TypeScript file is a production source only when its normalized repository path matches productionSourcePattern and its path relative to the package src root contains no complete test, tests, spec, specs, fixture, fixtures, or support role token separated by slash, dot, underscore, or hyphen. Role-tagged test/spec/fixture/support files remain scanned for canonical semantic SQL bypasses and applyMigrations bypasses, but local fixture DDL is not durable production DDL.",
+        "acceptedAdjacentInventory": {
+          "acceptedHead": "547f70dd67959541324688b7b737749bc43791ab",
+          "selection": "tracked packages/**/src/**/*.ts paths whose src-relative path contains a complete non-production role token",
+          "paths": [
+            "packages/cli/src/action-plan-command.test.ts",
+            "packages/cli/src/backup-command.test.ts",
+            "packages/cli/src/client.test.ts",
+            "packages/cli/src/command-outcome.test.ts",
+            "packages/cli/src/doctor-command.test.ts",
+            "packages/cli/src/message-show.test.ts",
+            "packages/cli/src/raw-content-command.test.ts",
+            "packages/cli/src/reindex-command.test.ts",
+            "packages/cli/src/restore-command.test.ts",
+            "packages/cli/src/routing-commands.test.ts",
+            "packages/cli/src/search-command.test.ts",
+            "packages/cli/src/selected-export-command.test.ts",
+            "packages/cli/src/selected-export.fixtures.ts",
+            "packages/cli/src/status-command.test.ts",
+            "packages/cli/src/sync-control-fixtures.ts",
+            "packages/cli/src/sync-control.test.ts",
+            "packages/cli/src/thread-show-command.test.ts",
+            "packages/cli/src/thread-show.fixtures.ts"
+          ],
+          "forms": [
+            { "form": ".test.ts", "count": 15 },
+            { "form": ".fixtures.ts", "count": 2 },
+            { "form": "-fixtures.ts", "count": 1 }
+          ],
+          "count": 18,
+          "sha256": "696c885ded011c2ffdfe45b0e756c92923a3f1fb50b829e75b881b96f44233b1"
+        },
+        "positiveFixture": {
+          "path": "packages/cli/src/selected-export-command.test.ts",
+          "acceptedSha256": "5a08ed01cf2b9b837ed045eb261d66f9ba9df08e7ccb1f09a31bd7f04654e0ae",
+          "ddlStatements": 12,
+          "classification": "non-production-test-fixture"
+        }
+      },
       "protectedPaths": [
         "AGENTS.md",
         "PLAN.md",

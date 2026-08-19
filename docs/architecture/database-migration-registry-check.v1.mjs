@@ -17,11 +17,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "58bb3aefde5dc4a89c23df2014cf303d2ef843b90acb4bac61f8c2e716c84acc";
+const EXPECTED_ORACLE_SHA256 = "3ee883873b8f56f2e69bc808e5c7eedebb0e23ae74c4e7fb64e0ad5ee43a698e";
 const EXPECTED_VIEW_SHA256 = [
-  "8c56dbdb386b1421b8335996e4fe9380f164cc67bb752332382282e5d2374efb",
-  "f9ca266b2e9ad7cb3669cb8112ad491dc07ab81638321b580c68d1a92917c5f2",
-  "a4d3a7743eab0ca8f61fd12e993043ffc26e3ca729cdcfe1327ba8a5dc65f426",
+  "e09841f773a20105a41107331d1e95caa027db3249440f13e74b8e0fcf4d9fea",
+  "ec5077f5f488a76aaf48fc33e1eecabe00799ee347c7f80af5449d890adfe1d6",
+  "61ed0cf873343143b2469c5b5a2311488309021c433c310304fbef5e7b8198a0",
 ];
 const ACCEPTED_HEAD = "547f70dd67959541324688b7b737749bc43791ab";
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -792,6 +792,64 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   ]) {
     nonempty(currentTree[key], "current-tree authority " + key);
   }
+  const productionClassification = currentTree.productionSourceClassification;
+  exact(
+    productionClassification.productionSourcePattern,
+    "^packages/[^/]+/src/(?:[^/]+/)*[^/]+\\.ts$",
+    "production source pattern",
+  );
+  exact(
+    productionClassification.nonProductionRoleTokenPattern,
+    "(?:^|[./_-])(?:test|tests|spec|specs|fixture|fixtures|support)(?=$|[./_-])",
+    "non-production role token pattern",
+  );
+  nonempty(productionClassification.rule, "production source classification rule");
+  exact(
+    productionClassification.acceptedAdjacentInventory,
+    {
+      acceptedHead: ACCEPTED_HEAD,
+      selection:
+        "tracked packages/**/src/**/*.ts paths whose src-relative path contains a complete non-production role token",
+      paths: [
+        "packages/cli/src/action-plan-command.test.ts",
+        "packages/cli/src/backup-command.test.ts",
+        "packages/cli/src/client.test.ts",
+        "packages/cli/src/command-outcome.test.ts",
+        "packages/cli/src/doctor-command.test.ts",
+        "packages/cli/src/message-show.test.ts",
+        "packages/cli/src/raw-content-command.test.ts",
+        "packages/cli/src/reindex-command.test.ts",
+        "packages/cli/src/restore-command.test.ts",
+        "packages/cli/src/routing-commands.test.ts",
+        "packages/cli/src/search-command.test.ts",
+        "packages/cli/src/selected-export-command.test.ts",
+        "packages/cli/src/selected-export.fixtures.ts",
+        "packages/cli/src/status-command.test.ts",
+        "packages/cli/src/sync-control-fixtures.ts",
+        "packages/cli/src/sync-control.test.ts",
+        "packages/cli/src/thread-show-command.test.ts",
+        "packages/cli/src/thread-show.fixtures.ts",
+      ],
+      forms: [
+        { form: ".test.ts", count: 15 },
+        { form: ".fixtures.ts", count: 2 },
+        { form: "-fixtures.ts", count: 1 },
+      ],
+      count: 18,
+      sha256: "696c885ded011c2ffdfe45b0e756c92923a3f1fb50b829e75b881b96f44233b1",
+    },
+    "accepted adjacent source inventory",
+  );
+  exact(
+    productionClassification.positiveFixture,
+    {
+      path: "packages/cli/src/selected-export-command.test.ts",
+      acceptedSha256: "5a08ed01cf2b9b837ed045eb261d66f9ba9df08e7ccb1f09a31bd7f04654e0ae",
+      ddlStatements: 12,
+      classification: "non-production-test-fixture",
+    },
+    "positive production classification fixture",
+  );
   exactSet(
     currentTree.protectedPaths,
     [
@@ -884,6 +942,21 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     allowedImplementationPaths,
     expectedImplementationAllowedPaths(oracle),
     "implementation allowed path set",
+  );
+  exact(
+    allowedImplementationPaths.has(productionClassification.positiveFixture.path),
+    false,
+    "positive fixture absent from implementation allowlist",
+  );
+  exact(
+    canonicalDdlAllowedPaths(oracle).has(productionClassification.positiveFixture.path),
+    false,
+    "positive fixture absent from canonical DDL allowlist",
+  );
+  exact(
+    currentTree.directSqlAllowedPaths.includes(productionClassification.positiveFixture.path),
+    false,
+    "positive fixture absent from direct SQL allowlist",
   );
   exactSet(
     oracle.issue234.testPaths,
@@ -1076,8 +1149,7 @@ function schemaSourceProjection(oracle) {
     .map((line) => line.slice(ACCEPTED_HEAD.length + 1))
     .filter(
       (path) =>
-        path.includes("/src/") &&
-        !path.endsWith(".test.ts") &&
+        isProductionTypeScriptSource(path, oracle.issue234.currentTreeAuthority) &&
         path !== "packages/storage/src/migration-runner.ts",
     )
     .sort();
@@ -2968,6 +3040,155 @@ function countPattern(text, pattern) {
   return [...text.matchAll(pattern)].length;
 }
 
+function packageSrcTypeScriptPath(path, authority) {
+  return new RegExp(authority.productionSourceClassification.productionSourcePattern, "u").test(
+    path,
+  );
+}
+
+function hasNonProductionRoleToken(path, authority) {
+  if (!packageSrcTypeScriptPath(path, authority)) return false;
+  const srcRelative = path.slice(path.indexOf("/src/") + "/src/".length);
+  return new RegExp(
+    authority.productionSourceClassification.nonProductionRoleTokenPattern,
+    "u",
+  ).test(srcRelative);
+}
+
+function isProductionTypeScriptSource(path, authority) {
+  return packageSrcTypeScriptPath(path, authority) && !hasNonProductionRoleToken(path, authority);
+}
+
+function durableDdlStatementCount(text) {
+  return countPattern(
+    text,
+    /\b(?:CREATE\s+(?:VIRTUAL\s+)?(?:TABLE|INDEX|TRIGGER)|ALTER\s+TABLE|DROP\s+TABLE)\b/giu,
+  );
+}
+
+function canonicalDdlAllowedPaths(oracle) {
+  return new Set([
+    ...oracle.canonicalRegistry.migrations.map((row) => row.source),
+    ...oracle.canonicalRegistry.migrations.flatMap((row) =>
+      row.registrySource === undefined ? [] : [row.registrySource],
+    ),
+    oracle.canonicalRegistry.conversionPath,
+    "packages/storage/src/migration-runner.ts",
+  ]);
+}
+
+function unregisteredProductionDdlPaths(oracle, sources) {
+  const authority = oracle.issue234.currentTreeAuthority;
+  const allowed = canonicalDdlAllowedPaths(oracle);
+  return [...sources]
+    .filter(
+      ([path, text]) =>
+        isProductionTypeScriptSource(path, authority) &&
+        durableDdlStatementCount(text) > 0 &&
+        !allowed.has(path),
+    )
+    .map(([path]) => path)
+    .sort();
+}
+
+function productionSourceClassificationProjection(oracle) {
+  const authority = oracle.issue234.currentTreeAuthority;
+  const classification = authority.productionSourceClassification;
+  const acceptedSources = acceptedTypeScriptSourceMap();
+  const adjacentPaths = [...acceptedSources.keys()]
+    .filter(
+      (path) =>
+        packageSrcTypeScriptPath(path, authority) && hasNonProductionRoleToken(path, authority),
+    )
+    .sort();
+  exact(
+    adjacentPaths,
+    classification.acceptedAdjacentInventory.paths,
+    "accepted adjacent source forms",
+  );
+  exact(
+    adjacentPaths.length,
+    classification.acceptedAdjacentInventory.count,
+    "accepted adjacent count",
+  );
+  exact(
+    sha256(Buffer.from(JSON.stringify(adjacentPaths))),
+    classification.acceptedAdjacentInventory.sha256,
+    "accepted adjacent digest",
+  );
+  const forms = [
+    { form: ".test.ts", count: adjacentPaths.filter((path) => path.endsWith(".test.ts")).length },
+    {
+      form: ".fixtures.ts",
+      count: adjacentPaths.filter((path) => path.endsWith(".fixtures.ts")).length,
+    },
+    {
+      form: "-fixtures.ts",
+      count: adjacentPaths.filter((path) => path.endsWith("-fixtures.ts")).length,
+    },
+  ];
+  exact(forms, classification.acceptedAdjacentInventory.forms, "accepted adjacent form counts");
+
+  const fixture = classification.positiveFixture;
+  const acceptedFixture = readCommitted(fixture.path);
+  const currentFixture = readFileSync(join(repositoryRoot, fixture.path));
+  exact(sha256(acceptedFixture), fixture.acceptedSha256, "positive fixture accepted digest");
+  exact(sha256(currentFixture), fixture.acceptedSha256, "positive fixture unchanged digest");
+  exact(
+    durableDdlStatementCount(currentFixture.toString("utf8")),
+    fixture.ddlStatements,
+    "positive fixture DDL statements",
+  );
+  exact(
+    isProductionTypeScriptSource(fixture.path, authority),
+    false,
+    "positive fixture production classification",
+  );
+  exact(
+    implementationAllowedPaths(oracle).has(fixture.path),
+    false,
+    "positive fixture mutation authority",
+  );
+  exact(
+    canonicalDdlAllowedPaths(oracle).has(fixture.path),
+    false,
+    "positive fixture canonical DDL authority",
+  );
+  exact(
+    authority.directSqlAllowedPaths.includes(fixture.path),
+    false,
+    "positive fixture direct SQL authority",
+  );
+  for (const path of [
+    "packages/cli/src/example.test.ts",
+    "packages/cli/src/example.spec.ts",
+    "packages/cli/src/example.fixture.ts",
+    "packages/cli/src/example-fixtures.ts",
+    "packages/cli/src/support/example.ts",
+  ]) {
+    exact(isProductionTypeScriptSource(path, authority), false, "non-production role path " + path);
+  }
+  exact(
+    isProductionTypeScriptSource("packages/cli/src/example.ts", authority),
+    true,
+    "ordinary production source path",
+  );
+  return {
+    acceptedAdjacentFiles: adjacentPaths.length,
+    forms,
+    positiveFixture: {
+      path: fixture.path,
+      ddlStatements: fixture.ddlStatements,
+      classification: fixture.classification,
+      production: false,
+      unchanged: true,
+      mutationAllowed: false,
+      canonicalDdlAllowed: false,
+      directSqlAllowed: false,
+    },
+  };
+}
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -3364,7 +3585,9 @@ function runSourceMutationChild(oracle, id) {
       (row) => row.observedSha256 !== null && row.observedSha256 !== row.expectedSha256,
     );
   } else if (id === "new-durable-ddl") {
-    detected = stable(observed.ddl) !== stable(baseline.ddl);
+    detected = unregisteredProductionDdlPaths(oracle, candidate).includes(
+      "packages/storage/src/forged-durable-ddl.ts",
+    );
   } else if (
     new Set([
       "new-direct-semantic-sql",
@@ -3489,34 +3712,22 @@ async function implementationCheck(oracle, runtime) {
   const applyPaths = [];
   const directSqlPaths = sourceFacts.directSql.map(([path]) => path);
   const productionDdlPaths = [];
-  const canonicalDdlAllowed = new Set([
-    ...oracle.canonicalRegistry.migrations.map((row) => row.source),
-    ...oracle.canonicalRegistry.migrations.flatMap((row) =>
-      row.registrySource === undefined ? [] : [row.registrySource],
-    ),
-    oracle.canonicalRegistry.conversionPath,
-    "packages/storage/src/migration-runner.ts",
-  ]);
+  const canonicalDdlAllowed = canonicalDdlAllowedPaths(oracle);
   for (const path of typeScriptPaths) {
     const text = readFileSync(join(repositoryRoot, path), "utf8");
     if (/\bapplyMigrations\s*\(/u.test(text)) applyPaths.push(path);
-    if (
-      path.includes("/src/") &&
-      /\b(?:CREATE\s+(?:VIRTUAL\s+)?(?:TABLE|INDEX|TRIGGER)|ALTER\s+TABLE|DROP\s+TABLE)\b/iu.test(
-        text,
-      )
-    ) {
+    if (isProductionTypeScriptSource(path, authority) && durableDdlStatementCount(text) > 0) {
       productionDdlPaths.push(path);
     }
     if (text.includes("test-action-chain-placeholder"))
       fail("implementation retains placeholder: " + path);
     if (text.includes("composeThreadGraphMigrations"))
       fail("implementation retains dynamic composer: " + path);
-    if (path.includes("/src/") && text.includes("supportedSchemaVersion")) {
+    if (isProductionTypeScriptSource(path, authority) && text.includes("supportedSchemaVersion")) {
       fail("implementation retains caller schema ceiling: " + path);
     }
     if (
-      path.includes("/src/") &&
+      isProductionTypeScriptSource(path, authority) &&
       path !== oracle.canonicalRegistry.registryPath &&
       /export\s+const\s+[A-Za-z0-9]+Migrations\s*=/u.test(text)
     ) {
@@ -3896,6 +4107,31 @@ function renderDesign(oracle, digest) {
       ". " +
       oracle.issue234.currentTreeAuthority.unknownPathRule,
     "",
+    "Production-source DDL classifier: " +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.rule +
+      " Accepted adjacent inventory: " +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.acceptedAdjacentInventory
+        .count +
+      " files at `" +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.acceptedAdjacentInventory
+        .acceptedHead +
+      "`, digest `" +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.acceptedAdjacentInventory
+        .sha256 +
+      "`; forms " +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.acceptedAdjacentInventory.forms
+        .map((row) => "`" + row.form + "`=" + row.count)
+        .join(", ") +
+      ". Positive fixture `" +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.positiveFixture.path +
+      "` is byte-identical to accepted SHA-256 `" +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.positiveFixture
+        .acceptedSha256 +
+      "`, contains " +
+      oracle.issue234.currentTreeAuthority.productionSourceClassification.positiveFixture
+        .ddlStatements +
+      " local DDL statements, and remains outside the 111-path mutation, canonical-DDL, and direct-SQL allowlists.",
+    "",
     "Implemented registry proof: " + oracle.issue234.currentTreeAuthority.registryImport,
     "",
     "Implemented converter proof: " + oracle.issue234.currentTreeAuthority.converterImport,
@@ -4032,7 +4268,7 @@ function renderCoverage(oracle, digest) {
       oracle.proofs.map((row) => [row.id, row.kind, row.postcondition]),
     ),
     "",
-    "The design checker closes all 27 accepted production DDL source files against the registry; freezes all 62 TypeScript execution roots and 94 calls; executes the immutable source projection, fresh/repeated-open real-SQLite projection, schema-only convergence for all 44 convertible histories and 76 unique prefixes, all seven convertible reindex overlays plus 12 forgeries, 14 no-source-write preflight cases including every added/changed table/index/trigger/view adjacency with whole-tree and sidecar equality, and one shared strict provenance decoder through fresh/conversion/reopen/doctor/backup/restore projections plus three self-consistent forgeries. Production ledger rewrite, domain-data parity, injected conversion failures, canonical opener routing, operational doctor, and filesystem backup/restore remain #234 implementation gates; this document does not claim them as implemented.",
+    "The design checker closes all 27 accepted production DDL source files against the registry; classifies the exact 18-file accepted package-src test/fixture naming inventory and proves the unchanged selected-export local-DDL fixture is non-production without adding an allowlist exception; freezes all 62 TypeScript execution roots and 94 calls; executes the immutable source projection, fresh/repeated-open real-SQLite projection, schema-only convergence for all 44 convertible histories and 76 unique prefixes, all seven convertible reindex overlays plus 12 forgeries, 14 no-source-write preflight cases including every added/changed table/index/trigger/view adjacency with whole-tree and sidecar equality, and one shared strict provenance decoder through fresh/conversion/reopen/doctor/backup/restore projections plus three self-consistent forgeries. Production ledger rewrite, domain-data parity, injected conversion failures, canonical opener routing, operational doctor, and filesystem backup/restore remain #234 implementation gates; this document does not claim them as implemented.",
     "",
     "## Retirement closure",
     "",
@@ -4172,6 +4408,23 @@ const mutations = [
   ["execution-root", (value) => value.issue234.executionRootPaths.pop()],
   ["current-tree-protection", (value) => value.issue234.currentTreeAuthority.protectedPaths.pop()],
   [
+    "production-source-classifier",
+    (value) =>
+      (value.issue234.currentTreeAuthority.productionSourceClassification.nonProductionRoleTokenPattern =
+        ""),
+  ],
+  [
+    "production-source-inventory",
+    (value) =>
+      value.issue234.currentTreeAuthority.productionSourceClassification.acceptedAdjacentInventory.paths.pop(),
+  ],
+  [
+    "production-source-positive-fixture",
+    (value) =>
+      (value.issue234.currentTreeAuthority.productionSourceClassification.positiveFixture.path =
+        "packages/cli/src/selected-export-command.ts"),
+  ],
+  [
     "semantic-allowlist-removal",
     (value) => value.issue234.currentTreeAuthority.semanticAllowedPaths.pop(),
   ],
@@ -4234,6 +4487,7 @@ if (sourceMutationArgument !== undefined) {
 const validation = validateOracle(oracle, { checkGit: true });
 const corpus = corpusProjection(oracle, validation.evidencePaths);
 const schemaSources = schemaSourceProjection(oracle);
+const productionSourceClassification = productionSourceClassificationProjection(oracle);
 const runtime = await sourceProjection(oracle);
 const sqlite = await freshSqliteProjection(oracle, runtime);
 const legacySchema = await legacySchemaProjection(oracle, runtime);
@@ -4297,6 +4551,7 @@ const result = {
   observedCompositions: oracle.observedCompositions.length,
   corpus,
   schemaSources,
+  productionSourceClassification,
   semanticSources: {
     paths: oracle.issue234.currentTreeAuthority.semanticAllowedPaths.length,
     identityDigest: runtime.semanticIdentityDigest,
