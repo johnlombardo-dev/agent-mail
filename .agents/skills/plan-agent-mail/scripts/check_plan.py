@@ -43,6 +43,8 @@ DAYBREAK_COLUMNS = (
     "Faithful executable proof", "Owner issue", "Intervention timing",
     "Evidence status",
 )
+AUTHORITY_ORACLE_DIGEST = "8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7"
+AUTHORITY_IMPLEMENTATION_COMMIT = "9d1f777"
 # The shape checks deliberately require the distinctive control/proof contract
 # for each row. They are not a substitute for running the named proof.
 ROW_REQUIREMENTS = {
@@ -169,8 +171,16 @@ def main() -> int:
         errors.append("planning pack must keep complete security evidence unverified and release-blocking")
     if not all(token in combined for token in ("#202", "#203", "#204", "#205", "#206", "#208")):
         errors.append("planning pack is missing #202-#206/#208 coordination dependencies")
-    if not all(token in combined for token in ("#203", "unresolved", "consequential", "block")):
-        errors.append("planning pack must preserve the unresolved consequential #203 decision as a blocker")
+    if AUTHORITY_ORACLE_DIGEST not in combined:
+        errors.append("planning pack is missing the accepted #203 oracle digest")
+    if AUTHORITY_IMPLEMENTATION_COMMIT not in combined:
+        errors.append("planning pack is missing the #204 implementation provenance commit")
+    if not all(token in combined for token in ("#203", "accepted", "oracle", "#204", "provenance", "release-blocking")):
+        errors.append("planning pack must record accepted #203 authority and #204 provenance while retaining release blockers")
+    if re.search(r"#203[^\n.]{0,180}\bunresolved\b|\bunresolved\b[^\n.]{0,180}#203", combined):
+        errors.append("planning pack contains stale unresolved #203 authority wording")
+    if "implementation not started" in combined or "no implementation evidence attached" in combined:
+        errors.append("planning pack contains stale pre-implementation status wording")
     check_daybreak(plan, "PLAN.md", errors)
     check_daybreak(evidence, "EVIDENCE.md", errors)
     check_daybreak(shields, "failure-shields.md", errors)
