@@ -17,11 +17,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "f69be212a387c3b70a48994610e70749473a37a68db5d5d781438753ce82e015";
+const EXPECTED_ORACLE_SHA256 = "58bb3aefde5dc4a89c23df2014cf303d2ef843b90acb4bac61f8c2e716c84acc";
 const EXPECTED_VIEW_SHA256 = [
-  "83c2cb27f743d208352f58179099d1dedfbca4c2a1b63850eb2f5baa8594ae31",
-  "1975c3371a2dfa4f92abf6d765b933baa2b571ef36bc398bd5baeac173d2d250",
-  "1012d1c1fc5f3f39e2ed16af7f6c18532f6b5bba640babcf9e41d70bdb64559b",
+  "8c56dbdb386b1421b8335996e4fe9380f164cc67bb752332382282e5d2374efb",
+  "f9ca266b2e9ad7cb3669cb8112ad491dc07ab81638321b580c68d1a92917c5f2",
+  "a4d3a7743eab0ca8f61fd12e993043ffc26e3ca729cdcfe1327ba8a5dc65f426",
 ];
 const ACCEPTED_HEAD = "547f70dd67959541324688b7b737749bc43791ab";
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -32,6 +32,11 @@ const viewPaths = [
   join(directory, "database-migration-registry-decisions.v1.md"),
   join(directory, "database-migration-registry-coverage.v1.md"),
 ];
+const authorityArtifactPaths = new Set([
+  relative(repositoryRoot, fileURLToPath(import.meta.url)),
+  relative(repositoryRoot, oraclePath),
+  ...viewPaths.map((path) => relative(repositoryRoot, path)),
+]);
 
 const CANONICAL_SIGNATURES = [
   "message-catalog:efed8a776eb3b10e6fc2ae274547e518e196d46daa6b646ff88f74f7928db334:on",
@@ -773,9 +778,12 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   );
   const currentTree = oracle.issue234.currentTreeAuthority;
   exact(currentTree.mode, "--implementation-check", "implementation-check mode");
+  exact(currentTree.scopeMode, "--implementation-scope-check", "implementation-scope-check mode");
   for (const key of [
     "enumeration",
     "allowedMutationPaths",
+    "scopeModeRule",
+    "semanticByteValidation",
     "unknownPathRule",
     "registryImport",
     "converterImport",
@@ -845,6 +853,8 @@ function validateOracle(oracle, { checkGit = true } = {}) {
       "registry-bracket-destructure",
       "registry-at-destructure",
       "registry-find-destructure",
+      "unknown-source",
+      "unknown-test",
     ],
     "source mutation IDs",
   );
@@ -857,6 +867,23 @@ function validateOracle(oracle, { checkGit = true } = {}) {
         "Only remove obsolete aggregate/lazy-schema exports, wrap SEARCH_REINDEX_SCHEMA_SQL as canonical slot 20 without changing its bytes, or relocate initial-backfill-completion into its registrySource; every other accepted name, SQL byte, execution mode, declared version, checksum, and canonical slot remains frozen.",
     },
     "issue 234 semantic source scope",
+  );
+  exact(currentTree.allowedMutationPathCount, 111, "implementation allowed path count authority");
+  exactSet(
+    currentTree.semanticAllowedPaths,
+    oracle.canonicalRegistry.migrations.map((row) => row.source),
+    "implementation semantic allowed paths",
+  );
+  const allowedImplementationPaths = implementationAllowedPaths(oracle);
+  exact(
+    allowedImplementationPaths.size,
+    currentTree.allowedMutationPathCount,
+    "implementation allowed path count",
+  );
+  exactSet(
+    allowedImplementationPaths,
+    expectedImplementationAllowedPaths(oracle),
+    "implementation allowed path set",
   );
   exactSet(
     oracle.issue234.testPaths,
@@ -941,7 +968,25 @@ async function sourceProjection(oracle) {
     );
     definitions.push({ ...definition, version: row.version });
   }
-  return { definitions, applyMigrations: runner.applyMigrations };
+  const semanticIdentityDigest = sha256(
+    Buffer.from(
+      JSON.stringify(
+        definitions.map((definition) => [
+          definition.version,
+          definition.name,
+          runner.migrationContentHash(definition),
+          definition.requiresForeignKeysOff === true,
+        ]),
+      ),
+      "utf8",
+    ),
+  );
+  exact(
+    semanticIdentityDigest,
+    oracle.canonicalRegistry.identityDigest,
+    "runtime semantic source identity",
+  );
+  return { definitions, applyMigrations: runner.applyMigrations, semanticIdentityDigest };
 }
 
 function corpusProjection(oracle, evidencePaths) {
@@ -3145,21 +3190,36 @@ function isGeneratedImplementationPath(path) {
   );
 }
 
-function implementationAllowedPaths(oracle) {
-  const corpusPaths = git(["grep", "-l", "-F", "applyMigrations(", ACCEPTED_HEAD, "--", "*.ts"])
+function acceptedCompositionCorpusPaths() {
+  return git(["grep", "-l", "-F", "applyMigrations(", ACCEPTED_HEAD, "--", "*.ts"])
     .trim()
     .split("\n")
     .filter(Boolean)
     .map((line) => line.slice(ACCEPTED_HEAD.length + 1));
+}
+
+function implementationPathUnion(oracle, semanticPaths) {
   return new Set([
     ...oracle.issue234.productionPaths,
     ...oracle.issue234.testPaths,
     ...oracle.issue234.executionRootPaths,
-    ...corpusPaths,
+    ...acceptedCompositionCorpusPaths(),
+    ...semanticPaths,
     ...oracle.canonicalRegistry.migrations.flatMap((row) =>
       row.registrySource === undefined ? [] : [row.registrySource],
     ),
   ]);
+}
+
+function implementationAllowedPaths(oracle) {
+  return implementationPathUnion(oracle, oracle.issue234.currentTreeAuthority.semanticAllowedPaths);
+}
+
+function expectedImplementationAllowedPaths(oracle) {
+  return implementationPathUnion(
+    oracle,
+    oracle.canonicalRegistry.migrations.map((row) => row.source),
+  );
 }
 
 function assertImplementationScope(authority, allowed, records) {
@@ -3229,7 +3289,7 @@ function runSourceMutationChild(oracle, id) {
       "applyMigrations(database, callerSelectedMigrations);\n",
     );
   } else if (id === "protected-deletion") {
-    scopeMutation = parseGitChangeRecords("D\0PLAN.md\0");
+    scopeMutation = parseGitChangeRecords("D\0docs/architecture/report-creation-check.v1.mjs\0");
   } else if (id === "unknown-deletion") {
     scopeMutation = parseGitChangeRecords("D\0README.md\0");
   } else if (id === "rename-endpoints") {
@@ -3276,6 +3336,10 @@ function runSourceMutationChild(oracle, id) {
         "const { sql: ddl } = canonicalDatabaseMigrations.find((migration) => migration.version === 3)!;\n" +
         "database.exec(ddl);\n",
     );
+  } else if (id === "unknown-source") {
+    scopeMutation = parseGitChangeRecords("A\0packages/storage/src/unrelated-helper.ts\0");
+  } else if (id === "unknown-test") {
+    scopeMutation = parseGitChangeRecords("?\0packages/storage/test/unrelated-helper.test.ts\0");
   } else {
     fail("unknown source mutation: " + id);
   }
@@ -3370,11 +3434,35 @@ function parseGitChangeRecords(value) {
   return records;
 }
 
-async function implementationCheck(oracle) {
-  const authority = oracle.issue234.currentTreeAuthority;
-  const trackedChangeRecords = parseGitChangeRecords(
-    git(["diff", "--name-status", "-z", "--find-renames", "HEAD"]),
+function trackedImplementationChangeRecords() {
+  return parseGitChangeRecords(git(["diff", "--name-status", "-z", "--find-renames", "HEAD"]));
+}
+
+function implementationScopeProjection(oracle, runtime) {
+  const allowed = implementationAllowedPaths(oracle);
+  const records = trackedImplementationChangeRecords().filter(
+    (record) => !authorityArtifactPaths.has(record.path),
   );
+  assertImplementationScope(oracle.issue234.currentTreeAuthority, allowed, records);
+  exact(
+    runtime.definitions.length,
+    oracle.issue234.currentTreeAuthority.semanticAllowedPaths.length,
+    "implementation semantic projection count",
+  );
+  return {
+    allowedPaths: allowed.size,
+    semanticAllowedPaths: oracle.issue234.currentTreeAuthority.semanticAllowedPaths.length,
+    semanticMigrationsValidated: runtime.definitions.length,
+    semanticIdentityDigest: runtime.semanticIdentityDigest,
+    trackedChangedEndpoints: new Set(records.map((record) => record.path)).size,
+    unknownTrackedEndpoints: 0,
+    authorityArtifactsExcluded: authorityArtifactPaths.size,
+  };
+}
+
+async function implementationCheck(oracle, runtime) {
+  const authority = oracle.issue234.currentTreeAuthority;
+  const trackedChangeRecords = trackedImplementationChangeRecords();
   const untracked = new Set(nulPaths(git(["ls-files", "--others", "--exclude-standard", "-z"])));
   const changeRecords = [
     ...trackedChangeRecords,
@@ -3490,6 +3578,9 @@ async function implementationCheck(oracle) {
       fail("implemented converter export is absent: " + name);
   }
   return {
+    allowedPaths: allowed.size,
+    semanticMigrationsValidated: projected.length,
+    semanticIdentityDigest: runtime.semanticIdentityDigest,
     enumeratedPaths: allPaths.length,
     changedPaths: changed.size,
     typeScriptPaths: typeScriptPaths.length,
@@ -3497,7 +3588,7 @@ async function implementationCheck(oracle) {
   };
 }
 
-function sourceDrift(oracle) {
+function acceptedFileDrift(oracle) {
   const paths = new Map();
   for (const input of oracle.frozenInputs) paths.set(input.path, input.id);
   for (const migration of oracle.canonicalRegistry.migrations) {
@@ -3783,13 +3874,24 @@ function renderDesign(oracle, digest) {
     "",
     "Semantic source scope: " + oracle.issue234.semanticSourceScope.allowedChanges,
     "",
+    "Exact implementation allowlist: " +
+      oracle.issue234.currentTreeAuthority.allowedMutationPathCount +
+      " paths, including a " +
+      oracle.issue234.currentTreeAuthority.semanticAllowedPaths.length +
+      "-path semantic subunion exactly equal to `canonicalRegistry.migrations[].source`. " +
+      oracle.issue234.currentTreeAuthority.semanticByteValidation,
+    "",
     "Capacity execution roots: " +
       oracle.issue234.executionRootPaths.map((path) => "`" + path + "`").join(", ") +
       ".",
     "",
-    "Current-tree acceptance mode: `" +
+    "Current-tree acceptance modes: `" +
       oracle.issue234.currentTreeAuthority.mode +
+      "` and tracked-only `" +
+      oracle.issue234.currentTreeAuthority.scopeMode +
       "`. " +
+      oracle.issue234.currentTreeAuthority.scopeModeRule +
+      " " +
       oracle.issue234.currentTreeAuthority.enumeration +
       ". " +
       oracle.issue234.currentTreeAuthority.unknownPathRule,
@@ -3980,7 +4082,7 @@ function renderCoverage(oracle, digest) {
     "",
     "Issue #234 additionally runs `bun docs/architecture/database-migration-registry-check.v1.mjs --implementation-check` after its scoped implementation exists. On the issue #233 shaping tree this mode must fail because the production registry and converter do not yet exist.",
     "",
-    "Checker mutations cover canonical identity/order, the all-TypeScript corpus and capacity roots, sequence-derived preflight effects/schema/order, strict provenance DDL/row/gate/trigger/domain/forgery checks, generic reindex grammar/full-object-tuple/counter forgeries, lifecycle and coverage closure, current-tree deletion/rename allow/protect/import-alias/slot-20-sql-constant/registry-index/direct-bracket-at-find-destructuring/bypass policy, report-scope exclusion, blockers, and frozen-input drift. The source self-test separately launches 16 fresh checker processes over real accepted source bytes and virtual Git deletion/rename records.",
+    "Checker mutations cover canonical identity/order, the all-TypeScript corpus and capacity roots, sequence-derived preflight effects/schema/order, strict provenance DDL/row/gate/trigger/domain/forgery checks, generic reindex grammar/full-object-tuple/counter forgeries, lifecycle and coverage closure, the exact 111-path/27-semantic-source allowlist including removal and unrelated-addition negatives, current-tree deletion/rename allow/protect/import-alias/slot-20-sql-constant/registry-index/direct-bracket-at-find-destructuring/bypass policy, report-scope exclusion, blockers, and frozen-input drift. The source self-test separately launches 18 fresh checker processes over real accepted source bytes and virtual Git source/test/deletion/rename records.",
     "",
   ];
   return lines.join("\n");
@@ -4070,6 +4172,17 @@ const mutations = [
   ["execution-root", (value) => value.issue234.executionRootPaths.pop()],
   ["current-tree-protection", (value) => value.issue234.currentTreeAuthority.protectedPaths.pop()],
   [
+    "semantic-allowlist-removal",
+    (value) => value.issue234.currentTreeAuthority.semanticAllowedPaths.pop(),
+  ],
+  [
+    "semantic-allowlist-unrelated",
+    (value) =>
+      value.issue234.currentTreeAuthority.semanticAllowedPaths.push(
+        "packages/storage/src/unrelated-helper.ts",
+      ),
+  ],
+  [
     "current-tree-bypass",
     (value) => value.issue234.currentTreeAuthority.postImplementationApplyMigrationPaths.pop(),
   ],
@@ -4127,8 +4240,11 @@ const legacySchema = await legacySchemaProjection(oracle, runtime);
 const reindexOverlays = await reindexOverlayProjection(oracle, runtime);
 const preflight = await preflightProjection(oracle, runtime);
 const provenance = await provenanceProjection(oracle, runtime);
+const implementationScope = process.argv.includes(oracle.issue234.currentTreeAuthority.scopeMode)
+  ? implementationScopeProjection(oracle, runtime)
+  : null;
 const implementation = process.argv.includes("--implementation-check")
-  ? await implementationCheck(oracle)
+  ? await implementationCheck(oracle, runtime)
   : null;
 
 if (process.argv.includes("--write-views")) {
@@ -4169,7 +4285,7 @@ const mutationCount = process.argv.includes("--self-test") ? runSelfTest(oracle)
 const sourceMutationCount = process.argv.includes("--source-self-test")
   ? runSourceSelfTest(oracle)
   : 0;
-const drift = sourceDrift(oracle);
+const fileDrift = acceptedFileDrift(oracle);
 const result = {
   ok: true,
   acceptedHead: ACCEPTED_HEAD,
@@ -4181,15 +4297,22 @@ const result = {
   observedCompositions: oracle.observedCompositions.length,
   corpus,
   schemaSources,
+  semanticSources: {
+    paths: oracle.issue234.currentTreeAuthority.semanticAllowedPaths.length,
+    identityDigest: runtime.semanticIdentityDigest,
+    drift: [],
+  },
   sqlite,
   legacySchema,
   reindexOverlays,
   preflight,
   provenance,
+  implementationScope,
   implementation,
   mutations: mutationCount,
   sourceMutations: sourceMutationCount,
-  sourceDrift: drift,
+  sourceDrift: [],
+  acceptedFileDrift: fileDrift,
 };
 
 if (process.argv.includes("--digest")) {

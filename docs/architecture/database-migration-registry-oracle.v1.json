@@ -1392,7 +1392,7 @@
     },
     {
       "id": "REQ-CURRENT-TREE",
-      "text": "Enforce exact issue 234 mutation scope and audit tracked plus untracked execution roots by importing the implemented registry/converter and rejecting every bypass or unknown path."
+      "text": "Enforce the exact 111-path issue 234 mutation union, including all 27 canonical semantic sources, and audit tracked plus untracked execution roots by importing the implemented registry/converter, revalidating immutable semantic bytes and metadata, and rejecting every bypass or unknown path."
     },
     {
       "id": "REQ-DOWNSTREAM",
@@ -1450,7 +1450,7 @@
     },
     {
       "id": "DEC-CURRENT-TREE",
-      "text": "Issue 234 acceptance scans all tracked and untracked source roots against exact allow/protected/unknown sets, imports the real registry/converter, and permits no execution-root bypass."
+      "text": "Issue 234 acceptance scans all tracked and untracked source roots against an exact 111-path allow/protected/unknown boundary whose 27-path semantic subunion equals canonicalRegistry.migrations[].source; authorized aggregate/lazy export retirement is accepted only when runtime semantic projection, the real registry/converter, and every execution-root bypass check remain exact."
     },
     {
       "id": "DEC-REPORT-28",
@@ -1553,7 +1553,7 @@
     {
       "id": "PROOF-CURRENT-TREE",
       "kind": "source-mutation",
-      "postcondition": "tracked/untracked scope includes deletions and both rename endpoints before filesystem inspection, real registry/converter imports match the oracle, and protected/unknown deletion plus remove/duplicate/change/new-DDL/all-27 migration-object/slot-20-sql-constant/import-alias/registry-index/direct-bracket-at-find-destructuring/bypass source mutations each make the checker exit nonzero"
+      "postcondition": "the exact 111-path union contains all and only the 27 canonical semantic source paths plus the frozen production/test/execution/corpus/relocation sets; current tracked #234 endpoints have no unknown member; deletions and both rename endpoints precede filesystem inspection; runtime semantic projection and real registry/converter imports match the oracle despite authorized wrapper/export retirement; protected #231, unrelated source/test/deletion/rename, and remove/duplicate/change/new-DDL/all-27 migration-object/slot-20-sql-constant/import-alias/registry-index/direct-bracket-at-find-destructuring/bypass mutations each reject"
     },
     {
       "id": "PROOF-REPORT-SLOT",
@@ -1731,8 +1731,41 @@
     },
     "currentTreeAuthority": {
       "mode": "--implementation-check",
+      "scopeMode": "--implementation-scope-check",
+      "scopeModeRule": "The tracked-only scope observation subtracts exactly the five issue 233 database-migration-registry authority artifact paths before evaluating the concurrent issue 234 tracked endpoints. Those artifacts are not added to the 111-path implementation allowlist, and full --implementation-check never subtracts them.",
       "enumeration": "First parse git diff --name-status -z --find-renames HEAD, retaining every deletion and both source and destination endpoints of renames/copies as virtual change records; union git ls-files --others --exclude-standard -z; normalize and enforce protected/allowed/unknown scope before any filesystem inspection. Only then enumerate existing tracked/untracked paths, reject symlinks, and scan every TypeScript file outside exact generated exclusions node_modules/, package dist/, __pycache__/, and *.pyc.",
-      "allowedMutationPaths": "exact union of productionPaths, testPaths, executionRootPaths, the 62 accepted compositionCorpus paths, and canonicalRegistry registrySource relocations",
+      "allowedMutationPaths": "exact 111-path set union of productionPaths, testPaths, executionRootPaths, the 62 accepted compositionCorpus paths, all 27 semanticAllowedPaths equal to canonicalRegistry.migrations[].source, and canonicalRegistry registrySource relocations",
+      "allowedMutationPathCount": 111,
+      "semanticAllowedPaths": [
+        "packages/storage/src/migrations/0001-message-catalog.ts",
+        "packages/storage/src/migrations/0001-operational-journal.ts",
+        "packages/storage/src/migrations/0002-structured-content.ts",
+        "packages/storage/src/routing-preview-migration.ts",
+        "packages/storage/src/migrations/0001-action-schema.ts",
+        "packages/storage/src/checkpoint-repository.ts",
+        "packages/storage/src/local-label-migration.ts",
+        "packages/storage/src/migrations/0003-external-content-search.ts",
+        "packages/storage/src/migrations/0002-action-plan-proposal.ts",
+        "packages/storage/src/migrations/0001-operational-journal-compaction.ts",
+        "packages/storage/src/routing-decision-migration.ts",
+        "packages/storage/src/migrations/0002-identity-only-content.ts",
+        "packages/storage/src/routing-preview-consumption-migration.ts",
+        "packages/storage/src/migrations/0003-action-plan-claim.ts",
+        "packages/storage/src/migrations/0004-action-attempt-start.ts",
+        "packages/storage/src/migrations/0003-placement-observation.ts",
+        "packages/storage/src/migrations/0003-message-blob-references.ts",
+        "packages/daemon/src/initial-backfill-loop.ts",
+        "packages/storage/src/migrations/0004-search-candidate-placement-index.ts",
+        "packages/storage/src/search-reindex.ts",
+        "packages/storage/src/routing-decision-origin-migration.ts",
+        "packages/storage/src/migrations/0005-action-attempt-dispatch.ts",
+        "packages/storage/src/migrations/0007-action-result-reconciliation.ts",
+        "packages/storage/src/migrations/0008-thread-graph.ts",
+        "packages/storage/src/migrations/0009-action-approval-authority.ts",
+        "packages/storage/src/migrations/0010-action-plan-restore-quarantine.ts",
+        "packages/storage/src/migrations/0011-seal-key-administration.ts"
+      ],
+      "semanticByteValidation": "Path authorization permits only issue 234 aggregate/lazy export retirement and the frozen slot-20/backfill relocations. It never authorizes semantic drift: import each canonical semantic export or its one registrySource relocation and require the exact canonical slot, name, declared version, SQL bytes through migrationContentHash, requiresForeignKeysOff mode, and content checksum before scope acceptance. Whole-file wrapper/export bytes may differ only because those named retirements are intentionally required; sourceDrift is the enforced semantic result while acceptedFileDrift remains informational evidence of authorized wrapper/export edits; durable-DDL closure, direct-SQL closure, registry import, and source mutations remain fail closed.",
       "protectedPaths": [
         "AGENTS.md",
         "PLAN.md",
@@ -1779,7 +1812,9 @@
         "slot20-sql-constant-alias",
         "registry-bracket-destructure",
         "registry-at-destructure",
-        "registry-find-destructure"
+        "registry-find-destructure",
+        "unknown-source",
+        "unknown-test"
       ],
       "mutationExitRule": "--source-self-test spawns one fresh checker process per sourceMutationId against real accepted source bytes or explicit virtual Git change records for deletion/rename cases; each child must exit nonzero for its independent mutation or the self-test fails."
     },
