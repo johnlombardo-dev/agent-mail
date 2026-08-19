@@ -4,5 +4,6 @@ export * from "./output-context";
 export * from "./command-outcome";
 export * from "./status-command";
 export * from "./sync-control";
+export * from "./search-command";
 
 export const packageMarker = true;
