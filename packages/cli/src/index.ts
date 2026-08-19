@@ -7,5 +7,6 @@ export * from "./sync-control";
 export * from "./search-command";
 export * from "./message-show";
 export * from "./thread-show-command";
+export * from "./raw-content-command";
 
 export const packageMarker = true;
