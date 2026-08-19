@@ -1,0 +1,4742 @@
+{
+  "format": "agent-mail.cli-command-outcome-oracle/v1",
+  "schemaVersion": 1,
+  "modelVersion": "1.0.0",
+  "status": "frozen-design",
+  "oracle": {
+    "normative": true,
+    "issue": 213,
+    "acceptedHead": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+    "description": "This JSON file is the single normative CLI command outcome, output destination, and process-exit authority. The design, decisions, and coverage Markdown files are checked views. If prose conflicts with this file, this file wins.",
+    "scope": "CLI presentation and process termination after command parsing, shared request validation, shared-client execution, or a raw stream; no operation, HTTP, storage, workflow, or remote-effect semantics are created here.",
+    "compatibilityRule": "Within v1, an existing semantic kind, error-code mapping, output destination, framing rule, or numeric exit cannot change. Additive operation applicability may select an already registered semantic kind. A new semantic kind or changed number requires a new oracle version and migration note.",
+    "sourceDate": "2026-08-19"
+  },
+  "frozenInputs": [
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "3f80537d53e1c06b6434d94a1ae0bc689c19275046787a9de216f7d93ff21f56"
+    },
+    {
+      "id": "EVIDENCE",
+      "path": "docs/planning/EVIDENCE.md",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "07845a1ed7e79e484e2c3ea35a4ce060a9e5cb5d564e8da2982cddc788b45eaf"
+    },
+    {
+      "id": "CONTEXT",
+      "path": "CONTEXT.md",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "a833e3b4ed7c9cb34daad1a0b4d74522f7b47fe2e7d40b8e7b11c034a9140395"
+    },
+    {
+      "id": "CLI-CLIENT",
+      "path": "packages/cli/src/client.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "af2fbc8cae50c19b287b346e094e96a9928baa53a756042eb372f0a5674f5cdd"
+    },
+    {
+      "id": "CLI-OUTPUT-CONTEXT",
+      "path": "packages/cli/src/output-context.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "5e0812f3f82da977f5349cd30a264a9af58ea8ff25ae9402e86c8cb60f28641c"
+    },
+    {
+      "id": "CLI-COMMAND-REGISTRY",
+      "path": "packages/cli/src/command-registry.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "7bf11d1b61b2c9021b498d72e914b70ebc2364331fe1cea5684468fca5347097"
+    },
+    {
+      "id": "ERROR-ENVELOPE",
+      "path": "packages/contracts/src/error-envelope.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "511a6ef675f87237a1394cfc81ac9b7d94f7d6031e0922ea4e062a1f0040ddb6"
+    },
+    {
+      "id": "HTTP-ERROR-AUTHORITY",
+      "path": "packages/contracts/src/http-error-authority.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "e300cdc29f27f3184080020e149a999f4f1da736b323fe16f1f31732d7fc28f5"
+    },
+    {
+      "id": "ACTION-AUTHORITY",
+      "path": "packages/contracts/src/action-authority.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "d2bcad03b47f51625430427d4d25e4e3fcd7b9b19dcbcfaa886363233e6689d7"
+    },
+    {
+      "id": "OPERATION-REGISTRY",
+      "path": "packages/contracts/src/operation-registry.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "6c8a12157ab986eb4537cf220baf54c5d2e496c698d95e34a7ea42a7843564ab"
+    },
+    {
+      "id": "ACTION-OPERATIONS",
+      "path": "packages/contracts/src/action-operations.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "a95d4c0089518630e761dadb6ca50c0b33e11216be82c887e34142339302933c"
+    },
+    {
+      "id": "REPORT-ADMIN-OPERATIONS",
+      "path": "packages/contracts/src/report-admin-operations.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "6378e599f9325c03892924422494a31a34d90d9a9ad72f9155defc89127aa27f"
+    },
+    {
+      "id": "RETRIEVAL-OPERATIONS",
+      "path": "packages/contracts/src/retrieval-operations.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "6063684cbb505b7c9a95310dec32b5ea74a245bd8637d0a62e013b641340bbb0"
+    },
+    {
+      "id": "ROUTING-OPERATIONS",
+      "path": "packages/contracts/src/routing-operations.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "b66568c78a2966e909720a7bacb3116a54122e5401ba5a08e4c2fdffcc4c2984"
+    },
+    {
+      "id": "SYNC-OPERATIONS",
+      "path": "packages/contracts/src/sync-operations.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "5c92012636efa97fc7d8f0c8e3bfeaa984d1b381e9419642e87d590dd82061cf"
+    },
+    {
+      "id": "THREAD-ORACLE",
+      "path": "docs/architecture/thread-oracle.v1.json",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "e24efd672113aa5743ef776c3c3add502eea509512cc0573febc7b1d3b1ea269"
+    },
+    {
+      "id": "PARITY-HARNESS",
+      "path": "tests/parity-matrix/harness.ts",
+      "gitCommit": "778e01b16cbdbe8917975c85818eaff967dc0a7f",
+      "sha256": "bcb3e156cc304645b3f81f4157fd70ee2907f3036c9963bf212ebd176147f4b6"
+    }
+  ],
+  "issueEvidence": [
+    {
+      "id": "ISSUE-155",
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/155",
+      "use": "accepted CliResponse and seven CliClientError kinds"
+    },
+    {
+      "id": "ISSUE-206",
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/206",
+      "use": "accepted human, structured, report, log, and raw output-context separation"
+    },
+    {
+      "id": "ISSUES-156-159",
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/156",
+      "use": "routing, raw stream, action, and coordination exit obligations"
+    },
+    {
+      "id": "ISSUES-191-195",
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/191",
+      "use": "status, control, search, message, and thread command projections"
+    },
+    {
+      "id": "ISSUE-214",
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/214",
+      "use": "downstream implementation owner"
+    }
+  ],
+  "primaryStandards": [
+    {
+      "id": "POSIX-SHELL-2024",
+      "url": "https://pubs.opengroup.org/onlinepubs/9799919799/utilities/V3_chap02.html",
+      "use": "zero/nonzero status, 126/127 invocation meanings, and greater-than-128 signal convention"
+    },
+    {
+      "id": "APPLE-SYSEXITS",
+      "url": "https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/sysexits.3.html",
+      "use": "macOS symbolic meanings and exact values 64 through 78"
+    },
+    {
+      "id": "APPLE-EXIT",
+      "url": "https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man3/exit.3.html",
+      "use": "only the low eight status bits are observable to wait-family callers"
+    },
+    {
+      "id": "APPLE-SIGACTION",
+      "url": "https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/sigaction.2.html",
+      "use": "SIGINT, SIGPIPE, SIGTERM behavior and partial writes during interruption"
+    }
+  ],
+  "terminology": [
+    {
+      "term": "command result",
+      "meaning": "A process-agnostic validated value, raw stream, or failure before any process exit is chosen."
+    },
+    {
+      "term": "semantic kind",
+      "meaning": "A registered machine meaning selected from validated data or a registered error. It never contains a number or output destination."
+    },
+    {
+      "term": "domain attention",
+      "meaning": "A successfully transported and validated domain value that requires operator or agent attention and therefore exits nonzero without becoming a transport error."
+    },
+    {
+      "term": "primary output",
+      "meaning": "The command value on stdout: one structured line, human frames, or exact raw bytes. Diagnostics are never primary output."
+    },
+    {
+      "term": "partial output",
+      "meaning": "At least one requested stdout or stderr byte was accepted, or a started write cannot prove zero acceptance, before non-EPIPE completion failure. Every prefix remains observable and is never retried."
+    },
+    {
+      "term": "registered error",
+      "meaning": "A PublicErrorEnvelope validated against the shared HTTP registry or the exact operation-scoped definition and status authority."
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-ALGEBRA",
+      "text": "One strict process-agnostic result algebra separates validated values, raw streams, registered failures, and runtime termination events."
+    },
+    {
+      "id": "REQ-EXIT",
+      "text": "Every semantic kind has exactly one stable numeric exit owned only by the central registry; 126, 127, and 128+signal conventions remain reserved."
+    },
+    {
+      "id": "REQ-OUTPUT",
+      "text": "JSON, human, and raw modes have exact stdout/stderr destinations and deterministic framing with no cross-context transformation."
+    },
+    {
+      "id": "REQ-ERROR",
+      "text": "Every current client, shared, and operation-scoped error maps without message parsing; unregistered or malformed errors fail as protocol errors, never success."
+    },
+    {
+      "id": "REQ-DOMAIN",
+      "text": "HTTP-200 registered errors and action, doctor, routing, or sync attention values retain their domain meaning and request nonzero exits where specified."
+    },
+    {
+      "id": "REQ-RAW",
+      "text": "Raw stdout is byte-exact, backpressured, never sanitized, never mixed with diagnostics, never retried after any accepted byte, and truthfully classifies EPIPE and partial completion."
+    },
+    {
+      "id": "REQ-SIGNAL",
+      "text": "SIGINT and SIGTERM request one awaited idempotent cleanup path, suppress new output and stacks, and settle to 130 and 143; EPIPE settles to 141."
+    },
+    {
+      "id": "REQ-SAFETY",
+      "text": "Structured and human failures retain safe correlation IDs, suppress stack/cause/credential material, and use bounded registered projections."
+    },
+    {
+      "id": "REQ-EXTENSION",
+      "text": "Feature adapters may select only operation-applicable registered semantic kinds and cannot supply numbers, destinations, process streams, or private error maps."
+    },
+    {
+      "id": "REQ-COVERAGE",
+      "text": "Constructive matrices and a drift checker reconstruct all accepted operations, client kinds, shared errors, operation error rows, domain branches, and runtime branches."
+    },
+    {
+      "id": "REQ-DOWNSTREAM",
+      "text": "Issue 214 and every blocked CLI, admin, parity, acceptance, and security contract have exact consumption and proof obligations."
+    }
+  ],
+  "planningShieldApplicability": [
+    {
+      "id": "S01",
+      "status": "required",
+      "reason": "The oracle pins the accepted commit, source digests, issue evidence, and precedence."
+    },
+    {
+      "id": "S02",
+      "status": "required",
+      "reason": "The manifest separates client, domain, renderer, sink, signal, and process-termination seams."
+    },
+    {
+      "id": "S03",
+      "status": "not-applicable",
+      "reason": "This policy owns no durable write or read-back value."
+    },
+    {
+      "id": "S04",
+      "status": "not-applicable",
+      "reason": "This policy records no external effect in local persistence."
+    },
+    {
+      "id": "S05",
+      "status": "required",
+      "reason": "Raw streaming, cancellation, signals, terminal arbitration, and cleanup form an explicit protocol."
+    },
+    {
+      "id": "S06",
+      "status": "not-applicable",
+      "reason": "No recoverable product state is created or restored by this seam."
+    },
+    {
+      "id": "S07",
+      "status": "required",
+      "reason": "JSON/human/raw and direct REST/composed CLI behavior require one parity authority."
+    },
+    {
+      "id": "S08",
+      "status": "required",
+      "reason": "Sink fakes must retain partial writes, backpressure, EPIPE, errors, cancellation, and cleanup shapes."
+    },
+    {
+      "id": "S09",
+      "status": "required",
+      "reason": "Raw streams and slow sinks require bounded memory and progress-aware deadlines."
+    },
+    {
+      "id": "S10",
+      "status": "required",
+      "reason": "Mail, filenames, links, errors, diagnostics, correlation values, and terminals cross trust boundaries."
+    },
+    {
+      "id": "S11",
+      "status": "required",
+      "reason": "Stable exits and truthful operator output are public CLI usability contracts."
+    },
+    {
+      "id": "S12",
+      "status": "required",
+      "reason": "This artifact is specified design; implementation and composed proof remain separate downstream evidence."
+    }
+  ],
+  "limits": {
+    "processExitMinimum": 0,
+    "processExitMaximum": 255,
+    "ownedNormalExitMaximum": 88,
+    "localErrorMessageUtf8Bytes": 500,
+    "localCorrelationIdUtf8Bytes": 200,
+    "localOperationKeyUtf8Bytes": 200,
+    "localSafeDetailUtf8Bytes": 512,
+    "diagnosticRecords": 16,
+    "diagnosticMessageUtf8Bytes": 500,
+    "diagnosticDetailUtf8Bytes": 2048
+  },
+  "structuredSchemas": {
+    "safeCorrelationIdV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://safe-correlation-id/v1",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200,
+      "not": { "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]" }
+    },
+    "errorEnvelopeV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://error-envelope/v1",
+      "oneOf": [
+        { "$ref": "agent-mail://cli-local-error-envelope/v1" },
+        { "$ref": "agent-mail://registered-server-error-envelope/v1" }
+      ]
+    },
+    "localErrorEnvelopeV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://cli-local-error-envelope/v1",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.usage" },
+            "message": { "const": "command invocation is invalid" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.usage/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.invalid-input" },
+            "message": {
+              "const": "command input does not satisfy the shared request contract"
+            },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.invalid-input/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.configuration" },
+            "message": { "const": "Agent Mail configuration is missing or invalid" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.configuration/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.connect-timeout" },
+            "message": { "const": "connection did not complete before its deadline" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.connect-timeout/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.control-timeout" },
+            "message": { "const": "control response did not arrive before its deadline" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.control-timeout/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.stream-idle-timeout" },
+            "message": { "const": "stream made no progress before its idle deadline" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": {
+              "$ref": "agent-mail://cli-local-detail/cli.stream-idle-timeout/v1"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.protocol" },
+            "message": { "const": "the CLI and service contract do not agree" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.protocol/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.cancelled" },
+            "message": { "const": "command execution was cancelled" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.cancelled/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.transport" },
+            "message": { "const": "the Agent Mail service is unavailable" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.transport/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.internal" },
+            "message": { "const": "the CLI could not complete the command" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.internal/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.output-io" },
+            "message": { "const": "the requested output could not be written" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.output-io/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.partial-output" },
+            "message": { "const": "output ended after an incomplete prefix was written" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.partial-output/v1" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "message", "correlationId", "details"],
+          "properties": {
+            "code": { "const": "cli.raw-tty-refused" },
+            "message": { "const": "raw output is refused on a TTY without explicit opt-in" },
+            "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+            "details": { "$ref": "agent-mail://cli-local-detail/cli.raw-tty-refused/v1" }
+          }
+        }
+      ]
+    },
+    "registeredServerErrorEnvelopeV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://registered-server-error-envelope/v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "correlationId", "details"],
+      "properties": {
+        "code": {
+          "enum": [
+            "invalid_request",
+            "missing_credentials",
+            "invalid_credentials",
+            "expired_credentials",
+            "insufficient_scope",
+            "request_too_large",
+            "not_found",
+            "internal_error",
+            "action.approval_forbidden",
+            "action.approval_presence_required",
+            "action.operator_presence_unsupported",
+            "action.operator_challenge_capacity",
+            "action.operator_challenge_not_found",
+            "action.operator_challenge_expired",
+            "action.operator_challenge_consumed",
+            "action.operator_assertion_invalid",
+            "action.approval_not_found",
+            "action.approval_mismatch",
+            "action.approval_expired",
+            "action.approval_cancelled",
+            "action.approval_invalidated",
+            "action.approval_consumed",
+            "action.plan_version_stale",
+            "action.plan_not_pending",
+            "action.plan_expired",
+            "action.legacy_authority",
+            "invalid_query",
+            "invalid_cursor",
+            "sync.control-rejected",
+            "sync.control-failed",
+            "sync.control-cancelled",
+            "sync.control-timeout",
+            "sync.control-idempotency-conflict",
+            "sync.control-capacity"
+          ]
+        },
+        "message": { "$ref": "#/$defs/safeMessage" },
+        "correlationId": { "$ref": "agent-mail://safe-correlation-id/v1" },
+        "details": { "$ref": "#/$defs/safeDetails" }
+      },
+      "$defs": {
+        "safeMessage": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "not": { "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]" }
+        },
+        "safeText": {
+          "type": "string",
+          "maxLength": 2048,
+          "not": { "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]" }
+        },
+        "safeValue": {
+          "oneOf": [
+            { "type": "null" },
+            { "type": "boolean" },
+            { "type": "number" },
+            { "$ref": "#/$defs/safeText" },
+            {
+              "type": "array",
+              "maxItems": 64,
+              "items": { "$ref": "#/$defs/safeValue" }
+            },
+            {
+              "type": "object",
+              "maxProperties": 64,
+              "propertyNames": { "$ref": "#/$defs/safeKey" },
+              "additionalProperties": { "$ref": "#/$defs/safeValue" }
+            }
+          ]
+        },
+        "safeKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "not": {
+            "pattern": "^(?:[cC][aA][uU][sS][eE]|[cC][rR][eE][dD][eE][nN][tT][iI][aA][lL][sS]?|[pP][aA][sS][sS][wW][oO][rR][dD]|[rR][aA][wW][_-]?[mM][aA][iI][lL]|[sS][eE][cC][rR][eE][tT]|[sS][tT][aA][cC][kK]|[tT][oO][kK][eE][nN])$"
+          }
+        },
+        "safeDetails": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "$ref": "#/$defs/safeKey" },
+          "additionalProperties": { "$ref": "#/$defs/safeValue" }
+        }
+      }
+    },
+    "diagnosticV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "kind", "level", "code", "message", "correlationId", "details"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "kind": {
+          "const": "diagnostic"
+        },
+        "level": {
+          "enum": ["info", "warning"]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "correlationId": {
+          "type": ["string", "null"],
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "details": {
+          "type": "object"
+        }
+      }
+    },
+    "executionReceiptV1": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://execution-receipt/v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "semanticKind",
+        "exitCode",
+        "stdoutBytesAccepted",
+        "stderrBytesAccepted",
+        "cleanupAwaited"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "semanticKind": {
+          "enum": [
+            "success",
+            "usage",
+            "invalid_input",
+            "not_found",
+            "unavailable",
+            "internal",
+            "io",
+            "temporary",
+            "protocol",
+            "authorization",
+            "configuration",
+            "conflict",
+            "stale",
+            "expired",
+            "replay",
+            "tampered",
+            "cancelled",
+            "attention",
+            "partial",
+            "uncertain",
+            "partial_output"
+          ]
+        },
+        "exitCode": {
+          "enum": [
+            0, 64, 65, 66, 69, 70, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 130,
+            141, 143
+          ]
+        },
+        "stdoutBytesAccepted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "stderrBytesAccepted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cleanupAwaited": {
+          "type": "boolean"
+        }
+      },
+      "oneOf": [
+        {
+          "properties": { "semanticKind": { "const": "success" }, "exitCode": { "const": 0 } },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": { "semanticKind": { "const": "usage" }, "exitCode": { "const": 64 } },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "invalid_input" },
+            "exitCode": { "const": 65 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "not_found" },
+            "exitCode": { "const": 66 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "unavailable" },
+            "exitCode": { "const": 69 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "internal" },
+            "exitCode": { "const": 70 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": { "semanticKind": { "const": "io" }, "exitCode": { "const": 74 } },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "temporary" },
+            "exitCode": { "const": 75 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "protocol" },
+            "exitCode": { "const": 76 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "authorization" },
+            "exitCode": { "const": 77 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "configuration" },
+            "exitCode": { "const": 78 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "conflict" },
+            "exitCode": { "const": 79 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": { "semanticKind": { "const": "stale" }, "exitCode": { "const": 80 } },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "expired" },
+            "exitCode": { "const": 81 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": { "semanticKind": { "const": "replay" }, "exitCode": { "const": 82 } },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "tampered" },
+            "exitCode": { "const": 83 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "cancelled" },
+            "exitCode": { "const": 84 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "attention" },
+            "exitCode": { "const": 85 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "partial" },
+            "exitCode": { "const": 86 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "uncertain" },
+            "exitCode": { "const": 87 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "partial_output" },
+            "exitCode": { "const": 88 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "cancelled" },
+            "exitCode": { "const": 130 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "partial_output" },
+            "exitCode": { "const": 141 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        },
+        {
+          "properties": {
+            "semanticKind": { "const": "cancelled" },
+            "exitCode": { "const": 143 }
+          },
+          "required": ["semanticKind", "exitCode"]
+        }
+      ]
+    }
+  },
+  "localDetailSchemas": [
+    {
+      "id": "LOCAL-DETAIL-CLI-USAGE",
+      "code": "cli.usage",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.usage/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["commandPath", "reasonCode"],
+        "properties": {
+          "commandPath": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z0-9]+(?:[ ._-][a-z0-9]+)*$"
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-INVALID-INPUT",
+      "code": "cli.invalid-input",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.invalid-input/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "reasonCode"],
+        "properties": {
+          "operationKey": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-CONFIGURATION",
+      "code": "cli.configuration",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.configuration/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["settingCode", "reasonCode"],
+        "properties": {
+          "settingCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "reasonCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-CONNECT-TIMEOUT",
+      "code": "cli.connect-timeout",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.connect-timeout/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "phase"],
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "phase": { "const": "connect" }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-CONTROL-TIMEOUT",
+      "code": "cli.control-timeout",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.control-timeout/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "phase"],
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "phase": { "const": "control" }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-STREAM-IDLE-TIMEOUT",
+      "code": "cli.stream-idle-timeout",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.stream-idle-timeout/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "phase"],
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "phase": { "const": "stream-idle" }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-PROTOCOL",
+      "code": "cli.protocol",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.protocol/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "phase"],
+        "properties": {
+          "operationKey": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-CANCELLED",
+      "code": "cli.cancelled",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.cancelled/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "source"],
+        "properties": {
+          "operationKey": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "source": { "enum": ["caller", "domain"] }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-TRANSPORT",
+      "code": "cli.transport",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.transport/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "phase"],
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "phase": { "enum": ["request", "stream"] }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-INTERNAL",
+      "code": "cli.internal",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.internal/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "phase"],
+        "properties": {
+          "operationKey": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-OUTPUT-IO",
+      "code": "cli.output-io",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.output-io/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["destination", "phase"],
+        "properties": {
+          "destination": { "enum": ["stdout", "stderr"] },
+          "phase": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-PARTIAL-OUTPUT",
+      "code": "cli.partial-output",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.partial-output/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "operationKey",
+          "causeCode",
+          "failedBoundary",
+          "stdoutBytesAccepted",
+          "stderrBytesAccepted"
+        ],
+        "properties": {
+          "operationKey": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "causeCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?:[A-Z][A-Z0-9_]*|[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*)$"
+          },
+          "failedBoundary": {
+            "enum": ["stdout", "stderr", "client", "render", "cleanup", "diagnostic"]
+          },
+          "stdoutBytesAccepted": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "stderrBytesAccepted": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      }
+    },
+    {
+      "id": "LOCAL-DETAIL-CLI-RAW-TTY-REFUSED",
+      "code": "cli.raw-tty-refused",
+      "schema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "agent-mail://cli-local-detail/cli.raw-tty-refused/v1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operationKey", "destination"],
+        "properties": {
+          "operationKey": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+          },
+          "destination": { "const": "tty" }
+        }
+      }
+    }
+  ],
+  "typescriptTypes": [
+    {
+      "id": "CommandValueV1",
+      "definition": "Readonly<{version:1;kind:'value';operationKey:string;semanticKind:RegisteredValueSemanticKind;data:unknown;humanLines:readonly [readonly [HumanSegment,...HumanSegment[]],...(readonly [HumanSegment,...HumanSegment[]])[]];diagnostics:readonly DiagnosticV1[]}>"
+    },
+    {
+      "id": "CommandRawV1",
+      "definition": "Readonly<{version:1;kind:'raw';operationKey:string;semanticKind:'success';stream:CliByteStream;diagnostics:readonly DiagnosticV1[]}>"
+    },
+    {
+      "id": "CommandFailureV1",
+      "definition": "Readonly<{version:1;kind:'failure';operationKey:string|null;semanticKind:RegisteredFailureSemanticKind;error:PublicErrorEnvelope;diagnostics:readonly DiagnosticV1[]}>"
+    },
+    {
+      "id": "CommandResultV1",
+      "definition": "CommandValueV1 | CommandRawV1 | CommandFailureV1"
+    },
+    {
+      "id": "SinkWriteResultV1",
+      "definition": "Readonly<{kind:'written';bytesAccepted:number}> | Readonly<{kind:'failed';errorCode:string|null;bytesAccepted:number|'unknown'}>"
+    },
+    {
+      "id": "CommandExecutionContextV1",
+      "definition": "Readonly<{invocationCorrelationId:string;mode:'json'|'human'|'raw';stdout:CommandSink;stderr:CommandSink;rawPolicy:RawOutputPolicy;signal:AbortSignal}>"
+    }
+  ],
+  "exitCodeRegistry": [
+    {
+      "semanticKind": "success",
+      "symbol": "EX_OK",
+      "code": 0,
+      "class": "standard",
+      "meaning": "The complete requested command outcome was emitted."
+    },
+    {
+      "semanticKind": "usage",
+      "symbol": "EX_USAGE",
+      "code": 64,
+      "class": "sysexits",
+      "meaning": "Command syntax, flag combination, or raw TTY policy is invalid."
+    },
+    {
+      "semanticKind": "invalid_input",
+      "symbol": "EX_DATAERR",
+      "code": 65,
+      "class": "sysexits",
+      "meaning": "User-supplied or server-rejected request data is invalid."
+    },
+    {
+      "semanticKind": "not_found",
+      "symbol": "EX_NOINPUT",
+      "code": 66,
+      "class": "sysexits",
+      "meaning": "The requested message, thread, attachment, challenge, approval, or other identity is absent."
+    },
+    {
+      "semanticKind": "unavailable",
+      "symbol": "EX_UNAVAILABLE",
+      "code": 69,
+      "class": "sysexits",
+      "meaning": "The service, transport, or required secure facility is unavailable."
+    },
+    {
+      "semanticKind": "internal",
+      "symbol": "EX_SOFTWARE",
+      "code": 70,
+      "class": "sysexits",
+      "meaning": "An internal command or server software invariant failed."
+    },
+    {
+      "semanticKind": "io",
+      "symbol": "EX_IOERR",
+      "code": 74,
+      "class": "sysexits",
+      "meaning": "A process sink failed before either sink accepted any requested output byte."
+    },
+    {
+      "semanticKind": "temporary",
+      "symbol": "EX_TEMPFAIL",
+      "code": 75,
+      "class": "sysexits",
+      "meaning": "A timeout or capacity condition may succeed on a later invocation."
+    },
+    {
+      "semanticKind": "protocol",
+      "symbol": "EX_PROTOCOL",
+      "code": 76,
+      "class": "sysexits",
+      "meaning": "A shared-client, server payload, error envelope, or semantic selection contract was impossible."
+    },
+    {
+      "semanticKind": "authorization",
+      "symbol": "EX_NOPERM",
+      "code": 77,
+      "class": "sysexits",
+      "meaning": "Credentials, scope, approval authority, or authentication state do not authorize the operation."
+    },
+    {
+      "semanticKind": "configuration",
+      "symbol": "EX_CONFIG",
+      "code": 78,
+      "class": "sysexits",
+      "meaning": "A required local configuration is missing or invalid."
+    },
+    {
+      "semanticKind": "conflict",
+      "symbol": "AM_EX_CONFLICT",
+      "code": 79,
+      "class": "agent-mail",
+      "meaning": "The requested transition conflicts with current state or an idempotency identity."
+    },
+    {
+      "semanticKind": "stale",
+      "symbol": "AM_EX_STALE",
+      "code": 80,
+      "class": "agent-mail",
+      "meaning": "A version, frozen target, or approval is stale or invalidated by newer authority."
+    },
+    {
+      "semanticKind": "expired",
+      "symbol": "AM_EX_EXPIRED",
+      "code": 81,
+      "class": "agent-mail",
+      "meaning": "A plan, preview, challenge, or approval domain authority expired."
+    },
+    {
+      "semanticKind": "replay",
+      "symbol": "AM_EX_REPLAY",
+      "code": 82,
+      "class": "agent-mail",
+      "meaning": "One-use authority was already consumed or replayed."
+    },
+    {
+      "semanticKind": "tampered",
+      "symbol": "AM_EX_TAMPERED",
+      "code": 83,
+      "class": "agent-mail",
+      "meaning": "A commitment, assertion, digest, target, nonce, or frozen authority does not match."
+    },
+    {
+      "semanticKind": "cancelled",
+      "symbol": "AM_EX_CANCELLED",
+      "code": 84,
+      "class": "agent-mail",
+      "meaning": "A caller cancellation or domain supersession ended work without a Unix termination signal."
+    },
+    {
+      "semanticKind": "attention",
+      "symbol": "AM_EX_ATTENTION",
+      "code": 85,
+      "class": "agent-mail",
+      "meaning": "A validated domain value requires attention but is neither partial nor uncertain."
+    },
+    {
+      "semanticKind": "partial",
+      "symbol": "AM_EX_PARTIAL",
+      "code": 86,
+      "class": "agent-mail",
+      "meaning": "A domain operation completed with a mixed or explicit partial result set."
+    },
+    {
+      "semanticKind": "uncertain",
+      "symbol": "AM_EX_UNCERTAIN",
+      "code": 87,
+      "class": "agent-mail",
+      "meaning": "At least one remote effect has uncertain durable or remote postcondition truth."
+    },
+    {
+      "semanticKind": "partial_output",
+      "symbol": "AM_EX_PARTIAL_OUTPUT",
+      "code": 88,
+      "class": "agent-mail",
+      "meaning": "A non-EPIPE failure occurred after stdout or stderr accepted bytes or could not prove a zero-byte write."
+    }
+  ],
+  "reservedProcessStatuses": {
+    "neverEmit": [
+      {
+        "code": 124,
+        "reason": "widely used by timeout wrappers"
+      },
+      {
+        "code": 125,
+        "reason": "wrapper/internal invocation failure convention"
+      },
+      {
+        "code": 126,
+        "reason": "shell found a command but could not invoke it"
+      },
+      {
+        "code": 127,
+        "reason": "shell could not find or invoke the command utility"
+      }
+    ],
+    "signalConvention": "The entire 128..255 range is reserved from normal semantic outcomes. Actual signal statuses use 128 plus the macOS signal number; this oracle emits only 130, 141, and 143.",
+    "lowEightBits": "The outer process adapter must pass only the exact 0..255 value; larger or negative values are invalid."
+  },
+  "signalMatrix": [
+    {
+      "event": "SIGINT",
+      "signalNumber": 2,
+      "processStatus": 130,
+      "semanticKind": "cancelled",
+      "output": "emit no new output after observation",
+      "cleanup": "abort owned work and await the memoized cleanup promise"
+    },
+    {
+      "event": "EPIPE",
+      "signalNumber": 13,
+      "processStatus": 141,
+      "semanticKind": "partial_output",
+      "output": "emit no stderr or further stdout; preserve any accepted prefix",
+      "cleanup": "abort upstream and await the memoized cleanup promise"
+    },
+    {
+      "event": "SIGTERM",
+      "signalNumber": 15,
+      "processStatus": 143,
+      "semanticKind": "cancelled",
+      "output": "emit no new output after observation",
+      "cleanup": "abort owned work and await the memoized cleanup promise"
+    }
+  ],
+  "commandResultAlgebra": {
+    "boundary": "Parse every candidate from unknown. Reject unknown keys. Operation data must already be validated by the shared operation registry. Human segments must carry the accepted output-context brands.",
+    "variants": [
+      {
+        "kind": "value",
+        "requiredFields": [
+          "version",
+          "kind",
+          "operationKey",
+          "semanticKind",
+          "data",
+          "humanLines",
+          "diagnostics"
+        ],
+        "forbiddenFields": ["exitCode", "stdout", "stderr", "process", "stack", "cause"],
+        "allowedSemanticKinds": [
+          "success",
+          "stale",
+          "expired",
+          "cancelled",
+          "attention",
+          "partial",
+          "uncertain"
+        ]
+      },
+      {
+        "kind": "raw",
+        "requiredFields": [
+          "version",
+          "kind",
+          "operationKey",
+          "semanticKind",
+          "stream",
+          "diagnostics"
+        ],
+        "forbiddenFields": [
+          "exitCode",
+          "stdout",
+          "stderr",
+          "process",
+          "stack",
+          "cause",
+          "humanLines"
+        ],
+        "allowedSemanticKinds": ["success"]
+      },
+      {
+        "kind": "failure",
+        "requiredFields": [
+          "version",
+          "kind",
+          "operationKey",
+          "semanticKind",
+          "error",
+          "diagnostics"
+        ],
+        "forbiddenFields": [
+          "exitCode",
+          "stdout",
+          "stderr",
+          "process",
+          "stack",
+          "cause",
+          "humanLines",
+          "data"
+        ],
+        "allowedSemanticKinds": [
+          "usage",
+          "invalid_input",
+          "not_found",
+          "unavailable",
+          "internal",
+          "io",
+          "temporary",
+          "protocol",
+          "authorization",
+          "configuration",
+          "conflict",
+          "stale",
+          "expired",
+          "replay",
+          "tampered",
+          "cancelled",
+          "partial_output"
+        ]
+      }
+    ],
+    "registeredErrorPrecedence": "Before an operation-specific value classifier, a value shaped as a public error envelope must validate against the operation or shared error authority and use the registered error mapping. An envelope-like value with an unknown code or invalid details is protocol, never success.",
+    "unknownPrecedence": "Missing semantic selection, an unregistered kind, a kind not allowed for the operation, a caller-supplied number, or a disagreement with a deterministic domain rule is protocol and exits 76. It can never default to success."
+  },
+  "localErrorRegistry": [
+    {
+      "code": "cli.usage",
+      "message": "command invocation is invalid",
+      "semanticKind": "usage",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-USAGE",
+      "validDetails": { "commandPath": null, "reasonCode": "unknown-command" }
+    },
+    {
+      "code": "cli.invalid-input",
+      "message": "command input does not satisfy the shared request contract",
+      "semanticKind": "invalid_input",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-INVALID-INPUT",
+      "validDetails": { "operationKey": "messages.search", "reasonCode": "request-schema" }
+    },
+    {
+      "code": "cli.configuration",
+      "message": "Agent Mail configuration is missing or invalid",
+      "semanticKind": "configuration",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-CONFIGURATION",
+      "validDetails": { "settingCode": "daemon.base-url", "reasonCode": "missing" }
+    },
+    {
+      "code": "cli.connect-timeout",
+      "message": "connection did not complete before its deadline",
+      "semanticKind": "temporary",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-CONNECT-TIMEOUT",
+      "validDetails": { "operationKey": "messages.search", "phase": "connect" }
+    },
+    {
+      "code": "cli.control-timeout",
+      "message": "control response did not arrive before its deadline",
+      "semanticKind": "temporary",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-CONTROL-TIMEOUT",
+      "validDetails": { "operationKey": "sync.pause", "phase": "control" }
+    },
+    {
+      "code": "cli.stream-idle-timeout",
+      "message": "stream made no progress before its idle deadline",
+      "semanticKind": "temporary",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-STREAM-IDLE-TIMEOUT",
+      "validDetails": { "operationKey": "messages.raw", "phase": "stream-idle" }
+    },
+    {
+      "code": "cli.protocol",
+      "message": "the CLI and service contract do not agree",
+      "semanticKind": "protocol",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-PROTOCOL",
+      "validDetails": { "operationKey": null, "phase": "result-validation" }
+    },
+    {
+      "code": "cli.cancelled",
+      "message": "command execution was cancelled",
+      "semanticKind": "cancelled",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-CANCELLED",
+      "validDetails": { "operationKey": null, "source": "caller" }
+    },
+    {
+      "code": "cli.transport",
+      "message": "the Agent Mail service is unavailable",
+      "semanticKind": "unavailable",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-TRANSPORT",
+      "validDetails": { "operationKey": "messages.search", "phase": "request" }
+    },
+    {
+      "code": "cli.internal",
+      "message": "the CLI could not complete the command",
+      "semanticKind": "internal",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-INTERNAL",
+      "validDetails": { "operationKey": null, "phase": "result-classifier" }
+    },
+    {
+      "code": "cli.output-io",
+      "message": "the requested output could not be written",
+      "semanticKind": "io",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-OUTPUT-IO",
+      "validDetails": { "destination": "stdout", "phase": "primary-frame" }
+    },
+    {
+      "code": "cli.partial-output",
+      "message": "output ended after an incomplete prefix was written",
+      "semanticKind": "partial_output",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-PARTIAL-OUTPUT",
+      "validDetails": {
+        "operationKey": "exports.selected",
+        "causeCode": "cli.stream-idle-timeout",
+        "failedBoundary": "client",
+        "stdoutBytesAccepted": 1024,
+        "stderrBytesAccepted": 0
+      }
+    },
+    {
+      "code": "cli.raw-tty-refused",
+      "message": "raw output is refused on a TTY without explicit opt-in",
+      "semanticKind": "usage",
+      "detailSchemaId": "LOCAL-DETAIL-CLI-RAW-TTY-REFUSED",
+      "validDetails": { "operationKey": "messages.raw", "destination": "tty" }
+    }
+  ],
+  "cliClientErrorMatrix": [
+    {
+      "kind": "connect_timeout",
+      "localCode": "cli.connect-timeout",
+      "semanticKind": "temporary",
+      "requiresServerError": false
+    },
+    {
+      "kind": "control_timeout",
+      "localCode": "cli.control-timeout",
+      "semanticKind": "temporary",
+      "requiresServerError": false
+    },
+    {
+      "kind": "stream_idle_timeout",
+      "localCode": "cli.stream-idle-timeout",
+      "semanticKind": "temporary",
+      "requiresServerError": false
+    },
+    {
+      "kind": "client_contract_error",
+      "localCode": "cli.protocol",
+      "semanticKind": "protocol",
+      "requiresServerError": false
+    },
+    {
+      "kind": "http_error",
+      "localCode": null,
+      "semanticKind": "registered-error-mapping",
+      "requiresServerError": true
+    },
+    {
+      "kind": "aborted",
+      "localCode": "cli.cancelled",
+      "semanticKind": "cancelled",
+      "requiresServerError": false
+    },
+    {
+      "kind": "transport_error",
+      "localCode": "cli.transport",
+      "semanticKind": "unavailable",
+      "requiresServerError": false
+    }
+  ],
+  "sharedErrorMatrix": [
+    { "code": "invalid_request", "status": 400, "semanticKind": "invalid_input" },
+    { "code": "missing_credentials", "status": 401, "semanticKind": "authorization" },
+    { "code": "invalid_credentials", "status": 401, "semanticKind": "authorization" },
+    { "code": "expired_credentials", "status": 401, "semanticKind": "authorization" },
+    { "code": "insufficient_scope", "status": 403, "semanticKind": "authorization" },
+    { "code": "request_too_large", "status": 413, "semanticKind": "invalid_input" },
+    { "code": "not_found", "status": 404, "semanticKind": "not_found" },
+    { "code": "internal_error", "status": 500, "semanticKind": "internal" },
+    { "code": "action.approval_forbidden", "status": 403, "semanticKind": "authorization" },
+    { "code": "action.approval_presence_required", "status": 403, "semanticKind": "authorization" },
+    {
+      "code": "action.operator_presence_unsupported",
+      "status": 503,
+      "semanticKind": "unavailable"
+    },
+    { "code": "action.operator_challenge_capacity", "status": 429, "semanticKind": "temporary" },
+    { "code": "action.operator_challenge_not_found", "status": 404, "semanticKind": "not_found" },
+    { "code": "action.operator_challenge_expired", "status": 409, "semanticKind": "expired" },
+    { "code": "action.operator_challenge_consumed", "status": 409, "semanticKind": "replay" },
+    { "code": "action.operator_assertion_invalid", "status": 403, "semanticKind": "tampered" },
+    { "code": "action.approval_not_found", "status": 409, "semanticKind": "not_found" },
+    { "code": "action.approval_mismatch", "status": 409, "semanticKind": "tampered" },
+    { "code": "action.approval_expired", "status": 409, "semanticKind": "expired" },
+    { "code": "action.approval_cancelled", "status": 409, "semanticKind": "cancelled" },
+    { "code": "action.approval_invalidated", "status": 409, "semanticKind": "stale" },
+    { "code": "action.approval_consumed", "status": 409, "semanticKind": "replay" },
+    { "code": "action.plan_version_stale", "status": 409, "semanticKind": "stale" },
+    { "code": "action.plan_not_pending", "status": 409, "semanticKind": "conflict" },
+    { "code": "action.plan_expired", "status": 409, "semanticKind": "expired" },
+    { "code": "action.legacy_authority", "status": 409, "semanticKind": "authorization" }
+  ],
+  "publicStatusMatrix": [
+    { "status": 400, "rule": "registered code decides; current default family is invalid_input" },
+    { "status": 401, "rule": "registered code decides; current default family is authorization" },
+    {
+      "status": 403,
+      "rule": "registered code decides; current codes are authorization or tampered"
+    },
+    { "status": 404, "rule": "registered code decides; current family is not_found" },
+    {
+      "status": 409,
+      "rule": "registered code decides among conflict, stale, expired, replay, tampered, cancelled, authorization, and not_found"
+    },
+    { "status": 413, "rule": "registered code decides; current family is invalid_input" },
+    {
+      "status": 415,
+      "rule": "no current registered code; any received envelope is protocol until a code is registered"
+    },
+    { "status": 429, "rule": "registered code decides; current family is temporary" },
+    {
+      "status": 500,
+      "rule": "registered code or typed details decide among internal, conflict, stale, cancelled, temporary, and authorization"
+    },
+    { "status": 503, "rule": "registered code decides; current family is unavailable" }
+  ],
+  "operationErrorMappings": [
+    {
+      "code": "invalid_query",
+      "status": 400,
+      "selector": "constant",
+      "semanticKind": "invalid_input"
+    },
+    {
+      "code": "invalid_cursor",
+      "status": 400,
+      "selector": "constant",
+      "semanticKind": "invalid_input"
+    },
+    { "code": "not_found", "status": 404, "selector": "constant", "semanticKind": "not_found" },
+    {
+      "code": "sync.control-rejected",
+      "status": 500,
+      "selector": "details.reason",
+      "cases": {
+        "stale-version": "stale",
+        "incompatible-state": "conflict",
+        "busy": "conflict",
+        "shutdown-terminal": "conflict"
+      }
+    },
+    {
+      "code": "sync.control-failed",
+      "status": 500,
+      "selector": "details.reason",
+      "cases": { "terminal-failure": "internal", "auth-blocked": "authorization" }
+    },
+    {
+      "code": "sync.control-cancelled",
+      "status": 500,
+      "selector": "constant",
+      "semanticKind": "cancelled"
+    },
+    {
+      "code": "sync.control-timeout",
+      "status": 500,
+      "selector": "constant",
+      "semanticKind": "temporary"
+    },
+    {
+      "code": "sync.control-idempotency-conflict",
+      "status": 500,
+      "selector": "constant",
+      "semanticKind": "conflict"
+    },
+    {
+      "code": "sync.control-capacity",
+      "status": 500,
+      "selector": "constant",
+      "semanticKind": "temporary"
+    }
+  ],
+  "operationErrorApplicability": [
+    { "operationKey": "messages.search", "code": "invalid_query", "status": 400 },
+    { "operationKey": "messages.search", "code": "invalid_cursor", "status": 400 },
+    { "operationKey": "messages.get", "code": "not_found", "status": 404 },
+    { "operationKey": "threads.get", "code": "invalid_cursor", "status": 400 },
+    { "operationKey": "threads.get", "code": "not_found", "status": 404 },
+    { "operationKey": "messages.raw", "code": "not_found", "status": 404 },
+    { "operationKey": "attachments.get", "code": "not_found", "status": 404 },
+    { "operationKey": "sync.start", "code": "sync.control-rejected", "status": 500 },
+    { "operationKey": "sync.start", "code": "sync.control-failed", "status": 500 },
+    { "operationKey": "sync.start", "code": "sync.control-cancelled", "status": 500 },
+    { "operationKey": "sync.start", "code": "sync.control-timeout", "status": 500 },
+    { "operationKey": "sync.pause", "code": "sync.control-rejected", "status": 500 },
+    { "operationKey": "sync.pause", "code": "sync.control-failed", "status": 500 },
+    { "operationKey": "sync.pause", "code": "sync.control-cancelled", "status": 500 },
+    { "operationKey": "sync.pause", "code": "sync.control-timeout", "status": 500 },
+    { "operationKey": "sync.pause", "code": "sync.control-idempotency-conflict", "status": 500 },
+    { "operationKey": "sync.pause", "code": "sync.control-capacity", "status": 500 },
+    { "operationKey": "sync.resume", "code": "sync.control-rejected", "status": 500 },
+    { "operationKey": "sync.resume", "code": "sync.control-failed", "status": 500 },
+    { "operationKey": "sync.resume", "code": "sync.control-cancelled", "status": 500 },
+    { "operationKey": "sync.resume", "code": "sync.control-timeout", "status": 500 },
+    { "operationKey": "sync.resume", "code": "sync.control-idempotency-conflict", "status": 500 },
+    { "operationKey": "sync.resume", "code": "sync.control-capacity", "status": 500 },
+    { "operationKey": "sync.stop", "code": "sync.control-rejected", "status": 500 },
+    { "operationKey": "sync.stop", "code": "sync.control-failed", "status": 500 },
+    { "operationKey": "sync.stop", "code": "sync.control-cancelled", "status": 500 },
+    { "operationKey": "sync.stop", "code": "sync.control-timeout", "status": 500 },
+    { "operationKey": "sync.stop", "code": "sync.control-idempotency-conflict", "status": 500 },
+    { "operationKey": "sync.stop", "code": "sync.control-capacity", "status": 500 }
+  ],
+  "operationMatrix": [
+    {
+      "operationKey": "messages.search",
+      "commandPath": "messages search",
+      "streaming": "none",
+      "valuePolicy": "registered-error-or-success"
+    },
+    {
+      "operationKey": "messages.get",
+      "commandPath": "messages get",
+      "streaming": "none",
+      "valuePolicy": "registered-error-or-success"
+    },
+    {
+      "operationKey": "threads.get",
+      "commandPath": "threads get",
+      "streaming": "none",
+      "valuePolicy": "registered-error-or-success"
+    },
+    {
+      "operationKey": "messages.raw",
+      "commandPath": "messages raw",
+      "streaming": "bytes",
+      "valuePolicy": "raw"
+    },
+    {
+      "operationKey": "attachments.get",
+      "commandPath": "attachments get",
+      "streaming": "bytes",
+      "valuePolicy": "raw"
+    },
+    {
+      "operationKey": "routing.preview",
+      "commandPath": "routing preview",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "routing.commit",
+      "commandPath": "routing commit",
+      "streaming": "none",
+      "valuePolicy": "routing-commit"
+    },
+    {
+      "operationKey": "messages.label",
+      "commandPath": "messages label",
+      "streaming": "none",
+      "valuePolicy": "label"
+    },
+    {
+      "operationKey": "action-plans.create",
+      "commandPath": "action plans create",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "action-plans.inspect",
+      "commandPath": "action plans inspect",
+      "streaming": "none",
+      "valuePolicy": "action-plan"
+    },
+    {
+      "operationKey": "action-plans.approve",
+      "commandPath": "action plans approve",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "action-plans.cancel-approval",
+      "commandPath": "action plans approval cancel",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "action-plans.commit",
+      "commandPath": "action plans commit",
+      "streaming": "none",
+      "valuePolicy": "action-plan"
+    },
+    {
+      "operationKey": "reports.create",
+      "commandPath": "reports create",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "exports.selected",
+      "commandPath": "exports selected",
+      "streaming": "bytes",
+      "valuePolicy": "raw"
+    },
+    {
+      "operationKey": "admin.backup",
+      "commandPath": "admin backup",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "admin.restore",
+      "commandPath": "admin restore",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "admin.doctor",
+      "commandPath": "admin doctor",
+      "streaming": "none",
+      "valuePolicy": "doctor"
+    },
+    {
+      "operationKey": "admin.reindex",
+      "commandPath": "admin reindex",
+      "streaming": "none",
+      "valuePolicy": "success"
+    },
+    {
+      "operationKey": "sync.status",
+      "commandPath": "sync status",
+      "streaming": "none",
+      "valuePolicy": "sync-status"
+    },
+    {
+      "operationKey": "sync.start",
+      "commandPath": "sync start",
+      "streaming": "none",
+      "valuePolicy": "registered-error-or-success"
+    },
+    {
+      "operationKey": "sync.pause",
+      "commandPath": "sync pause",
+      "streaming": "none",
+      "valuePolicy": "registered-error-or-success"
+    },
+    {
+      "operationKey": "sync.resume",
+      "commandPath": "sync resume",
+      "streaming": "none",
+      "valuePolicy": "registered-error-or-success"
+    },
+    {
+      "operationKey": "sync.stop",
+      "commandPath": "sync stop",
+      "streaming": "none",
+      "valuePolicy": "registered-error-or-success"
+    }
+  ],
+  "modeCompatibility": [
+    {
+      "resultKind": "value",
+      "operationStreaming": "none",
+      "allowedModes": ["json", "human"],
+      "mismatch": "cli.usage with reasonCode 'mode-not-supported' before client execution"
+    },
+    {
+      "resultKind": "raw",
+      "operationStreaming": "bytes",
+      "allowedModes": ["raw"],
+      "mismatch": "cli.usage with reasonCode 'mode-not-supported' before client execution"
+    }
+  ],
+  "modeResolution": {
+    "defaultByOperationStreaming": {
+      "none": "human",
+      "bytes": "raw"
+    },
+    "explicit": "Exactly one syntactically recognized explicit context selects json, human, or raw before request validation; a later operation mismatch is reported in that selected context.",
+    "preCommandFailure": "Before a command and one context can be resolved, use human failure output.",
+    "conflict": "Multiple conflicting or invalid context selections use human cli.usage with reasonCode 'output-context-conflict'.",
+    "clientRule": "Mode resolution and compatibility complete before configuration, request validation, client construction, or network execution."
+  },
+  "domainRuleDsl": {
+    "version": 1,
+    "selection": "first-match",
+    "registeredErrorProjection": {
+      "op": "input-path",
+      "path": ["registeredErrorSemanticKind"]
+    },
+    "expressionOperators": ["const", "eq", "in", "all", "any", "not-null"],
+    "projectionOperators": [
+      "path",
+      "literal",
+      "has-path",
+      "union-discriminant",
+      "array-empty",
+      "array-any-eq",
+      "array-any-not-eq",
+      "array-mixed-eq",
+      "array-all-eq-nonempty",
+      "target-coverage"
+    ],
+    "noMatch": { "semanticKind": "protocol", "localCode": "cli.protocol" },
+    "targetIdentity": {
+      "encoding": "json-array-v1",
+      "fields": ["accountId", "mailboxId", "uidValidity", "uid"],
+      "problemOrder": ["missing", "duplicate", "unexpected"],
+      "coverageValues": ["exact", "missing", "duplicate", "unexpected", "multiple-invalid"],
+      "classification": [
+        { "problems": [], "value": "exact" },
+        { "problems": ["missing"], "value": "missing" },
+        { "problems": ["duplicate"], "value": "duplicate" },
+        { "problems": ["unexpected"], "value": "unexpected" },
+        { "minimumProblemCount": 2, "value": "multiple-invalid" }
+      ]
+    },
+    "expressionSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://cli-domain-expression/v1",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": { "op": { "const": "const" }, "value": { "type": "boolean" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "fact", "value"],
+          "properties": {
+            "op": { "const": "eq" },
+            "fact": { "$ref": "#/$defs/factName" },
+            "value": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "fact", "values"],
+          "properties": {
+            "op": { "const": "in" },
+            "fact": { "$ref": "#/$defs/factName" },
+            "values": { "type": "array", "minItems": 1, "uniqueItems": true, "items": {} }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "clauses"],
+          "properties": {
+            "op": { "enum": ["all", "any"] },
+            "clauses": {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "agent-mail://cli-domain-expression/v1" }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "fact"],
+          "properties": {
+            "op": { "const": "not-null" },
+            "fact": { "$ref": "#/$defs/factName" }
+          }
+        }
+      ],
+      "$defs": {
+        "factName": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$" }
+      }
+    },
+    "outcomeSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://cli-domain-outcome/v1",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "semanticKind"],
+          "properties": {
+            "kind": { "const": "constant" },
+            "semanticKind": {
+              "enum": [
+                "success",
+                "invalid_input",
+                "not_found",
+                "unavailable",
+                "internal",
+                "temporary",
+                "protocol",
+                "authorization",
+                "conflict",
+                "stale",
+                "expired",
+                "replay",
+                "tampered",
+                "cancelled",
+                "attention",
+                "partial",
+                "uncertain"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "fact"],
+          "properties": {
+            "kind": { "const": "fact" },
+            "fact": { "const": "registeredErrorSemanticKind" }
+          }
+        }
+      ]
+    },
+    "projectionSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://cli-domain-projection/v1",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "path"],
+          "properties": {
+            "op": { "enum": ["path", "has-path", "array-empty"] },
+            "path": { "$ref": "#/$defs/path" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "value"],
+          "properties": { "op": { "const": "literal" }, "value": {} }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "path", "sentinel", "field"],
+          "properties": {
+            "op": { "const": "union-discriminant" },
+            "path": { "$ref": "#/$defs/path" },
+            "sentinel": { "type": "string", "minLength": 1 },
+            "field": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "path", "itemPath", "value"],
+          "properties": {
+            "op": {
+              "enum": [
+                "array-any-eq",
+                "array-any-not-eq",
+                "array-mixed-eq",
+                "array-all-eq-nonempty"
+              ]
+            },
+            "path": { "$ref": "#/$defs/path" },
+            "itemPath": { "$ref": "#/$defs/path" },
+            "value": {}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["op", "targetsPath", "resultsPath", "resultTargetPath"],
+          "properties": {
+            "op": { "const": "target-coverage" },
+            "targetsPath": { "$ref": "#/$defs/path" },
+            "resultsPath": { "$ref": "#/$defs/path" },
+            "resultTargetPath": { "$ref": "#/$defs/path" }
+          }
+        }
+      ],
+      "$defs": {
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z][A-Za-z0-9]*$" }
+        }
+      }
+    },
+    "ruleSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://cli-domain-rule/v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "when", "outcome"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^DOMAIN-[A-Z0-9-]+$" },
+        "when": { "$ref": "agent-mail://cli-domain-expression/v1" },
+        "outcome": { "$ref": "agent-mail://cli-domain-outcome/v1" }
+      }
+    },
+    "selectorSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "agent-mail://cli-domain-selector/v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "operations", "ruleOrder", "factProjection"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^SELECTOR-[A-Z0-9-]+$" },
+        "operations": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$" }
+        },
+        "ruleOrder": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^DOMAIN-[A-Z0-9-]+$" }
+        },
+        "factProjection": {
+          "type": "object",
+          "additionalProperties": { "$ref": "agent-mail://cli-domain-projection/v1" }
+        }
+      }
+    },
+    "factSchemas": {
+      "registeredErrorSemanticKind": {
+        "enum": [
+          null,
+          "invalid_input",
+          "not_found",
+          "unavailable",
+          "internal",
+          "temporary",
+          "authorization",
+          "conflict",
+          "stale",
+          "expired",
+          "replay",
+          "tampered",
+          "cancelled"
+        ]
+      },
+      "planState": {
+        "enum": [
+          "pending",
+          "executing",
+          "completed",
+          "partial",
+          "failed",
+          "rejected",
+          "expired",
+          "uncertain",
+          "restore-quarantined"
+        ]
+      },
+      "resultsEmpty": { "type": "boolean" },
+      "anyUncertainResult": { "type": "boolean" },
+      "mixedSuccessAndNonSuccess": { "type": "boolean" },
+      "allResultsStale": { "type": "boolean" },
+      "anyNonSuccessResult": { "type": "boolean" },
+      "targetCoverage": {
+        "enum": ["exact", "missing", "duplicate", "unexpected", "multiple-invalid"]
+      },
+      "approvalState": {
+        "enum": [
+          "not-applicable",
+          "absent",
+          "available",
+          "consumed",
+          "expired",
+          "cancelled",
+          "invalidated"
+        ]
+      },
+      "terminalState": {
+        "enum": [
+          "not-applicable",
+          "absent",
+          "completed",
+          "partial",
+          "failed",
+          "rejected",
+          "expired",
+          "uncertain",
+          "restore-quarantined"
+        ]
+      },
+      "executorDisposition": {
+        "enum": [
+          "not-applicable",
+          "absent",
+          "started",
+          "never-started-after-restore",
+          "unknown-after-restore"
+        ]
+      },
+      "hasConsumptionReceipt": { "type": "boolean" },
+      "doctorStatus": { "enum": ["healthy", "degraded", "unhealthy"] },
+      "syncActorState": {
+        "enum": [
+          "stopped",
+          "starting",
+          "backfilling",
+          "watching",
+          "sweeping",
+          "retrying",
+          "authBlocked",
+          "paused",
+          "stopping"
+        ]
+      },
+      "committed": { "type": "boolean" },
+      "dryRun": { "type": "boolean" }
+    }
+  },
+  "domainOutcomeRules": [
+    {
+      "id": "DOMAIN-REGISTERED-ERROR",
+      "when": { "op": "not-null", "fact": "registeredErrorSemanticKind" },
+      "outcome": { "kind": "fact", "fact": "registeredErrorSemanticKind" }
+    },
+    {
+      "id": "DOMAIN-ACTION-UNCERTAIN",
+      "when": {
+        "op": "any",
+        "clauses": [
+          { "op": "eq", "fact": "planState", "value": "uncertain" },
+          { "op": "eq", "fact": "anyUncertainResult", "value": true },
+          { "op": "eq", "fact": "terminalState", "value": "uncertain" },
+          {
+            "op": "eq",
+            "fact": "executorDisposition",
+            "value": "unknown-after-restore"
+          }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "uncertain" }
+    },
+    {
+      "id": "DOMAIN-ACTION-PARTIAL",
+      "when": {
+        "op": "any",
+        "clauses": [
+          { "op": "eq", "fact": "planState", "value": "partial" },
+          { "op": "eq", "fact": "terminalState", "value": "partial" },
+          { "op": "eq", "fact": "mixedSuccessAndNonSuccess", "value": true }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "partial" }
+    },
+    {
+      "id": "DOMAIN-ACTION-STALE",
+      "when": {
+        "op": "any",
+        "clauses": [
+          {
+            "op": "all",
+            "clauses": [
+              { "op": "eq", "fact": "targetCoverage", "value": "exact" },
+              { "op": "eq", "fact": "allResultsStale", "value": true }
+            ]
+          },
+          { "op": "eq", "fact": "approvalState", "value": "invalidated" }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "stale" }
+    },
+    {
+      "id": "DOMAIN-ACTION-EXPIRED",
+      "when": {
+        "op": "any",
+        "clauses": [
+          { "op": "eq", "fact": "planState", "value": "expired" },
+          { "op": "eq", "fact": "terminalState", "value": "expired" },
+          { "op": "eq", "fact": "approvalState", "value": "expired" }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "expired" }
+    },
+    {
+      "id": "DOMAIN-ACTION-CANCELLED",
+      "when": { "op": "eq", "fact": "approvalState", "value": "cancelled" },
+      "outcome": { "kind": "constant", "semanticKind": "cancelled" }
+    },
+    {
+      "id": "DOMAIN-ACTION-INSPECT-PENDING",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "planState", "value": "pending" },
+          { "op": "eq", "fact": "resultsEmpty", "value": true },
+          { "op": "eq", "fact": "terminalState", "value": "absent" },
+          { "op": "in", "fact": "approvalState", "values": ["absent", "available"] }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-ACTION-INSPECT-COMPLETED",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "planState", "value": "completed" },
+          { "op": "eq", "fact": "targetCoverage", "value": "exact" },
+          { "op": "eq", "fact": "anyNonSuccessResult", "value": false },
+          { "op": "eq", "fact": "approvalState", "value": "consumed" },
+          { "op": "eq", "fact": "terminalState", "value": "completed" },
+          { "op": "eq", "fact": "executorDisposition", "value": "started" }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-ACTION-COMMIT-COMPLETED",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "planState", "value": "completed" },
+          { "op": "eq", "fact": "targetCoverage", "value": "exact" },
+          { "op": "eq", "fact": "anyNonSuccessResult", "value": false },
+          { "op": "eq", "fact": "hasConsumptionReceipt", "value": true }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-ACTION-ATTENTION",
+      "when": { "op": "const", "value": true },
+      "outcome": { "kind": "constant", "semanticKind": "attention" }
+    },
+    {
+      "id": "DOMAIN-DOCTOR-HEALTHY",
+      "when": { "op": "eq", "fact": "doctorStatus", "value": "healthy" },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-DOCTOR-ATTENTION",
+      "when": {
+        "op": "in",
+        "fact": "doctorStatus",
+        "values": ["degraded", "unhealthy"]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "attention" }
+    },
+    {
+      "id": "DOMAIN-SYNC-AUTH-BLOCKED",
+      "when": { "op": "eq", "fact": "syncActorState", "value": "authBlocked" },
+      "outcome": { "kind": "constant", "semanticKind": "attention" }
+    },
+    {
+      "id": "DOMAIN-SYNC-STATUS",
+      "when": {
+        "op": "in",
+        "fact": "syncActorState",
+        "values": [
+          "stopped",
+          "starting",
+          "backfilling",
+          "watching",
+          "sweeping",
+          "retrying",
+          "paused",
+          "stopping"
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-ROUTING-COMMITTED",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "committed", "value": true },
+          { "op": "eq", "fact": "dryRun", "value": false }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-ROUTING-DRY-RUN",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "committed", "value": false },
+          { "op": "eq", "fact": "dryRun", "value": true }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-LABEL-COMMITTED",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "committed", "value": true },
+          { "op": "eq", "fact": "dryRun", "value": false }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-LABEL-DRY-RUN",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "committed", "value": false },
+          { "op": "eq", "fact": "dryRun", "value": true }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    },
+    {
+      "id": "DOMAIN-LABEL-UNCOMMITTED",
+      "when": {
+        "op": "all",
+        "clauses": [
+          { "op": "eq", "fact": "committed", "value": false },
+          { "op": "eq", "fact": "dryRun", "value": false }
+        ]
+      },
+      "outcome": { "kind": "constant", "semanticKind": "attention" }
+    },
+    {
+      "id": "DOMAIN-DEFAULT-SUCCESS",
+      "when": { "op": "const", "value": true },
+      "outcome": { "kind": "constant", "semanticKind": "success" }
+    }
+  ],
+  "domainSelectors": [
+    {
+      "id": "SELECTOR-ACTION-INSPECT",
+      "operations": ["action-plans.inspect"],
+      "ruleOrder": [
+        "DOMAIN-REGISTERED-ERROR",
+        "DOMAIN-ACTION-UNCERTAIN",
+        "DOMAIN-ACTION-PARTIAL",
+        "DOMAIN-ACTION-STALE",
+        "DOMAIN-ACTION-EXPIRED",
+        "DOMAIN-ACTION-CANCELLED",
+        "DOMAIN-ACTION-INSPECT-PENDING",
+        "DOMAIN-ACTION-INSPECT-COMPLETED",
+        "DOMAIN-ACTION-ATTENTION"
+      ],
+      "factProjection": {
+        "planState": { "op": "path", "path": ["plan", "state"] },
+        "resultsEmpty": { "op": "array-empty", "path": ["results"] },
+        "anyUncertainResult": {
+          "op": "array-any-eq",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "uncertain"
+        },
+        "mixedSuccessAndNonSuccess": {
+          "op": "array-mixed-eq",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "success"
+        },
+        "allResultsStale": {
+          "op": "array-all-eq-nonempty",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "stale"
+        },
+        "anyNonSuccessResult": {
+          "op": "array-any-not-eq",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "success"
+        },
+        "targetCoverage": {
+          "op": "target-coverage",
+          "targetsPath": ["plan", "targets"],
+          "resultsPath": ["results"],
+          "resultTargetPath": ["target"]
+        },
+        "approvalState": {
+          "op": "union-discriminant",
+          "path": ["approvalState"],
+          "sentinel": "absent",
+          "field": "state"
+        },
+        "terminalState": {
+          "op": "union-discriminant",
+          "path": ["terminalAudit"],
+          "sentinel": "absent",
+          "field": "terminalState"
+        },
+        "executorDisposition": {
+          "op": "union-discriminant",
+          "path": ["terminalAudit"],
+          "sentinel": "absent",
+          "field": "executorDisposition"
+        }
+      }
+    },
+    {
+      "id": "SELECTOR-ACTION-COMMIT",
+      "operations": ["action-plans.commit"],
+      "ruleOrder": [
+        "DOMAIN-REGISTERED-ERROR",
+        "DOMAIN-ACTION-UNCERTAIN",
+        "DOMAIN-ACTION-PARTIAL",
+        "DOMAIN-ACTION-STALE",
+        "DOMAIN-ACTION-EXPIRED",
+        "DOMAIN-ACTION-COMMIT-COMPLETED",
+        "DOMAIN-ACTION-ATTENTION"
+      ],
+      "factProjection": {
+        "planState": { "op": "path", "path": ["plan", "state"] },
+        "anyUncertainResult": {
+          "op": "array-any-eq",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "uncertain"
+        },
+        "mixedSuccessAndNonSuccess": {
+          "op": "array-mixed-eq",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "success"
+        },
+        "allResultsStale": {
+          "op": "array-all-eq-nonempty",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "stale"
+        },
+        "anyNonSuccessResult": {
+          "op": "array-any-not-eq",
+          "path": ["results"],
+          "itemPath": ["kind"],
+          "value": "success"
+        },
+        "targetCoverage": {
+          "op": "target-coverage",
+          "targetsPath": ["plan", "targets"],
+          "resultsPath": ["results"],
+          "resultTargetPath": ["target"]
+        },
+        "approvalState": { "op": "literal", "value": "not-applicable" },
+        "terminalState": { "op": "literal", "value": "not-applicable" },
+        "executorDisposition": { "op": "literal", "value": "not-applicable" },
+        "hasConsumptionReceipt": { "op": "has-path", "path": ["consumptionReceipt"] }
+      }
+    },
+    {
+      "id": "SELECTOR-DOCTOR",
+      "operations": ["admin.doctor"],
+      "ruleOrder": ["DOMAIN-REGISTERED-ERROR", "DOMAIN-DOCTOR-HEALTHY", "DOMAIN-DOCTOR-ATTENTION"],
+      "factProjection": { "doctorStatus": { "op": "path", "path": ["status"] } }
+    },
+    {
+      "id": "SELECTOR-SYNC-STATUS",
+      "operations": ["sync.status"],
+      "ruleOrder": ["DOMAIN-REGISTERED-ERROR", "DOMAIN-SYNC-AUTH-BLOCKED", "DOMAIN-SYNC-STATUS"],
+      "factProjection": {
+        "syncActorState": { "op": "path", "path": ["actorState"] }
+      }
+    },
+    {
+      "id": "SELECTOR-ROUTING-COMMIT",
+      "operations": ["routing.commit"],
+      "ruleOrder": [
+        "DOMAIN-REGISTERED-ERROR",
+        "DOMAIN-ROUTING-COMMITTED",
+        "DOMAIN-ROUTING-DRY-RUN"
+      ],
+      "factProjection": {
+        "committed": { "op": "path", "path": ["committed"] },
+        "dryRun": { "op": "path", "path": ["dryRun"] }
+      }
+    },
+    {
+      "id": "SELECTOR-LABEL",
+      "operations": ["messages.label"],
+      "ruleOrder": [
+        "DOMAIN-REGISTERED-ERROR",
+        "DOMAIN-LABEL-COMMITTED",
+        "DOMAIN-LABEL-DRY-RUN",
+        "DOMAIN-LABEL-UNCOMMITTED"
+      ],
+      "factProjection": {
+        "committed": { "op": "path", "path": ["committed"] },
+        "dryRun": { "op": "path", "path": ["dryRun"] }
+      }
+    },
+    {
+      "id": "SELECTOR-DEFAULT",
+      "operations": [
+        "messages.search",
+        "messages.get",
+        "threads.get",
+        "routing.preview",
+        "action-plans.create",
+        "action-plans.approve",
+        "action-plans.cancel-approval",
+        "reports.create",
+        "admin.backup",
+        "admin.restore",
+        "admin.reindex",
+        "sync.start",
+        "sync.pause",
+        "sync.resume",
+        "sync.stop"
+      ],
+      "ruleOrder": ["DOMAIN-REGISTERED-ERROR", "DOMAIN-DEFAULT-SUCCESS"],
+      "factProjection": {}
+    }
+  ],
+  "domainFixtureBases": [
+    {
+      "id": "BASE-ACTION-INSPECT-PENDING",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "facts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "pending",
+        "resultsEmpty": true,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "missing",
+        "approvalState": "absent",
+        "terminalState": "absent",
+        "executorDisposition": "absent"
+      }
+    },
+    {
+      "id": "BASE-ACTION-INSPECT-COMPLETED",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "facts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "exact",
+        "approvalState": "consumed",
+        "terminalState": "completed",
+        "executorDisposition": "started"
+      }
+    },
+    {
+      "id": "BASE-ACTION-COMMIT-COMPLETED",
+      "selectorId": "SELECTOR-ACTION-COMMIT",
+      "operationKey": "action-plans.commit",
+      "facts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "exact",
+        "approvalState": "not-applicable",
+        "terminalState": "not-applicable",
+        "executorDisposition": "not-applicable",
+        "hasConsumptionReceipt": true
+      }
+    },
+    {
+      "id": "BASE-DOCTOR",
+      "selectorId": "SELECTOR-DOCTOR",
+      "operationKey": "admin.doctor",
+      "facts": { "registeredErrorSemanticKind": null, "doctorStatus": "healthy" }
+    },
+    {
+      "id": "BASE-SYNC",
+      "selectorId": "SELECTOR-SYNC-STATUS",
+      "operationKey": "sync.status",
+      "facts": { "registeredErrorSemanticKind": null, "syncActorState": "stopped" }
+    },
+    {
+      "id": "BASE-ROUTING",
+      "selectorId": "SELECTOR-ROUTING-COMMIT",
+      "operationKey": "routing.commit",
+      "facts": {
+        "registeredErrorSemanticKind": null,
+        "committed": true,
+        "dryRun": false
+      }
+    },
+    {
+      "id": "BASE-LABEL",
+      "selectorId": "SELECTOR-LABEL",
+      "operationKey": "messages.label",
+      "facts": {
+        "registeredErrorSemanticKind": null,
+        "committed": true,
+        "dryRun": false
+      }
+    },
+    {
+      "id": "BASE-DEFAULT",
+      "selectorId": "SELECTOR-DEFAULT",
+      "operationKey": "messages.search",
+      "facts": { "registeredErrorSemanticKind": null }
+    }
+  ],
+  "domainFixtures": [
+    {
+      "id": "FIXTURE-ACTION-REGISTERED-ERROR-PRECEDENCE",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": {
+        "registeredErrorSemanticKind": "invalid_input",
+        "anyUncertainResult": true,
+        "mixedSuccessAndNonSuccess": true,
+        "allResultsStale": true
+      },
+      "expectedRuleId": "DOMAIN-REGISTERED-ERROR",
+      "expectedSemanticKind": "invalid_input",
+      "expectedExitCode": 65,
+      "expectedLocalCode": null,
+      "tags": ["registered-error-precedence"]
+    },
+    {
+      "id": "FIXTURE-ACTION-UNCERTAIN-PLAN",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "uncertain" },
+      "expectedRuleId": "DOMAIN-ACTION-UNCERTAIN",
+      "expectedSemanticKind": "uncertain",
+      "expectedExitCode": 87,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-UNCERTAIN-RESULT",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "anyUncertainResult": true, "anyNonSuccessResult": true },
+      "expectedRuleId": "DOMAIN-ACTION-UNCERTAIN",
+      "expectedSemanticKind": "uncertain",
+      "expectedExitCode": 87,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-UNCERTAIN-TERMINAL",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "terminalState": "uncertain" },
+      "expectedRuleId": "DOMAIN-ACTION-UNCERTAIN",
+      "expectedSemanticKind": "uncertain",
+      "expectedExitCode": 87,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-UNCERTAIN-EXECUTOR",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "executorDisposition": "unknown-after-restore" },
+      "expectedRuleId": "DOMAIN-ACTION-UNCERTAIN",
+      "expectedSemanticKind": "uncertain",
+      "expectedExitCode": 87,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-UNCERTAIN-OVER-PARTIAL",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "anyUncertainResult": true, "planState": "partial" },
+      "expectedRuleId": "DOMAIN-ACTION-UNCERTAIN",
+      "expectedSemanticKind": "uncertain",
+      "expectedExitCode": 87,
+      "expectedLocalCode": null,
+      "tags": ["uncertain-over-partial"]
+    },
+    {
+      "id": "FIXTURE-ACTION-PARTIAL-PLAN",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "partial" },
+      "expectedRuleId": "DOMAIN-ACTION-PARTIAL",
+      "expectedSemanticKind": "partial",
+      "expectedExitCode": 86,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-PARTIAL-TERMINAL",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "terminalState": "partial" },
+      "expectedRuleId": "DOMAIN-ACTION-PARTIAL",
+      "expectedSemanticKind": "partial",
+      "expectedExitCode": 86,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-PARTIAL-MIXED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": {
+        "mixedSuccessAndNonSuccess": true,
+        "anyNonSuccessResult": true
+      },
+      "expectedRuleId": "DOMAIN-ACTION-PARTIAL",
+      "expectedSemanticKind": "partial",
+      "expectedExitCode": 86,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-PARTIAL-OVER-STALE",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "partial", "allResultsStale": true },
+      "expectedRuleId": "DOMAIN-ACTION-PARTIAL",
+      "expectedSemanticKind": "partial",
+      "expectedExitCode": 86,
+      "expectedLocalCode": null,
+      "tags": ["partial-over-stale"]
+    },
+    {
+      "id": "FIXTURE-ACTION-STALE-ALL-RESULTS",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "allResultsStale": true, "anyNonSuccessResult": true },
+      "expectedRuleId": "DOMAIN-ACTION-STALE",
+      "expectedSemanticKind": "stale",
+      "expectedExitCode": 80,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-STALE-INVALIDATED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "approvalState": "invalidated" },
+      "expectedRuleId": "DOMAIN-ACTION-STALE",
+      "expectedSemanticKind": "stale",
+      "expectedExitCode": 80,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-STALE-OVER-EXPIRED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "approvalState": "invalidated", "planState": "expired" },
+      "expectedRuleId": "DOMAIN-ACTION-STALE",
+      "expectedSemanticKind": "stale",
+      "expectedExitCode": 80,
+      "expectedLocalCode": null,
+      "tags": ["stale-over-expired"]
+    },
+    {
+      "id": "FIXTURE-ACTION-EXPIRED-PLAN",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "expired" },
+      "expectedRuleId": "DOMAIN-ACTION-EXPIRED",
+      "expectedSemanticKind": "expired",
+      "expectedExitCode": 81,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-EXPIRED-TERMINAL",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "terminalState": "expired" },
+      "expectedRuleId": "DOMAIN-ACTION-EXPIRED",
+      "expectedSemanticKind": "expired",
+      "expectedExitCode": 81,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-EXPIRED-APPROVAL",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "approvalState": "expired" },
+      "expectedRuleId": "DOMAIN-ACTION-EXPIRED",
+      "expectedSemanticKind": "expired",
+      "expectedExitCode": 81,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-EXPIRED-OVER-CANCELLED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "expired", "approvalState": "cancelled" },
+      "expectedRuleId": "DOMAIN-ACTION-EXPIRED",
+      "expectedSemanticKind": "expired",
+      "expectedExitCode": 81,
+      "expectedLocalCode": null,
+      "tags": ["expired-over-cancelled"]
+    },
+    {
+      "id": "FIXTURE-ACTION-CANCELLED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "approvalState": "cancelled" },
+      "expectedRuleId": "DOMAIN-ACTION-CANCELLED",
+      "expectedSemanticKind": "cancelled",
+      "expectedExitCode": 84,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-INSPECT-PENDING-ABSENT",
+      "baseId": "BASE-ACTION-INSPECT-PENDING",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-ACTION-INSPECT-PENDING",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-INSPECT-PENDING-AVAILABLE",
+      "baseId": "BASE-ACTION-INSPECT-PENDING",
+      "factOverrides": { "approvalState": "available" },
+      "expectedRuleId": "DOMAIN-ACTION-INSPECT-PENDING",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-INSPECT-COMPLETED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-ACTION-INSPECT-COMPLETED",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-EXECUTING",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "executing" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-FAILED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "failed" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-REJECTED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "rejected" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-RESTORE-QUARANTINED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "planState": "restore-quarantined" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-NON-SUCCESS-RESULT",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "anyNonSuccessResult": true },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-TERMINAL-FAILED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "terminalState": "failed" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-TERMINAL-REJECTED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "terminalState": "rejected" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-TERMINAL-RESTORE-QUARANTINED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "terminalState": "restore-quarantined" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-EXECUTOR-NEVER-STARTED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "executorDisposition": "never-started-after-restore" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-APPROVAL-AVAILABLE",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "approvalState": "available" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-TARGET-MISSING",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "targetCoverage": "missing" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null,
+      "tags": ["missing-target"]
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-TARGET-DUPLICATE",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "targetCoverage": "duplicate" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null,
+      "tags": ["duplicate-target"]
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-TARGET-UNEXPECTED",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "targetCoverage": "unexpected" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null,
+      "tags": ["unexpected-target"]
+    },
+    {
+      "id": "FIXTURE-ACTION-ATTENTION-TARGET-MULTIPLE-INVALID",
+      "baseId": "BASE-ACTION-INSPECT-COMPLETED",
+      "factOverrides": { "targetCoverage": "multiple-invalid" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null,
+      "tags": ["multiple-invalid-targets"]
+    },
+    {
+      "id": "FIXTURE-ACTION-COMMIT-COMPLETED",
+      "baseId": "BASE-ACTION-COMMIT-COMPLETED",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-ACTION-COMMIT-COMPLETED",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-COMMIT-UNCERTAIN",
+      "baseId": "BASE-ACTION-COMMIT-COMPLETED",
+      "factOverrides": { "planState": "uncertain" },
+      "expectedRuleId": "DOMAIN-ACTION-UNCERTAIN",
+      "expectedSemanticKind": "uncertain",
+      "expectedExitCode": 87,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-COMMIT-PARTIAL",
+      "baseId": "BASE-ACTION-COMMIT-COMPLETED",
+      "factOverrides": { "mixedSuccessAndNonSuccess": true },
+      "expectedRuleId": "DOMAIN-ACTION-PARTIAL",
+      "expectedSemanticKind": "partial",
+      "expectedExitCode": 86,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-COMMIT-STALE",
+      "baseId": "BASE-ACTION-COMMIT-COMPLETED",
+      "factOverrides": { "allResultsStale": true },
+      "expectedRuleId": "DOMAIN-ACTION-STALE",
+      "expectedSemanticKind": "stale",
+      "expectedExitCode": 80,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-COMMIT-EXPIRED",
+      "baseId": "BASE-ACTION-COMMIT-COMPLETED",
+      "factOverrides": { "planState": "expired" },
+      "expectedRuleId": "DOMAIN-ACTION-EXPIRED",
+      "expectedSemanticKind": "expired",
+      "expectedExitCode": 81,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-COMMIT-MISSING-RECEIPT",
+      "baseId": "BASE-ACTION-COMMIT-COMPLETED",
+      "factOverrides": { "hasConsumptionReceipt": false },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ACTION-COMMIT-TARGET-MISSING",
+      "baseId": "BASE-ACTION-COMMIT-COMPLETED",
+      "factOverrides": { "targetCoverage": "missing" },
+      "expectedRuleId": "DOMAIN-ACTION-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-DOCTOR-HEALTHY",
+      "baseId": "BASE-DOCTOR",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-DOCTOR-HEALTHY",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-DOCTOR-DEGRADED",
+      "baseId": "BASE-DOCTOR",
+      "factOverrides": { "doctorStatus": "degraded" },
+      "expectedRuleId": "DOMAIN-DOCTOR-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-DOCTOR-UNHEALTHY",
+      "baseId": "BASE-DOCTOR",
+      "factOverrides": { "doctorStatus": "unhealthy" },
+      "expectedRuleId": "DOMAIN-DOCTOR-ATTENTION",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-STOPPED",
+      "baseId": "BASE-SYNC",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-STARTING",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "starting" },
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-BACKFILLING",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "backfilling" },
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-WATCHING",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "watching" },
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-SWEEPING",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "sweeping" },
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-RETRYING",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "retrying" },
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-AUTH-BLOCKED",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "authBlocked" },
+      "expectedRuleId": "DOMAIN-SYNC-AUTH-BLOCKED",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-PAUSED",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "paused" },
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-SYNC-STOPPING",
+      "baseId": "BASE-SYNC",
+      "factOverrides": { "syncActorState": "stopping" },
+      "expectedRuleId": "DOMAIN-SYNC-STATUS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ROUTING-COMMITTED",
+      "baseId": "BASE-ROUTING",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-ROUTING-COMMITTED",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ROUTING-DRY-RUN",
+      "baseId": "BASE-ROUTING",
+      "factOverrides": { "committed": false, "dryRun": true },
+      "expectedRuleId": "DOMAIN-ROUTING-DRY-RUN",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-ROUTING-NO-MATCH",
+      "baseId": "BASE-ROUTING",
+      "factOverrides": { "committed": false, "dryRun": false },
+      "expectedRuleId": null,
+      "expectedSemanticKind": "protocol",
+      "expectedExitCode": 76,
+      "expectedLocalCode": "cli.protocol",
+      "tags": ["no-match"]
+    },
+    {
+      "id": "FIXTURE-LABEL-COMMITTED",
+      "baseId": "BASE-LABEL",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-LABEL-COMMITTED",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-LABEL-DRY-RUN",
+      "baseId": "BASE-LABEL",
+      "factOverrides": { "committed": false, "dryRun": true },
+      "expectedRuleId": "DOMAIN-LABEL-DRY-RUN",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-LABEL-UNCOMMITTED",
+      "baseId": "BASE-LABEL",
+      "factOverrides": { "committed": false, "dryRun": false },
+      "expectedRuleId": "DOMAIN-LABEL-UNCOMMITTED",
+      "expectedSemanticKind": "attention",
+      "expectedExitCode": 85,
+      "expectedLocalCode": null
+    },
+    {
+      "id": "FIXTURE-LABEL-NO-MATCH",
+      "baseId": "BASE-LABEL",
+      "factOverrides": { "committed": true, "dryRun": true },
+      "expectedRuleId": null,
+      "expectedSemanticKind": "protocol",
+      "expectedExitCode": 76,
+      "expectedLocalCode": "cli.protocol",
+      "tags": ["no-match"]
+    },
+    {
+      "id": "FIXTURE-DEFAULT-SUCCESS",
+      "baseId": "BASE-DEFAULT",
+      "factOverrides": {},
+      "expectedRuleId": "DOMAIN-DEFAULT-SUCCESS",
+      "expectedSemanticKind": "success",
+      "expectedExitCode": 0,
+      "expectedLocalCode": null,
+      "tags": ["default"]
+    }
+  ],
+  "domainProjectionFixtures": [
+    {
+      "id": "PROJECTION-ACTION-INSPECT-PENDING-ABSENT",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "pending",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 }
+          ]
+        },
+        "results": [],
+        "approvalState": "absent",
+        "terminalAudit": "absent"
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "pending",
+        "resultsEmpty": true,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "missing",
+        "approvalState": "absent",
+        "terminalState": "absent",
+        "executorDisposition": "absent"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-COMPLETED-EXACT",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          }
+        ],
+        "approvalState": { "state": "consumed" },
+        "terminalAudit": { "terminalState": "completed", "executorDisposition": "started" }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "exact",
+        "approvalState": "consumed",
+        "terminalState": "completed",
+        "executorDisposition": "started"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-MIXED",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "partial",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 },
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 2 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          },
+          {
+            "kind": "stale",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 2
+            }
+          }
+        ],
+        "approvalState": { "state": "consumed" },
+        "terminalAudit": { "terminalState": "partial", "executorDisposition": "started" }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "partial",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": true,
+        "allResultsStale": false,
+        "anyNonSuccessResult": true,
+        "targetCoverage": "exact",
+        "approvalState": "consumed",
+        "terminalState": "partial",
+        "executorDisposition": "started"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-MISSING",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 },
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 2 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          }
+        ],
+        "approvalState": { "state": "consumed" },
+        "terminalAudit": { "terminalState": "completed", "executorDisposition": "started" }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "missing",
+        "approvalState": "consumed",
+        "terminalState": "completed",
+        "executorDisposition": "started"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-DUPLICATE",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          },
+          {
+            "kind": "stale",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          }
+        ],
+        "approvalState": { "state": "consumed" },
+        "terminalAudit": { "terminalState": "completed", "executorDisposition": "started" }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": true,
+        "allResultsStale": false,
+        "anyNonSuccessResult": true,
+        "targetCoverage": "duplicate",
+        "approvalState": "consumed",
+        "terminalState": "completed",
+        "executorDisposition": "started"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-UNEXPECTED",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          },
+          {
+            "kind": "rejected",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:other",
+              "uidValidity": 1,
+              "uid": 3
+            }
+          }
+        ],
+        "approvalState": { "state": "consumed" },
+        "terminalAudit": { "terminalState": "completed", "executorDisposition": "started" }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": true,
+        "allResultsStale": false,
+        "anyNonSuccessResult": true,
+        "targetCoverage": "unexpected",
+        "approvalState": "consumed",
+        "terminalState": "completed",
+        "executorDisposition": "started"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-MULTIPLE-INVALID",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 },
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 2 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          },
+          {
+            "kind": "failed",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          },
+          {
+            "kind": "stale",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:other",
+              "uidValidity": 1,
+              "uid": 3
+            }
+          }
+        ],
+        "approvalState": { "state": "consumed" },
+        "terminalAudit": {
+          "terminalState": "failed",
+          "executorDisposition": "never-started-after-restore"
+        }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": true,
+        "allResultsStale": false,
+        "anyNonSuccessResult": true,
+        "targetCoverage": "multiple-invalid",
+        "approvalState": "consumed",
+        "terminalState": "failed",
+        "executorDisposition": "never-started-after-restore"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-ALL-STALE",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            },
+            {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 2
+            }
+          ]
+        },
+        "results": [
+          {
+            "kind": "stale",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          },
+          {
+            "kind": "stale",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 2
+            }
+          }
+        ],
+        "approvalState": { "state": "consumed" },
+        "terminalAudit": { "terminalState": "completed", "executorDisposition": "started" }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "resultsEmpty": false,
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": true,
+        "anyNonSuccessResult": true,
+        "targetCoverage": "exact",
+        "approvalState": "consumed",
+        "terminalState": "completed",
+        "executorDisposition": "started"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-INSPECT-UNCERTAIN",
+      "selectorId": "SELECTOR-ACTION-INSPECT",
+      "operationKey": "action-plans.inspect",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "uncertain",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "uncertain",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          }
+        ],
+        "approvalState": { "state": "invalidated" },
+        "terminalAudit": {
+          "terminalState": "uncertain",
+          "executorDisposition": "unknown-after-restore"
+        }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "uncertain",
+        "resultsEmpty": false,
+        "anyUncertainResult": true,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": true,
+        "targetCoverage": "exact",
+        "approvalState": "invalidated",
+        "terminalState": "uncertain",
+        "executorDisposition": "unknown-after-restore"
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-COMMIT-COMPLETED",
+      "selectorId": "SELECTOR-ACTION-COMMIT",
+      "operationKey": "action-plans.commit",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            { "accountId": "account:a", "mailboxId": "mailbox:inbox", "uidValidity": 1, "uid": 1 }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          }
+        ],
+        "consumptionReceipt": { "receiptId": "approval-receipt:1" }
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "exact",
+        "approvalState": "not-applicable",
+        "terminalState": "not-applicable",
+        "executorDisposition": "not-applicable",
+        "hasConsumptionReceipt": true
+      }
+    },
+    {
+      "id": "PROJECTION-ACTION-COMMIT-MISSING-RECEIPT",
+      "selectorId": "SELECTOR-ACTION-COMMIT",
+      "operationKey": "action-plans.commit",
+      "input": {
+        "registeredErrorSemanticKind": null,
+        "plan": {
+          "state": "completed",
+          "targets": [
+            {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          ]
+        },
+        "results": [
+          {
+            "kind": "success",
+            "target": {
+              "accountId": "account:a",
+              "mailboxId": "mailbox:inbox",
+              "uidValidity": 1,
+              "uid": 1
+            }
+          }
+        ]
+      },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "planState": "completed",
+        "anyUncertainResult": false,
+        "mixedSuccessAndNonSuccess": false,
+        "allResultsStale": false,
+        "anyNonSuccessResult": false,
+        "targetCoverage": "exact",
+        "approvalState": "not-applicable",
+        "terminalState": "not-applicable",
+        "executorDisposition": "not-applicable",
+        "hasConsumptionReceipt": false
+      }
+    },
+    {
+      "id": "PROJECTION-DOCTOR-DEGRADED",
+      "selectorId": "SELECTOR-DOCTOR",
+      "operationKey": "admin.doctor",
+      "input": { "registeredErrorSemanticKind": null, "status": "degraded" },
+      "expectedFacts": { "registeredErrorSemanticKind": null, "doctorStatus": "degraded" }
+    },
+    {
+      "id": "PROJECTION-SYNC-AUTH-BLOCKED",
+      "selectorId": "SELECTOR-SYNC-STATUS",
+      "operationKey": "sync.status",
+      "input": { "registeredErrorSemanticKind": null, "actorState": "authBlocked" },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "syncActorState": "authBlocked"
+      }
+    },
+    {
+      "id": "PROJECTION-ROUTING-DRY-RUN",
+      "selectorId": "SELECTOR-ROUTING-COMMIT",
+      "operationKey": "routing.commit",
+      "input": { "registeredErrorSemanticKind": null, "committed": false, "dryRun": true },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "committed": false,
+        "dryRun": true
+      }
+    },
+    {
+      "id": "PROJECTION-LABEL-UNCOMMITTED",
+      "selectorId": "SELECTOR-LABEL",
+      "operationKey": "messages.label",
+      "input": { "registeredErrorSemanticKind": null, "committed": false, "dryRun": false },
+      "expectedFacts": {
+        "registeredErrorSemanticKind": null,
+        "committed": false,
+        "dryRun": false
+      }
+    },
+    {
+      "id": "PROJECTION-DEFAULT-REGISTERED-ERROR",
+      "selectorId": "SELECTOR-DEFAULT",
+      "operationKey": "messages.search",
+      "input": { "registeredErrorSemanticKind": "not_found" },
+      "expectedFacts": { "registeredErrorSemanticKind": "not_found" }
+    }
+  ],
+  "outputPolicy": {
+    "jsonSuccess": "Write JSON.stringify(validated data) followed by exactly LF to stdout. Write no success marker or error to stderr. A nonzero domain value remains on stdout.",
+    "jsonFailure": "Construct a fresh ErrorEnvelopeV1 in exact key order code,message,correlationId,details; write JSON.stringify(projection) plus exactly LF to stderr and zero stdout bytes. A server PublicErrorEnvelope retains the exact four validated values; local failures use a registered cli.* envelope and the invocation correlation ID.",
+    "humanSuccess": "Render only branded humanLines through renderHuman. The runner owns logical line separators and exactly one final LF. A nonzero domain value remains on stdout.",
+    "humanFailure": "Write exactly 'error[' + visible(code) + ']: ' + visible(message) + ' (correlation ' + visible(correlationId) + ')' plus LF to stderr through the human renderer. Do not render details or a stack.",
+    "rawSuccess": "After raw TTY preflight and optional diagnostic preflight, copy only stream bytes to stdout with awaited backpressure. Do not append LF, metadata, counts, progress, or a success marker.",
+    "rawFailure": "Before any accepted output byte, write one ErrorEnvelopeV1 JSON line to stderr. After a non-EPIPE partial or unknowable stdout/stderr write, preserve every accepted prefix, write cli.partial-output to stderr only when that sink remains writable, and exit 88. Its failedBoundary and two accepted-byte counts are the bounded snapshot taken when the terminal cause latches, before failure reporting. EPIPE and signals emit nothing further.",
+    "diagnostics": "Diagnostics are opt-in and capped at 16 records. JSON and raw modes construct strict DiagnosticV1 records in exact key order version,kind,level,code,message,correlationId,details and emit JSON.stringify(record) plus LF only on stderr; human mode emits branded human-safe lines only on stderr. Code/message/correlation/details are parsed from unknown, credential and stack-like keys are recursively forbidden, messages are at most 500 UTF-8 bytes, and encoded details are at most 2048 UTF-8 bytes. Pre-stream metadata diagnostics are completed before the first raw byte. There is no progress output.",
+    "framing": "One runner serializes writes per sink. JSON and diagnostic records are fully encoded before write and end in exactly one LF. A write-all loop awaits backpressure. Cross-sink observation order is not promised except that requested raw preflight diagnostics finish before the first raw byte. Unknown acceptance after a started write is conservatively partial.",
+    "correlation": "Retain an exact validated server correlationId for server errors. All locally synthesized envelopes use one validated invocation correlationId injected into the process-agnostic executor. Never replace a server ID or copy an exception string into it.",
+    "stack": "No JSON, human, raw diagnostic, usage, or fallback output may contain stack, cause, credentials, raw mail, arbitrary Error.message, or inspected exception objects."
+  },
+  "outputDispositionMatrix": [
+    {
+      "id": "OUT-JSON-VALUE",
+      "mode": "json",
+      "result": "value",
+      "stdout": "canonical JSON line",
+      "stderr": "requested DiagnosticV1 JSONL only",
+      "exit": "semantic registry"
+    },
+    {
+      "id": "OUT-JSON-FAILURE",
+      "mode": "json",
+      "result": "failure",
+      "stdout": "empty",
+      "stderr": "one ErrorEnvelopeV1 JSON line",
+      "exit": "semantic registry"
+    },
+    {
+      "id": "OUT-HUMAN-VALUE",
+      "mode": "human",
+      "result": "value",
+      "stdout": "human-safe framed lines",
+      "stderr": "requested human-safe diagnostics only",
+      "exit": "semantic registry"
+    },
+    {
+      "id": "OUT-HUMAN-FAILURE",
+      "mode": "human",
+      "result": "failure",
+      "stdout": "empty",
+      "stderr": "one human-safe error line",
+      "exit": "semantic registry"
+    },
+    {
+      "id": "OUT-RAW-STREAM",
+      "mode": "raw",
+      "result": "raw",
+      "stdout": "exact stream bytes",
+      "stderr": "requested DiagnosticV1 JSONL only",
+      "exit": "success when complete"
+    },
+    {
+      "id": "OUT-RAW-PREFAIL",
+      "mode": "raw",
+      "result": "failure before primary bytes",
+      "stdout": "empty",
+      "stderr": "one ErrorEnvelopeV1 JSON line",
+      "exit": "semantic registry"
+    },
+    {
+      "id": "OUT-RAW-PARTIAL",
+      "mode": "raw",
+      "result": "non-EPIPE failure after primary bytes",
+      "stdout": "unchanged accepted prefix",
+      "stderr": "cli.partial-output JSON line when writable",
+      "exit": "partial_output"
+    },
+    {
+      "id": "OUT-EPIPE",
+      "mode": "any",
+      "result": "EPIPE from stdout or stderr",
+      "stdout": "unchanged accepted prefix",
+      "stderr": "unchanged accepted prefix; no new output",
+      "exit": "141"
+    },
+    {
+      "id": "OUT-SIGNAL",
+      "mode": "any",
+      "result": "SIGINT or SIGTERM",
+      "stdout": "no new output",
+      "stderr": "no new output",
+      "exit": "130 or 143"
+    }
+  ],
+  "executionProtocol": {
+    "name": "CliCommandEmissionV1",
+    "owner": "one command executor actor per process invocation",
+    "receiptRule": "For normal completion, semanticKind and exitCode are the exact exitCodeRegistry pair. The only exceptions are cancelled with 130 or 143 for SIGINT/SIGTERM and partial_output with 141 for EPIPE. Every other pair is invalid.",
+    "cleanupReceiptRule": "cleanupAwaited is true only after the memoized cleanup promise settled and false only when no cleanup path was registered or required. EPIPE, SIGINT, SIGTERM, caller abort, and an opened raw stream failure must settle cleanup before any receipt.",
+    "states": [
+      {
+        "id": "validating",
+        "activeWork": "parse result, mode, registered semantic selection, correlation, diagnostics, and raw TTY policy"
+      },
+      {
+        "id": "rendering",
+        "activeWork": "encode the complete next non-raw frame before a sink write"
+      },
+      {
+        "id": "emitting",
+        "activeWork": "await serialized sink writes and raw backpressure while counting accepted primary bytes"
+      },
+      {
+        "id": "cancelling",
+        "activeWork": "abort owned client or stream work after caller abort, EPIPE, or signal"
+      },
+      { "id": "cleaning", "activeWork": "await exactly one memoized cleanup promise" },
+      {
+        "id": "reporting",
+        "activeWork": "emit the one permitted non-signal failure frame when its destination remains writable"
+      },
+      { "id": "settled", "activeWork": "none; return one immutable execution receipt" }
+    ],
+    "events": [
+      "VALID",
+      "VALUE_FRAME_READY",
+      "RAW_STREAM_READY",
+      "WRITE_ACCEPTED",
+      "COMMAND_FAILURE",
+      "SINK_FAILURE",
+      "EPIPE",
+      "CALLER_ABORT",
+      "SIGINT",
+      "SIGTERM",
+      "CLEANUP_DONE",
+      "CLEANUP_FAILED",
+      "REPORT_DONE",
+      "REPORT_FAILED"
+    ],
+    "rules": [
+      "The actor owns one AbortController, one stdout sink, one stderr sink, separate accepted-byte counters, one terminal-cause latch, and one memoized cleanup promise.",
+      "The first observed SIGINT or SIGTERM latches the signal terminal cause and outranks every non-signal cause. A later signal cannot change it.",
+      "EPIPE outranks non-signal client, sink, and cleanup failures but never outranks an already latched SIGINT or SIGTERM.",
+      "After any requested stdout or stderr byte, a non-EPIPE client, sink, render, diagnostic, or cleanup failure becomes partial_output. Unknown bytesAccepted after a started write is treated as partial_output.",
+      "Before any output byte, a sink failure becomes io; a render or cleanup invariant becomes internal; a client failure keeps its registered semantic kind.",
+      "A signal handler only records the event and requests abort. Cleanup and any process status decision happen in normal async execution.",
+      "No terminal branch retries a command, a remote operation, or an output prefix."
+    ],
+    "terminalPrecedence": [
+      "first SIGINT or SIGTERM",
+      "EPIPE",
+      "partial_output after an accepted or unknown stdout/stderr prefix",
+      "registered command or client semantic kind",
+      "cleanup/internal fallback"
+    ]
+  },
+  "runtimeFailureMatrix": [
+    {
+      "id": "RUN-PRE-SINK-IO",
+      "condition": "a stdout or stderr write fails with proven bytesAccepted == 0 and neither sink accepted prior bytes",
+      "semanticKind": "io",
+      "stderr": "cli.output-io only when stderr is writable and was not the failed sink",
+      "retry": "never inside invocation"
+    },
+    {
+      "id": "RUN-POST-SINK-IO",
+      "condition": "a stdout or stderr write fails after either sink accepted bytes, or after a started write with unknown acceptance",
+      "semanticKind": "partial_output",
+      "stderr": "cli.partial-output only when stderr remains writable",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-EPIPE-ZERO",
+      "condition": "stdout or stderr returns EPIPE before a proven accepted byte",
+      "semanticKind": "partial_output",
+      "processStatus": 141,
+      "stderr": "none",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-EPIPE-PARTIAL",
+      "condition": "stdout or stderr returns EPIPE after an accepted or unknown prefix",
+      "semanticKind": "partial_output",
+      "processStatus": 141,
+      "stderr": "none",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-STREAM-FAIL-ZERO",
+      "condition": "stream client failure before either sink accepts a byte",
+      "semanticKind": "underlying client mapping",
+      "stderr": "one mapped error envelope",
+      "retry": "never inside invocation"
+    },
+    {
+      "id": "RUN-STREAM-FAIL-PARTIAL",
+      "condition": "stream client failure after either sink accepts a byte",
+      "semanticKind": "partial_output",
+      "stderr": "cli.partial-output with underlying causeCode when writable",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-CALLER-ABORT-ZERO",
+      "condition": "non-signal caller abort before either sink accepts output",
+      "semanticKind": "cancelled",
+      "stderr": "cli.cancelled",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-CALLER-ABORT-PARTIAL",
+      "condition": "non-signal caller abort after either sink accepts output",
+      "semanticKind": "partial_output",
+      "stderr": "cli.partial-output when writable",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-SIGINT",
+      "condition": "SIGINT at any non-settled state",
+      "semanticKind": "cancelled",
+      "processStatus": 130,
+      "stderr": "none",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-SIGTERM",
+      "condition": "SIGTERM at any non-settled state",
+      "semanticKind": "cancelled",
+      "processStatus": 143,
+      "stderr": "none",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-RENDER-FAIL",
+      "condition": "JSON or human frame cannot be constructed before either sink accepts output",
+      "semanticKind": "internal",
+      "stderr": "cli.internal",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-CLEANUP-FAIL-ZERO",
+      "condition": "memoized cleanup rejects before either sink accepts output and no signal or EPIPE is latched",
+      "semanticKind": "internal",
+      "stderr": "cli.internal",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-CLEANUP-FAIL-PARTIAL",
+      "condition": "memoized cleanup rejects after either sink accepts output and no signal or EPIPE is latched",
+      "semanticKind": "partial_output",
+      "stderr": "cli.partial-output if writable",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-DIAGNOSTIC-FAIL-ZERO",
+      "condition": "requested diagnostic write fails with proven zero acceptance before either sink accepts output",
+      "semanticKind": "io",
+      "stderr": "no recursive diagnostic",
+      "retry": "forbidden"
+    },
+    {
+      "id": "RUN-DIAGNOSTIC-FAIL-PARTIAL",
+      "condition": "requested diagnostic write fails after accepted output or with unknown acceptance",
+      "semanticKind": "partial_output",
+      "stderr": "no recursive diagnostic",
+      "retry": "forbidden"
+    }
+  ],
+  "safetyPolicy": {
+    "human": "Every feature-provided value remains UntrustedValue. Only fixed CLI chrome from trustedChrome may frame it. Runtime brands and exact keys are revalidated. Raw bytes never enter renderHuman.",
+    "structured": "JSON preserves validated semantic values. It does not apply terminal escaping, truncation, display-width logic, color, or human sanitization.",
+    "raw": "Raw bytes are copied exactly after TTY policy. Diagnostics and metadata use stderr only. No raw byte is decoded for classification or error parsing.",
+    "errors": "Server error envelopes are validated by exact code, status, fixed message when defined, strict detail schema, and safe public envelope. Local errors use fixed messages and strict bounded safe detail shapes.",
+    "hostileContent": "ESC, CSI, OSC, DCS, APC, PM, SOS, CR, backspace, C0/C1, DEL, bidi controls, combining marks, hostile filenames, URLs, error strings, and correlation values are inert in human mode and faithful JSON strings in structured mode.",
+    "structuralBans": [
+      "process.stdout.write outside the shared process adapter",
+      "process.stderr.write outside the shared process adapter",
+      "console.log/error/warn in feature renderers",
+      "caller-supplied exitCode",
+      "numeric exit tables outside the shared module",
+      "stack or cause in public output",
+      "message-text parsing for semantics",
+      "raw bytes through renderHuman",
+      "diagnostics on stdout",
+      "retry after partial output"
+    ]
+  },
+  "extensionMechanism": {
+    "registryVersion": 1,
+    "selectionShape": "{version:1,operationKey,semanticKind}",
+    "allowedValueKinds": [
+      "success",
+      "stale",
+      "expired",
+      "cancelled",
+      "attention",
+      "partial",
+      "uncertain"
+    ],
+    "rules": [
+      "A feature adapter selects only a semanticKind string. The shape has no numeric, stream, destination, or renderer field.",
+      "The shared module validates the kind against exitCodeRegistry and the operation's valuePolicy, then recomputes deterministic domain rules when one exists. A mismatch is cli.protocol/76.",
+      "Registered public errors bypass feature selection and map centrally by code plus typed details. Messages and HTTP status alone never select a kind.",
+      "An additive operation mapping may reuse an existing kind only after adding exact operation applicability and proof. A new kind or changed meaning requires oracle v2.",
+      "Future routing replay, expiry, and tamper errors must first become registered strict operation/shared errors or strict domain discriminants. Their feature adapter may then select replay, expired, or tampered; it may not infer them from a private exception or message."
+    ]
+  },
+  "decisions": [
+    {
+      "id": "D01",
+      "decision": "Make semantic kind the only bridge from validated command meaning to one central numeric registry."
+    },
+    {
+      "id": "D02",
+      "decision": "Use macOS sysexits values where their meanings fit and reserve Agent Mail 79 through 88 for required domain distinctions."
+    },
+    {
+      "id": "D03",
+      "decision": "Never emit 124 through 127 or a normal semantic value above 127; use 130, 141, and 143 only for signal conventions."
+    },
+    {
+      "id": "D04",
+      "decision": "Keep a validated HTTP-200 domain attention value on stdout while returning its nonzero semantic exit."
+    },
+    {
+      "id": "D05",
+      "decision": "Map registered public errors by code and typed details, never by message text or status alone."
+    },
+    {
+      "id": "D06",
+      "decision": "Treat an HTTP-200 registered error envelope as the same failure as its non-200 form."
+    },
+    {
+      "id": "D07",
+      "decision": "Emit canonical JSON values on success and the exact four-field safe error envelope on stderr for failures."
+    },
+    {
+      "id": "D08",
+      "decision": "Keep human success and attention on stdout, human errors on stderr, and pass all values through the accepted branded renderer."
+    },
+    {
+      "id": "D09",
+      "decision": "Keep raw stdout byte-exact and require JSONL diagnostics on stderr when requested."
+    },
+    {
+      "id": "D10",
+      "decision": "Use 141 and silence for EPIPE after awaited upstream cancellation, regardless of accepted-byte count."
+    },
+    {
+      "id": "D11",
+      "decision": "Use partial_output 88 for every non-EPIPE failure after an accepted or unknowable stdout/stderr prefix and forbid retry."
+    },
+    {
+      "id": "D12",
+      "decision": "Use 130 and 143 for SIGINT and SIGTERM after one awaited idempotent cleanup, with no new output or stack."
+    },
+    {
+      "id": "D13",
+      "decision": "Retain exact server correlation IDs and synthesize local envelopes only from one injected invocation correlation ID."
+    },
+    {
+      "id": "D14",
+      "decision": "Pair every fixed local code/message/semantic kind with one strict machine-readable bounded detail schema; never copy Error.message, stack, cause, credentials, or raw content."
+    },
+    {
+      "id": "D15",
+      "decision": "Use ordered first-match action selectors: registered error, uncertainty/unknown-after-restore, partial, exact all-stale or invalidated, expired, inspect cancellation, exact operation success, then attention fallback."
+    },
+    {
+      "id": "D16",
+      "decision": "Classify unhealthy/degraded doctor and authBlocked sync status as attention while preserving their validated value."
+    },
+    {
+      "id": "D17",
+      "decision": "Validate feature semantic selections against declarative operation applicability and deterministic domain rules."
+    },
+    {
+      "id": "D18",
+      "decision": "Keep missing routing replay/expiry/tamper discriminants as a downstream contract obligation instead of inventing CLI-private codes."
+    },
+    {
+      "id": "D19",
+      "decision": "Default value operations to human and byte streams to raw; allow JSON/human only for values and raw only for bytes; reject a mismatch as usage before configuration/client execution."
+    }
+  ],
+  "examples": [
+    {
+      "id": "EX-JSON-SUCCESS",
+      "input": "validated messages.search page",
+      "mode": "json",
+      "expected": "canonical page plus LF on stdout, empty stderr, exit 0"
+    },
+    {
+      "id": "EX-JSON-NOT-FOUND",
+      "input": "registered not_found",
+      "mode": "json",
+      "expected": "exact envelope plus LF on stderr, empty stdout, exit 66"
+    },
+    {
+      "id": "EX-HUMAN-HOSTILE",
+      "input": "OSC52 plus CR forged-success content",
+      "mode": "human",
+      "expected": "inert visible evidence on stdout with no terminal effect"
+    },
+    {
+      "id": "EX-ACTION-PARTIAL",
+      "input": "HTTP 200 plan.partial with success and stale target results",
+      "mode": "json",
+      "expected": "full canonical action value on stdout, empty stderr, exit 86"
+    },
+    {
+      "id": "EX-ACTION-UNCERTAIN",
+      "input": "HTTP 200 with any uncertain target",
+      "mode": "human",
+      "expected": "every target and certainty on stdout, empty stderr, exit 87"
+    },
+    {
+      "id": "EX-ACTION-STALE",
+      "input": "HTTP 200 with nonempty all-stale result set",
+      "mode": "json",
+      "expected": "full value on stdout, exit 80"
+    },
+    {
+      "id": "EX-ACTION-MISSING-TARGET",
+      "input": "HTTP 200 completed plan whose success results omit one frozen target",
+      "mode": "json",
+      "expected": "full value on stdout, empty stderr, attention exit 85; never success"
+    },
+    {
+      "id": "EX-ACTION-CANCELLED-AUTHORITY",
+      "input": "HTTP 200 inspect of a pending plan whose approvalState is cancelled",
+      "mode": "json",
+      "expected": "full inspect value on stdout, empty stderr, cancelled exit 84"
+    },
+    {
+      "id": "EX-ACTION-INCOMPLETE-AUDIT",
+      "input": "HTTP 200 inspect of completed exact all-success targets with absent approval or terminal audit",
+      "mode": "human",
+      "expected": "full inspect value on stdout, empty stderr, attention exit 85; never success"
+    },
+    {
+      "id": "EX-DOCTOR-UNHEALTHY",
+      "input": "HTTP 200 unhealthy with all diagnoses",
+      "mode": "json",
+      "expected": "full doctor value on stdout, exit 85"
+    },
+    {
+      "id": "EX-SYNC-200-REJECTED",
+      "input": "HTTP 200 registered sync.control-rejected with reason stale-version",
+      "mode": "json",
+      "expected": "error envelope on stderr, exit 80"
+    },
+    {
+      "id": "EX-RAW-COMPLETE",
+      "input": "binary bytes 00 1b ff",
+      "mode": "raw",
+      "expected": "same three stdout bytes, no newline, exit 0"
+    },
+    {
+      "id": "EX-MODE-MISMATCH",
+      "input": "messages.raw selected with JSON mode or messages.search selected with raw mode",
+      "mode": "mismatched",
+      "expected": "client is not called; cli.usage error on stderr in the resolved context; exit 64"
+    },
+    {
+      "id": "EX-RAW-EPIPE",
+      "input": "sink closes after a prefix",
+      "mode": "raw",
+      "expected": "upstream cancelled once, no retry, no stderr, exit 141"
+    },
+    {
+      "id": "EX-RAW-PARTIAL-TIMEOUT",
+      "input": "stream idle timeout after accepted bytes",
+      "mode": "raw",
+      "expected": "prefix preserved, cli.partial-output on stderr when possible, exit 88"
+    },
+    {
+      "id": "EX-SIGINT",
+      "input": "SIGINT while stream is active",
+      "mode": "raw",
+      "expected": "abort and await cleanup once, no new output, exit 130"
+    },
+    {
+      "id": "EX-SIGTERM",
+      "input": "SIGTERM before JSON response",
+      "mode": "json",
+      "expected": "abort and await cleanup once, no new output, exit 143"
+    },
+    {
+      "id": "EX-UNKNOWN-KIND",
+      "input": "feature selects unregistered kind",
+      "mode": "json",
+      "expected": "cli.protocol on stderr, exit 76, never exit 0"
+    },
+    {
+      "id": "EX-CORRELATION",
+      "input": "server error correlation request:abc",
+      "mode": "human",
+      "expected": "exact ID retained as inert visible value; no replacement or stack"
+    }
+  ],
+  "properties": [
+    {
+      "id": "PROP-REGISTRY-COMPLETE",
+      "generator": "Enumerate current client kinds, shared errors, operation definitions, and operation error rows from accepted source.",
+      "assertion": "Every source row appears exactly once and every oracle row exists in source."
+    },
+    {
+      "id": "PROP-NUMERIC-UNIQUE",
+      "generator": "Enumerate exitCodeRegistry and reserved status ranges.",
+      "assertion": "Every normal semantic kind has one unique 0..88 number; 124..127 and 128..255 are absent from normal outcomes."
+    },
+    {
+      "id": "PROP-MODE-DESTINATION",
+      "generator": "Cross every output mode with every operation streaming kind, every registered value/failure semantic kind, and raw completion/failure.",
+      "assertion": "Value operations allow JSON/human, byte streams allow raw, mismatches stop before the client with usage 64, primary values use stdout, failures use stderr, raw bytes never mix with diagnostics, and domain nonzero values remain stdout values."
+    },
+    {
+      "id": "PROP-ERROR-NO-MESSAGE-PARSE",
+      "generator": "Change every safe error message while keeping registered code/details and then change code/details while keeping message.",
+      "assertion": "Only code and typed details affect semantic kind; unknown/malformed values become protocol."
+    },
+    {
+      "id": "PROP-HOSTILE-OUTPUT",
+      "generator": "Run the #206 hostile corpus through success, error, diagnostic, correlation, filename, and URL values.",
+      "assertion": "Human output is inert, JSON is semantically faithful, raw is byte-exact, and no stack/cause appears."
+    },
+    {
+      "id": "PROP-ACTION-ATTENTION",
+      "generator": "Generate every action plan state, result-kind combination, missing/duplicate/exact target coverage, inspect approvalState, terminalState, and executorDisposition accepted by the shared schemas.",
+      "assertion": "Uncertain/unknown-after-restore outranks partial; mixed or explicit partial is 86; exact all-stale or invalidated is 80; expired is 81; cancelled inspect approval is 84; incomplete authority/audit, missing/duplicate/unexpected/multiple-invalid coverage, or other non-success is 85; only exact pending inspect, completed inspect, or completed commit predicates are 0."
+    },
+    {
+      "id": "PROP-RAW-FAILURE",
+      "generator": "Inject EPIPE, sink error, transport close, idle timeout, caller abort, cleanup failure, SIGINT, and SIGTERM before and after each chunk boundary.",
+      "assertion": "Cleanup is awaited once; no retry occurs; exact prefix and exit follow runtimeFailureMatrix; stacks and raw diagnostics never reach stdout."
+    },
+    {
+      "id": "PROP-ATOMIC-FRAMES",
+      "generator": "Inject short, failed, and unknown-acceptance writes at every byte of JSON, human, and diagnostic frames.",
+      "assertion": "Frames are serialized, LF rules hold, zero-byte failures are io/underlying, and any unknowable started primary frame is partial_output."
+    },
+    {
+      "id": "PROP-EXTENSION-CLOSED",
+      "generator": "Omit, duplicate, invent, or misapply semantic selections and add caller exitCode/stdout/stderr fields.",
+      "assertion": "Strict validation rejects every case as protocol or structural test failure; no feature number is accepted."
+    },
+    {
+      "id": "PROP-PARITY",
+      "generator": "Run direct REST and composed CLI success/error/attention/stream cells for every applicable operation.",
+      "assertion": "Validated value/error semantics match; CLI adds only destination/framing and the central exit."
+    }
+  ],
+  "implementationObligations": [
+    {
+      "id": "I214-01",
+      "issue": 214,
+      "owner": "shared packages/cli command outcome module",
+      "must": "Implement the strict algebra, registries, value classifiers, local safe envelopes, sink abstraction, and process-agnostic receipt exactly."
+    },
+    {
+      "id": "I214-02",
+      "issue": 214,
+      "owner": "shared packages/cli emission actor",
+      "must": "Implement JSON/human/raw destinations, EPIPE/signals, terminal precedence, byte counting, and one awaited memoized cleanup path."
+    },
+    {
+      "id": "I214-03",
+      "issue": 214,
+      "owner": "focused tests",
+      "must": "Execute every matrix row and property counterexample, including malformed selections, hostile values, partial writes, and signal races."
+    },
+    {
+      "id": "I214-04",
+      "issue": 214,
+      "owner": "structural checks",
+      "must": "Reject direct process writes, console output, private numeric maps, caller exitCode, raw human sanitization, stack output, and retry after prefix."
+    },
+    {
+      "id": "I156-01",
+      "issue": 156,
+      "owner": "routing/label CLI adapters",
+      "must": "Use success for committed and dry-run values, attention for a validated non-dry-run uncommitted label, and central registered mappings for expiry, replay, and tamper. Current routing operations expose no strict replay/expiry/tamper public discriminants; return that gap to the contract/route owner instead of parsing storage exceptions or inventing CLI codes."
+    },
+    {
+      "id": "I157-01",
+      "issue": 157,
+      "owner": "raw message/attachment adapters",
+      "must": "Preflight TTY policy, write only exact bytes, await backpressure, cancel once, use 141 for EPIPE, 88 for other post-prefix failure, underlying mapping before bytes, and 130/143 for signals."
+    },
+    {
+      "id": "I158-01",
+      "issue": 158,
+      "owner": "action CLI adapters",
+      "must": "Retain every target result, certainty, approval state, and terminal audit and conform to the exact action rule precedence; no partial, all-stale, invalidated, expired, cancelled, unknown-after-restore, incomplete, uncertain, or other attention value may exit 0."
+    },
+    {
+      "id": "I159-01",
+      "issue": 159,
+      "owner": "CLI coordination gate",
+      "must": "Require #214 before all five children and retain output/exit evidence per command without child-local policy."
+    },
+    {
+      "id": "I191-01",
+      "issue": 191,
+      "owner": "status command",
+      "must": "Project validated status; authBlocked is attention 85 and all other accepted actor states are success 0. Do not infer state locally."
+    },
+    {
+      "id": "I192-01",
+      "issue": 192,
+      "owner": "sync control commands",
+      "must": "Map registered error envelopes equally at HTTP 200 or non-200, including typed stale-version/auth-blocked detail cases; accepted/completed actor-observed values are success."
+    },
+    {
+      "id": "I193-01",
+      "issue": 193,
+      "owner": "search command",
+      "must": "Invalid query/cursor is 65; empty valid page is success; canonical JSON remains stdout and errors remain stderr."
+    },
+    {
+      "id": "I194-01",
+      "issue": 194,
+      "owner": "message show command",
+      "must": "Unknown/tombstoned-as-unavailable registered not_found is stderr and 66; known value is safely rendered on stdout."
+    },
+    {
+      "id": "I195-01",
+      "issue": 195,
+      "owner": "thread show command",
+      "must": "Unknown is registered not_found/66; the accepted empty known continuation remains canonical stdout success/0; no thread-local number."
+    },
+    {
+      "id": "I160-01",
+      "issue": 160,
+      "owner": "backup CLI",
+      "must": "Emit success only after the validated verified artifact; any future operation_conflict must be registered and select conflict 79 centrally."
+    },
+    {
+      "id": "I161-01",
+      "issue": 161,
+      "owner": "doctor CLI",
+      "must": "Preserve all findings; healthy exits 0 and degraded/unhealthy values remain stdout with attention 85."
+    },
+    {
+      "id": "I162-01",
+      "issue": 162,
+      "owner": "Agent Mail operator skill",
+      "must": "Teach agent callers that a validated attention, partial, uncertain, stale, expired, or cancelled value remains on stdout with a meaningful nonzero exit; do not discard it as transport failure or infer success from parseable stdout alone."
+    },
+    {
+      "id": "I163-01",
+      "issue": 163,
+      "owner": "selected export CLI",
+      "must": "Use raw stream semantics for exact JSONL bytes, JSONL diagnostics on stderr, 141 EPIPE, and 88 other post-prefix failure."
+    },
+    {
+      "id": "I164-01",
+      "issue": 164,
+      "owner": "admin parity",
+      "must": "Compare canonical values, output destinations, and exits for every doctor/reindex/backup/restore success and failure cell."
+    },
+    {
+      "id": "I165-01",
+      "issue": 165,
+      "owner": "public parity matrix",
+      "must": "Add success, registered error, client error, attention, partial, uncertain, and raw runtime cells with no unclassified operation."
+    },
+    {
+      "id": "I166-01",
+      "issue": 166,
+      "owner": "acceptance evidence index",
+      "must": "Index the oracle/checker digest plus exact implementation, composed, capacity, security, and delivery evidence separately."
+    },
+    {
+      "id": "I169-01",
+      "issue": 169,
+      "owner": "clean-clone static gate",
+      "must": "Run the oracle checker and checked-view digest verification from the frozen candidate without rewriting files; an oracle, view, source-inventory, or generated drift fixture must fail the gate."
+    },
+    {
+      "id": "I176-01",
+      "issue": 176,
+      "owner": "capacity qualification",
+      "must": "Exercise full-scale raw and selected-export streams through slow and closed sinks; retain exact bytes, bounded memory, backpressure, terminal status, and zero leaked client/blob/sink resources."
+    },
+    {
+      "id": "I178-01",
+      "issue": 178,
+      "owner": "release parity",
+      "must": "Rerun the complete outcome/output/exit matrix against the frozen release candidate and final operation registry."
+    },
+    {
+      "id": "I183-01",
+      "issue": 183,
+      "owner": "security review",
+      "must": "Exercise hostile human/error/diagnostic/correlation values, raw separation, stack suppression, malformed registered errors, and direct-write/private-exit bypass attempts."
+    },
+    {
+      "id": "I184-01",
+      "issue": 184,
+      "owner": "final evidence-first review",
+      "must": "Treat an omitted operation, false exit 0, wrong destination, unfaithful fake, cleanup race, or missing composed proof as a finding or explicit release gap; unit-green evidence cannot clear this seam."
+    },
+    {
+      "id": "I185-01",
+      "issue": 185,
+      "owner": "finding-closure ledger",
+      "must": "Keep any #213/#214 output, exit, safety, or parity finding open until its original reproduction, faithful affected gate, adjacent counterexample, repair digest, and bounded repair-diff seam review all pass."
+    },
+    {
+      "id": "I186-01",
+      "issue": 186,
+      "owner": "operator and agent walkthrough",
+      "must": "Execute documented commands with exact stdout, stderr, and exit assertions for success, domain attention, registered failure, and raw interruption; documentation must not flatten nonzero values or promise unsupported exits."
+    }
+  ],
+  "coverage": {
+    "REQ-ALGEBRA": {
+      "decisions": ["D01", "D04", "D06"],
+      "examples": ["EX-JSON-SUCCESS", "EX-SYNC-200-REJECTED", "EX-UNKNOWN-KIND"],
+      "properties": ["PROP-REGISTRY-COMPLETE", "PROP-EXTENSION-CLOSED"],
+      "obligations": ["I214-01"]
+    },
+    "REQ-EXIT": {
+      "decisions": ["D02", "D03", "D10", "D11", "D12"],
+      "examples": [
+        "EX-ACTION-PARTIAL",
+        "EX-ACTION-UNCERTAIN",
+        "EX-RAW-EPIPE",
+        "EX-SIGINT",
+        "EX-SIGTERM"
+      ],
+      "properties": ["PROP-NUMERIC-UNIQUE"],
+      "obligations": ["I214-01", "I157-01", "I158-01"]
+    },
+    "REQ-OUTPUT": {
+      "decisions": ["D07", "D08", "D09", "D19"],
+      "examples": [
+        "EX-JSON-SUCCESS",
+        "EX-JSON-NOT-FOUND",
+        "EX-HUMAN-HOSTILE",
+        "EX-RAW-COMPLETE",
+        "EX-MODE-MISMATCH"
+      ],
+      "properties": ["PROP-MODE-DESTINATION", "PROP-ATOMIC-FRAMES"],
+      "obligations": ["I214-02", "I193-01", "I194-01", "I195-01", "I186-01"]
+    },
+    "REQ-ERROR": {
+      "decisions": ["D05", "D06"],
+      "examples": ["EX-JSON-NOT-FOUND", "EX-SYNC-200-REJECTED", "EX-UNKNOWN-KIND"],
+      "properties": ["PROP-REGISTRY-COMPLETE", "PROP-ERROR-NO-MESSAGE-PARSE"],
+      "obligations": ["I214-01", "I192-01"]
+    },
+    "REQ-DOMAIN": {
+      "decisions": ["D04", "D15", "D16", "D18"],
+      "examples": [
+        "EX-ACTION-PARTIAL",
+        "EX-ACTION-UNCERTAIN",
+        "EX-ACTION-STALE",
+        "EX-ACTION-MISSING-TARGET",
+        "EX-ACTION-CANCELLED-AUTHORITY",
+        "EX-ACTION-INCOMPLETE-AUDIT",
+        "EX-DOCTOR-UNHEALTHY"
+      ],
+      "properties": ["PROP-ACTION-ATTENTION", "PROP-PARITY"],
+      "obligations": ["I156-01", "I158-01", "I191-01", "I161-01", "I162-01"]
+    },
+    "REQ-RAW": {
+      "decisions": ["D09", "D10", "D11"],
+      "examples": ["EX-RAW-COMPLETE", "EX-RAW-EPIPE", "EX-RAW-PARTIAL-TIMEOUT"],
+      "properties": ["PROP-RAW-FAILURE"],
+      "obligations": ["I157-01", "I163-01", "I176-01"]
+    },
+    "REQ-SIGNAL": {
+      "decisions": ["D10", "D12"],
+      "examples": ["EX-RAW-EPIPE", "EX-SIGINT", "EX-SIGTERM"],
+      "properties": ["PROP-RAW-FAILURE"],
+      "obligations": ["I214-02", "I157-01"]
+    },
+    "REQ-SAFETY": {
+      "decisions": ["D07", "D08", "D13", "D14"],
+      "examples": ["EX-HUMAN-HOSTILE", "EX-CORRELATION"],
+      "properties": ["PROP-HOSTILE-OUTPUT", "PROP-ERROR-NO-MESSAGE-PARSE"],
+      "obligations": ["I214-02", "I183-01"]
+    },
+    "REQ-EXTENSION": {
+      "decisions": ["D01", "D17", "D18"],
+      "examples": ["EX-UNKNOWN-KIND"],
+      "properties": ["PROP-EXTENSION-CLOSED"],
+      "obligations": ["I214-04", "I156-01"]
+    },
+    "REQ-COVERAGE": {
+      "decisions": ["D05", "D15", "D17"],
+      "examples": ["EX-SYNC-200-REJECTED", "EX-RAW-PARTIAL-TIMEOUT"],
+      "properties": ["PROP-REGISTRY-COMPLETE", "PROP-PARITY"],
+      "obligations": ["I214-03", "I164-01", "I165-01", "I169-01", "I178-01"]
+    },
+    "REQ-DOWNSTREAM": {
+      "decisions": ["D17", "D18"],
+      "examples": ["EX-DOCTOR-UNHEALTHY", "EX-RAW-EPIPE", "EX-UNKNOWN-KIND"],
+      "properties": ["PROP-PARITY", "PROP-EXTENSION-CLOSED"],
+      "obligations": [
+        "I214-01",
+        "I214-02",
+        "I214-03",
+        "I214-04",
+        "I156-01",
+        "I157-01",
+        "I158-01",
+        "I159-01",
+        "I191-01",
+        "I192-01",
+        "I193-01",
+        "I194-01",
+        "I195-01",
+        "I160-01",
+        "I161-01",
+        "I162-01",
+        "I163-01",
+        "I164-01",
+        "I165-01",
+        "I166-01",
+        "I169-01",
+        "I176-01",
+        "I178-01",
+        "I183-01",
+        "I184-01",
+        "I185-01",
+        "I186-01"
+      ]
+    }
+  },
+  "adjacentCounterexamples": [
+    {
+      "id": "CE-EXIT-ZERO-UNKNOWN",
+      "mustFail": "An unregistered or missing semantic kind falls through to exit 0."
+    },
+    {
+      "id": "CE-HTTP200-ERROR",
+      "mustFail": "A validated sync error envelope carried by HTTP 200 is printed as success."
+    },
+    {
+      "id": "CE-PARTIAL-ACTION",
+      "mustFail": "A partial or uncertain action is summarized as success while targets disappear."
+    },
+    {
+      "id": "CE-MISSING-ACTION-TARGET",
+      "mustFail": "A completed action with missing or duplicate target result coverage exits 0."
+    },
+    {
+      "id": "CE-ACTION-AUTHORITY-DROP",
+      "mustFail": "Action inspect ignores cancelled, expired, invalidated, unknown-after-restore, or incomplete terminal authority and exits 0."
+    },
+    {
+      "id": "CE-RAW-PROGRESS",
+      "mustFail": "A progress, metadata, diagnostic, or newline byte is written to raw stdout."
+    },
+    {
+      "id": "CE-RAW-RETRY",
+      "mustFail": "A stream or operation is retried after stdout accepted any byte."
+    },
+    {
+      "id": "CE-EPIPE-STACK",
+      "mustFail": "EPIPE emits a stack or human error line instead of silent 141 after cleanup."
+    },
+    {
+      "id": "CE-SIGNAL-RACE",
+      "mustFail": "SIGINT or SIGTERM runs cleanup twice or a later non-signal error replaces the signal status."
+    },
+    {
+      "id": "CE-HOSTILE-CORRELATION",
+      "mustFail": "A correlation ID, message, filename, or URL can overwrite trusted human chrome."
+    },
+    {
+      "id": "CE-FEATURE-NUMBER",
+      "mustFail": "A feature adapter provides exitCode, writes process streams, or defines a private numeric table."
+    },
+    {
+      "id": "CE-ROUTING-MESSAGE-PARSE",
+      "mustFail": "Routing replay, expiry, or tamper is inferred by parsing an exception or error message."
+    }
+  ]
+}
