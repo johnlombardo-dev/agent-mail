@@ -158,6 +158,13 @@ async function collect(source: SelectedExportSource, selection: Parameters<typeo
   return [...(await Array.fromAsync(decodeExportStream(chunks)))];
 }
 
+async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = performance.now() + timeoutMs;
+  while (!predicate() && performance.now() < deadline)
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  expect(predicate()).toBe(true);
+}
+
 describe("P6-C19 selected export stream", () => {
   test("streams the exact SQLite identity-set order with attribution and bounded pages", async () => {
     const fixtures = Array.from({ length: 5 }, (_, index) => fixture(index + 1));
@@ -229,6 +236,67 @@ describe("P6-C19 selected export stream", () => {
     await expect(pending).rejects.toBeInstanceOf(SelectedExportError);
     expect(reads).toBe(1);
     database.close();
+  });
+
+  test("response cancellation awaits a yielded blob iterator exactly once", async () => {
+    const item = fixture(1);
+    const requestAbort = new AbortController();
+    let readsStarted = 0;
+    let readsCompleted = 0;
+    const source: SelectedExportSource = {
+      page: async ({ pageNumber }) => ({
+        records: [1, 2].map((position) => ({
+          messageId: createMessageId(`message:${position.toString(16).padStart(64, "0")}`),
+          placementId: item.content.blobId,
+          metadata: item.content.bytes,
+          blobs: [item.content],
+        })),
+        nextCursor: null,
+        queryDigest,
+        pageNumber,
+      }),
+      authorize: async () => true,
+      readBlob: async function* (_blob, signal) {
+        readsStarted += 1;
+        try {
+          yield item.content.bytes;
+          if (readsStarted === 1) return;
+          while (!signal.aborted) await new Promise<void>((resolve) => setTimeout(resolve, 1));
+        } finally {
+          readsCompleted += 1;
+        }
+      },
+    };
+    const app = createSelectedExportStreamingApp({
+      source,
+      authenticate: () => ({
+        kind: "authenticated" as const,
+        principal: { subject: "operator:fixture", scopes: ["mail:export.selected"] },
+      }),
+    });
+    const response = await app.request("http://localhost/v1/exports", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer fixture" },
+      body: JSON.stringify({ selection: { kind: "identities", messageIds: [item.messageId] } }),
+      signal: requestAbort.signal,
+    });
+    if (response.status !== 200) throw new Error(`unexpected status ${response.status}`);
+    const reader = response.body?.getReader();
+    if (reader === undefined) throw new Error("missing stream reader");
+    await reader.read();
+    await reader.read();
+    const pending = reader.read();
+    try {
+      await waitUntil(() => readsStarted === 2);
+    } catch {
+      throw new Error(`expected second read, started=${readsStarted}`);
+    }
+    requestAbort.abort();
+    await Promise.all([reader.cancel(), reader.cancel()]);
+    await pending;
+    await waitUntil(() => readsCompleted === 2);
+    expect(readsStarted).toBe(2);
+    expect(readsCompleted).toBe(2);
   });
 
   test("authenticates and validates before the truthful AMEX byte response", async () => {

@@ -12,7 +12,10 @@ import { parseAccountId, parseMessageId, type AccountId, type MessageId } from "
 import type { Database } from "bun:sqlite";
 import { selectSearchCandidates } from "../../storage/src/search-candidate-repository";
 import { compileSearchQuery } from "../../storage/src/search-query-compiler";
-import { digestNormalizedSearchQuery, type SearchCursorIntegrityCodec } from "../../storage/src/search-cursor";
+import {
+  digestNormalizedSearchQuery,
+  type SearchCursorIntegrityCodec,
+} from "../../storage/src/search-cursor";
 import { compileStructuredFilters } from "../../storage/src/structured-filter-compiler";
 import {
   EXPORT_STREAM_VERSION,
@@ -61,18 +64,17 @@ export type SelectedExportPage = Readonly<{
 }>;
 
 export type SelectedExportSource = Readonly<{
-  readonly page: (input: Readonly<{
-    readonly selection: ReportAdminExportSelection;
-    readonly cursor: string | null;
-    readonly pageNumber: number;
-    readonly signal: AbortSignal;
-  }>) => Promise<SelectedExportPage>;
+  readonly page: (
+    input: Readonly<{
+      readonly selection: ReportAdminExportSelection;
+      readonly cursor: string | null;
+      readonly pageNumber: number;
+      readonly signal: AbortSignal;
+    }>,
+  ) => Promise<SelectedExportPage>;
   /** Reauthorization is deliberately performed after each page read. */
   readonly authorize: (record: SelectedExportRecord) => Promise<boolean>;
-  readonly readBlob?: (
-    blob: SelectedExportBlob,
-    signal: AbortSignal,
-  ) => AsyncIterable<Uint8Array>;
+  readonly readBlob?: (blob: SelectedExportBlob, signal: AbortSignal) => AsyncIterable<Uint8Array>;
 }>;
 
 export type SelectedExportStreamOptions = Readonly<{
@@ -136,7 +138,9 @@ function internalErrorBody(correlationId: string): unknown {
   });
 }
 
-function metadataBytes(record: Readonly<{ messageId: string; placementId: string; subject: string | null }>): Uint8Array {
+function metadataBytes(
+  record: Readonly<{ messageId: string; placementId: string; subject: string | null }>,
+): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(record));
 }
 
@@ -176,17 +180,61 @@ async function collectBlob(
   const chunks: Uint8Array[] = [];
   let total = 0;
   if (source.readBlob === undefined) throw new SelectedExportError("content_unavailable");
-  const reader = source.readBlob(blob, signal);
-  for await (const chunk of reader) {
-    if (isCancelled(signal)) throw new SelectedExportError("cancelled");
-    if (!(chunk instanceof Uint8Array) || chunk.byteLength === 0) {
-      throw new SelectedExportError("content_unavailable");
+  const reader = source.readBlob(blob, signal)[Symbol.asyncIterator]();
+  let readerDone = false;
+  let pendingNext: Promise<IteratorResult<Uint8Array>> | undefined;
+  let readerReturn: Promise<void> | undefined;
+  let rejectAbort: ((reason: SelectedExportError) => void) | undefined;
+  const abortPromise = new Promise<never>((_resolve, reject) => {
+    rejectAbort = reject;
+  });
+  const closeReader = (): Promise<void> => {
+    readerReturn ??= (async (): Promise<void> => {
+      try {
+        await reader.return?.(undefined);
+      } catch {
+        // Cleanup remains idempotent even when the source rejects on abort.
+      }
+    })();
+    return readerReturn;
+  };
+  const onAbort = (): void => {
+    rejectAbort?.(new SelectedExportError("cancelled"));
+  };
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    while (true) {
+      pendingNext = reader.next();
+      const result = await Promise.race([pendingNext, abortPromise]);
+      pendingNext = undefined;
+      if (result.done) {
+        readerDone = true;
+        break;
+      }
+      const chunk = result.value;
+      if (isCancelled(signal)) throw new SelectedExportError("cancelled");
+      if (!(chunk instanceof Uint8Array) || chunk.byteLength === 0) {
+        throw new SelectedExportError("content_unavailable");
+      }
+      total += chunk.byteLength;
+      if (total > MAX_EXPORT_CONTENT_BYTES || total > blob.size) {
+        throw new SelectedExportError("content_unavailable");
+      }
+      chunks.push(chunk.slice());
     }
-    total += chunk.byteLength;
-    if (total > MAX_EXPORT_CONTENT_BYTES || total > blob.size) {
-      throw new SelectedExportError("content_unavailable");
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    if (!readerDone) {
+      if (pendingNext !== undefined) {
+        try {
+          await pendingNext;
+        } catch {
+          // The aborted source may reject its in-flight read before closure.
+        }
+        pendingNext = undefined;
+      }
+      await closeReader();
     }
-    chunks.push(chunk.slice());
   }
   if (total !== blob.size) throw new SelectedExportError("content_unavailable");
   const content = new Uint8Array(total);
@@ -217,6 +265,7 @@ async function* fileBlobReader(
       const length = Math.min(READ_CHUNK_BYTES, blob.size - position);
       const buffer = Buffer.allocUnsafe(length);
       const result = await handle.read(buffer, 0, length, position);
+      if (isCancelled(signal)) throw new SelectedExportError("cancelled");
       if (result.bytesRead <= 0) throw new SelectedExportError("content_unavailable");
       position += result.bytesRead;
       yield buffer.subarray(0, result.bytesRead);
@@ -229,9 +278,14 @@ async function* fileBlobReader(
 function encodeFrames(
   record: SelectedExportRecord,
   queryDigest: string,
-  content: readonly Readonly<{ readonly kind: "metadata" | "raw" | "attachment"; readonly bytes: Uint8Array }>[],
+  content: readonly Readonly<{
+    readonly kind: "metadata" | "raw" | "attachment";
+    readonly bytes: Uint8Array;
+  }>[],
 ): readonly Uint8Array[] {
-  return content.flatMap((part) => [...encodeExportFrameChunks(streamFrame(part.kind, record, part.bytes, queryDigest))]);
+  return content.flatMap((part) => [
+    ...encodeExportFrameChunks(streamFrame(part.kind, record, part.bytes, queryDigest)),
+  ]);
 }
 
 /**
@@ -266,15 +320,17 @@ export async function* streamSelectedExport(
         throw new SelectedExportError("unauthorized_selection");
       }
       const metadata = record.metadata;
-      if (metadata.byteLength > MAX_EXPORT_CONTENT_BYTES) throw new SelectedExportError("invalid_page");
-      const parts: Array<Readonly<{ readonly kind: "metadata" | "raw" | "attachment"; readonly bytes: Uint8Array }>> = [
-        { kind: "metadata", bytes: metadata },
-      ];
+      if (metadata.byteLength > MAX_EXPORT_CONTENT_BYTES)
+        throw new SelectedExportError("invalid_page");
+      const parts: Array<
+        Readonly<{ readonly kind: "metadata" | "raw" | "attachment"; readonly bytes: Uint8Array }>
+      > = [{ kind: "metadata", bytes: metadata }];
       let recordBytes = metadata.byteLength;
       for (const blob of record.blobs) {
         const bytes = await collectBlob(blob, source, signal);
         recordBytes += bytes.byteLength;
-        if (recordBytes > MAX_RECORD_CONTENT_BYTES) throw new SelectedExportError("content_unavailable");
+        if (recordBytes > MAX_RECORD_CONTENT_BYTES)
+          throw new SelectedExportError("content_unavailable");
         parts.push({ kind: blob.kind, bytes });
       }
       for (const chunk of encodeFrames(record, queryDigest, parts)) {
@@ -314,10 +370,40 @@ export function createSelectedExportStreamingApp(options: SelectedExportStreamOp
     });
     if (admission.kind === "rejected") return context.json(admission.body, admission.status);
     let stream: AsyncGenerator<Uint8Array> | undefined;
+    const producerAbort = new AbortController();
+    let terminal: Promise<void> | undefined;
+    let terminated = false;
+    const activePulls = new Set<Promise<void>>();
+    const terminate = (): Promise<void> => {
+      terminal ??= (async (): Promise<void> => {
+        terminated = true;
+        request.signal.removeEventListener("abort", onRequestAbort);
+        producerAbort.abort();
+        await Promise.allSettled(activePulls);
+        try {
+          await stream?.return(undefined);
+        } catch {
+          // The producer's error is already represented by the response or its
+          // cancellation. Cleanup must remain awaitable and rejection-free.
+        }
+      })();
+      return terminal;
+    };
+    const onRequestAbort = (): void => {
+      void terminate();
+    };
+    const complete = (): void => {
+      if (terminated) return;
+      terminated = true;
+      request.signal.removeEventListener("abort", onRequestAbort);
+      terminal ??= Promise.resolve();
+    };
     const handlers: OperationHandlerMap = {
       "exports.selected": async (value, _handlerContext) => {
         const parsed = reportAdminExportRequestSchema.parse(value);
-        stream = streamSelectedExport(parsed.selection, options.source, request.signal);
+        stream = streamSelectedExport(parsed.selection, options.source, producerAbort.signal);
+        if (request.signal.aborted) onRequestAbort();
+        else request.signal.addEventListener("abort", onRequestAbort, { once: true });
         return { version: 1, contentType: "application/octet-stream", streamVersion: 1 };
       },
     };
@@ -333,14 +419,18 @@ export function createSelectedExportStreamingApp(options: SelectedExportStreamOp
       admission.input,
       authenticatedTransportContext({ request, correlationId }, admission.principal),
     );
-    if (result.status !== 200 || stream === undefined) return context.json(result.body, result.status);
+    if (result.status !== 200 || stream === undefined)
+      return context.json(result.body, result.status);
     let prefetched: IteratorResult<Uint8Array>;
     try {
       prefetched = await stream.next();
       if (prefetched.done) {
+        request.signal.removeEventListener("abort", onRequestAbort);
         return context.json(internalErrorBody(correlationId), 500);
       }
     } catch {
+      await terminate();
+      request.signal.removeEventListener("abort", onRequestAbort);
       try {
         options.logger?.({
           kind: "handler-error",
@@ -354,27 +444,62 @@ export function createSelectedExportStreamingApp(options: SelectedExportStreamOp
     }
     let firstPull = true;
     const body = new ReadableStream<Uint8Array>({
-      async pull(controller) {
-        try {
-          const next = firstPull ? prefetched : await stream?.next();
-          firstPull = false;
-          if (next === undefined || next.done) controller.close();
-          else controller.enqueue(next.value);
-        } catch (error: unknown) {
-          try {
-            options.logger?.({
-              kind: "handler-error",
-              operationKey: "exports.selected",
-              correlationId,
-            });
-          } catch {
-            // Diagnostics cannot change stream termination.
+      pull(controller) {
+        const pullPromise = (async (): Promise<void> => {
+          if (terminated) {
+            try {
+              controller.close();
+            } catch {
+              // A response cancellation may have already closed the controller.
+            }
+            await terminal;
+            return;
           }
-          controller.error(error);
-        }
+          try {
+            const next = firstPull ? prefetched : await stream?.next();
+            firstPull = false;
+            if (terminated) {
+              try {
+                controller.close();
+              } catch {
+                // A response cancellation may have already closed the controller.
+              }
+              return;
+            }
+            if (next === undefined || next.done) {
+              complete();
+              controller.close();
+            } else controller.enqueue(next.value);
+          } catch (error: unknown) {
+            if (terminated) {
+              try {
+                controller.close();
+              } catch {
+                // A response cancellation may have already closed the controller.
+              }
+              return;
+            }
+            try {
+              options.logger?.({
+                kind: "handler-error",
+                operationKey: "exports.selected",
+                correlationId,
+              });
+            } catch {
+              // Diagnostics cannot change stream termination.
+            }
+            controller.error(error);
+          }
+        })();
+        activePulls.add(pullPromise);
+        void pullPromise.then(
+          () => activePulls.delete(pullPromise),
+          () => activePulls.delete(pullPromise),
+        );
+        return pullPromise;
       },
-      async cancel() {
-        await stream?.return(undefined);
+      cancel() {
+        return terminate();
       },
     });
     return new Response(body, {
@@ -405,25 +530,32 @@ type BlobRow = Readonly<{
 }>;
 
 /** A real SQLite source used by the focused exactness test and the daemon composition. */
-export function createSqliteSelectedExportSource(options: Readonly<{
-  readonly database: Database;
-  readonly accountId: unknown;
-  readonly canonicalDirectory?: string;
-  readonly cursorCodec?: SearchCursorIntegrityCodec;
-}>): SelectedExportSource {
+export function createSqliteSelectedExportSource(
+  options: Readonly<{
+    readonly database: Database;
+    readonly accountId: unknown;
+    readonly canonicalDirectory?: string;
+    readonly cursorCodec?: SearchCursorIntegrityCodec;
+  }>,
+): SelectedExportSource {
   const accountId = parseAccountId(options.accountId);
   const filters = compileStructuredFilters([]);
   if (filters.kind !== "compiled") throw new TypeError("empty filters must compile");
   const canonicalDirectory = options.canonicalDirectory;
-  const readBlob = canonicalDirectory === undefined
-    ? undefined
-    : (blob: SelectedExportBlob, signal: AbortSignal) => fileBlobReader(canonicalDirectory, blob, signal);
+  const readBlob =
+    canonicalDirectory === undefined
+      ? undefined
+      : (blob: SelectedExportBlob, signal: AbortSignal) =>
+          fileBlobReader(canonicalDirectory, blob, signal);
   return {
     page: async ({ selection, cursor, pageNumber, signal }) => {
       if (isCancelled(signal)) throw new SelectedExportError("cancelled");
       if (selection.kind === "query") {
         if (options.cursorCodec === undefined) {
-          throw new SelectedExportError("invalid_page", "selected export query paging is unavailable");
+          throw new SelectedExportError(
+            "invalid_page",
+            "selected export query paging is unavailable",
+          );
         }
         const text = compileSearchQuery(selection.query);
         if (text.kind !== "compiled") throw new SelectedExportError("invalid_page");
@@ -435,7 +567,9 @@ export function createSqliteSelectedExportSource(options: Readonly<{
           cursor: cursor === null ? undefined : cursor,
           cursorCodec: options.cursorCodec,
         });
-        const records = page.candidates.map((candidate) => readRecord(options.database, accountId, candidate.messageId));
+        const records = page.candidates.map((candidate) =>
+          readRecord(options.database, accountId, candidate.messageId),
+        );
         if (records.some((record) => record === undefined)) {
           throw new SelectedExportError("content_unavailable");
         }
@@ -448,11 +582,16 @@ export function createSqliteSelectedExportSource(options: Readonly<{
       }
       const identityStart = cursor === null ? 0 : parseIdentityCursor(cursor);
       const ids = selection.messageIds.slice(identityStart, identityStart + PAGE_SIZE);
-      const records = ids.map((messageId) => readRecord(options.database, accountId, parseMessageId(messageId)));
+      const records = ids.map((messageId) =>
+        readRecord(options.database, accountId, parseMessageId(messageId)),
+      );
       if (records.some((record) => record === undefined)) {
         throw new SelectedExportError("tombstoned_selection");
       }
-      const next = identityStart + ids.length < selection.messageIds.length ? String(identityStart + ids.length) : null;
+      const next =
+        identityStart + ids.length < selection.messageIds.length
+          ? String(identityStart + ids.length)
+          : null;
       return {
         records: records.filter((record): record is SelectedExportRecord => record !== undefined),
         nextCursor: next,
@@ -471,23 +610,69 @@ function parseIdentityCursor(value: string): number {
   return parsed;
 }
 
-function readRecord(database: Database, accountId: AccountId, messageId: MessageId): SelectedExportRecord | undefined {
-  const placement = database.query<PlacementRow, [string, string]>(
-    "SELECT account_id, mailbox_id, uid_validity, uid FROM remote_placements WHERE account_id = ? AND message_id = ? AND tombstone_observed_at IS NULL ORDER BY mailbox_id, uid_validity, uid LIMIT 1;",
-  ).get(accountId, messageId);
+function readRecord(
+  database: Database,
+  accountId: AccountId,
+  messageId: MessageId,
+): SelectedExportRecord | undefined {
+  const placement = database
+    .query<PlacementRow, [string, string]>(
+      "SELECT account_id, mailbox_id, uid_validity, uid FROM remote_placements WHERE account_id = ? AND message_id = ? AND tombstone_observed_at IS NULL ORDER BY mailbox_id, uid_validity, uid LIMIT 1;",
+    )
+    .get(accountId, messageId);
   if (placement === null || placement === undefined) return undefined;
-  if (typeof placement.account_id !== "string" || typeof placement.mailbox_id !== "string" || typeof placement.uid_validity !== "number" || typeof placement.uid !== "number") throw new SelectedExportError("invalid_page");
-  const id = placementId(placement.account_id, placement.mailbox_id, placement.uid_validity, placement.uid);
-  const subjectRow = database.query<{ readonly subject: unknown }, [string]>("SELECT value AS subject FROM message_headers WHERE message_id = ? AND normalized_name = 'subject' ORDER BY ordinal LIMIT 1;").get(messageId);
-  const subject = subjectRow === null || typeof subjectRow.subject !== "string" ? null : subjectRow.subject;
-  const blobRows = database.query<BlobRow, [string]>(
-    "SELECT r.kind, r.ordinal, r.blob_id, r.size, a.filename, a.content_type FROM message_blob_references AS r LEFT JOIN message_attachments AS a ON a.message_id = r.message_id AND a.ordinal = r.ordinal AND r.kind = 'attachment' WHERE r.message_id = ? AND r.kind IN ('raw-eml', 'attachment') ORDER BY CASE r.kind WHEN 'raw-eml' THEN 0 ELSE 1 END, r.ordinal;",
-  ).all(messageId);
+  if (
+    typeof placement.account_id !== "string" ||
+    typeof placement.mailbox_id !== "string" ||
+    typeof placement.uid_validity !== "number" ||
+    typeof placement.uid !== "number"
+  )
+    throw new SelectedExportError("invalid_page");
+  const id = placementId(
+    placement.account_id,
+    placement.mailbox_id,
+    placement.uid_validity,
+    placement.uid,
+  );
+  const subjectRow = database
+    .query<{ readonly subject: unknown }, [string]>(
+      "SELECT value AS subject FROM message_headers WHERE message_id = ? AND normalized_name = 'subject' ORDER BY ordinal LIMIT 1;",
+    )
+    .get(messageId);
+  const subject =
+    subjectRow === null || typeof subjectRow.subject !== "string" ? null : subjectRow.subject;
+  const blobRows = database
+    .query<BlobRow, [string]>(
+      "SELECT r.kind, r.ordinal, r.blob_id, r.size, a.filename, a.content_type FROM message_blob_references AS r LEFT JOIN message_attachments AS a ON a.message_id = r.message_id AND a.ordinal = r.ordinal AND r.kind = 'attachment' WHERE r.message_id = ? AND r.kind IN ('raw-eml', 'attachment') ORDER BY CASE r.kind WHEN 'raw-eml' THEN 0 ELSE 1 END, r.ordinal;",
+    )
+    .all(messageId);
   const blobs: SelectedExportBlob[] = [];
   for (const row of blobRows) {
-    if (typeof row.kind !== "string" || (row.kind !== "raw-eml" && row.kind !== "attachment") || typeof row.blob_id !== "string" || typeof row.size !== "number") throw new SelectedExportError("invalid_page");
-    blobs.push({ kind: row.kind === "raw-eml" ? "raw" : "attachment", blobId: `blob:${row.blob_id}`, size: row.size, filename: row.filename === null || row.filename === undefined ? null : typeof row.filename === "string" ? row.filename : null, contentType: typeof row.content_type === "string" ? row.content_type : undefined });
+    if (
+      typeof row.kind !== "string" ||
+      (row.kind !== "raw-eml" && row.kind !== "attachment") ||
+      typeof row.blob_id !== "string" ||
+      typeof row.size !== "number"
+    )
+      throw new SelectedExportError("invalid_page");
+    blobs.push({
+      kind: row.kind === "raw-eml" ? "raw" : "attachment",
+      blobId: `blob:${row.blob_id}`,
+      size: row.size,
+      filename:
+        row.filename === null || row.filename === undefined
+          ? null
+          : typeof row.filename === "string"
+            ? row.filename
+            : null,
+      contentType: typeof row.content_type === "string" ? row.content_type : undefined,
+    });
   }
   if (!blobs.some((blob) => blob.kind === "raw")) return undefined;
-  return { messageId, placementId: id, metadata: metadataBytes({ messageId, placementId: id, subject }), blobs };
+  return {
+    messageId,
+    placementId: id,
+    metadata: metadataBytes({ messageId, placementId: id, subject }),
+    blobs,
+  };
 }
