@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "issue": 164,
+  "layers": ["direct", "rest", "cli"],
+  "operations": ["admin.doctor", "admin.reindex", "admin.backup", "admin.restore"],
+  "rows": [
+    {"id": "doctor-healthy", "operation": "admin.doctor", "semanticKind": "success", "exitCode": 0, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "doctor-findings", "operation": "admin.doctor", "semanticKind": "attention", "exitCode": 85, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "doctor-service-failure", "operation": "admin.doctor", "semanticKind": "internal", "exitCode": 70, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "reindex-success", "operation": "admin.reindex", "semanticKind": "success", "exitCode": 0, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "reindex-service-failure", "operation": "admin.reindex", "semanticKind": "internal", "exitCode": 70, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "backup-success", "operation": "admin.backup", "semanticKind": "success", "exitCode": 0, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "backup-publication-failure", "operation": "admin.backup", "semanticKind": "internal", "exitCode": 70, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "restore-confirmed-offline", "operation": "admin.restore", "semanticKind": "success", "exitCode": 0, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "restore-nonce-blocked", "operation": "admin.restore", "semanticKind": "invalid_input", "exitCode": 65, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "restore-offline-blocked", "operation": "admin.restore", "semanticKind": "invalid_input", "exitCode": 65, "cells": {"direct": true, "rest": true, "cli": true}},
+    {"id": "restore-digest-mismatch", "operation": "admin.restore", "semanticKind": "internal", "exitCode": 70, "cells": {"direct": true, "rest": true, "cli": true}}
+  ],
+  "negativeFixtures": [
+    {"id": "dropped-doctor-finding", "kind": "doctor", "mustFail": "finding-set-parity"},
+    {"id": "changed-backup-digest", "kind": "backup", "mustFail": "manifest-digest-parity"}
+  ]
+}
