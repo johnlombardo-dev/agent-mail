@@ -1,15 +1,36 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { lstat, open, readdir, type FileHandle } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  lstat,
+  mkdtemp,
+  open,
+  readFile,
+  readdir,
+  rm,
+  type FileHandle,
+  writeFile,
+} from "node:fs/promises";
+import { execFile } from "node:child_process";
 import { constants, type Dirent } from "node:fs";
 import { isAbsolute, join, normalize, parse, relative } from "node:path";
+import { tmpdir } from "node:os";
+import { promisify } from "node:util";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { migrationContentHash, type Migration } from "./migration-runner";
+import { canonicalDatabaseMigrations } from "./migration-registry";
+import {
+  classifyMigrationHistory,
+  verifyCanonicalMigrationState,
+} from "./migration-history-conversion";
 
 const SHA256 = /^[0-9a-f]{64}$/u;
 const MESSAGE_ID = /^message:[0-9a-f]{64}$/u;
 const STAGE = /^\.stage-v1-pid[1-9]\d*-owner[0-9a-f]{64}-random[0-9a-f]{64}\.tmp$/u;
 const QUARANTINE = /^\.quarantine-v1-[0-9a-f]{64}-[0-9a-f]{32}\.blob$/u;
 const MAX_EVIDENCE = 32;
+const SQLITE_HEADER = Buffer.from("SQLite format 3\0", "ascii");
 
 export type DoctorCheckId =
   | "sqlite-integrity"
@@ -44,8 +65,6 @@ export type DoctorIntegrityOptions = Readonly<{
   readonly privateRoot: string;
   readonly databasePath: string;
   readonly blobDirectory: string;
-  /** The exact migration sequence expected by this store. */
-  readonly migrations: readonly Migration[];
 }>;
 
 type RecordValue = Readonly<Record<string, unknown>>;
@@ -66,7 +85,10 @@ type EvidenceCollector = Readonly<{
 type DbState = Readonly<{
   readonly database: Database | undefined;
   readonly openError: string | undefined;
+  readonly cleanup?: () => Promise<void>;
 }>;
+
+const execFileAsync = promisify(execFile);
 
 function isRecord(value: unknown): value is RecordValue {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -129,28 +151,46 @@ function pathWithin(root: string, target: string): boolean {
 }
 
 async function openReadOnly(databasePath: string): Promise<DbState> {
+  const scratchRoot = await mkdtemp(join(tmpdir(), "agent-mail-doctor-readonly-"));
+  const scratchPath = join(scratchRoot, "archive.sqlite");
+  const stablePath = join(scratchRoot, "stable.sqlite");
   try {
-    const walPath = `${databasePath}-wal`;
-    try {
-      const wal = await lstat(walPath);
-      if (!wal.isFile() || wal.isSymbolicLink()) {
-        return { database: undefined, openError: "SQLite WAL sidecar is not a regular file" };
-      }
-      if (wal.size > 0) {
-        return {
-          database: undefined,
-          openError: "SQLite WAL sidecar is non-empty; immutable read is unsafe",
-        };
-      }
-    } catch (error: unknown) {
-      if (!isFsCode(error, "ENOENT")) return { database: undefined, openError: stableError(error) };
+    // Copy only the canonical main database and WAL bytes.  The SHM file is a
+    // derived lock/index file and must never be copied or opened from the
+    // private root.  sqlite3's backup command then replays the WAL into a
+    // private, non-WAL snapshot before Bun opens anything.
+    await copyFile(databasePath, scratchPath);
+    const mainBytes = await readFile(scratchPath);
+    if (
+      mainBytes.byteLength < 100 ||
+      !Buffer.from(mainBytes.subarray(0, SQLITE_HEADER.byteLength)).equals(SQLITE_HEADER)
+    ) {
+      throw new Error("SQLite database header is invalid");
     }
-    // immutable=1 prevents SQLite from updating WAL/SHM read marks during a diagnostic run.
+    try {
+      await copyFile(`${databasePath}-wal`, `${scratchPath}-wal`);
+    } catch (error: unknown) {
+      if (!isFsCode(error, "ENOENT")) throw error;
+    }
+    await execFileAsync("sqlite3", ["-readonly", scratchPath, `.backup ${stablePath}`]);
+    // The backup preserves the source's WAL journal-mode header but has no
+    // companion WAL.  Normalize only this disposable copy before opening it
+    // with Bun's readonly handle.
+    const stableBytes = Uint8Array.from(await readFile(stablePath));
+    if (stableBytes.length >= 20 && stableBytes[18] === 2 && stableBytes[19] === 2) {
+      stableBytes[18] = 1;
+      stableBytes[19] = 1;
+      await writeFile(stablePath, stableBytes, { mode: 0o600 });
+    } else {
+      await chmod(stablePath, 0o600);
+    }
     return {
-      database: new Database(`file:${databasePath}?immutable=1`, { readonly: true, create: false }),
+      database: new Database(stablePath, { readonly: true, create: false }),
       openError: undefined,
+      cleanup: async () => rm(scratchRoot, { recursive: true, force: true }),
     };
   } catch (error: unknown) {
+    await rm(scratchRoot, { recursive: true, force: true });
     return { database: undefined, openError: stableError(error) };
   }
 }
@@ -254,14 +294,40 @@ function migrationCheck(
         detail: "database contains migrations not supplied by the expected sequence",
       });
     }
-    return mismatch
-      ? check(
-          "migrations",
-          "fail",
-          "migration history does not match the expected definitions",
-          collector,
-        )
-      : check("migrations", "pass", "migration history and hashes match", collector);
+    if (mismatch)
+      return check(
+        "migrations",
+        "fail",
+        "migration history does not match the expected definitions",
+        collector,
+      );
+    // Keep referential corruption attributed to the dedicated foreign-key
+    // check. The store is already unhealthy there; migration admission still
+    // runs for states whose relational structure is intact.
+    if (database.query("PRAGMA foreign_key_check;").all().length !== 0)
+      return check("migrations", "pass", "migration history and hashes match", collector);
+    try {
+      const classified = classifyMigrationHistory(database);
+      if (
+        classified.classification !== "supported-canonical-prefix" ||
+        classified.userVersion !== migrations.length
+      ) {
+        throw new Error(classified.reason ?? "canonical migration preflight rejected the database");
+      }
+      verifyCanonicalMigrationState(database);
+      return check(
+        "migrations",
+        "pass",
+        "migration history, conversion provenance, and reindex overlay are valid",
+        collector,
+      );
+    } catch (error: unknown) {
+      collector.add({
+        path: databasePath,
+        detail: `canonical migration admission failed: ${stableError(error)}`,
+      });
+      return check("migrations", "fail", "canonical migration admission failed", collector);
+    }
   } catch (error: unknown) {
     collector.add({
       path: databasePath,
@@ -647,7 +713,10 @@ async function orphanCheck(
   );
 }
 
-async function permissionsCheck(options: DoctorIntegrityOptions): Promise<DoctorCheck> {
+async function permissionsCheck(
+  options: DoctorIntegrityOptions,
+  checkedDatabasePath = options.databasePath,
+): Promise<DoctorCheck> {
   const collector = evidenceCollector();
   const paths = [
     options.privateRoot,
@@ -666,12 +735,12 @@ async function permissionsCheck(options: DoctorIntegrityOptions): Promise<Doctor
   }
   if (
     validCanonicalPath(options.privateRoot) &&
-    (!validCanonicalPath(options.databasePath) ||
-      !pathWithin(options.privateRoot, options.databasePath))
+    (!validCanonicalPath(checkedDatabasePath) ||
+      !pathWithin(options.privateRoot, checkedDatabasePath))
   ) {
     failed = true;
     collector.add({
-      path: options.databasePath,
+      path: checkedDatabasePath,
       detail: "database path is not beneath the private root",
     });
   }
@@ -750,7 +819,7 @@ async function permissionsCheck(options: DoctorIntegrityOptions): Promise<Doctor
 }
 
 /** Run all integrity checks without opening a write handle or issuing a mutating SQL/filesystem operation. */
-export async function runDoctorIntegrity(
+async function runDoctorIntegrityInProcess(
   options: DoctorIntegrityOptions,
 ): Promise<DoctorIntegrityResult> {
   const opened = await openReadOnly(options.databasePath);
@@ -761,12 +830,15 @@ export async function runDoctorIntegrity(
     const migrations = migrationCheck(
       database,
       opened.openError,
-      options.migrations,
+      canonicalDatabaseMigrations,
       options.databasePath,
     );
     const blobs = await blobCheck(options, database, opened.openError);
     const orphans = await orphanCheck(options, blobs.references);
-    const permissions = await permissionsCheck(options);
+    const permissions = await permissionsCheck(
+      options,
+      Reflect.get(options as object, "permissionsDatabasePath") as string | undefined,
+    );
     const checks = Object.freeze([
       sqlite,
       foreignKeys,
@@ -779,5 +851,37 @@ export async function runDoctorIntegrity(
     return Object.freeze({ status, checks });
   } finally {
     database?.close();
+    await opened.cleanup?.();
   }
+}
+
+/**
+ * Bun keeps a process-wide SQLite WAL cache.  A database handle that was
+ * closed by a writer can still be checkpointed when a second Bun handle is
+ * closed, even when that second handle points at a disposable copy.  Run the
+ * read-only inspection in a fresh Bun process so the source process has no
+ * SQLite state that can be checkpointed by the doctor.
+ */
+export async function runDoctorIntegrity(
+  options: DoctorIntegrityOptions,
+): Promise<DoctorIntegrityResult> {
+  if (process.env.AGENT_MAIL_DOCTOR_WORKER === "1") {
+    return runDoctorIntegrityInProcess(options);
+  }
+  const moduleUrl = pathToFileURL(fileURLToPath(import.meta.url)).href;
+  const workerScript = [
+    `import { runDoctorIntegrity as run } from ${JSON.stringify(moduleUrl)};`,
+    "const options = JSON.parse(process.argv[1]);",
+    "const result = await run(options);",
+    "process.stdout.write(JSON.stringify(result));",
+  ].join(" ");
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    ["-e", workerScript, JSON.stringify(options)],
+    {
+      env: { ...process.env, AGENT_MAIL_DOCTOR_WORKER: "1" },
+      maxBuffer: 1024 * 1024,
+    },
+  );
+  return JSON.parse(stdout) as DoctorIntegrityResult;
 }

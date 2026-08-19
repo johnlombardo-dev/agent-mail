@@ -348,6 +348,4 @@ BEGIN SELECT RAISE(ABORT, 'cancellation display is not bound to its challenge');
 `,
 } satisfies Migration;
 
-export const actionPlanRestoreQuarantineMigrations = [
-  actionPlanRestoreQuarantineMigration,
-] as const;
+export const actionPlanRestoreQuarantineSequence = [actionPlanRestoreQuarantineMigration] as const;

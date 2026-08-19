@@ -13,9 +13,6 @@ import { createCliClient } from "../../cli/src/client";
 import { executeCommand, type CommandSink } from "../../cli/src/command-outcome";
 import { runDoctorCommand } from "../../cli/src/doctor-command";
 import { openDatabase } from "../../storage/src/database";
-import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
-import { messageCatalogMigration } from "../../storage/src/migrations/0001-message-catalog";
-import { messageBlobReferencesMigration } from "../../storage/src/migrations/0003-message-blob-references";
 import type { DoctorIntegrityResult } from "../../storage/src/doctor-integrity";
 import {
   createDoctorService,
@@ -36,12 +33,6 @@ const messageId = `message:${"a".repeat(64)}`;
 const rawBytes = Buffer.from("raw message bytes\n");
 const bodyBytes = Buffer.from("body bytes\n");
 const attachmentBytes = Buffer.from("attachment bytes\n");
-const migrationDefinitions = [messageCatalogMigration, messageBlobReferencesMigration];
-const migrations: readonly Migration[] = migrationDefinitions.map((migration, index) => ({
-  ...migration,
-  version: index + 1,
-}));
-
 type Fixture = Readonly<{
   readonly root: string;
   readonly databasePath: string;
@@ -61,8 +52,7 @@ async function fixture(): Promise<Fixture> {
   const blobDirectory = join(root, "blobs");
   await mkdir(blobDirectory, { mode: 0o700 });
   const databasePath = join(root, "archive.sqlite");
-  const opened = await openDatabase(databasePath, { supportedSchemaVersion: migrations.length });
-  applyMigrations(opened, migrations);
+  const opened = await openDatabase(databasePath);
   opened.db.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   const rawDigest = digest(rawBytes);
   const bodyDigest = digest(bodyBytes);
@@ -192,7 +182,6 @@ describe("P7-C02 doctor API and CLI projection", () => {
         privateRoot: value.root,
         databasePath: value.databasePath,
         blobDirectory: value.blobDirectory,
-        migrations,
       },
     });
     const direct = reportAdminDoctorResponseSchema.parse(await doctor({}, context()));
@@ -279,7 +268,6 @@ describe("P7-C02 doctor API and CLI projection", () => {
         privateRoot: value.root,
         databasePath: value.databasePath,
         blobDirectory: value.blobDirectory,
-        migrations,
       },
     });
     const baseUrl = await startServer(doctor);

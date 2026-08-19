@@ -1,5 +1,5 @@
 import type { Migration } from "../migration-runner";
-import { actionAttemptStartMigrations } from "./0004-action-attempt-start";
+import { actionAttemptStartSequence } from "./0004-action-attempt-start";
 
 /** Immutable evidence that an unresolved attempt crossed command dispatch. */
 export const actionAttemptDispatchMigration = {
@@ -91,7 +91,9 @@ END;
 `,
 } satisfies Migration;
 
-export const actionAttemptDispatchMigrations = [
-  ...actionAttemptStartMigrations,
+export const actionAttemptDispatchSequence = [
+  ...actionAttemptStartSequence,
   actionAttemptDispatchMigration,
 ] as const;
+
+export { actionAttemptDispatchSequence as actionAttemptDispatchMigrations };

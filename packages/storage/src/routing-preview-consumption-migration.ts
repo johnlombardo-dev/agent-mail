@@ -43,7 +43,7 @@ CREATE INDEX routing_previews_by_consumption
 } satisfies Migration;
 
 /** Compose the accepted creation schema with its one-way consumption receipt. */
-export const routingPreviewConsumptionMigrations = [
+export const routingPreviewConsumptionSequence = [
   routingPreviewMigration,
   { ...routingPreviewConsumptionMigration, version: 2 },
 ] as const;

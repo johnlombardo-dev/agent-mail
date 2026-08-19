@@ -23,7 +23,7 @@ import type {
 import type { RawMessageDownloadResult } from "../../../imap/src/raw-download";
 import { stageBlob } from "../../../storage/src/blob-stage";
 import { cleanupAbandonedBlobStages } from "../../../storage/src/blob-stage-cleanup";
-import { applyMigrations } from "../../../storage/src/migration-runner";
+import { runMigrations } from "../../../storage/src/migration-runner";
 import { openDatabase, type OpenDatabase } from "../../../storage/src/database";
 import { messageCatalogMigration } from "../../../storage/src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../../../storage/src/migrations/0002-structured-content";
@@ -294,7 +294,7 @@ function routingFor(uid: number) {
 }
 
 function databaseMigrations(opened: OpenDatabase): void {
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db
     .query(
       "INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);",
@@ -327,9 +327,7 @@ async function openFixture(root: string): Promise<{
   } catch {
     exists = false;
   }
-  const opened = await openDatabase(paths.databasePath, {
-    supportedSchemaVersion: 10,
-  });
+  const opened = await openDatabase(paths.databasePath);
   if (!exists) databaseMigrations(opened);
   return { opened, staging: paths.staging, blobs: paths.blobs };
 }
@@ -518,6 +516,7 @@ async function completeInitialBackfill(
       if (mode === "interrupt:checkpoint-update")
         abruptInterrupt(root, "checkpoint-update", database, staging, blobs, {
           cut: "checkpoint-update-before-completion-write",
+
         });
     },
   });
@@ -598,7 +597,6 @@ async function completeInitialBackfill(
     throw new Error(`initial backfill did not complete: ${result.status}`);
   }
 }
-
 async function runSweepAndReset(
   root: string,
   database: Database,

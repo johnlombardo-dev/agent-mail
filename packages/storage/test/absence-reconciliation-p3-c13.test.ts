@@ -15,7 +15,7 @@ import {
   type AbsenceTombstoneWriter,
 } from "../src/absence-reconciliation";
 import { openDatabase } from "../src/database";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import { readRemotePlacement } from "../src/remote-placement-tombstone";
@@ -63,7 +63,7 @@ async function openCatalog() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   opened.db
     .query(

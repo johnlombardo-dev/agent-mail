@@ -149,6 +149,6 @@ CREATE INDEX thread_merges_winner ON thread_merges (account_id, winning_thread_i
 `,
 } satisfies Migration;
 
-export const threadGraphMigrations = [threadGraphMigration] as const;
+export const threadGraphSequence = [threadGraphMigration] as const;
 export const threadMigration = threadGraphMigration;
-export const threadMigrations = threadGraphMigrations;
+export const threadSequence = threadGraphSequence;

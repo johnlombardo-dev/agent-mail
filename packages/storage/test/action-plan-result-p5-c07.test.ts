@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations } from "../src/migration-runner";
-import { actionAttemptStartMigrations, startActionPlanAttempt } from "../src/action-plan-attempt";
+import { runMigrations } from "../src/migration-runner";
+import { actionAttemptStartSequence, startActionPlanAttempt } from "../src/action-plan-attempt";
 import { claimPendingActionPlan } from "../src/action-plan-claim";
 import { createPendingActionPlan } from "../src/action-plan-repository";
 import {
@@ -34,7 +34,7 @@ afterEach(() => {
 function openDatabase(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, actionAttemptStartMigrations);
+  runMigrations(database, actionAttemptStartSequence);
   createPendingActionPlan(database, {
     planId: "plan:one",
     action: { kind: "moveToArchive" },

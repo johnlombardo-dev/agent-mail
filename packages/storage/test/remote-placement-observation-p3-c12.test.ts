@@ -13,7 +13,7 @@ import {
   createUidValidity,
 } from "@agent-mail/core";
 import { openDatabase } from "../src/database";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
@@ -49,7 +49,7 @@ async function openCatalog() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   opened.db
     .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
@@ -74,7 +74,7 @@ async function openPromotedCatalog() {
     { ...messageBlobReferencesMigration, version: 3 },
     { ...placementObservationMigration, version: 4 },
   ];
-  applyMigrations(opened, promotedMigrations);
+  runMigrations(opened, promotedMigrations);
   opened.db
     .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
     .run(accountId, mailboxId, uidValidity);
@@ -130,8 +130,8 @@ describe("remote placement observation repository P3-C12", () => {
     expect(opened.db.query("SELECT COUNT(*) AS count FROM operational_journal;").get()).toEqual({ count: 2 });
 
     await opened.close();
-    const reopened = await openDatabase(path, { supportedSchemaVersion: 4 });
-    applyMigrations(reopened, promotedMigrations);
+    const reopened = await openDatabase(path);
+    runMigrations(reopened, promotedMigrations);
     expect(readRemotePlacementObservation(reopened.db, identity)?.internalDate).toBe(
       "2026-08-18T00:00:00.000Z",
     );
@@ -271,8 +271,8 @@ describe("remote placement observation repository P3-C12", () => {
     expect(opened.db.query("SELECT COUNT(*) AS count FROM operational_journal;").get()).toEqual({ count: 2 });
 
     await opened.close();
-    const reopened = await openDatabase(path, { supportedSchemaVersion: 3 });
-    applyMigrations(reopened, migrations);
+    const reopened = await openDatabase(path);
+    runMigrations(reopened, migrations);
     expect(readRemotePlacementObservation(reopened.db, identity)).toMatchObject({
       internalDate: "2026-08-18T00:00:00.000Z",
       flags: ["\\Flagged", "\\Seen"],

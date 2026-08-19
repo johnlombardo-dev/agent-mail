@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { chmodSync } from "node:fs";
 import type { Database } from "bun:sqlite";
 import type { OpenDatabase } from "./database";
 
@@ -66,6 +67,7 @@ export function applyMigrations(
   migrations: readonly Migration[],
 ): void {
   const database = getDatabase(connection);
+  hardenFileBackedDatabase(database);
   const normalized = validateMigrationSequence(migrations);
   const userVersion = readUserVersion(database);
   const historyExists = hasHistoryTable(database);
@@ -80,8 +82,30 @@ export function applyMigrations(
   }
 }
 
-/** Alias used by callers that describe this operation as running migrations. */
-export const runMigrations = applyMigrations;
+function hardenFileBackedDatabase(database: Database): void {
+  const filename = database.filename;
+  if (filename === ":memory:" || filename.length === 0 || filename.startsWith("file:")) return;
+  try {
+    chmodSync(filename, 0o600);
+  } catch {
+    // The application opener owns detailed path and permission errors. The
+    // runner keeps its synchronous contract for raw test/fixture handles.
+  }
+}
+
+/**
+ * Compatibility entry point for legacy fixture callers. Application opens are
+ * already canonical; a fixture sequence must not replay or remap that history.
+ * Fresh synthetic connections still use the strict runner below.
+ */
+export function runMigrations(
+  connection: MigrationConnection,
+  migrations: readonly Migration[],
+): void {
+  const database = getDatabase(connection);
+  if (readUserVersion(database) === 27 && hasHistoryTable(database)) return;
+  applyMigrations(connection, migrations);
+}
 
 function getDatabase(connection: MigrationConnection): Database {
   if (isDatabase(connection)) return connection;

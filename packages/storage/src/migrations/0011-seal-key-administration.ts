@@ -285,4 +285,4 @@ BEGIN SELECT RAISE(ABORT, 'action terminal audit is immutable'); END;
 `,
 } satisfies Migration;
 
-export const sealKeyAdministrationMigrations = [sealKeyAdministrationMigration] as const;
+export const sealKeyAdministrationSequence = [sealKeyAdministrationMigration] as const;

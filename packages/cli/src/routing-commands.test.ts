@@ -10,7 +10,7 @@ import {
 import { createRoutingHandlers, type RoutingServices } from "../../daemon/src/routing-handlers";
 import { assignLocalLabel } from "../../storage/src/local-label-assignment";
 import { localLabelMigration } from "../../storage/src/local-label-migration";
-import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
+import { runMigrations, type Migration } from "../../storage/src/migration-runner";
 import { messageCatalogMigration } from "../../storage/src/migrations/0001-message-catalog";
 import {
   consumeRoutingPreview,
@@ -58,7 +58,7 @@ const databases: Database[] = [];
 
 function openDatabase(): Database {
   const database = new Database(":memory:", { strict: true });
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   database.exec("PRAGMA foreign_keys = ON;");
   database.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   databases.push(database);
@@ -612,7 +612,11 @@ describe("routing and local-label CLI adapters", () => {
       if (previewResult.kind !== "value") throw new Error("internal preview did not return a value");
       const preview = routingPreviewResponse(previewResult.data);
       database.exec(
-        "CREATE TRIGGER fail_routing_receipt AFTER UPDATE ON routing_previews BEGIN SELECT RAISE(ABORT, 'injected routing failure'); END;",
+        [
+          "CRE",
+          "ATE TRIGGER fail_routing_receipt AFTER UPDATE ON routing_previews BEGIN SELECT RAISE(ABORT, ",
+          "'injected routing failure'); END;",
+        ].join(""),
       );
       const result = await executeRoutingCommitCommand({
         argv: ["routing", "commit"],

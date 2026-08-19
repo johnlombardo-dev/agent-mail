@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations } from "../src/migration-runner";
-import { actionPlanProposalMigrations } from "../src/migrations/0002-action-plan-proposal";
+import { runMigrations } from "../src/migration-runner";
+import { actionPlanProposalSequence } from "../src/migrations/0002-action-plan-proposal";
 import { actionSchemaMigration } from "../src/migrations/0001-action-schema";
 import {
   createPendingActionPlan,
@@ -19,7 +19,7 @@ afterEach(() => {
 function openActionDatabase(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, actionPlanProposalMigrations);
+  runMigrations(database, actionPlanProposalSequence);
   return database;
 }
 
@@ -131,7 +131,7 @@ describe("pending action plan repository", () => {
   test("requires the proposal evidence migration before repository use", () => {
     const database = new Database(":memory:");
     databases.push(database);
-    applyMigrations(database, [actionSchemaMigration]);
+    runMigrations(database, [actionSchemaMigration]);
     expect(() => createPendingActionPlan(database, proposal)).toThrow(PendingActionPlanSchemaError);
     expect(() => readPendingActionPlan(database, proposal.planId)).toThrow(PendingActionPlanSchemaError);
   });

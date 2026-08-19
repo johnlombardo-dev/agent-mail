@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
-import { actionPlanClaimMigrations } from "../src/migrations/0003-action-plan-claim";
+import { actionPlanClaimSequence } from "../src/migrations/0003-action-plan-claim";
 import { createPendingActionPlan } from "../src/action-plan-repository";
 import { claimPendingActionPlan } from "../src/action-plan-claim";
 
@@ -30,8 +30,8 @@ async function makeDatabase(name: string): Promise<{
   await chmod(root, 0o700);
   roots.push(root);
   const path = join(root, "archive.sqlite");
-  const opened = await openDatabase(path, { supportedSchemaVersion: 3 });
-  applyMigrations(opened, actionPlanClaimMigrations);
+  const opened = await openDatabase(path);
+  runMigrations(opened, actionPlanClaimSequence);
   return { root, path, opened };
 }
 
@@ -174,7 +174,7 @@ describe("atomic pending action plan claim", () => {
     expect(outputs.filter((result) => result.kind === "claimed")).toHaveLength(1);
     expect(outputs.filter((result) => result.kind === "already-claimed")).toHaveLength(1);
 
-    const reopened = await openDatabase(database.path, { supportedSchemaVersion: 3 });
+    const reopened = await openDatabase(database.path);
     try {
       expect(
         reopened.db

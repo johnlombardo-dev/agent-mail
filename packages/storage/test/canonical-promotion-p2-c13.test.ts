@@ -13,7 +13,7 @@ import {
   createRoutingRuleId,
   createUtcInstant,
 } from "@agent-mail/core";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import {
   CanonicalPromotionError,
@@ -128,7 +128,7 @@ async function openPromotionDatabase() {
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db
     .query(
       "INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);",
@@ -219,8 +219,8 @@ describe("canonical promotion transaction P2-C13", () => {
     expect(promoteCanonicalMessage(opened.db, unit)).toEqual({ messageId, status: "committed" });
     await opened.close();
 
-    const reopened = await openDatabase(join(roots[0], "archive.sqlite"), { supportedSchemaVersion: 7 });
-    applyMigrations(reopened, migrations);
+    const reopened = await openDatabase(join(roots[0], "archive.sqlite"));
+    runMigrations(reopened, migrations);
     expect(readCanonicalPromotion(reopened.db, messageId)).toEqual({
       ...unit,
       routingDecisions: unit.routingDecisions.map((routing) => ({

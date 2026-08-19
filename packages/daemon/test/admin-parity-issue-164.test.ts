@@ -37,7 +37,7 @@ import {
 } from "../src/http";
 import { createReportAdminHandlers, type ReportAdminServices } from "../src/report-admin-handlers";
 import { openDatabase } from "../../storage/src/database";
-import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
+import { runMigrations, type Migration } from "../../storage/src/migration-runner";
 import { messageCatalogMigration } from "../../storage/src/migrations/0001-message-catalog";
 import { messageBlobReferencesMigration } from "../../storage/src/migrations/0003-message-blob-references";
 import { externalContentSearchMigration } from "../../storage/src/migrations/0003-external-content-search";
@@ -179,8 +179,8 @@ async function makeDoctorRoot(corrupt: boolean): Promise<Readonly<{ root: string
   const databasePath = join(root, "archive.sqlite");
   const definitions = [messageCatalogMigration, messageBlobReferencesMigration];
   const migrations: readonly Migration[] = definitions.map((migration, index) => ({ ...migration, version: index + 1 }));
-  const opened = await openDatabase(databasePath, { supportedSchemaVersion: migrations.length });
-  applyMigrations(opened.db, migrations);
+  const opened = await openDatabase(databasePath);
+  runMigrations(opened.db, migrations);
   if (corrupt) {
     const messageId = `message:${"a".repeat(64)}`;
     const missingBlob = "b".repeat(64);
@@ -240,7 +240,7 @@ function backupService(value: Awaited<ReturnType<typeof makeBackupRoot>>, before
 function reindexDatabase(): Database {
   const database = new Database(":memory:", { strict: true });
   databases.push(database);
-  applyMigrations(database, [messageCatalogMigration, structuredContentMigration, externalContentSearchMigration]);
+  runMigrations(database, [messageCatalogMigration, structuredContentMigration, externalContentSearchMigration]);
   const first = `message:${"a".repeat(64)}`;
   database.query("INSERT INTO messages (message_id) VALUES (?);").run(first);
   database.query("INSERT INTO message_search_documents (document_id, message_id) VALUES (10, ?);").run(first);

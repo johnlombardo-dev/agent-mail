@@ -10,10 +10,10 @@ import { actionPlanCreateRequestSchema } from "@agent-mail/contracts";
 import type { RemoteAttempt, RemoteAttemptResult } from "@agent-mail/core";
 import type { PreconditionObservation } from "../../imap/src/precondition";
 import {
-  applyMigrations,
+  runMigrations,
 } from "../../storage/src/migration-runner";
 import {
-  actionAttemptDispatchMigrations,
+  actionAttemptDispatchSequence,
 } from "../../storage/src/migrations/0005-action-attempt-dispatch";
 import {
   actionResultReconciliationMigration,
@@ -76,9 +76,11 @@ afterEach(() => {
 function openDatabase(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, actionAttemptDispatchMigrations);
-  database.exec(operationalJournalMigration.sql);
-  database.exec(actionResultReconciliationMigration.sql);
+  runMigrations(database, [
+    ...actionAttemptDispatchSequence,
+    { ...operationalJournalMigration, version: 6, name: "test-operational-journal" },
+    actionResultReconciliationMigration,
+  ]);
   return database;
 }
 

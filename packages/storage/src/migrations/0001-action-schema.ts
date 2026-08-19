@@ -287,4 +287,4 @@ export const actionSchemaMigration = {
 } satisfies Migration;
 
 /** A standalone set is convenient for focused schema tests and later composition. */
-export const actionSchemaMigrations = [actionSchemaMigration] as const;
+export const actionSchemaSequence = [actionSchemaMigration] as const;

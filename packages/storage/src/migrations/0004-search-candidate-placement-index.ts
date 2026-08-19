@@ -12,6 +12,6 @@ CREATE INDEX search_placements_by_account_message
 `,
 } satisfies Migration;
 
-export const searchCandidatePlacementIndexMigrations = [
+export const searchCandidatePlacementIndexSequence = [
   searchCandidatePlacementIndexMigration,
 ] as const;

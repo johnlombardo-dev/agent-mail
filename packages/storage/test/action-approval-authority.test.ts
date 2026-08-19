@@ -5,12 +5,12 @@ import { createRemoteAttemptSuccess } from "@agent-mail/core";
 import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import { actionApprovalAuthorityMigration } from "../src/migrations/0009-action-approval-authority";
 import { actionPlanRestoreQuarantineMigration } from "../src/migrations/0010-action-plan-restore-quarantine";
 import { sealKeyAdministrationMigration } from "../src/migrations/0011-seal-key-administration";
-import { actionAttemptDispatchMigrations } from "../src/migrations/0005-action-attempt-dispatch";
+import { actionAttemptDispatchSequence } from "../src/migrations/0005-action-attempt-dispatch";
 import { actionResultReconciliationMigration } from "../src/migrations/0007-action-result-reconciliation";
 import { threadGraphMigration } from "../src/migrations/0008-thread-graph";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
@@ -113,8 +113,8 @@ function setup(
 ): { readonly database: Database; readonly planId: string } {
   const database = new Database(":memory:", { strict: true });
   database.exec("PRAGMA foreign_keys = ON;");
-  applyMigrations(database, [
-    ...actionAttemptDispatchMigrations,
+  runMigrations(database, [
+    ...actionAttemptDispatchSequence,
     { ...operationalJournalMigration, version: 6 },
     actionResultReconciliationMigration,
     threadGraphMigration,
@@ -182,8 +182,8 @@ describe("durable one-use action approval authority", () => {
     try {
       const first = new Database(path, { strict: true });
       first.exec("PRAGMA foreign_keys = ON;");
-      applyMigrations(first, [
-        ...actionAttemptDispatchMigrations,
+      runMigrations(first, [
+        ...actionAttemptDispatchSequence,
         { ...operationalJournalMigration, version: 6 },
         actionResultReconciliationMigration,
         threadGraphMigration,
@@ -235,8 +235,8 @@ describe("durable one-use action approval authority", () => {
       first.close();
       const reopened = new Database(path, { strict: true });
       reopened.exec("PRAGMA foreign_keys = ON;");
-      applyMigrations(reopened, [
-        ...actionAttemptDispatchMigrations,
+      runMigrations(reopened, [
+        ...actionAttemptDispatchSequence,
         { ...operationalJournalMigration, version: 6 },
         actionResultReconciliationMigration,
         threadGraphMigration,
@@ -248,8 +248,8 @@ describe("durable one-use action approval authority", () => {
       reopened.close();
       const v11 = new Database(path, { strict: true });
       v11.exec("PRAGMA foreign_keys = ON;");
-      applyMigrations(v11, [
-        ...actionAttemptDispatchMigrations,
+      runMigrations(v11, [
+        ...actionAttemptDispatchSequence,
         { ...operationalJournalMigration, version: 6 },
         actionResultReconciliationMigration,
         threadGraphMigration,
@@ -274,8 +274,8 @@ describe("durable one-use action approval authority", () => {
   it("enforces exact decimal seal-key revisions in the v11 SQL boundary", () => {
     const database = new Database(":memory:", { strict: true });
     database.exec("PRAGMA foreign_keys = ON;");
-    applyMigrations(database, [
-      ...actionAttemptDispatchMigrations,
+    runMigrations(database, [
+      ...actionAttemptDispatchSequence,
       { ...operationalJournalMigration, version: 6 },
       actionResultReconciliationMigration,
       threadGraphMigration,

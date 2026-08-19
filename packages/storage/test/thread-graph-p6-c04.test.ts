@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { identityOnlyContentMigration } from "../src/migrations/0002-identity-only-content";
@@ -18,13 +18,13 @@ const migrations: readonly Migration[] = [
 
 function database(): Database {
   const database = new Database(":memory:");
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   return database;
 }
 
 function placementDatabase(): Database {
   const database = new Database(":memory:");
-  applyMigrations(database, [
+  runMigrations(database, [
     messageCatalogMigration,
     structuredContentMigration,
     { ...placementObservationMigration, version: 3 },
@@ -35,7 +35,7 @@ function placementDatabase(): Database {
 
 function identityOnlyDatabase(): Database {
   const database = new Database(":memory:");
-  applyMigrations(database, [
+  runMigrations(database, [
     messageCatalogMigration,
     identityOnlyContentMigration,
     { ...threadGraphMigration, version: 3 },

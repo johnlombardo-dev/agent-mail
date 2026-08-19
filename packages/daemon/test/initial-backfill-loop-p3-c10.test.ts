@@ -11,7 +11,7 @@ import {
   createUtcInstant,
   createUidValidity,
 } from "@agent-mail/core";
-import { applyMigrations } from "../../storage/src/migration-runner";
+import { runMigrations } from "../../storage/src/migration-runner";
 import { openDatabase } from "../../storage/src/database";
 import {
   createMailboxCheckpointRepository,
@@ -43,7 +43,7 @@ async function setup(): Promise<{ db: Database; path: string; close: () => Promi
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, [
+  runMigrations(opened, [
     { ...messageCatalogMigration, version: 1 },
     { ...mailboxCheckpointMigration, version: 2 },
     { ...identityOnlyContentMigration, version: 3 },
@@ -131,7 +131,7 @@ describe("initial backfill loop P3-C10", () => {
     });
     await fixture.close();
 
-    const reopened = await openDatabase(fixture.path, { supportedSchemaVersion: 6 });
+    const reopened = await openDatabase(fixture.path);
     const checkpoints = createMailboxCheckpointRepository(reopened.db);
     const completions = createInitialBackfillCompletionRepository(reopened.db);
     expect(checkpoints.read({ accountId, mailboxId, uidValidity })).toMatchObject({
@@ -206,7 +206,7 @@ describe("initial backfill loop P3-C10", () => {
     ).toBeUndefined();
 
     await fixture.close();
-    const reopened = await openDatabase(fixture.path, { supportedSchemaVersion: 6 });
+    const reopened = await openDatabase(fixture.path);
     const recovered = await runInitialBackfillLoop(request(2), dependencies(reopened.db));
     expect(recovered.status).toBe("completed");
     expect(recovered.checkpoint.backfillCompleted).toBe(true);

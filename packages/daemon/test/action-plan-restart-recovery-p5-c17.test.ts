@@ -12,12 +12,12 @@ import {
   type RemoteAttempt,
 } from "@agent-mail/core";
 import type { PreconditionObservation } from "../../imap/src/precondition";
-import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
+import { runMigrations, type Migration } from "../../storage/src/migration-runner";
 import { claimPendingActionPlan } from "../../storage/src/action-plan-claim";
 import { readActionPlanAttempt, startActionPlanAttempt } from "../../storage/src/action-plan-attempt";
 import { createPendingActionPlan } from "../../storage/src/action-plan-repository";
-import { actionAttemptDispatchMigrations } from "../../storage/src/action-plan-recovery";
-import { actionResultReconciliationMigrations } from "../../storage/src/action-plan-result";
+import { actionAttemptDispatchSequence } from "../../storage/src/action-plan-recovery";
+import { actionResultReconciliationSequence } from "../../storage/src/action-plan-result";
 import { operationalJournalMigration } from "../../storage/src/migrations/0001-operational-journal";
 import { threadGraphMigration } from "../../storage/src/migrations/0008-thread-graph";
 import { actionApprovalAuthorityMigration } from "../../storage/src/migrations/0009-action-approval-authority";
@@ -43,9 +43,9 @@ const target = {
   precondition: { modseq: 101 },
 } as const;
 const migrations: readonly Migration[] = [
-  ...actionAttemptDispatchMigrations,
+  ...actionAttemptDispatchSequence,
   { ...operationalJournalMigration, version: 6 },
-  ...actionResultReconciliationMigrations.map((migration) => ({ ...migration, version: 7 })),
+  ...actionResultReconciliationSequence.map((migration) => ({ ...migration, version: 7 })),
 ];
 const legacyMigrations: readonly Migration[] = [
   ...migrations,
@@ -68,7 +68,7 @@ afterEach(() => {
 function openDatabase(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: "plan:restart",
     action: { kind: "moveToArchive" },
@@ -95,7 +95,7 @@ function openDatabase(): Database {
 function openLegacyDatabase(dispatched: boolean): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: dispatched ? "plan:legacy-dispatched" : "plan:legacy-undispatched",
     action: { kind: "moveToArchive" },
@@ -142,7 +142,7 @@ function openLegacyDatabase(dispatched: boolean): Database {
     });
     if (marked.kind !== "marked") throw new Error("legacy attempt was not dispatched");
   }
-  applyMigrations(database, legacyMigrations);
+  runMigrations(database, legacyMigrations);
   return database;
 }
 
@@ -229,7 +229,7 @@ async function createCrashFixture(root: string, name: string): Promise<CrashFixt
   const tracePath = join(fixtureRoot, "remote-trace.jsonl");
   const remoteStatePath = join(fixtureRoot, "remote-state.json");
   const database = new Database(databasePath);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: "plan:restart",
     action: { kind: "moveToArchive" },
@@ -274,11 +274,11 @@ function crashChildScript(fixture: CrashFixture, cutPoint: CrashCutPoint | "none
     const { appendFile, readFile, writeFile } = await import("node:fs/promises");
     const database = new Database(config.databasePath);
     const migrations = [
-      ...dispatch.actionAttemptDispatchMigrations,
+      ...dispatch.actionAttemptDispatchSequence,
       { ...journal.operationalJournalMigration, version: 6 },
-      ...resultStore.actionResultReconciliationMigrations.map((item) => ({ ...item, version: 7 })),
+      ...resultStore.actionResultReconciliationSequence.map((item) => ({ ...item, version: 7 })),
     ];
-    migration.applyMigrations(database, migrations);
+    migration.runMigrations(database, migrations);
     const now = core.createUtcInstant("2026-08-18T02:00:00.000Z");
     const resultAt = core.createUtcInstant("2026-08-18T02:00:01.000Z");
     const satisfied = (candidate) => ({ kind: "satisfied", target: candidate, observed: { uidValidity: candidate.uidValidity, uid: candidate.uid, modseq: candidate.precondition.modseq } });

@@ -73,6 +73,6 @@ END;
 `,
 } satisfies Migration;
 
-export const operationalJournalCompactionMigrations = [
+export const operationalJournalCompactionSequence = [
   operationalJournalCompactionMigration,
 ] as const;

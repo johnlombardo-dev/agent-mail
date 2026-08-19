@@ -9,9 +9,9 @@ import {
   decodeUtcMillisecondInstant,
   type SqliteColumnContext,
 } from "../src/row-decoders";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
-import { actionSchemaMigrations } from "../src/migrations/0001-action-schema";
+import { actionSchemaSequence } from "../src/migrations/0001-action-schema";
 
 const roots: string[] = [];
 
@@ -24,7 +24,7 @@ async function openActionDatabase() {
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, actionSchemaMigrations);
+  runMigrations(opened, actionSchemaSequence);
   return opened;
 }
 

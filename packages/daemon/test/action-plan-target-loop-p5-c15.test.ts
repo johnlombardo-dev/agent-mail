@@ -14,14 +14,14 @@ import {
   type RemoteAttemptResult,
 } from "@agent-mail/core";
 import type { PreconditionObservation } from "../../imap/src/precondition";
-import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
+import { runMigrations, type Migration } from "../../storage/src/migration-runner";
 import { startActionPlanAttempt } from "../../storage/src/action-plan-attempt";
 import { claimPendingActionPlan } from "../../storage/src/action-plan-claim";
 import { createPendingActionPlan } from "../../storage/src/action-plan-repository";
 import {
-  actionResultReconciliationMigrations,
+  actionResultReconciliationSequence,
 } from "../../storage/src/action-plan-result";
-import { actionAttemptDispatchMigrations } from "../../storage/src/action-plan-recovery";
+import { actionAttemptDispatchSequence } from "../../storage/src/action-plan-recovery";
 import { operationalJournalMigration } from "../../storage/src/migrations/0001-operational-journal";
 import {
   runActionPlanTargetLoop,
@@ -33,9 +33,9 @@ const now = createUtcInstant("2026-08-18T02:00:00.000Z");
 const resultAt = createUtcInstant("2026-08-18T02:00:01.000Z");
 const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const migrations: readonly Migration[] = [
-  ...actionAttemptDispatchMigrations,
+  ...actionAttemptDispatchSequence,
   { ...operationalJournalMigration, version: 6 },
-  ...actionResultReconciliationMigrations.map((migration) => ({ ...migration, version: 7 })),
+  ...actionResultReconciliationSequence.map((migration) => ({ ...migration, version: 7 })),
 ];
 
 afterEach(() => {
@@ -62,7 +62,7 @@ function targets(count: number): readonly ActionPlanTarget[] {
 function openDatabase(targetList: readonly ActionPlanTarget[]): ReturnType<typeof createExecutingActionPlan> {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: "plan:serial",
     action: { kind: "markSeen" },

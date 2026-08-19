@@ -20,7 +20,7 @@ import {
   type AdapterContractSuite,
   type AdapterFactoryInput,
 } from "../../../tests/adapter-contracts/harness";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { openDatabase, type OpenDatabase } from "../src/database";
 import { localLabelMigration } from "../src/local-label-migration";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
@@ -198,7 +198,7 @@ async function createSqliteFixture(): Promise<{ readonly opened: OpenDatabase; r
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db
     .query(
       "INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);",

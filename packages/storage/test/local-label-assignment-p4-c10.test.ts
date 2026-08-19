@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { localLabelMigration } from "../src/local-label-migration";
 import {
   assignLocalLabel,
@@ -26,7 +26,7 @@ function openDatabase(): Database {
     operationalJournalMigration,
     localLabelMigration,
   ].map((migration, index) => ({ ...migration, version: index + 1 }));
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   database.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   database
     .query(

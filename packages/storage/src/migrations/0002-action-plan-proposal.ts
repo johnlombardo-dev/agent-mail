@@ -72,10 +72,10 @@ END;
 } satisfies Migration;
 
 /** The extension alone is retained for the eventual application registry. */
-export const actionPlanProposalExtensionMigrations = [actionPlanProposalMigration] as const;
+export const actionPlanProposalExtensionSequence = [actionPlanProposalMigration] as const;
 
 /** Dependency-complete composition for focused repository tests. */
-export const actionPlanProposalMigrations = [
+export const actionPlanProposalSequence = [
   actionSchemaMigration,
   actionPlanProposalMigration,
 ] as const;

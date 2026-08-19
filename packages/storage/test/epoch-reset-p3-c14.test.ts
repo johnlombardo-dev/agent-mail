@@ -10,7 +10,7 @@ import {
   createUidValidity,
 } from "@agent-mail/core";
 import { openDatabase } from "../src/database";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import {
   mailboxCheckpointMigration,
@@ -42,7 +42,7 @@ async function openEpochDatabase() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, [
+  runMigrations(opened, [
     messageCatalogMigration,
     mailboxCheckpointMigration,
     { ...operationalJournalMigration, version: 3 },
@@ -193,7 +193,7 @@ describe("mailbox UIDVALIDITY epoch reset P3-C14", () => {
     });
     await opened.close();
 
-    const reopened = await openDatabase(path, { supportedSchemaVersion: 4 });
+    const reopened = await openDatabase(path);
     expect(
       readMailboxCheckpoint(reopened.db, { accountId, mailboxId: inbox, uidValidity: newUidValidity }),
     ).toEqual(result.checkpoint);

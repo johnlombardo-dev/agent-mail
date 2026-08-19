@@ -9,12 +9,6 @@
 import { createHash } from "node:crypto";
 import { arch, cpus, hostname, platform, release, totalmem } from "node:os";
 import { Database } from "bun:sqlite";
-import { applyMigrations, type Migration } from "../../packages/storage/src/migration-runner";
-import { messageCatalogMigration } from "../../packages/storage/src/migrations/0001-message-catalog";
-import { structuredContentMigration } from "../../packages/storage/src/migrations/0002-structured-content";
-import { placementObservationMigration } from "../../packages/storage/src/migrations/0003-placement-observation";
-import { externalContentSearchMigration } from "../../packages/storage/src/migrations/0003-external-content-search";
-import { localLabelMigration } from "../../packages/storage/src/local-label-migration";
 import { searchCandidatePlacementIndexMigration } from "../../packages/storage/src/migrations/0004-search-candidate-placement-index";
 import {
   compileSearchQuery,
@@ -38,7 +32,6 @@ import {
   SEARCH_CAPACITY_TOP_LIMIT,
   SEARCH_CAPACITY_WARMUPS,
   type SearchCapacityEvidence,
-  type SearchPlanEvidence,
   type SearchSample,
 } from "./search-capacity-gate";
 
@@ -48,15 +41,6 @@ const DEFAULT_OUTPUT = ".artifacts/p4-c17-search-capacity.json";
 const DEFAULT_BENCHMARK_COPY = ".artifacts/p4-c17-search-corpus-indexed.sqlite";
 const DEFAULT_TIMEOUT_MS = 1_500;
 const REPRESENTATIVE_QUERIES = ["atlas", "beacon", '"status update"'] as const;
-
-const BENCHMARK_MIGRATIONS: readonly Migration[] = [
-  messageCatalogMigration,
-  structuredContentMigration,
-  { ...placementObservationMigration, version: 3 },
-  { ...externalContentSearchMigration, version: 4 },
-  { ...localLabelMigration, version: 5 },
-  { ...searchCandidatePlacementIndexMigration, version: 6 },
-];
 
 type PlanRow = Readonly<{ readonly detail: string }>;
 type CountRow = Readonly<{ readonly count: number }>;
@@ -341,13 +325,6 @@ async function main(): Promise<void> {
   if (copyResult.exitCode !== 0) throw new Error("failed to create benchmark database copy");
   const database = new Database(benchmarkCopyPath);
   try {
-    applyMigrations(database, BENCHMARK_MIGRATIONS);
-    const plans: SearchPlanEvidence = {
-      candidate: [],
-      hydration: [],
-      negativeFullScan: [],
-      negativeFullScanRejected: false,
-    };
     const first = requireCompiledSearch(REPRESENTATIVE_QUERIES[0]);
     const candidateParameters: (string | number | null)[] = [
       ACCOUNT_ID,

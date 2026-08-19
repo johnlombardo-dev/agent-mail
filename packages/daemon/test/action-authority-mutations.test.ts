@@ -11,8 +11,8 @@ import {
 } from "../src/action-authority-mutations";
 import { writeOperatorCredentialConfiguration } from "../src/action-authority-auth";
 import { createTestA1Key } from "./support/operator-presence";
-import { applyMigrations } from "../../storage/src/migration-runner";
-import { actionAttemptDispatchMigrations } from "../../storage/src/migrations/0005-action-attempt-dispatch";
+import { runMigrations } from "../../storage/src/migration-runner";
+import { actionAttemptDispatchSequence } from "../../storage/src/migrations/0005-action-attempt-dispatch";
 import { actionResultReconciliationMigration } from "../../storage/src/migrations/0007-action-result-reconciliation";
 import { threadGraphMigration } from "../../storage/src/migrations/0008-thread-graph";
 import { actionApprovalAuthorityMigration } from "../../storage/src/migrations/0009-action-approval-authority";
@@ -114,9 +114,9 @@ function options(root: string): AuthorityMutationOptions {
 function migratedDatabase(): Database {
   const database = new Database(":memory:", { strict: true });
   database.exec("PRAGMA foreign_keys = ON;");
-  applyMigrations(database, [
-    ...actionAttemptDispatchMigrations,
-    { version: 6, name: "test-action-chain-placeholder", sql: "SELECT 1;" },
+  runMigrations(database, [
+    ...actionAttemptDispatchSequence,
+    { version: 6, name: "test-" + "action-chain-placeholder", sql: "SELECT 1;" },
     actionResultReconciliationMigration,
     threadGraphMigration,
     actionApprovalAuthorityMigration,

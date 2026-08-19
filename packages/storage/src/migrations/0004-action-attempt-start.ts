@@ -1,5 +1,5 @@
 import type { Migration } from "../migration-runner";
-import { actionPlanClaimMigrations } from "./0003-action-plan-claim";
+import { actionPlanClaimSequence } from "./0003-action-plan-claim";
 
 /**
  * Extends the accepted attempt table with the complete executor input.
@@ -103,9 +103,13 @@ END;
 export const actionPlanAttemptMigration = actionAttemptStartMigration;
 
 /** Dependency-complete migration set for the attempt-start boundary. */
-export const actionAttemptStartMigrations = [
-  ...actionPlanClaimMigrations,
+export const actionAttemptStartSequence = [
+  ...actionPlanClaimSequence,
   actionAttemptStartMigration,
 ] as const;
 
-export const actionPlanAttemptMigrations = actionAttemptStartMigrations;
+export const actionPlanAttemptSequence = actionAttemptStartSequence;
+
+// Compatibility names remain as non-registry aliases for existing domain
+// module re-exports; canonical composition is owned only by migration-registry.
+export { actionAttemptStartSequence as actionAttemptStartMigrations };

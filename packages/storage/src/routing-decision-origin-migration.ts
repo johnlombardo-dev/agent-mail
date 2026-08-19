@@ -43,4 +43,4 @@ END;
 `,
 } satisfies Migration;
 
-export const routingDecisionOriginMigrations = [routingDecisionOriginMigration] as const;
+export const routingDecisionOriginSequence = [routingDecisionOriginMigration] as const;

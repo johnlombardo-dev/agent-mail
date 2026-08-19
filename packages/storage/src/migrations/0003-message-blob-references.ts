@@ -49,4 +49,4 @@ END;
 `,
 } satisfies Migration;
 
-export const messageBlobReferencesMigrations = [messageBlobReferencesMigration] as const;
+export const messageBlobReferencesSequence = [messageBlobReferencesMigration] as const;

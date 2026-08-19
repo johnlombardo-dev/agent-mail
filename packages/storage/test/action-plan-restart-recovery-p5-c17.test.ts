@@ -1,16 +1,16 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { claimPendingActionPlan } from "../src/action-plan-claim";
 import { createPendingActionPlan } from "../src/action-plan-repository";
 import {
-  actionAttemptDispatchMigrations,
+  actionAttemptDispatchSequence,
   discoverExecutingActionPlans,
 } from "../src/index";
 
 const databases: Database[] = [];
 const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const migrations: readonly Migration[] = actionAttemptDispatchMigrations;
+const migrations: readonly Migration[] = actionAttemptDispatchSequence;
 
 afterEach(() => {
   for (const database of databases.splice(0)) database.close();
@@ -20,7 +20,7 @@ describe("executing action-plan startup discovery P5-C17", () => {
   test("returns only executing plans with their immutable version and targets", () => {
     const database = new Database(":memory:");
     databases.push(database);
-    applyMigrations(database, migrations);
+    runMigrations(database, migrations);
     for (const [planId, idempotencyIdentity] of [
       ["plan:executing", "caller:executing"],
       ["plan:pending", "caller:pending"],

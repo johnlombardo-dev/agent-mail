@@ -11,7 +11,7 @@ import {
 import { openDatabase } from "../src/database";
 import { localLabelMigration } from "../src/local-label-migration";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { persistRouteDecision } from "../src/local-label-assignment";
 import { routingDecisionMigration } from "../src/routing-decision-migration";
 
@@ -42,7 +42,7 @@ async function openRoutingDatabase() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   return { ...opened, path };
 }

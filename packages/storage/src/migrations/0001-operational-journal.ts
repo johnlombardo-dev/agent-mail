@@ -114,4 +114,4 @@ END;
 } satisfies Migration;
 
 /** A standalone set is convenient for migration tests and later composition. */
-export const operationalJournalMigrations = [operationalJournalMigration] as const;
+export const operationalJournalSequence = [operationalJournalMigration] as const;

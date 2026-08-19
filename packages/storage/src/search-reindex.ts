@@ -27,7 +27,9 @@ const MAX_BATCH_SIZE = 1_000;
 export const MAX_REPRESENTATIVE_TOP_K = 100;
 
 export type SearchReindexBoundary =
-  "batch-committed" | "activation-before-swap" | "activation-after-swap";
+  | "batch-committed"
+  | "activation-before-swap"
+  | "activation-after-swap";
 
 export type SearchReindexOptions = Readonly<{
   /** A stable owner name lets a restart resume the same durable operation. */
@@ -37,13 +39,9 @@ export type SearchReindexOptions = Readonly<{
   /** Exact, ordered MATCH results required before the swap can commit. */
   readonly representativeQueries?: readonly SearchReindexRepresentativeQuery[];
   /** Test seam for proving verification retains only bounded batches. */
-  readonly onVerificationBatch?: (
-    batch: SearchReindexVerificationBatch,
-  ) => void;
+  readonly onVerificationBatch?: (batch: SearchReindexVerificationBatch) => void;
   /** Test seam for proving representative probes use a bounded top-k. */
-  readonly onRepresentativeProbe?: (
-    probe: SearchReindexRepresentativeProbe,
-  ) => void;
+  readonly onRepresentativeProbe?: (probe: SearchReindexRepresentativeProbe) => void;
   /** Test seam; called after a durable batch or during the atomic swap. */
   readonly beforeBoundary?: (boundary: SearchReindexBoundary) => void;
 }>;
@@ -86,11 +84,7 @@ export type SearchReindexErrorCode =
 export class SearchReindexError extends Error {
   readonly code: SearchReindexErrorCode;
 
-  constructor(
-    code: SearchReindexErrorCode,
-    message: string,
-    options?: ErrorOptions,
-  ) {
+  constructor(code: SearchReindexErrorCode, message: string, options?: ErrorOptions) {
     super(message, options);
     this.name = "SearchReindexError";
     this.code = code;
@@ -150,12 +144,13 @@ export function rebuildSearchIndex(
   database: Database,
   options: SearchReindexOptions = {},
 ): SearchReindexResult {
-  const operationName = parseOperationName(
-    options.operationName ?? REINDEX_OPERATION_NAME,
-  );
+  const operationName = parseOperationName(options.operationName ?? REINDEX_OPERATION_NAME);
   const batchSize = parseBatchSize(options.batchSize ?? DEFAULT_BATCH_SIZE);
   validateRepresentativeQueries(options.representativeQueries ?? []);
 
+  // Legacy in-memory callers may not yet have passed through the slot-20
+  // registry. This compatibility path is harmless for canonical databases,
+  // where the schema already exists, and is retained for conversion probes.
   createReindexSchema(database);
   let lease = acquireLease(database, operationName);
   ensureActiveIndex(database);
@@ -175,10 +170,7 @@ export function rebuildSearchIndex(
     options.beforeBoundary?.("batch-committed");
     const nextLease = readLease(database, operationName, true);
     if (nextLease === undefined) {
-      throw new SearchReindexError(
-        "schema",
-        "search reindex lease disappeared during build",
-      );
+      throw new SearchReindexError("schema", "search reindex lease disappeared during build");
     }
     lease = nextLease;
   }
@@ -191,10 +183,7 @@ export function rebuildSearchIndex(
       onRepresentativeProbe: options.onRepresentativeProbe,
     });
   } catch (error: unknown) {
-    if (
-      error instanceof SearchReindexError &&
-      error.code === "verification-failed"
-    ) {
+    if (error instanceof SearchReindexError && error.code === "verification-failed") {
       resetFailedOperation(database, lease);
     }
     throw error;
@@ -222,13 +211,9 @@ function createReindexSchema(database: Database): void {
   try {
     database.exec(SEARCH_REINDEX_SCHEMA_SQL);
   } catch (error: unknown) {
-    throw new SearchReindexError(
-      "schema",
-      "search reindex helper schema is unavailable",
-      {
-        cause: error,
-      },
-    );
+    throw new SearchReindexError("schema", "search reindex helper schema is unavailable", {
+      cause: error,
+    });
   }
 }
 
@@ -244,9 +229,7 @@ function acquireLease(database: Database, operationName: string): Lease {
       return existing;
     }
     const occupied = database
-      .query(
-        "SELECT operation_name FROM search_reindex_lease WHERE lease_id = 1;",
-      )
+      .query("SELECT operation_name FROM search_reindex_lease WHERE lease_id = 1;")
       .get();
     if (occupied !== null) {
       throw new SearchReindexError(
@@ -274,13 +257,9 @@ function acquireLease(database: Database, operationName: string): Lease {
   } catch (error: unknown) {
     if (transactionStarted) rollback(database, error);
     if (error instanceof SearchReindexError) throw error;
-    throw new SearchReindexError(
-      "schema",
-      "search reindex lease could not be acquired",
-      {
-        cause: error,
-      },
-    );
+    throw new SearchReindexError("schema", "search reindex lease could not be acquired", {
+      cause: error,
+    });
   }
 }
 
@@ -299,13 +278,7 @@ function readLease(
   const value = requireRecord(row, "search reindex lease");
   requireExactKeys(
     value,
-    [
-      "operation_name",
-      "replacement_name",
-      "phase",
-      "last_rowid",
-      "processed_rows",
-    ],
+    ["operation_name", "replacement_name", "phase", "last_rowid", "processed_rows"],
     "search reindex lease",
   );
   if (
@@ -315,10 +288,7 @@ function readLease(
     !isNonNegativeInteger(value.last_rowid) ||
     !isNonNegativeInteger(value.processed_rows)
   ) {
-    throw new SearchReindexError(
-      "schema",
-      "search reindex lease has an invalid shape",
-    );
+    throw new SearchReindexError("schema", "search reindex lease has an invalid shape");
   }
   if (requireOwner && value.operation_name !== operationName) {
     throw new SearchReindexError(
@@ -340,21 +310,11 @@ function ensureActiveIndex(database: Database): void {
     .query("SELECT type, sql FROM sqlite_master WHERE name = ?;")
     .get(ACTIVE_INDEX_NAME);
   if (row === null) {
-    throw new SearchReindexError(
-      "schema",
-      "active message_fts index does not exist",
-    );
+    throw new SearchReindexError("schema", "active message_fts index does not exist");
   }
   const value = requireRecord(row, "active search index");
-  if (
-    value.type !== "table" ||
-    typeof value.sql !== "string" ||
-    !value.sql.includes("fts5")
-  ) {
-    throw new SearchReindexError(
-      "schema",
-      "active message_fts object is not an FTS5 table",
-    );
+  if (value.type !== "table" || typeof value.sql !== "string" || !value.sql.includes("fts5")) {
+    throw new SearchReindexError("schema", "active message_fts object is not an FTS5 table");
   }
 }
 
@@ -364,23 +324,12 @@ function ensureReplacementIndex(database: Database, lease: Lease): void {
     .get(lease.replacementName);
   if (row !== null) {
     const value = requireRecord(row, "replacement search index");
-    if (
-      value.type !== "table" ||
-      typeof value.sql !== "string" ||
-      !value.sql.includes("fts5")
-    ) {
-      throw new SearchReindexError(
-        "schema",
-        "replacement search object is not an FTS5 table",
-      );
+    if (value.type !== "table" || typeof value.sql !== "string" || !value.sql.includes("fts5")) {
+      throw new SearchReindexError("schema", "replacement search object is not an FTS5 table");
     }
     return;
   }
-  if (
-    lease.phase !== "building" ||
-    lease.lastRowid !== 0 ||
-    lease.processedRows !== 0
-  ) {
+  if (lease.phase !== "building" || lease.lastRowid !== 0 || lease.processedRows !== 0) {
     throw new SearchReindexError(
       "schema",
       "activating reindex lease has no replacement index to resume",
@@ -396,20 +345,13 @@ function ensureReplacementIndex(database: Database, lease: Lease): void {
   );
 }
 
-function hasReplacementIndex(
-  database: Database,
-  replacementName: string,
-): boolean {
+function hasReplacementIndex(database: Database, replacementName: string): boolean {
   const row: unknown = database
     .query("SELECT type, sql FROM sqlite_master WHERE name = ?;")
     .get(replacementName);
   if (row === null) return false;
   const value = requireRecord(row, "replacement search index");
-  return (
-    value.type === "table" &&
-    typeof value.sql === "string" &&
-    value.sql.includes("fts5")
-  );
+  return value.type === "table" && typeof value.sql === "string" && value.sql.includes("fts5");
 }
 
 function readSourceBatch(
@@ -456,36 +398,23 @@ function readReplacementRowBatch(
 
 function decodeProgressRow(row: ProgressRow): DecodedProgressRow {
   if (!isPositiveInteger(row.source_rowid) || !isSha256(row.source_digest)) {
-    throw new SearchReindexError(
-      "verification-failed",
-      "reindex progress row is invalid",
-    );
+    throw new SearchReindexError("verification-failed", "reindex progress row is invalid");
   }
   return { sourceRowid: row.source_rowid, sourceDigest: row.source_digest };
 }
 
 function readCount(database: Database, table: string): number {
-  const row: unknown = database
-    .query(`SELECT COUNT(*) AS count FROM ${table};`)
-    .get();
+  const row: unknown = database.query(`SELECT COUNT(*) AS count FROM ${table};`).get();
   const value = requireRecord(row, "reindex count");
   if (!isNonNegativeInteger(value.count)) {
-    throw new SearchReindexError(
-      "verification-failed",
-      "reindex count is invalid",
-    );
+    throw new SearchReindexError("verification-failed", "reindex count is invalid");
   }
   return value.count;
 }
 
-function commitBatch(
-  database: Database,
-  lease: Lease,
-  rows: readonly VerifiedSourceRow[],
-): void {
+function commitBatch(database: Database, lease: Lease, rows: readonly VerifiedSourceRow[]): void {
   const last = rows.at(-1);
-  if (last === undefined)
-    throw new SearchReindexError("schema", "empty reindex batch");
+  if (last === undefined) throw new SearchReindexError("schema", "empty reindex batch");
   const index = quoteIdentifier(lease.replacementName);
   let transactionStarted = false;
   try {
@@ -521,13 +450,9 @@ function commitBatch(
   } catch (error: unknown) {
     if (transactionStarted) rollback(database, error);
     if (error instanceof SearchReindexError) throw error;
-    throw new SearchReindexError(
-      "schema",
-      "replacement index batch could not be committed",
-      {
-        cause: error,
-      },
-    );
+    throw new SearchReindexError("schema", "replacement index batch could not be committed", {
+      cause: error,
+    });
   }
 }
 
@@ -548,13 +473,9 @@ function markActivating(database: Database, lease: Lease): Lease {
   } catch (error: unknown) {
     if (transactionStarted) rollback(database, error);
     if (error instanceof SearchReindexError) throw error;
-    throw new SearchReindexError(
-      "schema",
-      "search reindex could not enter activation",
-      {
-        cause: error,
-      },
-    );
+    throw new SearchReindexError("schema", "search reindex could not enter activation", {
+      cause: error,
+    });
   }
 }
 
@@ -571,25 +492,16 @@ function verifyReplacement(
   batchSize: number,
   options: Readonly<{
     readonly representativeQueries: readonly SearchReindexRepresentativeQuery[];
-    readonly onVerificationBatch?: (
-      batch: SearchReindexVerificationBatch,
-    ) => void;
-    readonly onRepresentativeProbe?: (
-      probe: SearchReindexRepresentativeProbe,
-    ) => void;
+    readonly onVerificationBatch?: (batch: SearchReindexVerificationBatch) => void;
+    readonly onRepresentativeProbe?: (probe: SearchReindexRepresentativeProbe) => void;
   }>,
 ): Verification {
   validateRepresentativeQueries(options.representativeQueries);
   const sourceRowCount = readCount(database, "indexed_messages");
   const index = quoteIdentifier(lease.replacementName);
-  const replacementDocsize = quoteIdentifier(
-    `${lease.replacementName}_docsize`,
-  );
+  const replacementDocsize = quoteIdentifier(`${lease.replacementName}_docsize`);
   const replacementRowCount = readCount(database, replacementDocsize);
-  if (
-    sourceRowCount !== replacementRowCount ||
-    sourceRowCount !== lease.processedRows
-  ) {
+  if (sourceRowCount !== replacementRowCount || sourceRowCount !== lease.processedRows) {
     throw new SearchReindexError(
       "verification-failed",
       "replacement FTS row count does not match the source or durable checkpoint",
@@ -622,16 +534,8 @@ function verifyReplacement(
       progressRows: progressRows.length,
       replacementRows: replacementRows.length,
     });
-    if (
-      sourceRows.length === 0 &&
-      progressRows.length === 0 &&
-      replacementRows.length === 0
-    )
-      break;
-    if (
-      sourceRows.length !== progressRows.length ||
-      sourceRows.length !== replacementRows.length
-    ) {
+    if (sourceRows.length === 0 && progressRows.length === 0 && replacementRows.length === 0) break;
+    if (sourceRows.length !== progressRows.length || sourceRows.length !== replacementRows.length) {
       throw new SearchReindexError(
         "verification-failed",
         "replacement keyset batches do not have matching identities",
@@ -647,10 +551,7 @@ function verifyReplacement(
         );
       }
       const progress = decodeProgressRow(progressRow);
-      if (
-        sourceRow.rowid !== progress.sourceRowid ||
-        sourceRow.rowid !== replacementRow.id
-      ) {
+      if (sourceRow.rowid !== progress.sourceRowid || sourceRow.rowid !== replacementRow.id) {
         throw new SearchReindexError(
           "verification-failed",
           "replacement identities do not match the source",
@@ -694,17 +595,11 @@ function verifyReplacement(
   const replacementChecksum = replacementAccumulator.finish();
 
   try {
-    database
-      .query(`INSERT INTO ${index}(${index}) VALUES ('integrity-check');`)
-      .run();
+    database.query(`INSERT INTO ${index}(${index}) VALUES ('integrity-check');`).run();
   } catch (error: unknown) {
-    throw new SearchReindexError(
-      "verification-failed",
-      "replacement FTS integrity check failed",
-      {
-        cause: error,
-      },
-    );
+    throw new SearchReindexError("verification-failed", "replacement FTS integrity check failed", {
+      cause: error,
+    });
   }
   for (const representative of options.representativeQueries) {
     const requestedLimit = Math.min(
@@ -746,13 +641,9 @@ function verifyReplacement(
   };
 }
 
-function sameNumbers(
-  actual: readonly number[],
-  expected: readonly number[],
-): boolean {
+function sameNumbers(actual: readonly number[], expected: readonly number[]): boolean {
   return (
-    actual.length === expected.length &&
-    actual.every((value, index) => value === expected[index])
+    actual.length === expected.length && actual.every((value, index) => value === expected[index])
   );
 }
 
@@ -780,22 +671,16 @@ function activateReplacement(
       .query("DELETE FROM search_reindex_progress WHERE replacement_name = ?;")
       .run(lease.replacementName);
     database
-      .query(
-        "DELETE FROM search_reindex_lease WHERE lease_id = 1 AND operation_name = ?;",
-      )
+      .query("DELETE FROM search_reindex_lease WHERE lease_id = 1 AND operation_name = ?;")
       .run(lease.operationName);
     database.exec("COMMIT;");
     transactionStarted = false;
   } catch (error: unknown) {
     if (transactionStarted) rollback(database, error);
     if (error instanceof SearchReindexError) throw error;
-    throw new SearchReindexError(
-      "activation-failed",
-      "replacement FTS activation failed",
-      {
-        cause: error,
-      },
-    );
+    throw new SearchReindexError("activation-failed", "replacement FTS activation failed", {
+      cause: error,
+    });
   }
 }
 
@@ -804,9 +689,7 @@ type TriggerDefinition = Readonly<{
   readonly sql: string;
 }>;
 
-function readFtsTriggerDefinitions(
-  database: Database,
-): readonly TriggerDefinition[] {
+function readFtsTriggerDefinitions(database: Database): readonly TriggerDefinition[] {
   const rows = database
     .query<{ name: unknown; sql: unknown }, [string]>(
       "SELECT name, sql FROM sqlite_master " +
@@ -815,10 +698,7 @@ function readFtsTriggerDefinitions(
     .all(ACTIVE_INDEX_NAME);
   return rows.map((row) => {
     if (typeof row.name !== "string" || typeof row.sql !== "string") {
-      throw new SearchReindexError(
-        "schema",
-        "FTS maintenance trigger definition is invalid",
-      );
+      throw new SearchReindexError("schema", "FTS maintenance trigger definition is invalid");
     }
     return { name: row.name, sql: row.sql };
   });
@@ -839,9 +719,7 @@ function restoreFtsTriggerTargets(
   }
 }
 
-function validateRepresentativeQueries(
-  queries: readonly SearchReindexRepresentativeQuery[],
-): void {
+function validateRepresentativeQueries(queries: readonly SearchReindexRepresentativeQuery[]): void {
   if (queries.length === 0) {
     throw new SearchReindexError(
       "verification-failed",
@@ -857,20 +735,14 @@ function validateRepresentativeQueries(
       query.expectedRowids.length > MAX_REPRESENTATIVE_TOP_K ||
       query.expectedRowids.some((rowid) => !isPositiveInteger(rowid))
     ) {
-      throw new SearchReindexError(
-        "invalid-input",
-        "representative search query is invalid",
-      );
+      throw new SearchReindexError("invalid-input", "representative search query is invalid");
     }
   }
 }
 
 function resetMissingReplacement(database: Database, lease: Lease): void {
   if (lease.replacementName === ACTIVE_INDEX_NAME) {
-    throw new SearchReindexError(
-      "schema",
-      "reindex lease points at the active FTS index",
-    );
+    throw new SearchReindexError("schema", "reindex lease points at the active FTS index");
   }
   let transactionStarted = false;
   try {
@@ -880,45 +752,32 @@ function resetMissingReplacement(database: Database, lease: Lease): void {
       .query("DELETE FROM search_reindex_progress WHERE replacement_name = ?;")
       .run(lease.replacementName);
     database
-      .query(
-        "DELETE FROM search_reindex_lease WHERE lease_id = 1 AND operation_name = ?;",
-      )
+      .query("DELETE FROM search_reindex_lease WHERE lease_id = 1 AND operation_name = ?;")
       .run(lease.operationName);
     database.exec("COMMIT;");
     transactionStarted = false;
   } catch (error: unknown) {
     if (transactionStarted) rollback(database, error);
-    throw new SearchReindexError(
-      "schema",
-      "stale replacement reindex state could not be cleaned",
-      {
-        cause: error,
-      },
-    );
+    throw new SearchReindexError("schema", "stale replacement reindex state could not be cleaned", {
+      cause: error,
+    });
   }
 }
 
 function resetFailedOperation(database: Database, lease: Lease): void {
   if (lease.replacementName === ACTIVE_INDEX_NAME) {
-    throw new SearchReindexError(
-      "schema",
-      "reindex lease points at the active FTS index",
-    );
+    throw new SearchReindexError("schema", "reindex lease points at the active FTS index");
   }
   let transactionStarted = false;
   try {
     database.exec("BEGIN IMMEDIATE;");
     transactionStarted = true;
-    database.exec(
-      `DROP TABLE IF EXISTS ${quoteIdentifier(lease.replacementName)};`,
-    );
+    database.exec(`DROP TABLE IF EXISTS ${quoteIdentifier(lease.replacementName)};`);
     database
       .query("DELETE FROM search_reindex_progress WHERE replacement_name = ?;")
       .run(lease.replacementName);
     database
-      .query(
-        "DELETE FROM search_reindex_lease WHERE lease_id = 1 AND operation_name = ?;",
-      )
+      .query("DELETE FROM search_reindex_lease WHERE lease_id = 1 AND operation_name = ?;")
       .run(lease.operationName);
     database.exec("COMMIT;");
     transactionStarted = false;
@@ -944,10 +803,7 @@ function decodeSourceRow(row: SourceRow): VerifiedSourceRow {
     typeof row.body_html !== "string" ||
     typeof row.attachment_names !== "string"
   ) {
-    throw new SearchReindexError(
-      "verification-failed",
-      "indexed message source row is invalid",
-    );
+    throw new SearchReindexError("verification-failed", "indexed message source row is invalid");
   }
   const fields = [
     row.rowid,
@@ -966,9 +822,7 @@ function decodeSourceRow(row: SourceRow): VerifiedSourceRow {
     bodyPlain: row.body_plain,
     bodyHtml: row.body_html,
     attachmentNames: row.attachment_names,
-    digest: createHash("sha256")
-      .update(JSON.stringify(fields), "utf8")
-      .digest("hex"),
+    digest: createHash("sha256").update(JSON.stringify(fields), "utf8").digest("hex"),
   };
 }
 
@@ -988,14 +842,8 @@ function replacementNameFor(operationName: string): string {
 }
 
 function parseOperationName(value: unknown): string {
-  if (
-    typeof value !== "string" ||
-    !/^[A-Za-z][A-Za-z0-9._:-]{0,127}$/u.test(value)
-  ) {
-    throw new SearchReindexError(
-      "invalid-input",
-      "reindex operation name is invalid",
-    );
+  if (typeof value !== "string" || !/^[A-Za-z][A-Za-z0-9._:-]{0,127}$/u.test(value)) {
+    throw new SearchReindexError("invalid-input", "reindex operation name is invalid");
   }
   return value;
 }
@@ -1037,21 +885,11 @@ function isRecord(value: unknown): value is RecordValue {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function requireExactKeys(
-  value: RecordValue,
-  keys: readonly string[],
-  description: string,
-): void {
+function requireExactKeys(value: RecordValue, keys: readonly string[], description: string): void {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
-  if (
-    actual.length !== expected.length ||
-    actual.some((key, index) => key !== expected[index])
-  ) {
-    throw new SearchReindexError(
-      "schema",
-      `${description} has unexpected columns`,
-    );
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new SearchReindexError("schema", `${description} has unexpected columns`);
   }
 }
 
@@ -1059,13 +897,9 @@ function rollback(database: Database, error: unknown): never {
   try {
     database.exec("ROLLBACK;");
   } catch (rollbackError: unknown) {
-    throw new SearchReindexError(
-      "schema",
-      "search reindex transaction could not roll back",
-      {
-        cause: new AggregateError([error, rollbackError]),
-      },
-    );
+    throw new SearchReindexError("schema", "search reindex transaction could not roll back", {
+      cause: new AggregateError([error, rollbackError]),
+    });
   }
   throw error;
 }

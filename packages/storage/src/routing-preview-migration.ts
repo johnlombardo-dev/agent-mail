@@ -93,4 +93,4 @@ END;
 } satisfies Migration;
 
 /** A standalone set is convenient for focused schema tests and composition. */
-export const routingPreviewMigrations = [routingPreviewMigration] as const;
+export const routingPreviewSequence = [routingPreviewMigration] as const;

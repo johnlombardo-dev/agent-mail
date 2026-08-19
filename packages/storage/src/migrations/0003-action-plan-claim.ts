@@ -1,5 +1,5 @@
 import type { Migration } from "../migration-runner";
-import { actionPlanProposalMigrations } from "./0002-action-plan-proposal";
+import { actionPlanProposalSequence } from "./0002-action-plan-proposal";
 
 /** Adds the optimistic version used by the atomic claim transaction. */
 export const actionPlanClaimMigration = {
@@ -12,7 +12,7 @@ ALTER TABLE action_plans ADD COLUMN version INTEGER NOT NULL DEFAULT 1 CHECK (
 `,
 } satisfies Migration;
 
-export const actionPlanClaimMigrations = [
-  ...actionPlanProposalMigrations,
+export const actionPlanClaimSequence = [
+  ...actionPlanProposalSequence,
   actionPlanClaimMigration,
 ] as const;

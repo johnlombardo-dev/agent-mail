@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import {
-  actionAttemptStartMigrations,
+  actionAttemptStartSequence,
   readActionPlanAttempt,
   startActionPlanAttempt,
 } from "../src/action-plan-attempt";
@@ -25,7 +25,7 @@ afterEach(() => {
 function openActionDatabase(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, actionAttemptStartMigrations);
+  runMigrations(database, actionAttemptStartSequence);
   return database;
 }
 

@@ -14,7 +14,7 @@ import {
 import type { RawMessageDownloadRequest, RawMessageDownloadResult } from "../../imap/src/raw-download";
 import type { MetadataBatchItem } from "../../imap/src/metadata-batch";
 import { stageBlob } from "../../storage/src/blob-stage";
-import { applyMigrations } from "../../storage/src/migration-runner";
+import { runMigrations } from "../../storage/src/migration-runner";
 import { openDatabase } from "../../storage/src/database";
 import { createSqlitePromotionAdapter } from "../../storage/src/promotion-adapter";
 import { messageCatalogMigration } from "../../storage/src/migrations/0001-message-catalog";
@@ -75,7 +75,7 @@ async function setup() {
     })(),
   });
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db
     .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
     .run(accountId, mailboxId, 7);

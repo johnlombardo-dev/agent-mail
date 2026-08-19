@@ -21,7 +21,7 @@ import {
 } from "../src/routing-handlers";
 import { localLabelMigration } from "../../storage/src/local-label-migration";
 import { messageCatalogMigration } from "../../storage/src/migrations/0001-message-catalog";
-import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
+import { runMigrations, type Migration } from "../../storage/src/migration-runner";
 import { assignLocalLabel } from "../../storage/src/local-label-assignment";
 import {
   consumeRoutingPreview,
@@ -119,7 +119,7 @@ const sqliteDatabases: Database[] = [];
 
 function openRoutingSqlite(path = ":memory:", seedMessage = true): Database {
   const database = new Database(path, { strict: true });
-  applyMigrations(database, sqliteMigrations);
+  runMigrations(database, sqliteMigrations);
   database.exec("PRAGMA foreign_keys = ON;");
   if (seedMessage) database.query("INSERT INTO messages (message_id) VALUES (?);").run(sqliteMessageId);
   sqliteDatabases.push(database);

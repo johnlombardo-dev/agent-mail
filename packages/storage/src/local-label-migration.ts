@@ -108,4 +108,4 @@ END;
 } satisfies Migration;
 
 /** A standalone set supports focused schema tests and later composition. */
-export const localLabelMigrations = [localLabelMigration] as const;
+export const localLabelSequence = [localLabelMigration] as const;

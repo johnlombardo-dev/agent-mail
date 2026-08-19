@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations, type Migration } from "../src/migration-runner";
-import { actionAttemptStartMigrations, startActionPlanAttempt } from "../src/action-plan-attempt";
+import { runMigrations, type Migration } from "../src/migration-runner";
+import { actionAttemptStartSequence, startActionPlanAttempt } from "../src/action-plan-attempt";
 import { claimPendingActionPlan } from "../src/action-plan-claim";
 import { createPendingActionPlan } from "../src/action-plan-repository";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
@@ -26,7 +26,7 @@ const target = {
 } as const;
 
 const migrations: readonly Migration[] = [
-  ...actionAttemptStartMigrations,
+  ...actionAttemptStartSequence,
   { ...operationalJournalMigration, version: 5 },
 ];
 
@@ -37,7 +37,7 @@ afterEach(() => {
 function openDatabaseFor(action: "markSeen" | "moveToArchive") {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: "plan:one",
     action: { kind: action },

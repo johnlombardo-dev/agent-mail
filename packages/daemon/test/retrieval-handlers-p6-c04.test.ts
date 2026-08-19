@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { parseMessageId, parseUtcInstant } from "@agent-mail/core";
 import { createSearchCursor, createSearchCursorIntegrityCodec } from "../../storage/src/search-cursor";
-import { applyMigrations, type Migration } from "../../storage/src/migration-runner";
+import { runMigrations, type Migration } from "../../storage/src/migration-runner";
 import { messageCatalogMigration } from "../../storage/src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../../storage/src/migrations/0002-structured-content";
 import { externalContentSearchMigration } from "../../storage/src/migrations/0003-external-content-search";
@@ -36,7 +36,7 @@ const migrations: readonly Migration[] = [
 
 function database(): Database {
   const db = new Database(":memory:", { strict: true });
-  applyMigrations(db, migrations);
+  runMigrations(db, migrations);
   db.exec("PRAGMA foreign_keys = ON;");
   databases.push(db);
   return db;

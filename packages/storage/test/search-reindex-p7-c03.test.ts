@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { externalContentSearchMigration } from "../src/migrations/0003-external-content-search";
@@ -30,7 +30,7 @@ function fixture(): Database {
 }
 
 function seedFixture(database: Database): void {
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   database
     .query("INSERT INTO messages (message_id) VALUES (?), (?);")
     .run(firstMessage, secondMessage);

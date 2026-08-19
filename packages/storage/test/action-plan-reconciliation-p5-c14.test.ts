@@ -17,9 +17,9 @@ import {
   IMAP_RECONCILIATION_LOCK_OPTIONS,
   type ImapFlowUncertainReconciliationClient,
 } from "../../imap/src/uncertain-reconciliation";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import {
-  actionAttemptStartMigrations,
+  actionAttemptStartSequence,
   readActionPlanAttempt,
   startActionPlanAttempt,
 } from "../src/action-plan-attempt";
@@ -31,7 +31,7 @@ import {
   readActionPlanResult,
 } from "../src/action-plan-result";
 import {
-  actionAttemptDispatchMigrations,
+  actionAttemptDispatchSequence,
   markActionPlanAttemptDispatched,
   recoverUnresolvedActionPlanAttempt,
 } from "../src/action-plan-recovery";
@@ -119,7 +119,7 @@ const startedAt = "2026-08-18T01:00:02.000Z";
 const resultAt = "2026-08-18T01:00:05.000Z";
 const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const migrations: readonly Migration[] = [
-  ...actionAttemptDispatchMigrations,
+  ...actionAttemptDispatchSequence,
   { ...operationalJournalMigration, version: 6 },
   actionResultReconciliationMigration,
 ];
@@ -133,7 +133,7 @@ function openDatabase(
 ): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: "plan:one",
     action: { kind: action },

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { openDatabase } from "../src/database";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { placementObservationMigration } from "../src/migrations/0003-placement-observation";
@@ -31,9 +31,9 @@ describe("P4-C17 search placement index migration", () => {
     const root = await mkdtemp(join(tmpdir(), "agent-mail-search-placement-index-p4-c17-"));
     await chmod(root, 0o700);
     roots.push(root);
-    const opened = await openDatabase(join(root, "archive.sqlite"), { supportedSchemaVersion: 6 });
-    applyMigrations(opened, migrations);
-    applyMigrations(opened, migrations);
+    const opened = await openDatabase(join(root, "archive.sqlite"));
+    runMigrations(opened, migrations);
+    runMigrations(opened, migrations);
 
     const index = opened.db
       .query<{ readonly name: string; readonly sql: string }, []>(

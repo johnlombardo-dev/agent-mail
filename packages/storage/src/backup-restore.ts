@@ -21,6 +21,7 @@ import {
   type BackupManifestArtifact,
   type BackupManifestArtifactRole,
 } from "./backup-manifest";
+import { verifyCanonicalAdmissionIfPresent } from "./migration-history-conversion";
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -486,6 +487,7 @@ async function verifySQLite(
         databaseEntry.path,
       );
     }
+    verifyCanonicalAdmissionIfPresent(database);
   } catch (error: unknown) {
     if (error instanceof BackupRestoreError) throw error;
     throw new BackupRestoreError(

@@ -7,8 +7,8 @@ import {
   DATABASE_BUSY_TIMEOUT_MS,
   DatabaseOpenError,
   openDatabase,
-  SUPPORTED_DATABASE_SCHEMA_VERSION,
 } from "../src/database";
+import { CANONICAL_DATABASE_SCHEMA_VERSION } from "../src/migration-registry";
 
 const temporaryRoots: string[] = [];
 
@@ -67,9 +67,7 @@ describe("SQLite database boundary", () => {
     });
     expect(opened.db.query("PRAGMA secure_delete;").get()).toEqual({ secure_delete: 1 });
     expect(opened.db.query("PRAGMA trusted_schema;").get()).toEqual({ trusted_schema: 0 });
-    // Opening is deliberately migration-free; a new file remains at SQLite's
-    // empty schema version until the application migration registry runs.
-    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 0 });
+    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: CANONICAL_DATABASE_SCHEMA_VERSION });
     expect(opened.db.query("PRAGMA integrity_check;").get()).toEqual({ integrity_check: "ok" });
 
     // Real WAL activity creates -wal and -shm companions. Close owns the
@@ -138,7 +136,7 @@ describe("SQLite database boundary", () => {
   test("rejects a database schema newer than this adapter supports", async () => {
     const { path } = await temporaryDatabasePath();
     const seed = new Database(path);
-    seed.exec(`PRAGMA user_version = ${SUPPORTED_DATABASE_SCHEMA_VERSION + 1};`);
+    seed.exec(`PRAGMA user_version = ${CANONICAL_DATABASE_SCHEMA_VERSION + 1};`);
     seed.close();
     await chmod(path, 0o600);
 
@@ -148,44 +146,9 @@ describe("SQLite database boundary", () => {
     // the file immediately without waiting for a lock or leaked descriptor.
     const probe = new Database(path, { strict: true });
     expect(probe.query("PRAGMA user_version;").get()).toEqual({
-      user_version: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
+      user_version: CANONICAL_DATABASE_SCHEMA_VERSION + 1,
     });
     probe.close();
-  });
-
-  test("opens a version within a caller-declared schema ceiling", async () => {
-    const { path } = await temporaryDatabasePath();
-    const seed = new Database(path);
-    seed.exec(`PRAGMA user_version = ${SUPPORTED_DATABASE_SCHEMA_VERSION + 1};`);
-    seed.close();
-    await chmod(path, 0o600);
-
-    const opened = await openDatabase(path, {
-      supportedSchemaVersion: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
-    });
-    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({
-      user_version: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
-    });
-    expect(opened.db.query("PRAGMA foreign_keys;").get()).toEqual({ foreign_keys: 1 });
-    await opened.close();
-  });
-
-  test("rejects a version above a caller-declared schema ceiling", async () => {
-    const { path } = await temporaryDatabasePath();
-    const seed = new Database(path);
-    seed.exec(`PRAGMA user_version = ${SUPPORTED_DATABASE_SCHEMA_VERSION + 2};`);
-    seed.close();
-    await chmod(path, 0o600);
-
-    await expectOpenError(path, "unsupported-schema", {
-      supportedSchemaVersion: SUPPORTED_DATABASE_SCHEMA_VERSION + 1,
-    });
-  });
-
-  test("rejects an invalid schema ceiling before opening", async () => {
-    const { path } = await temporaryDatabasePath();
-    await expectOpenError(path, "invalid-schema-ceiling", { supportedSchemaVersion: -1 });
-    await expectOpenError(path, "invalid-schema-ceiling", { supportedSchemaVersion: 1.5 });
   });
 
   test("enables foreign keys even when an adjacent connection left them off", async () => {

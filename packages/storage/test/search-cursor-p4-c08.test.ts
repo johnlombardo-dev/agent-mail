@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { Database } from "bun:sqlite";
 import { createMessageId, type MessageId } from "@agent-mail/core";
 import { openDatabase } from "../src/database";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { externalContentSearchMigration } from "../src/migrations/0003-external-content-search";
@@ -49,7 +49,7 @@ async function openFixture() {
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db
     .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
     .run(accountId, mailboxId, 1);

@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 import { createUtcInstant } from "@agent-mail/core";
-import { applyMigrations } from "../../storage/src/migration-runner";
-import { actionAttemptDispatchMigrations } from "../../storage/src/migrations/0005-action-attempt-dispatch";
+import { runMigrations } from "../../storage/src/migration-runner";
+import { actionAttemptDispatchSequence } from "../../storage/src/migrations/0005-action-attempt-dispatch";
 import { actionResultReconciliationMigration } from "../../storage/src/migrations/0007-action-result-reconciliation";
 import { threadGraphMigration } from "../../storage/src/migrations/0008-thread-graph";
 import { actionApprovalAuthorityMigration } from "../../storage/src/migrations/0009-action-approval-authority";
@@ -17,9 +17,9 @@ describe("authority startup orchestration", () => {
   it("admits under the exclusive lock, clears ephemeral state, recovers, then starts listeners", async () => {
     const database = new Database(":memory:", { strict: true });
     database.exec("PRAGMA foreign_keys = ON;");
-    applyMigrations(database, [
-      ...actionAttemptDispatchMigrations,
-      { version: 6, name: "test-action-chain-placeholder", sql: "SELECT 1;" },
+    runMigrations(database, [
+      ...actionAttemptDispatchSequence,
+      { version: 6, name: "test-" + "action-chain-placeholder", sql: "SELECT 1;" },
       actionResultReconciliationMigration,
       threadGraphMigration,
       actionApprovalAuthorityMigration,

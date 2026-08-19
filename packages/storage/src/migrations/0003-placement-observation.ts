@@ -108,4 +108,4 @@ END;
 } satisfies Migration;
 
 /** The extension alone is retained for an application registry. */
-export const placementObservationExtensionMigrations = [placementObservationMigration] as const;
+export const placementObservationExtensionSequence = [placementObservationMigration] as const;

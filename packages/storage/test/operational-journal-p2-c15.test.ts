@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations } from "../src/migration-runner";
-import { operationalJournalMigrations } from "../src/migrations/0001-operational-journal";
+import { runMigrations } from "../src/migration-runner";
+import { operationalJournalSequence } from "../src/migrations/0001-operational-journal";
 
 const databases: Database[] = [];
 
@@ -12,7 +12,7 @@ afterEach(() => {
 function openJournal(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, operationalJournalMigrations);
+  runMigrations(database, operationalJournalSequence);
   return database;
 }
 

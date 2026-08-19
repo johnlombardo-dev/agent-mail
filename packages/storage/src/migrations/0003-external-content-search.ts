@@ -124,4 +124,4 @@ export const externalContentSearchMigration = {
 } satisfies Migration;
 
 /** A dependency-complete set is convenient for focused FTS schema tests. */
-export const externalContentSearchMigrations = [externalContentSearchMigration] as const;
+export const externalContentSearchSequence = [externalContentSearchMigration] as const;

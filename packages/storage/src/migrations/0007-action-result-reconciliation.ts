@@ -30,4 +30,6 @@ END;
 `,
 } satisfies Migration;
 
-export const actionResultReconciliationMigrations = [actionResultReconciliationMigration] as const;
+export const actionResultReconciliationSequence = [actionResultReconciliationMigration] as const;
+
+export { actionResultReconciliationSequence as actionResultReconciliationMigrations };

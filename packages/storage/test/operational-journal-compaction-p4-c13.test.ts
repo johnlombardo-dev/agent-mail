@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import { operationalJournalCompactionMigration } from "../src/migrations/0001-operational-journal-compaction";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { localLabelMigration } from "../src/local-label-migration";
 import { assignLocalLabel } from "../src/local-label-assignment";
 import { compactOperationalJournal } from "../src/operational-journal-compaction";
@@ -28,7 +28,7 @@ function openJournal(withLocalLabels = false): Database {
   const migrations = (withLocalLabels ? [...definitions, localLabelMigration] : definitions).map(
     (migration, index) => ({ ...migration, version: index + 1 }),
   );
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   database.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   return database;
 }
@@ -108,7 +108,7 @@ describe("operational journal compaction", () => {
   test("fails closed when the standalone compaction migration is absent", () => {
     const database = new Database(":memory:");
     databases.push(database);
-    applyMigrations(database, [operationalJournalMigration]);
+    runMigrations(database, [operationalJournalMigration]);
     insertEvent(database, { id: "event:old", occurredAt: "2025-01-01T00:00:00.000Z" });
 
     expect(() =>

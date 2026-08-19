@@ -13,7 +13,7 @@ import {
 } from "@agent-mail/core";
 import { Database } from "bun:sqlite";
 import type { Database as DatabaseType } from "bun:sqlite";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
@@ -26,7 +26,7 @@ import { compileStructuredFilters } from "../src/structured-filter-compiler";
 import { promoteCanonicalMessage, type PromotionUnit } from "../src/canonical-promotion";
 import { messageBlobReferencesMigration } from "../src/migrations/0003-message-blob-references";
 import { updateMessageSearchProjection } from "../src/search-projection";
-import { composeThreadGraphMigrations } from "../src/thread-migration";
+import { threadGraphMigration } from "../src/migrations/0008-thread-graph";
 import { ThreadGraphRepository } from "../src/thread-graph-repository";
 import { normalizeThreadFacts } from "../src/thread-normalizer";
 import {
@@ -46,14 +46,15 @@ const messageIds = {
   canonical: createMessageId(`message:${"e".repeat(64)}`),
 } as const;
 
-const migrations: readonly Migration[] = composeThreadGraphMigrations([
+const migrations: readonly Migration[] = [
   messageCatalogMigration,
   structuredContentMigration,
   { ...messageBlobReferencesMigration, version: 3 },
   { ...externalContentSearchMigration, version: 4 },
   { ...placementObservationMigration, version: 5 },
   { ...operationalJournalMigration, version: 6 },
-]);
+  { ...threadGraphMigration, version: 7 },
+];
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
@@ -64,7 +65,7 @@ async function openFixture() {
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db
     .query("INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);")
     .run(accountId, mailboxId, 1);
@@ -354,7 +355,7 @@ describe("final-page search summary hydration P4-C07", () => {
 
   test("requires the composed thread graph and never fabricates a thread handle", async () => {
     const database = new Database(":memory:");
-    applyMigrations(database, migrations.slice(0, -1));
+    runMigrations(database, migrations.slice(0, -1));
     expect(searchSummaryHydrationSql(1)).not.toContain("substr(message_id");
     expect(() =>
       hydrateSearchSummaryPage(database, {

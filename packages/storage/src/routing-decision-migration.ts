@@ -74,8 +74,8 @@ END;
 } satisfies Migration;
 
 /** A standalone set supports focused schema tests and later composition. */
-export const routingDecisionMigrations = [routingDecisionMigration] as const;
+export const routingDecisionSequence = [routingDecisionMigration] as const;
 
 /** Descriptive aliases for callers that name the migration by its invariant. */
 export const routingDecisionUniquenessMigration = routingDecisionMigration;
-export const routingDecisionUniquenessMigrations = routingDecisionMigrations;
+export const routingDecisionUniquenessSequence = routingDecisionSequence;

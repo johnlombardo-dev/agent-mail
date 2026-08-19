@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { createAccountId, createBlobId, createMailboxId, createMessageId, createUtcInstant } from "@agent-mail/core";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
 import { identityOnlyContentMigration } from "../src/migrations/0002-identity-only-content";
@@ -103,7 +103,7 @@ const promotionMigrations: readonly Migration[] = [
 function openDatabase(kind: "standard" | "identity" | "promotion" = "standard", path = ":memory:"): Database {
   const database = new Database(path);
   database.exec("PRAGMA foreign_keys = ON;");
-  applyMigrations(
+  runMigrations(
     database,
     kind === "identity" ? identityMigrations : kind === "promotion" ? promotionMigrations : standardMigrations,
   );

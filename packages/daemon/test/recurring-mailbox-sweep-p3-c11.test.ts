@@ -14,7 +14,7 @@ import {
   type UtcInstant,
 } from "@agent-mail/core";
 import { createMetadataBatchAdapter, type MetadataBatchItem } from "../../imap/src/metadata-batch";
-import { applyMigrations } from "../../storage/src/migration-runner";
+import { runMigrations } from "../../storage/src/migration-runner";
 import { openDatabase } from "../../storage/src/database";
 import {
   createMailboxCheckpointRepository,
@@ -95,7 +95,7 @@ async function setup(): Promise<{
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, [
+  runMigrations(opened, [
     { ...messageCatalogMigration, version: 1 },
     { ...mailboxCheckpointMigration, version: 2 },
     { ...identityOnlyContentMigration, version: 3 },

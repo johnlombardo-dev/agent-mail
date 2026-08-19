@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createMessageId, type MessageId } from "@agent-mail/core";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
@@ -27,7 +27,7 @@ async function openSearchDatabase() {
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, [
+  runMigrations(opened, [
     messageCatalogMigration,
     structuredContentMigration,
     externalContentSearchMigration,

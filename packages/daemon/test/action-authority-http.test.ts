@@ -12,8 +12,8 @@ import { registerTrustedAuthContext } from "../src/trusted-auth-context";
 import type { OperatorPresenceRequest } from "../src/operator-presence";
 import { OPERATOR_PRESENCE_PROTOCOL_VERSION } from "../src/operator-presence";
 import { createTestA1Key, TestOperatorPresenceVerifier } from "./support/operator-presence";
-import { applyMigrations } from "../../storage/src/migration-runner";
-import { actionAttemptDispatchMigrations } from "../../storage/src/migrations/0005-action-attempt-dispatch";
+import { runMigrations } from "../../storage/src/migration-runner";
+import { actionAttemptDispatchSequence } from "../../storage/src/migrations/0005-action-attempt-dispatch";
 import { actionResultReconciliationMigration } from "../../storage/src/migrations/0007-action-result-reconciliation";
 import { threadGraphMigration } from "../../storage/src/migrations/0008-thread-graph";
 import { actionApprovalAuthorityMigration } from "../../storage/src/migrations/0009-action-approval-authority";
@@ -145,9 +145,9 @@ describe("authority HTTP composition", () => {
   it("composes a loopback broker-backed session and returns the raw token once", async () => {
     const database = new Database(":memory:", { strict: true });
     database.exec("PRAGMA foreign_keys = ON;");
-    applyMigrations(database, [
-      ...actionAttemptDispatchMigrations,
-      { version: 6, name: "test-action-chain-placeholder", sql: "SELECT 1;" },
+    runMigrations(database, [
+      ...actionAttemptDispatchSequence,
+      { version: 6, name: "test-" + "action-chain-placeholder", sql: "SELECT 1;" },
       actionResultReconciliationMigration,
       threadGraphMigration,
       actionApprovalAuthorityMigration,

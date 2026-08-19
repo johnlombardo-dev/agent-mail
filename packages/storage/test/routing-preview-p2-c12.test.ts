@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations } from "../src/migration-runner";
-import { routingPreviewMigrations } from "../src/routing-preview-migration";
+import { runMigrations } from "../src/migration-runner";
+import { routingPreviewSequence } from "../src/routing-preview-migration";
 import {
   createRoutingPreview,
   routingPreviewDigest,
@@ -17,7 +17,7 @@ afterEach(() => {
 function openPreviewDatabase(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, routingPreviewMigrations);
+  runMigrations(database, routingPreviewSequence);
   // These adjacent tables model the no-effect assertion without granting the
   // preview operation any access to them.
   database.exec(

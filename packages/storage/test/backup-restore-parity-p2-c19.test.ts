@@ -17,7 +17,7 @@ import {
   serializeRemoteUid,
   type MessageId,
 } from "@agent-mail/core";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { openDatabase, type OpenDatabase } from "../src/database";
 import { writeBackup } from "../src/backup-writer";
 import { restoreBackup } from "../src/backup-restore";
@@ -224,7 +224,7 @@ async function createFixture(): Promise<Fixture> {
 
   const databasePath = join(dataDirectory, "archive.sqlite");
   const opened = await openDatabase(databasePath);
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db
     .query(
       "INSERT INTO mailbox_checkpoints (account_id, mailbox_id, uid_validity) VALUES (?, ?, ?);",
@@ -292,8 +292,8 @@ async function createFixture(): Promise<Fixture> {
 }
 
 async function reopenDatabase(path: string): Promise<OpenDatabase> {
-  const reopened = await openDatabase(path, { supportedSchemaVersion: migrations.length });
-  applyMigrations(reopened, migrations);
+  const reopened = await openDatabase(path);
+  runMigrations(reopened, migrations);
   return reopened;
 }
 

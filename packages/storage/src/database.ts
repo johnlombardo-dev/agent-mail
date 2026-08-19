@@ -1,16 +1,30 @@
 import { Database } from "bun:sqlite";
-import { chmod, lstat } from "node:fs/promises";
-import { dirname, isAbsolute, normalize, parse } from "node:path";
+import { execFile } from "node:child_process";
+import { chmod, copyFile, lstat, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, isAbsolute, join, normalize, parse } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
+import { applyMigrations } from "./migration-runner";
+import {
+  classifyMigrationHistory,
+  convertMigrationHistory,
+  installMigrationConversionInfrastructure,
+  verifyCanonicalMigrationState,
+  type ConversionBackupProof,
+} from "./migration-history-conversion";
+import {
+  canonicalDatabaseMigrations,
+  CANONICAL_DATABASE_SCHEMA_VERSION,
+} from "./migration-registry";
 
-/** The schema is intentionally empty until the first migration is delivered. */
-export const SUPPORTED_DATABASE_SCHEMA_VERSION = 11;
 export const DATABASE_BUSY_TIMEOUT_MS = 5_000;
 
 const PRIVATE_DATABASE_MODE = 0o600;
+const execFileAsync = promisify(execFile);
 
 export type DatabaseOpenErrorCode =
   | "invalid-path"
-  | "invalid-schema-ceiling"
   | "unsafe-permissions"
   | "unsupported-schema"
   | "initialization-failed"
@@ -32,8 +46,10 @@ export type OpenDatabase = Readonly<{
 }>;
 
 export type OpenDatabaseOptions = Readonly<{
-  /** Highest schema version this caller has migrations and behavior for. */
-  readonly supportedSchemaVersion?: number;
+  /** Verified backup proof/capability for an exact legacy composition. */
+  readonly legacyBackup?:
+    | ConversionBackupProof
+    | (() => ConversionBackupProof | Promise<ConversionBackupProof>);
 }>;
 
 type PermissionKind = "parent directory" | "database";
@@ -51,11 +67,32 @@ export async function openDatabase(
   databasePath: string,
   options: OpenDatabaseOptions = {},
 ): Promise<OpenDatabase> {
-  const supportedSchemaVersion = validateSchemaCeiling(options.supportedSchemaVersion);
   validateDatabasePath(databasePath);
   await assertPrivateParent(dirname(databasePath));
 
   const existed = await validateExistingDatabase(databasePath);
+  const preflight = existed ? await preflightDatabase(databasePath) : undefined;
+  if (preflight !== undefined && preflight.classification === "newer") {
+    throw new DatabaseOpenError(
+      "unsupported-schema",
+      `storage database schema version is newer than supported version ${CANONICAL_DATABASE_SCHEMA_VERSION}`,
+    );
+  }
+  if (
+    preflight !== undefined &&
+    !new Set(["supported-empty", "supported-canonical-prefix", "supported-legacy"]).has(
+      preflight.classification,
+    )
+  ) {
+    throw new DatabaseOpenError(
+      "unsupported-schema",
+      preflight.reason ?? "storage database history is unsupported",
+    );
+  }
+  const legacyBackupProof =
+    preflight?.classification === "supported-legacy"
+      ? await resolveLegacyBackup(options.legacyBackup)
+      : undefined;
   let db: Database | undefined;
   try {
     db = new Database(databasePath, { create: true, strict: true });
@@ -69,7 +106,19 @@ export async function openDatabase(
     // WAL configuration can create the companion files. Harden and verify
     // them only after SQLite has selected WAL, not before that side effect.
     await hardenCompanionFiles(databasePath);
-    verifySchemaVersion(db, supportedSchemaVersion);
+    if (preflight?.classification === "supported-legacy") {
+      try {
+        convertMigrationHistory(db, { backupProof: legacyBackupProof });
+      } catch (error: unknown) {
+        throw new DatabaseOpenError("initialization-failed", "legacy migration conversion failed", {
+          cause: error,
+        });
+      }
+    } else {
+      applyMigrations(db, canonicalDatabaseMigrations);
+      installMigrationConversionInfrastructure(db);
+    }
+    verifyCanonicalMigrationState(db);
     verifyIntegrity(db);
 
     let handleClosed = false;
@@ -127,6 +176,132 @@ export async function openDatabase(
       cause: primaryError,
     });
   }
+}
+
+type PreflightResult = ReturnType<typeof classifyMigrationHistory>;
+
+async function preflightDatabaseInProcess(databasePath: string): Promise<PreflightResult> {
+  const scratchRoot = await mkdtemp(join(tmpdir(), "agent-mail-migration-preflight-"));
+  const scratchPath = join(scratchRoot, "archive.sqlite");
+  const stablePath = join(scratchRoot, "stable.sqlite");
+  try {
+    await copyFile(databasePath, scratchPath);
+    const mainBytes = await Bun.file(scratchPath).bytes();
+    if (mainBytes.byteLength === 0) {
+      return emptyPreflight();
+    }
+    if (
+      mainBytes.byteLength < 100 ||
+      new TextDecoder().decode(mainBytes.subarray(0, 16)) !== "SQLite format 3\0"
+    ) {
+      return corruptPreflight("storage database header is invalid");
+    }
+    try {
+      await copyFile(`${databasePath}-wal`, `${scratchPath}-wal`);
+    } catch (error: unknown) {
+      if (!isMissingFileError(error)) throw error;
+    }
+    await execFileAsync("sqlite3", ["-readonly", scratchPath, `.backup ${stablePath}`]);
+    const stableBytes = await Bun.file(stablePath).bytes();
+    if (stableBytes.length >= 20 && stableBytes[18] === 2 && stableBytes[19] === 2) {
+      stableBytes[18] = 1;
+      stableBytes[19] = 1;
+      await Bun.write(stablePath, stableBytes);
+    }
+    let scratch: Database | undefined;
+    try {
+      scratch = new Database(stablePath, { create: false, strict: true });
+      scratch.exec("PRAGMA query_only = ON");
+      scratch.exec("PRAGMA foreign_keys = ON");
+      scratch.exec("PRAGMA trusted_schema = OFF");
+      return classifyMigrationHistory(scratch);
+    } catch (error: unknown) {
+      if (error instanceof DatabaseOpenError) throw error;
+      return corruptPreflight("storage database preflight failed");
+    } finally {
+      scratch?.close();
+    }
+  } finally {
+    await rm(scratchRoot, { recursive: true, force: true });
+  }
+}
+
+function corruptPreflight(reason: string): PreflightResult {
+  return {
+    classification: "corrupt",
+    userVersion: -1,
+    history: [],
+    migrationIds: [],
+    overlay: {
+      id: "O-REINDEX-ABSENT",
+      lease: null,
+      progress: [],
+      objects: [],
+      sourceRows: [],
+      replacementDocsizeRowids: [],
+    },
+    schema: [],
+    reason,
+  };
+}
+
+function emptyPreflight(): PreflightResult {
+  return {
+    classification: "supported-empty",
+    userVersion: 0,
+    history: [],
+    migrationIds: [],
+    overlay: {
+      id: "O-REINDEX-ABSENT",
+      lease: null,
+      progress: [],
+      objects: [],
+      sourceRows: [],
+      replacementDocsizeRowids: [],
+    },
+    schema: [],
+  };
+}
+
+/** Classify in a fresh process so Bun's process-wide WAL cache cannot checkpoint the source. */
+export async function preflightDatabase(databasePath: string): Promise<PreflightResult> {
+  if (process.env.AGENT_MAIL_PREFLIGHT_WORKER === "1") {
+    return preflightDatabaseInProcess(databasePath);
+  }
+  const moduleUrl = pathToFileURL(fileURLToPath(import.meta.url)).href;
+  const workerScript = [
+    `import { preflightDatabase as run } from ${JSON.stringify(moduleUrl)};`,
+    "const databasePath = process.argv[1];",
+    "const result = await run(databasePath);",
+    "process.stdout.write(JSON.stringify(result));",
+  ].join(" ");
+  const { stdout } = await execFileAsync(process.execPath, ["-e", workerScript, databasePath], {
+    env: { ...process.env, AGENT_MAIL_PREFLIGHT_WORKER: "1" },
+    maxBuffer: 1024 * 1024,
+  });
+  return JSON.parse(stdout) as PreflightResult;
+}
+
+async function resolveLegacyBackup(
+  value: OpenDatabaseOptions["legacyBackup"],
+): Promise<ConversionBackupProof> {
+  if (value === undefined) {
+    throw new DatabaseOpenError(
+      "initialization-failed",
+      "legacy migration conversion requires a verified backup capability",
+    );
+  }
+  const proof = typeof value === "function" ? await value() : value;
+  if (
+    typeof proof !== "object" ||
+    proof === null ||
+    typeof proof.backupId !== "string" ||
+    typeof proof.manifestSha256 !== "string" ||
+    typeof proof.createdAt !== "string"
+  ) {
+    throw new DatabaseOpenError("initialization-failed", "legacy backup proof is invalid");
+  }
+  return proof;
 }
 
 function validateDatabasePath(databasePath: string): void {
@@ -259,31 +434,6 @@ function configureDatabase(db: Database): void {
   expectPragmaNumber(db, "secure_delete", 1);
   db.exec("PRAGMA trusted_schema = OFF;");
   expectPragmaNumber(db, "trusted_schema", 0);
-}
-
-function validateSchemaCeiling(value: number | undefined): number {
-  const ceiling = value ?? SUPPORTED_DATABASE_SCHEMA_VERSION;
-  if (!Number.isSafeInteger(ceiling) || ceiling < 0) {
-    throw new DatabaseOpenError(
-      "invalid-schema-ceiling",
-      "supported database schema version must be a non-negative safe integer",
-    );
-  }
-  return ceiling;
-}
-
-function verifySchemaVersion(db: Database, supportedSchemaVersion: number): void {
-  const row = db.query("PRAGMA user_version;").get();
-  const version = readPragmaNumber(row, "user_version");
-  if (version > supportedSchemaVersion) {
-    throw new DatabaseOpenError(
-      "unsupported-schema",
-      `storage database schema version ${version} is newer than supported version ${supportedSchemaVersion}`,
-    );
-  }
-  if (version < 0) {
-    throw new DatabaseOpenError("unsupported-schema", "storage database schema version is invalid");
-  }
 }
 
 function verifyIntegrity(db: Database): void {

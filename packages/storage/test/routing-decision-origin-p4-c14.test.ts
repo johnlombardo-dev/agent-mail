@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { createMessageId, createRouteDecision, serializeRoutingDecision } from "@agent-mail/core";
 import { restoreBackup } from "../src/backup-restore";
 import { writeBackup } from "../src/backup-writer";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { localLabelMigration } from "../src/local-label-migration";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { routingDecisionMigration } from "../src/routing-decision-migration";
@@ -50,7 +50,7 @@ describe("routing decision origin migration and backup parity P4-C14", () => {
     );
     const databasePath = join(root, "archive.sqlite");
     const database = new Database(databasePath);
-    applyMigrations({ db: database, close: () => database.close() }, migrations);
+    runMigrations({ db: database, close: () => database.close() }, migrations);
     database
       .query("INSERT INTO messages (message_id) VALUES (?);")
       .run(messageId);

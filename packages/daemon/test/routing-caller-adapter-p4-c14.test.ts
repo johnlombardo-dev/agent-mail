@@ -19,7 +19,7 @@ import type { RawMessageDownloadRequest, RawMessageDownloadResult } from "../../
 import type { PromotionRoutingDecision } from "../../storage/src/canonical-promotion";
 import type { PromotionStoragePort } from "../../storage/src/promotion-adapter";
 import { stageBlob } from "../../storage/src/blob-stage";
-import { applyMigrations } from "../../storage/src/migration-runner";
+import { runMigrations } from "../../storage/src/migration-runner";
 import { openDatabase } from "../../storage/src/database";
 import { messageCatalogMigration } from "../../storage/src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../../storage/src/migrations/0002-structured-content";
@@ -91,7 +91,7 @@ async function setup(): Promise<Fixture> {
   const root = await mkdtemp(join(tmpdir(), "agent-mail-routing-parity-p4-c14-"));
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, [
+  runMigrations(opened, [
     { ...messageCatalogMigration, version: 1 },
     { ...mailboxCheckpointMigration, version: 2 },
     { ...structuredContentMigration, version: 3 },

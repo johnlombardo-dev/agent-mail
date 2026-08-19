@@ -463,4 +463,4 @@ BEGIN SELECT RAISE(ABORT, 'attempt authority receipt attribution is invalid'); E
 } satisfies Migration;
 
 /** Extension-only export for the application migration registry. */
-export const actionApprovalAuthorityMigrations = [actionApprovalAuthorityMigration] as const;
+export const actionApprovalAuthoritySequence = [actionApprovalAuthorityMigration] as const;

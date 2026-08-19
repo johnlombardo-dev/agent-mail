@@ -83,4 +83,4 @@ export const messageCatalogMigration: Migration = {
 };
 
 /** A standalone set is convenient for focused schema tests and later composition. */
-export const messageCatalogMigrations = [messageCatalogMigration] as const;
+export const messageCatalogSequence = [messageCatalogMigration] as const;

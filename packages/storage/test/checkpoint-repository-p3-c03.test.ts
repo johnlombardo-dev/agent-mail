@@ -11,7 +11,7 @@ import {
   createMailboxId,
 } from "@agent-mail/core";
 import { openDatabase } from "../src/database";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import {
   MAILBOX_CHECKPOINT_MIGRATION_VERSION,
@@ -47,7 +47,7 @@ async function openCheckpointDatabase() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, [messageCatalogMigration, mailboxCheckpointMigration]);
+  runMigrations(opened, [messageCatalogMigration, mailboxCheckpointMigration]);
   return { path, opened };
 }
 
@@ -67,16 +67,12 @@ describe("mailbox checkpoint extension and repository", () => {
     expect(known.observedVersion).toBe(1);
     await opened.close();
 
-    const reopened = await openDatabase(path, {
-      supportedSchemaVersion: MAILBOX_CHECKPOINT_MIGRATION_VERSION,
-    });
-    applyMigrations(reopened, [messageCatalogMigration, mailboxCheckpointMigration]);
+    const reopened = await openDatabase(path);
+    runMigrations(reopened, [messageCatalogMigration, mailboxCheckpointMigration]);
     expect(readMailboxCheckpoint(reopened.db, { accountId, mailboxId, uidValidity })).toEqual(known);
     await reopened.close();
 
-    const unknownOpen = await openDatabase(path, {
-      supportedSchemaVersion: MAILBOX_CHECKPOINT_MIGRATION_VERSION,
-    });
+    const unknownOpen = await openDatabase(path);
     expect(
       readMailboxCheckpoint(unknownOpen.db, { accountId, mailboxId, uidValidity }),
     ).toEqual(known);
@@ -86,9 +82,7 @@ describe("mailbox checkpoint extension and repository", () => {
     });
     await unknownOpen.close();
 
-    const finalOpen = await openDatabase(path, {
-      supportedSchemaVersion: MAILBOX_CHECKPOINT_MIGRATION_VERSION,
-    });
+    const finalOpen = await openDatabase(path);
     expect(readMailboxCheckpoint(finalOpen.db, { accountId, mailboxId, uidValidity })).toMatchObject(
       unknownCheckpoint,
     );

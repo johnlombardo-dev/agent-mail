@@ -10,7 +10,7 @@ import {
   createUtcInstant,
   serializeRemoteUid,
 } from "@agent-mail/core";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
@@ -46,7 +46,7 @@ async function openIdentityOnlyDatabase() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   return { path, opened };
 }
 
@@ -84,8 +84,8 @@ describe("identity-only message repository", () => {
     ).toEqual([]);
     await first.opened.close();
 
-    const reopened = await openDatabase(first.path, { supportedSchemaVersion: 2 });
-    applyMigrations(reopened, migrations);
+    const reopened = await openDatabase(first.path);
+    runMigrations(reopened, migrations);
     expect(readIdentityOnlyMessage(reopened.db, messageId)).toEqual(stored);
     expect(lookupIdentityOnlyBody(reopened.db, messageId)).toEqual({
       kind: "unavailable",
@@ -179,7 +179,7 @@ async function openIdentityOnlyDatabaseWithStructuredContent() {
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, [
+  runMigrations(opened, [
     { ...messageCatalogMigration, version: 1 },
     { ...structuredContentMigration, version: 2 },
     { ...identityOnlyContentMigration, version: 3 },

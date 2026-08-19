@@ -10,7 +10,7 @@ import {
   createUidValidity,
 } from "@agent-mail/core";
 import { openDatabase } from "../src/database";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { operationalJournalMigration } from "../src/migrations/0001-operational-journal";
 import {
@@ -51,7 +51,7 @@ async function openCatalog() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   opened.db
     .query(
@@ -79,8 +79,8 @@ describe("remote placement tombstone repository P2-C14", () => {
     });
     await opened.close();
 
-    const reopened = await openDatabase(path, { supportedSchemaVersion: 2 });
-    applyMigrations(reopened, migrations);
+    const reopened = await openDatabase(path);
+    runMigrations(reopened, migrations);
     expect(readRemotePlacement(reopened.db, identity)).toEqual({
       identity: { accountId, mailboxId, uidValidity, uid },
       messageId,

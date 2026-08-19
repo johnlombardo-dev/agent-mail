@@ -7,7 +7,7 @@ import { createMessageId } from "@agent-mail/core";
 import { openDatabase } from "../src/database";
 import { localLabelMigration } from "../src/local-label-migration";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { routingDecisionMigration } from "../src/routing-decision-migration";
 import { persistRouteDecision } from "../src/local-label-assignment";
 import {
@@ -74,7 +74,7 @@ async function openRoutingDatabase() {
   roots.push(root);
   const path = join(root, "archive.sqlite");
   const opened = await openDatabase(path);
-  applyMigrations(opened, migrations);
+  runMigrations(opened, migrations);
   opened.db.query("PRAGMA foreign_keys = ON;").run();
   opened.db.query("INSERT INTO messages (message_id) VALUES (?), (?);").run(targetMessageId, adjacentMessageId);
   return { ...opened, path };
@@ -134,7 +134,7 @@ describe("routing preview consumption P4-C13", () => {
     expect(opened.db.query("SELECT consumed_at, consumed_by FROM routing_previews;").get()).toEqual({ consumed_at: "2026-08-18T00:01:00.000Z", consumed_by: "consumer:test" });
     await opened.close();
 
-    const reopened = await openDatabase(opened.path, { supportedSchemaVersion: 5 });
+    const reopened = await openDatabase(opened.path);
     expect(consumeRoutingPreview(reopened.db, consumeInput(preview), { digestKey })).toEqual({ kind: "replayed", previewId: "preview:one" });
     expect(counts(reopened.db)).toEqual({ decisions: { count: 1 }, assignments: { count: 1 }, labels: { count: 1 } });
     await reopened.close();

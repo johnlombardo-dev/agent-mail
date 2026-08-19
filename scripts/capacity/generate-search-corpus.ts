@@ -12,24 +12,10 @@ import { chmod, mkdir, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { openDatabase } from "../../packages/storage/src/database";
-import { applyMigrations, type Migration } from "../../packages/storage/src/migration-runner";
-import { messageCatalogMigration } from "../../packages/storage/src/migrations/0001-message-catalog";
-import { structuredContentMigration } from "../../packages/storage/src/migrations/0002-structured-content";
-import { placementObservationMigration } from "../../packages/storage/src/migrations/0003-placement-observation";
-import { externalContentSearchMigration } from "../../packages/storage/src/migrations/0003-external-content-search";
-import { localLabelMigration } from "../../packages/storage/src/local-label-migration";
 
 export const DEFAULT_SEED = 116_2026;
 export const DEFAULT_COUNT = 250_000;
 export const CORPUS_VERSION = "p4-c16-v1";
-
-const migrations: readonly Migration[] = [
-  messageCatalogMigration,
-  structuredContentMigration,
-  placementObservationMigration,
-  { ...externalContentSearchMigration, version: 4 },
-  { ...localLabelMigration, version: 5 },
-];
 
 const labels = [
   "label:important",
@@ -289,7 +275,6 @@ export async function generateCorpus(
   await chmod(root, 0o700);
   const opened = await openDatabase(outputPath);
   try {
-    applyMigrations(opened, migrations);
     const db = opened.db;
     db.exec("PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;");
     db.query(

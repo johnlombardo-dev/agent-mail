@@ -7,8 +7,8 @@ import {
   createRemoteAttemptStale,
   type RemoteAttemptResult,
 } from "@agent-mail/core";
-import { applyMigrations, type Migration } from "../src/migration-runner";
-import { actionAttemptStartMigrations, startActionPlanAttempt } from "../src/action-plan-attempt";
+import { runMigrations, type Migration } from "../src/migration-runner";
+import { actionAttemptStartSequence, startActionPlanAttempt } from "../src/action-plan-attempt";
 import { claimPendingActionPlan } from "../src/action-plan-claim";
 import { createPendingActionPlan } from "../src/action-plan-repository";
 import { recordDefiniteActionPlanResult } from "../src/action-plan-result";
@@ -31,7 +31,7 @@ const targets = [
   { accountId: "account:one", mailboxId: "mailbox:inbox", uidValidity: 9, uid: 8, precondition: { modseq: 201 } },
 ] as const;
 const migrations: readonly Migration[] = [
-  ...actionAttemptStartMigrations,
+  ...actionAttemptStartSequence,
   { ...operationalJournalMigration, version: 5 },
 ];
 
@@ -42,7 +42,7 @@ afterEach(() => {
 function openPlan(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: "plan:finalize",
     action: { kind: "markSeen" },

@@ -100,13 +100,16 @@ ALTER TABLE mailbox_checkpoints
 } satisfies Migration;
 
 /** The extension alone is retained for an application registry that composes all migrations. */
-export const mailboxCheckpointExtensionMigrations = [mailboxCheckpointMigration] as const;
+export const mailboxCheckpointExtensionSequence = [mailboxCheckpointMigration] as const;
 
 /** A dependency-complete set is convenient for focused checkpoint tests. */
-export const mailboxCheckpointMigrations = [
+export const mailboxCheckpointSequence = [
   messageCatalogMigration,
   mailboxCheckpointMigration,
 ] as const;
+
+export { mailboxCheckpointExtensionSequence as mailboxCheckpointExtensionMigrations };
+export { mailboxCheckpointSequence as mailboxCheckpointMigrations };
 
 type CheckpointValueInput<T> =
   | Readonly<{ readonly kind: "known"; readonly value: T }>

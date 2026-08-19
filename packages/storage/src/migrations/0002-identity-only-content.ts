@@ -66,4 +66,4 @@ export const identityOnlyContentMigration = {
 } satisfies Migration;
 
 /** A standalone set is convenient for focused schema and repository tests. */
-export const identityOnlyContentMigrations = [identityOnlyContentMigration] as const;
+export const identityOnlyContentSequence = [identityOnlyContentMigration] as const;

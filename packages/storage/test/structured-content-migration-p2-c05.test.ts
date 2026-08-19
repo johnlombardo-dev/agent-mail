@@ -2,7 +2,7 @@ import { chmod, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, test } from "bun:test";
-import { applyMigrations } from "../src/migration-runner";
+import { runMigrations } from "../src/migration-runner";
 import { openDatabase } from "../src/database";
 import { messageCatalogMigration } from "../src/migrations/0001-message-catalog";
 import { structuredContentMigration } from "../src/migrations/0002-structured-content";
@@ -22,7 +22,7 @@ async function openStructuredContent() {
   await chmod(root, 0o700);
   roots.push(root);
   const opened = await openDatabase(join(root, "archive.sqlite"));
-  applyMigrations(opened, [messageCatalogMigration, structuredContentMigration]);
+  runMigrations(opened, [messageCatalogMigration, structuredContentMigration]);
   opened.db.query("INSERT INTO messages (message_id) VALUES (?);").run(messageId);
   return opened;
 }

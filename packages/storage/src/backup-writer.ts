@@ -12,7 +12,12 @@ import {
   type FileHandle,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, parse, relative } from "node:path";
-import { buildBackupManifest, type BackupManifest, type BackupManifestOptions } from "./backup-manifest";
+import {
+  buildBackupManifest,
+  type BackupManifest,
+  type BackupManifestOptions,
+} from "./backup-manifest";
+import { verifyCanonicalAdmissionIfPresent } from "./migration-history-conversion";
 
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
@@ -138,9 +143,13 @@ async function makeStage(destinationDirectory: string): Promise<string> {
       return stage;
     } catch (error: unknown) {
       if (error instanceof Error && "code" in error && error.code === "EEXIST") continue;
-      throw new BackupWriterError("publication-failed", "backup staging directory could not be created", {
-        cause: error,
-      });
+      throw new BackupWriterError(
+        "publication-failed",
+        "backup staging directory could not be created",
+        {
+          cause: error,
+        },
+      );
     }
   }
   throw new BackupWriterError("publication-failed", "backup staging directory name was not unique");
@@ -187,7 +196,11 @@ function stageManifestOptions(
   };
 }
 
-async function copyArtifact(sourceRoot: string, stage: string, artifact: SourceArtifact): Promise<void> {
+async function copyArtifact(
+  sourceRoot: string,
+  stage: string,
+  artifact: SourceArtifact,
+): Promise<void> {
   const source = join(sourceRoot, artifact.path);
   const target = join(stage, artifact.path);
   const targetDirectory = dirname(target);
@@ -260,9 +273,30 @@ async function verifySnapshot(databasePath: string): Promise<void> {
     }
   } catch (error: unknown) {
     if (error instanceof BackupWriterError) throw error;
-    throw new BackupWriterError("verification-failed", "SQLite snapshot failed integrity verification", {
-      cause: error,
-    });
+    throw new BackupWriterError(
+      "verification-failed",
+      "SQLite snapshot failed integrity verification",
+      {
+        cause: error,
+      },
+    );
+  } finally {
+    database?.close();
+  }
+}
+
+async function verifyCanonicalSnapshot(databasePath: string): Promise<void> {
+  let database: Database | undefined;
+  try {
+    database = new Database(databasePath, { readonly: true, strict: true, create: false });
+    verifyCanonicalAdmissionIfPresent(database);
+  } catch (error: unknown) {
+    if (error instanceof BackupWriterError) throw error;
+    throw new BackupWriterError(
+      "verification-failed",
+      "SQLite snapshot failed canonical migration admission",
+      { cause: error },
+    );
   } finally {
     database?.close();
   }
@@ -327,6 +361,7 @@ export async function writeBackup(options: BackupWriterOptions): Promise<BackupW
     await chmod(dirname(stagedDatabasePath), PRIVATE_DIRECTORY_MODE);
     await writePrivateFile(stagedDatabasePath, snapshot);
     await verifySnapshot(stagedDatabasePath);
+    await verifyCanonicalSnapshot(stagedDatabasePath);
 
     for (const artifact of sourceArtifacts(sourceManifest)) {
       await copyArtifact(options.privateRoot, stage, artifact);
@@ -334,8 +369,14 @@ export async function writeBackup(options: BackupWriterOptions): Promise<BackupW
     await syncDirectories(stage);
 
     // Empty blob and journal directories are still part of the archive shape.
-    await ensurePrivatePath(stage, join(stage, relativeFromRoot(options.privateRoot, options.blobDirectory)));
-    await ensurePrivatePath(stage, join(stage, relativeFromRoot(options.privateRoot, options.journalDirectory)));
+    await ensurePrivatePath(
+      stage,
+      join(stage, relativeFromRoot(options.privateRoot, options.blobDirectory)),
+    );
+    await ensurePrivatePath(
+      stage,
+      join(stage, relativeFromRoot(options.privateRoot, options.journalDirectory)),
+    );
     const stagedOptions = stageManifestOptions(options, options.privateRoot, stage);
     const firstManifest = await buildBackupManifest(stagedOptions);
     await writePrivateFile(join(stage, MANIFEST_NAME), manifestJson(firstManifest));
@@ -343,7 +384,10 @@ export async function writeBackup(options: BackupWriterOptions): Promise<BackupW
     // catches a test/operations hook that mutates a stage before publication.
     const finalManifest = await buildBackupManifest(stagedOptions);
     if (JSON.stringify(finalManifest) !== JSON.stringify(firstManifest)) {
-      throw new BackupWriterError("verification-failed", "backup artifacts changed during verification");
+      throw new BackupWriterError(
+        "verification-failed",
+        "backup artifacts changed during verification",
+      );
     }
     await writePrivateFile(join(stage, MANIFEST_NAME), manifestJson(finalManifest));
     await syncDirectories(stage);

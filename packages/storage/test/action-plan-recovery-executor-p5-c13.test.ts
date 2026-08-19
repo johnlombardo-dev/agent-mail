@@ -11,11 +11,11 @@ import {
 } from "@agent-mail/core";
 import { executeRemoteAttempt } from "../../imap/src/remote-executor";
 import type { PreconditionObservation } from "../../imap/src/precondition";
-import { applyMigrations, type Migration } from "../src/migration-runner";
+import { runMigrations, type Migration } from "../src/migration-runner";
 import { claimPendingActionPlan } from "../src/action-plan-claim";
 import { startActionPlanAttempt } from "../src/action-plan-attempt";
 import {
-  actionAttemptDispatchMigrations,
+  actionAttemptDispatchSequence,
   markActionPlanAttemptDispatched,
   recoverUnresolvedActionPlanAttempt,
 } from "../src/action-plan-recovery";
@@ -36,7 +36,7 @@ const markerAt = "2026-08-18T01:00:02.500Z";
 const recoveredAt = "2026-08-18T01:00:04.000Z";
 const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const migrations: readonly Migration[] = [
-  ...actionAttemptDispatchMigrations,
+  ...actionAttemptDispatchSequence,
   { ...operationalJournalMigration, version: 6 },
 ];
 
@@ -47,7 +47,7 @@ afterEach(() => {
 function openDatabase(): Database {
   const database = new Database(":memory:");
   databases.push(database);
-  applyMigrations(database, migrations);
+  runMigrations(database, migrations);
   createPendingActionPlan(database, {
     planId: "plan:one",
     action: { kind: "markSeen" },

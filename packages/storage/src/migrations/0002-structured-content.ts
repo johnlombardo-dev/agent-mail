@@ -161,4 +161,4 @@ export const structuredContentMigration = {
 } satisfies Migration;
 
 /** A standalone set supports focused schema tests and later registry composition. */
-export const structuredContentMigrations = [structuredContentMigration] as const;
+export const structuredContentSequence = [structuredContentMigration] as const;
