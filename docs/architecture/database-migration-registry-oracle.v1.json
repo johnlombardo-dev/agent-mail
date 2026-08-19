@@ -1,0 +1,1924 @@
+{
+  "format": "agent-mail.database-migration-registry-oracle/v1",
+  "schemaVersion": 1,
+  "modelVersion": "1.0.0",
+  "status": "frozen-design",
+  "oracle": {
+    "normative": true,
+    "issue": 233,
+    "implementationIssue": 234,
+    "shapingCommit": "547f70dd67959541324688b7b737749bc43791ab",
+    "scope": "Canonical SQLite migration identity, ordering, history conversion, opener authority, diagnostics, backup, and restore behavior.",
+    "compatibilityRule": "Only an exact canonical prefix or an exact prefix of a listed convertible legacy composition may be changed. Unknown, ambiguous, corrupt, direct-SQL, and placeholder histories remain byte-untouched and fail closed.",
+    "absenceOfDeploymentAuthority": "The repository and accepted planning evidence contain no live, deployed, or externally inventoried database history. This oracle therefore freezes lossless conversion for every exact accepted ledger observed in source without inventing a data-discard policy."
+  },
+  "baseline": {
+    "productionRegistry": "absent",
+    "productionMigrationConsumer": "absent",
+    "databaseOpenBehavior": "packages/storage/src/database.ts validates an independently supplied schema ceiling and never applies migrations",
+    "defaultSchemaCeiling": 11,
+    "ceilingDisposition": "legacy compatibility guard only; not a migration registry and not evidence that versions 1 through 11 form the application schema",
+    "acceptedSemanticMigrationCount": 27,
+    "freshSchemaObjectCount": 193,
+    "unrecordedSchemaSemanticCount": 1,
+    "schemaDefinitionSourceFiles": 27,
+    "convertibleCompositionCount": 44,
+    "uniqueConvertiblePrefixCount": 76,
+    "declaredVersionCollisions": {
+      "1": 10,
+      "2": 5,
+      "3": 4,
+      "4": 1,
+      "5": 1,
+      "7": 1,
+      "8": 1,
+      "9": 1,
+      "10": 1,
+      "11": 1
+    },
+    "applyMigrationSourceFiles": 62,
+    "applyMigrationCallSites": 94,
+    "applyMigrationCorpusSha256": "e35638caca271c94c87421d10f12f204b8a3ae38daee54e928323943cfaafa70",
+    "applyMigrationCorpusSelection": "git grep -l -F applyMigrations( <acceptedHead> -- *.ts",
+    "executionRootScriptPaths": [
+      "scripts/capacity/benchmark-search.ts",
+      "scripts/capacity/generate-search-corpus.ts"
+    ],
+    "placeholderOccurrences": 4,
+    "dynamicThreadComposerOccurrences": 3,
+    "directAcceptedSqlBypassOccurrences": 3,
+    "adHocMigrationRegistryExports": 30
+  },
+  "checksumAuthority": {
+    "algorithm": "sha256",
+    "textEncoding": "utf8",
+    "ordinaryMaterial": "migration.sql exactly",
+    "foreignKeysOffMaterial": "migration.sql exactly, followed by newline and /* migration-requires-foreign-keys-off:v1 */",
+    "immutability": "Canonical slot, semantic id, name, SQL bytes, execution mode, and resulting checksum are append-only authority. Any semantic change requires a new final slot.",
+    "sourceVersionRule": "A migration module's declared version records its legacy local composition only. The canonical registry clones the unchanged semantic definition with the canonical slot. The accepted search-reindex schema was never ledgered and therefore retains declaredVersion null plus legacyRecorded false instead of receiving an invented historical version."
+  },
+  "canonicalRegistry": {
+    "registryPath": "packages/storage/src/migration-registry.ts",
+    "conversionPath": "packages/storage/src/migration-history-conversion.ts",
+    "schemaVersion": 27,
+    "nextLegalMigrationVersion": 28,
+    "nextLegalReportMigrationVersion": 28,
+    "identityDigestAlgorithm": "sha256(utf8(JSON.stringify(migrations.map(m => [m.version, m.name, m.contentHash, m.requiresForeignKeysOff]))))",
+    "identityDigest": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+    "orderRule": "Ascending first-accepted commit ancestry at shaping commit 547f70dd67959541324688b7b737749bc43791ab, with dependency order inside the three migrations first accepted together at 9d1f77791c2af1c024347c462899ca645823716a.",
+    "migrations": [
+      {
+        "version": 1,
+        "id": "message-catalog",
+        "name": "message-catalog",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/migrations/0001-message-catalog.ts",
+        "export": "messageCatalogMigration",
+        "contentHash": "efed8a776eb3b10e6fc2ae274547e518e196d46daa6b646ff88f74f7928db334",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 61,
+        "acceptedCommit": "202e83ce2a8b9369a11eaa714832f2ba3ad00486",
+        "dependsOn": []
+      },
+      {
+        "version": 2,
+        "id": "operational-journal",
+        "name": "operational-journal",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/migrations/0001-operational-journal.ts",
+        "export": "operationalJournalMigration",
+        "contentHash": "afb153e614a4233be9f3f1155852bd6f68008fde84878891b0279e4f30862013",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 71,
+        "acceptedCommit": "17c5e4bf8e02fef8199cd6538eeee7c7ed29dcda",
+        "dependsOn": []
+      },
+      {
+        "version": 3,
+        "id": "structured-content",
+        "name": "structured-content",
+        "declaredVersion": 2,
+        "source": "packages/storage/src/migrations/0002-structured-content.ts",
+        "export": "structuredContentMigration",
+        "contentHash": "d6b7499b793c0d004e375860ce9304d3a6c35c6fa1db280034b3f1650a690911",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 64,
+        "acceptedCommit": "5f1a5131798bf0b5798a17485ff8c4acc196b508",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 4,
+        "id": "routing-preview",
+        "name": "routing-preview",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/routing-preview-migration.ts",
+        "export": "routingPreviewMigration",
+        "contentHash": "79b8411046df9988be783acf9b0309672824ffda5cd286e3e6ba2ba52f47a34b",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 90,
+        "acceptedCommit": "40dcbbb05e1d630dd2fc446ef8d9f6537b5ba865",
+        "dependsOn": []
+      },
+      {
+        "version": 5,
+        "id": "action-schema",
+        "name": "action-schema",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/migrations/0001-action-schema.ts",
+        "export": "actionSchemaMigration",
+        "contentHash": "3988266a7422cab54f4a99aa39641b56c4939779686f4cce461ae4f51efffb3e",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 91,
+        "acceptedCommit": "5b31cea23787fc621a00ae7895f1dd826b452f65",
+        "dependsOn": []
+      },
+      {
+        "version": 6,
+        "id": "mailbox-checkpoint-extension",
+        "name": "mailbox-checkpoint-extension",
+        "declaredVersion": 2,
+        "source": "packages/storage/src/checkpoint-repository.ts",
+        "export": "mailboxCheckpointMigration",
+        "contentHash": "2f3ceb36433eb04d04c812b8168c32dd849fc874842e285a65f4001b57eb20fd",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 77,
+        "acceptedCommit": "e3e6d6a987917dd0bfcbe674d4c4a46dd7b50a75",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 7,
+        "id": "local-labels",
+        "name": "local-labels",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/local-label-migration.ts",
+        "export": "localLabelMigration",
+        "contentHash": "4a76efa836865727034b605a8074f84cbbf4d2cfb1f4cde4305222114682bcb0",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 89,
+        "acceptedCommit": "68449a951a8f8d18ac5fcb9805e5fa64815c1c75",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 8,
+        "id": "external-content-search",
+        "name": "external-content-search",
+        "declaredVersion": 3,
+        "source": "packages/storage/src/migrations/0003-external-content-search.ts",
+        "export": "externalContentSearchMigration",
+        "contentHash": "0dccdafb0962ee76d930a88a57af13ec1e46405e8ce53f9a068e40257348c626",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 79,
+        "acceptedCommit": "c39df3b0187ff6904411b38d187f9635a1c5acd4",
+        "dependsOn": ["message-catalog", "structured-content"]
+      },
+      {
+        "version": 9,
+        "id": "action-plan-proposal-evidence",
+        "name": "action-plan-proposal-evidence",
+        "declaredVersion": 2,
+        "source": "packages/storage/src/migrations/0002-action-plan-proposal.ts",
+        "export": "actionPlanProposalMigration",
+        "contentHash": "22034f49119a630a02197e9f788eff9f154095ac4b0c517c5b3da8d9421e5eab",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 103,
+        "acceptedCommit": "06b8546476a481accca7c7218c456b4d332f486a",
+        "dependsOn": ["action-schema"]
+      },
+      {
+        "version": 10,
+        "id": "operational-journal-compaction",
+        "name": "operational-journal-compaction",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/migrations/0001-operational-journal-compaction.ts",
+        "export": "operationalJournalCompactionMigration",
+        "contentHash": "6b5fc2997036e38a85caa2534edfdd543c6ea40d57174518a326094d0961806e",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 100,
+        "acceptedCommit": "7da7514c850f5437b98d0e6ea1f1c23b8446907c",
+        "dependsOn": ["operational-journal"]
+      },
+      {
+        "version": 11,
+        "id": "routing-decisions",
+        "name": "routing-decisions",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/routing-decision-migration.ts",
+        "export": "routingDecisionMigration",
+        "contentHash": "b6da2e9673c39cc68bb5a9f10f228b3effb9b520fb07a8a5d06faf93fecaad9c",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 96,
+        "acceptedCommit": "0f864fc6ecd422bde9182e9d1f73c1d40f9096cd",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 12,
+        "id": "identity-only-content",
+        "name": "identity-only-content",
+        "declaredVersion": 2,
+        "source": "packages/storage/src/migrations/0002-identity-only-content.ts",
+        "export": "identityOnlyContentMigration",
+        "contentHash": "59fb64c8d5554121698c01674aa9663f9c18b1ce7e7fd28046b6affd4fa826bb",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 66,
+        "acceptedCommit": "d83265b4101db6af4b2a3567e7eeb85cb1572020",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 13,
+        "id": "routing-preview-consumption",
+        "name": "routing-preview-consumption",
+        "declaredVersion": 2,
+        "source": "packages/storage/src/routing-preview-consumption-migration.ts",
+        "export": "routingPreviewConsumptionMigration",
+        "contentHash": "0b084e173211b95384c5928c0cfbf22b4e6ee40f7faaa54a3633fe5a624fc6df",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 99,
+        "acceptedCommit": "8a9fabee5a223abe38eb7474013913d4e78be924",
+        "dependsOn": ["routing-preview"]
+      },
+      {
+        "version": 14,
+        "id": "action-plan-claim-version",
+        "name": "action-plan-claim-version",
+        "declaredVersion": 3,
+        "source": "packages/storage/src/migrations/0003-action-plan-claim.ts",
+        "export": "actionPlanClaimMigration",
+        "contentHash": "0dbbbbd90d31e69187b5735c4fdf012a6a89653b2067338d571ccc16402958aa",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 105,
+        "acceptedCommit": "092d06c49c460537641768505d0119c4ab37b392",
+        "dependsOn": ["action-plan-proposal-evidence"]
+      },
+      {
+        "version": 15,
+        "id": "action-attempt-start-boundary",
+        "name": "action-attempt-start-boundary",
+        "declaredVersion": 4,
+        "source": "packages/storage/src/migrations/0004-action-attempt-start.ts",
+        "export": "actionAttemptStartMigration",
+        "contentHash": "8342a92455a61be235504aafdc69f7fc9409cdf1a1e277619fe91028f8a17e60",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 111,
+        "acceptedCommit": "c776116e5be0d95f9cc75c6e25b9e6254c737ba9",
+        "dependsOn": ["action-plan-claim-version"]
+      },
+      {
+        "version": 16,
+        "id": "remote-placement-observation",
+        "name": "remote-placement-observation",
+        "declaredVersion": 3,
+        "source": "packages/storage/src/migrations/0003-placement-observation.ts",
+        "export": "placementObservationMigration",
+        "contentHash": "a61a94191cb19c0b5e619da3ccd1d58bb07b511f215b4ef2d2605670bcbbfe2a",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 94,
+        "acceptedCommit": "574a679105b0b141e6b1a913badf0338e6e75eae",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 17,
+        "id": "message-blob-references",
+        "name": "message-blob-references",
+        "declaredVersion": 3,
+        "source": "packages/storage/src/migrations/0003-message-blob-references.ts",
+        "export": "messageBlobReferencesMigration",
+        "contentHash": "e4033a51c70fef0a678652129e47e3e3d73e4e9c9da23718043d3b82e61dbea8",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 104,
+        "acceptedCommit": "255f8c98a43850c19f2dc0eb78fd8625846846f7",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 18,
+        "id": "initial-backfill-completion",
+        "name": "initial-backfill-completion",
+        "declaredVersion": 1,
+        "source": "packages/daemon/src/initial-backfill-loop.ts",
+        "export": "initialBackfillCompletionMigration",
+        "registrySource": "packages/storage/src/migrations/initial-backfill-completion.ts",
+        "contentHash": "97f36004ad5e03159be30d1b2e663e37f4b983eadf65a79fd3c463ccd676ea0b",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 117,
+        "acceptedCommit": "b6d07bc56e775cc7aea4b9436b81532bba7c4e9a",
+        "dependsOn": ["mailbox-checkpoint-extension"]
+      },
+      {
+        "version": 19,
+        "id": "search-candidate-placement-index",
+        "name": "search-candidate-placement-index",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/migrations/0004-search-candidate-placement-index.ts",
+        "export": "searchCandidatePlacementIndexMigration",
+        "contentHash": "d42db322e6e0652811ab8571f13d8e24816ebc26bbd47b5e2bfc3f49872343c4",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 118,
+        "acceptedCommit": "0aee14a6025ba892ef53f11dcb98eb84cb50d9d9",
+        "dependsOn": ["remote-placement-observation"]
+      },
+      {
+        "version": 20,
+        "id": "search-reindex-schema",
+        "name": "search-reindex-schema",
+        "declaredVersion": null,
+        "legacyRecorded": false,
+        "source": "packages/storage/src/search-reindex.ts",
+        "export": "SEARCH_REINDEX_SCHEMA_SQL",
+        "sourceKind": "sql-constant",
+        "contentHash": "e3f8eb52d805c6b35fc12efbb0c3f3a8907ab24eaaceb22f6afaf3029fb7d0d0",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 123,
+        "acceptedCommit": "7d5e9daafed2b423071264c7bac50b8901c982c0",
+        "dependsOn": ["external-content-search"]
+      },
+      {
+        "version": 21,
+        "id": "routing-decision-origins",
+        "name": "routing-decision-origins",
+        "declaredVersion": 1,
+        "source": "packages/storage/src/routing-decision-origin-migration.ts",
+        "export": "routingDecisionOriginMigration",
+        "contentHash": "bc90efaf7a8217bf94a65165df39cc16b4935eff08bdcd7f6648010ef1b9d298",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 121,
+        "acceptedCommit": "96de7238ed71d5859c2fb69d6aa672d978783d1e",
+        "dependsOn": ["routing-decisions"]
+      },
+      {
+        "version": 22,
+        "id": "action-attempt-dispatch-evidence",
+        "name": "action-attempt-dispatch-evidence",
+        "declaredVersion": 5,
+        "source": "packages/storage/src/migrations/0005-action-attempt-dispatch.ts",
+        "export": "actionAttemptDispatchMigration",
+        "contentHash": "8e0f4bf1caee9a414eef808934b8c993621d560e2ba2b8c30e2f7018c4274131",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 135,
+        "acceptedCommit": "e6c52552aa68d8ecfe5af1937c33b4983e628b6a",
+        "dependsOn": ["action-attempt-start-boundary"]
+      },
+      {
+        "version": 23,
+        "id": "action-result-reconciliation-transition",
+        "name": "action-result-reconciliation-transition",
+        "declaredVersion": 7,
+        "source": "packages/storage/src/migrations/0007-action-result-reconciliation.ts",
+        "export": "actionResultReconciliationMigration",
+        "contentHash": "7766420d878431a0a7b33df0483931431b6daaf4568114a0749f97a3165f5af9",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 142,
+        "acceptedCommit": "55a84134c255731f8d28a12969298a8966c25c38",
+        "dependsOn": ["action-attempt-dispatch-evidence"]
+      },
+      {
+        "version": 24,
+        "id": "thread-graph",
+        "name": "thread-graph",
+        "declaredVersion": 8,
+        "source": "packages/storage/src/migrations/0008-thread-graph.ts",
+        "export": "threadGraphMigration",
+        "contentHash": "cdf5af5482ca1b1b28436d42371cc91723b45a20f1747c7fb0bfeb6fb6411c9c",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 199,
+        "acceptedCommit": "6b79fce1213be5e779f31e1055636920ad3ea5fc",
+        "dependsOn": []
+      },
+      {
+        "version": 25,
+        "id": "action-approval-authority-v1",
+        "name": "action-approval-authority-v1",
+        "declaredVersion": 9,
+        "source": "packages/storage/src/migrations/0009-action-approval-authority.ts",
+        "export": "actionApprovalAuthorityMigration",
+        "contentHash": "0f3bf555e87b7e82e0f50725301cced4ef00391715ec91bcaad53f0c16d15264",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 204,
+        "acceptedCommit": "9d1f77791c2af1c024347c462899ca645823716a",
+        "dependsOn": [
+          "action-schema",
+          "action-plan-claim-version",
+          "action-attempt-start-boundary",
+          "action-attempt-dispatch-evidence",
+          "action-result-reconciliation-transition"
+        ]
+      },
+      {
+        "version": 26,
+        "id": "action-plan-restore-quarantine",
+        "name": "action-plan-restore-quarantine",
+        "declaredVersion": 10,
+        "source": "packages/storage/src/migrations/0010-action-plan-restore-quarantine.ts",
+        "export": "actionPlanRestoreQuarantineMigration",
+        "contentHash": "150cb6277c84be4e6cd5e056d99662f2db12b65f47e96ec45d20b20de6df6cab",
+        "requiresForeignKeysOff": true,
+        "acceptedIssue": 204,
+        "acceptedCommit": "9d1f77791c2af1c024347c462899ca645823716a",
+        "dependsOn": ["action-approval-authority-v1"]
+      },
+      {
+        "version": 27,
+        "id": "seal-key-administration-authority",
+        "name": "seal-key-administration-authority",
+        "declaredVersion": 11,
+        "source": "packages/storage/src/migrations/0011-seal-key-administration.ts",
+        "export": "sealKeyAdministrationMigration",
+        "contentHash": "0715be56cd5ee39745a5be25d2c041ec0ccac70d6c09abb9e455820bf091e184",
+        "requiresForeignKeysOff": true,
+        "acceptedIssue": 204,
+        "acceptedCommit": "9d1f77791c2af1c024347c462899ca645823716a",
+        "dependsOn": ["action-plan-restore-quarantine"]
+      }
+    ]
+  },
+  "historicalPolicy": {
+    "supported": "The empty database, every exact canonical prefix, and every exact non-empty prefix of a convertible ledger composition below, combined only with an exact supported search-reindex schema overlay.",
+    "classification": "Require user_version to equal ledger row count, versions to be contiguous from one, every recorded row name and checksum to identify exactly one frozen semantic migration, recorded semantic identities to be unique, dependencies to be present earlier or provably represented by the exact schema, the base SQLite schema fingerprint to match the expected ledger result, and the search-reindex overlay to satisfy one exact overlay state. The unledgered search-reindex semantic is never fabricated as an old ledger row.",
+    "schemaFingerprint": "Decode one complete supported ledger sequence, then build its expected base schema in isolated in-memory SQLite from the exact frozen semantic definitions at the decoded contiguous positions. Compare the complete ordered tuple sequence and its digest, encoded as UTF-8 JSON.stringify of [type,name,tbl_name,sql] rows from sqlite_schema with SQLite null encoded as JSON null. Exclude only sqlite_ internals, exact fully validated schema_migrations infrastructure, exact fully validated conversion-provenance infrastructure and rows, and one fully classified reindex overlay. Never use a literal object allowlist, selected-table presence, unchecked name prefix, or digest without tuple equality; any added or changed table, index, trigger, or view is unsupported before a source effect.",
+    "schemaOverlayRule": "Classify the unledgered search-reindex schema independently. Absent and exact empty one-table partial states are completed by canonical slot 20. Exact idle, both building-empty variants, nonempty building, or activating states preserve their control rows and deterministic replacement FTS objects; every active state accepts any operation name matching reindexAuthority.operationNamePattern and verifies the frozen name derivation and row/object relations. Any other control DDL, lease, progress, replacement name, object family, counter, digest, or orphan state is unsupported before write.",
+    "conversionBackup": "Before changing a file-backed legacy database, automatically publish and verify one complete backup in the configured privateRoot/backups directory, outside the mutable data, blob, journal, and configuration subtrees. Conversion does not begin if backup creation or verification fails.",
+    "conversionTransaction": "Disable foreign keys before BEGIN IMMEDIATE, archive the exact legacy ledger, overlay classification, and their digests in immutable registry metadata, execute each missing semantic SQL body once in canonical slot order, preserve any valid active reindex actor state, validate integrity and foreign keys, replace schema_migrations with all 27 canonical rows, set user_version to 27, commit, and restore foreign_keys=ON. Any failure before commit rolls back the entire database conversion.",
+    "conversionFeasibility": "At the shaping commit, every one of the 44 convertible full ledgers and all 76 unique non-empty prefixes can execute its missing frozen SQL bodies, including absent search-reindex control schema, inside one foreign-keys-off BEGIN IMMEDIATE transaction and reach the same 192 application schema objects with integrity ok and no foreign-key findings. Focused overlay probes cover absent, partial-empty, idle, both building-empty variants, nondefault nonempty building, and nondefault activating states plus forged negatives. This proves schema feasibility only; issue 234 must still prove ledger archival, backup, domain-row parity, and injected rollback.",
+    "dataRule": "No table, row, blob reference, or accepted provenance may be dropped as a compatibility shortcut. Existing semantic SQL is skipped only after exact identity plus schema proof.",
+    "unknownRule": "A missing ledger on a non-empty database, nonzero user_version without a ledger, unknown name or checksum, duplicate semantic identity, unexpected schema object, dependency contradiction, placeholder, direct-SQL bypass, or ambiguous fingerprint returns a stable unsupported-history error before any write.",
+    "prefixRule": "An error or crash before an ordinary migration commit leaves its exact canonical predecessor; after commit it leaves the newly committed exact canonical prefix. An error or crash before the legacy conversion commit leaves the exact legacy ledger and reindex overlay; after commit it leaves exact canonical 27 with the same valid active overlay. Reopen always reclassifies ledger plus schema and never infers success from selected schema objects alone."
+  },
+  "historicalSchemaOverlays": [
+    {
+      "id": "O-REINDEX-ABSENT",
+      "classification": "convertible-overlay",
+      "state": "neither search-reindex control table and no replacement object family",
+      "conversion": "execute canonical slot 20",
+      "provenance": "accepted lazy initialization path before first reindex"
+    },
+    {
+      "id": "O-REINDEX-PARTIAL-EMPTY",
+      "classification": "convertible-overlay",
+      "state": "exact empty search_reindex_lease table only; no progress or replacement objects",
+      "conversion": "execute canonical slot 20 to create the missing empty progress table",
+      "provenance": "derived crash point between the two accepted autocommit CREATE TABLE statements"
+    },
+    {
+      "id": "O-REINDEX-IDLE",
+      "classification": "convertible-overlay",
+      "state": "both exact control tables, no lease or progress rows, and no replacement object family",
+      "conversion": "adopt slot 20 without changing the control tables",
+      "provenance": "observed successful issue #123 completion state"
+    },
+    {
+      "id": "O-REINDEX-BUILDING-EMPTY-ABSENT",
+      "classification": "convertible-overlay",
+      "state": "exact building lease at counters zero with no progress and no replacement object family",
+      "conversion": "preserve state; accepted reindex recovery resets the missing family and resumes",
+      "provenance": "accepted commit boundary between lease acquisition and replacement creation"
+    },
+    {
+      "id": "O-REINDEX-BUILDING-EMPTY-PRESENT",
+      "classification": "convertible-overlay",
+      "state": "exact building lease at counters zero with no progress and the exact empty deterministic replacement object family",
+      "conversion": "preserve state for bounded restart resume",
+      "provenance": "accepted commit boundary after replacement creation and before the first batch"
+    },
+    {
+      "id": "O-REINDEX-BUILDING",
+      "classification": "convertible-overlay",
+      "state": "exact building lease, matching progress rows, and deterministic replacement FTS object family",
+      "conversion": "preserve state for bounded restart resume",
+      "provenance": "observed issue #123 batch interruption state"
+    },
+    {
+      "id": "O-REINDEX-ACTIVATING",
+      "classification": "convertible-overlay",
+      "state": "exact activating lease, matching progress rows, and deterministic complete replacement FTS object family",
+      "conversion": "preserve state for verification and atomic activation resume",
+      "provenance": "observed issue #123 pre-swap and rolled-back post-rename interruption states"
+    },
+    {
+      "id": "O-REINDEX-INVALID",
+      "classification": "unsupported-overlay",
+      "state": "any other partial, altered, orphaned, multiply named, or nondeterministic control/replacement state",
+      "conversion": "stable rejection before backup or database write",
+      "provenance": "not produced by an accepted recoverable boundary"
+    }
+  ],
+  "reindexAuthority": {
+    "operationNamePattern": "^[A-Za-z][A-Za-z0-9._:-]{0,127}$",
+    "operationNameEncoding": "UTF-8 bytes of the exact operation name; no trim, normalization, or case folding",
+    "replacementNameDerivation": "message_fts_replacement_ plus the first 16 lowercase hexadecimal characters of SHA-256(operationName UTF-8 bytes)",
+    "replacementObjectTupleDerivation": "For each valid operation name, create the derived replacement virtual table with the byte-frozen external-content FTS5 SQL in isolated in-memory SQLite, then freeze and compare every ordered [type,name,tbl_name,sql] tuple for the virtual table and all four SQLite-generated shadow tables. Names alone, docsize presence, selected rows, or a digest without tuple equality never establish the family.",
+    "replacementObjectFamily": [
+      "<replacement>",
+      "<replacement>_data",
+      "<replacement>_idx",
+      "<replacement>_docsize",
+      "<replacement>_config"
+    ],
+    "leaseRelation": "Exactly zero or one lease_id=1 row. A row's operation_name matches the grammar, replacement_name equals the frozen derivation, phase is building or activating, and last_rowid/processed_rows are safe nonnegative integers.",
+    "progressRelation": "Every progress row uses the lease replacement_name, has a unique positive source_rowid and a lowercase SHA-256 source_digest, and has a matching replacement FTS rowid. No progress exists without a lease and exact replacement family.",
+    "counterRelation": "Building-empty requires last_rowid=processed_rows=0 and no progress/replacement rows. Nonempty building requires processed_rows=progress count=replacement docsize count, last_rowid=max progress source_rowid, and an exact digest match to indexed_messages for every processed row. Activating additionally requires processed_rows=source/progress/replacement counts and last_rowid=max indexed_messages rowid, or zero for an empty source.",
+    "buildingEmptyVariants": [
+      "O-REINDEX-BUILDING-EMPTY-ABSENT",
+      "O-REINDEX-BUILDING-EMPTY-PRESENT"
+    ],
+    "nondefaultFixtureOperationName": "Ops.reindex:tenant-7",
+    "nondefaultFixtureReplacementName": "message_fts_replacement_bf737a6b37fe2cde",
+    "nondefaultFixtureObjectTupleSha256": "2e83e220d94e2698939d1185b24007e1dd586f4db013cb378ccf5d79085bcbfe",
+    "forgedCases": [
+      "invalid or noncanonical operation name",
+      "replacement name not derived from operation name",
+      "missing, altered, extra, or multiply named replacement object",
+      "orphan or wrong-name progress row",
+      "progress digest or FTS rowid mismatch",
+      "building counter or last-rowid mismatch",
+      "activating state without a complete replacement",
+      "lease pointing at message_fts or message_fts_previous",
+      "building-empty lease with an ordinary-table lookalike replacement family",
+      "building-empty lease with altered virtual-table or shadow-table tuple bytes",
+      "nonempty lease with an ordinary-table lookalike replacement family",
+      "nonempty lease with altered virtual-table or shadow-table tuple bytes"
+    ]
+  },
+  "observedCompositions": [
+    {
+      "id": "H-MESSAGE-CATALOG",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog"],
+      "evidence": ["packages/storage/test/message-catalog-migration-p2-c04.test.ts"]
+    },
+    {
+      "id": "H-OPERATIONAL-JOURNAL",
+      "classification": "convertible-ledger",
+      "sequence": ["operational-journal"],
+      "evidence": ["packages/storage/test/operational-journal-p2-c15.test.ts"]
+    },
+    {
+      "id": "H-ROUTING-PREVIEW",
+      "classification": "convertible-ledger",
+      "sequence": ["routing-preview"],
+      "evidence": ["packages/storage/test/routing-preview-p2-c12.test.ts"]
+    },
+    {
+      "id": "H-ACTION-SCHEMA",
+      "classification": "convertible-ledger",
+      "sequence": ["action-schema"],
+      "evidence": ["packages/storage/test/action-schema-migration-p5-c01.test.ts"]
+    },
+    {
+      "id": "H-MESSAGE-STRUCTURED",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "structured-content"],
+      "evidence": ["packages/storage/test/structured-content-migration-p2-c05.test.ts"]
+    },
+    {
+      "id": "H-MESSAGE-IDENTITY",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "identity-only-content"],
+      "evidence": ["packages/storage/test/identity-only-repository-p2-c12.test.ts"]
+    },
+    {
+      "id": "H-MESSAGE-CHECKPOINT",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "mailbox-checkpoint-extension"],
+      "evidence": ["packages/storage/test/checkpoint-repository-p3-c03.test.ts"]
+    },
+    {
+      "id": "H-MESSAGE-BLOB",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "message-blob-references"],
+      "evidence": [
+        "packages/storage/test/doctor-integrity-p7-c01.test.ts",
+        "packages/daemon/test/doctor-service-p7-c02.test.ts",
+        "packages/daemon/test/admin-parity-issue-164.test.ts"
+      ]
+    },
+    {
+      "id": "H-ACTION-PROPOSAL",
+      "classification": "convertible-ledger",
+      "sequence": ["action-schema", "action-plan-proposal-evidence"],
+      "evidence": ["packages/storage/test/action-plan-repository-p5-c02.test.ts"]
+    },
+    {
+      "id": "H-PREVIEW-CONSUMPTION-STANDALONE",
+      "classification": "convertible-ledger",
+      "sequence": ["routing-preview", "routing-preview-consumption"],
+      "evidence": ["packages/storage/src/routing-preview-consumption-migration.ts"]
+    },
+    {
+      "id": "H-MESSAGE-STRUCTURED-IDENTITY",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "structured-content", "identity-only-content"],
+      "evidence": ["packages/storage/test/identity-only-repository-p2-c12.test.ts"]
+    },
+    {
+      "id": "H-SEARCH-BASE",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "structured-content", "external-content-search"],
+      "evidence": [
+        "packages/storage/test/external-content-search-migration-p4-c01.test.ts",
+        "packages/storage/test/search-projection-p4-c02.test.ts",
+        "packages/storage/test/search-reindex-p7-c03.test.ts"
+      ]
+    },
+    {
+      "id": "H-MESSAGE-JOURNAL",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "operational-journal"],
+      "evidence": [
+        "packages/storage/test/absence-reconciliation-p3-c13.test.ts",
+        "packages/storage/test/remote-placement-tombstone-p2-c14.test.ts"
+      ]
+    },
+    {
+      "id": "H-LOCAL-LABEL",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "operational-journal", "local-labels"],
+      "evidence": ["packages/storage/test/local-label-assignment-p4-c10.test.ts"]
+    },
+    {
+      "id": "H-JOURNAL-COMPACTION",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "operational-journal", "operational-journal-compaction"],
+      "evidence": ["packages/storage/test/operational-journal-compaction-p4-c13.test.ts"]
+    },
+    {
+      "id": "H-JOURNAL-COMPACTION-LABEL",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "operational-journal",
+        "operational-journal-compaction",
+        "local-labels"
+      ],
+      "evidence": ["packages/storage/test/operational-journal-compaction-p4-c13.test.ts"]
+    },
+    {
+      "id": "H-ROUTING-DECISION",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "local-labels", "routing-decisions"],
+      "evidence": ["packages/storage/test/routing-decision-dedup-p4-c11.test.ts"]
+    },
+    {
+      "id": "H-ROUTING-ORIGIN",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "local-labels",
+        "routing-decisions",
+        "routing-decision-origins"
+      ],
+      "evidence": ["packages/storage/test/routing-decision-origin-p4-c14.test.ts"]
+    },
+    {
+      "id": "H-ROUTING-COMPOSED",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "local-labels",
+        "routing-decisions",
+        "routing-preview",
+        "routing-preview-consumption"
+      ],
+      "evidence": [
+        "packages/storage/test/routing-preview-consumption-p4-c13.test.ts",
+        "packages/daemon/test/routing-handlers-p6-c06.test.ts",
+        "packages/cli/src/routing-commands.test.ts"
+      ]
+    },
+    {
+      "id": "H-CHECKPOINT-LABEL",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "mailbox-checkpoint-extension",
+        "operational-journal",
+        "local-labels"
+      ],
+      "evidence": ["packages/storage/test/epoch-reset-p3-c14.test.ts"]
+    },
+    {
+      "id": "H-PLACEMENT-OBSERVATION",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "operational-journal", "remote-placement-observation"],
+      "evidence": ["packages/storage/test/remote-placement-observation-p3-c12.test.ts"]
+    },
+    {
+      "id": "H-PROMOTED-PLACEMENT-OBSERVATION",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "operational-journal",
+        "message-blob-references",
+        "remote-placement-observation"
+      ],
+      "evidence": ["packages/storage/test/remote-placement-observation-p3-c12.test.ts"]
+    },
+    {
+      "id": "H-ACTION-CLAIM",
+      "classification": "convertible-ledger",
+      "sequence": ["action-schema", "action-plan-proposal-evidence", "action-plan-claim-version"],
+      "evidence": ["packages/storage/test/action-plan-claim-p5-c03.test.ts"]
+    },
+    {
+      "id": "H-ACTION-ATTEMPT",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary"
+      ],
+      "evidence": [
+        "packages/storage/test/action-plan-attempt-p5-c04.test.ts",
+        "packages/storage/test/action-plan-result-p5-c07.test.ts"
+      ]
+    },
+    {
+      "id": "H-ACTION-ATTEMPT-JOURNAL",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "operational-journal"
+      ],
+      "evidence": [
+        "packages/storage/test/action-plan-result-p5-c12.test.ts",
+        "packages/storage/test/action-plan-finalization-p5-c16.test.ts"
+      ]
+    },
+    {
+      "id": "H-ACTION-DISPATCH",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "action-attempt-dispatch-evidence"
+      ],
+      "evidence": ["packages/storage/test/action-plan-restart-recovery-p5-c17.test.ts"]
+    },
+    {
+      "id": "H-ACTION-DISPATCH-JOURNAL",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "action-attempt-dispatch-evidence",
+        "operational-journal"
+      ],
+      "evidence": ["packages/storage/test/action-plan-recovery-executor-p5-c13.test.ts"]
+    },
+    {
+      "id": "H-ACTION-RESULT",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "action-attempt-dispatch-evidence",
+        "operational-journal",
+        "action-result-reconciliation-transition"
+      ],
+      "evidence": [
+        "packages/storage/test/action-plan-reconciliation-p5-c14.test.ts",
+        "packages/daemon/test/action-plan-target-loop-p5-c15.test.ts",
+        "packages/daemon/test/action-plan-restart-recovery-p5-c17.test.ts"
+      ]
+    },
+    {
+      "id": "H-PROMOTION-COMPOSED",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "operational-journal",
+        "local-labels",
+        "routing-decisions",
+        "message-blob-references",
+        "remote-placement-observation"
+      ],
+      "evidence": [
+        "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+        "packages/storage/test/promotion-adapter-p2-c20.test.ts",
+        "packages/daemon/test/single-message-ingestion-p3-c08.test.ts"
+      ]
+    },
+    {
+      "id": "H-BACKUP-PARITY",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "operational-journal",
+        "local-labels",
+        "routing-decisions",
+        "message-blob-references",
+        "remote-placement-observation",
+        "identity-only-content"
+      ],
+      "evidence": ["packages/storage/test/backup-restore-parity-p2-c19.test.ts"]
+    },
+    {
+      "id": "H-SYNC-BATCH",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "mailbox-checkpoint-extension",
+        "identity-only-content",
+        "operational-journal",
+        "remote-placement-observation"
+      ],
+      "evidence": ["packages/daemon/test/initial-backfill-batch-p3-c09.test.ts"]
+    },
+    {
+      "id": "H-SYNC-COMPLETE",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "mailbox-checkpoint-extension",
+        "identity-only-content",
+        "operational-journal",
+        "remote-placement-observation",
+        "initial-backfill-completion"
+      ],
+      "evidence": [
+        "packages/daemon/test/initial-backfill-loop-p3-c10.test.ts",
+        "packages/daemon/test/recurring-mailbox-sweep-p3-c11.test.ts",
+        "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts"
+      ]
+    },
+    {
+      "id": "H-SEARCH-PLACEMENT-INDEX",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "remote-placement-observation",
+        "external-content-search",
+        "local-labels",
+        "search-candidate-placement-index"
+      ],
+      "evidence": ["packages/storage/test/search-candidate-placement-index-p4-c17.test.ts"]
+    },
+    {
+      "id": "H-SEARCH-PLACEMENT",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "external-content-search",
+        "remote-placement-observation"
+      ],
+      "evidence": ["packages/storage/test/search-cursor-p4-c08.test.ts"]
+    },
+    {
+      "id": "H-SEARCH-THREAD",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "external-content-search",
+        "remote-placement-observation",
+        "thread-graph"
+      ],
+      "evidence": ["packages/daemon/test/retrieval-handlers-p6-c04.test.ts"]
+    },
+    {
+      "id": "H-SEARCH-CANDIDATE-THREAD",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "external-content-search",
+        "remote-placement-observation",
+        "local-labels",
+        "thread-graph"
+      ],
+      "evidence": ["packages/storage/test/search-candidate-repository-p4-c05.test.ts"]
+    },
+    {
+      "id": "H-SEARCH-SUMMARY-THREAD",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "message-blob-references",
+        "external-content-search",
+        "remote-placement-observation",
+        "operational-journal",
+        "thread-graph"
+      ],
+      "evidence": ["packages/storage/test/search-summary-hydration-p4-c07.test.ts"]
+    },
+    {
+      "id": "H-THREAD-STRUCTURED",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "structured-content", "thread-graph"],
+      "evidence": ["packages/storage/test/thread-graph-p6-c04.test.ts"]
+    },
+    {
+      "id": "H-THREAD-STANDARD",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "remote-placement-observation",
+        "thread-graph"
+      ],
+      "evidence": [
+        "packages/storage/test/thread-graph-p6-c04.test.ts",
+        "packages/storage/test/thread-oracle-p6-c04.test.ts"
+      ]
+    },
+    {
+      "id": "H-THREAD-IDENTITY",
+      "classification": "convertible-ledger",
+      "sequence": ["message-catalog", "identity-only-content", "thread-graph"],
+      "evidence": [
+        "packages/storage/test/thread-graph-p6-c04.test.ts",
+        "packages/storage/test/thread-oracle-p6-c04.test.ts"
+      ]
+    },
+    {
+      "id": "H-THREAD-PROMOTION",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "remote-placement-observation",
+        "message-blob-references",
+        "operational-journal",
+        "thread-graph"
+      ],
+      "evidence": ["packages/storage/test/thread-oracle-p6-c04.test.ts"]
+    },
+    {
+      "id": "H-INTEGRATED-ROUTING-CALLER",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "mailbox-checkpoint-extension",
+        "structured-content",
+        "operational-journal",
+        "local-labels",
+        "routing-decisions",
+        "message-blob-references",
+        "remote-placement-observation",
+        "initial-backfill-completion",
+        "routing-decision-origins"
+      ],
+      "evidence": ["packages/daemon/test/routing-caller-adapter-p4-c14.test.ts"]
+    },
+    {
+      "id": "H-INTEGRATED-RESTART-CHILD",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "message-catalog",
+        "structured-content",
+        "operational-journal",
+        "local-labels",
+        "routing-decisions",
+        "message-blob-references",
+        "remote-placement-observation",
+        "routing-decision-origins",
+        "mailbox-checkpoint-extension",
+        "initial-backfill-completion"
+      ],
+      "evidence": ["packages/daemon/test/helpers/restart-convergence-child.ts"]
+    },
+    {
+      "id": "H-ACTION-AUTHORITY",
+      "classification": "convertible-ledger",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "action-attempt-dispatch-evidence",
+        "operational-journal",
+        "action-result-reconciliation-transition",
+        "thread-graph",
+        "action-approval-authority-v1",
+        "action-plan-restore-quarantine",
+        "seal-key-administration-authority"
+      ],
+      "evidence": [
+        "packages/storage/test/action-approval-authority.test.ts",
+        "packages/daemon/test/action-plan-restart-recovery-p5-c17.test.ts"
+      ]
+    },
+    {
+      "id": "H-ACTION-PLACEHOLDER",
+      "classification": "unsupported-placeholder",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "action-attempt-dispatch-evidence",
+        "test-action-chain-placeholder",
+        "action-result-reconciliation-transition",
+        "thread-graph",
+        "action-approval-authority-v1",
+        "action-plan-restore-quarantine",
+        "seal-key-administration-authority"
+      ],
+      "evidence": [
+        "packages/daemon/test/action-approval-service-composed.test.ts",
+        "packages/daemon/test/action-authority-http.test.ts",
+        "packages/daemon/test/action-authority-mutations.test.ts",
+        "packages/daemon/test/action-authority-startup.test.ts"
+      ]
+    },
+    {
+      "id": "H-ACTION-DIRECT-SQL",
+      "classification": "unsupported-direct-sql-bypass",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "action-attempt-dispatch-evidence"
+      ],
+      "unrecordedSql": ["operational-journal", "action-result-reconciliation-transition"],
+      "evidence": ["packages/daemon/test/action-plan-http-real-composition-p6-c07.test.ts"]
+    },
+    {
+      "id": "H-PLACEHOLDER-DIRECT-SQL",
+      "classification": "unsupported-direct-sql-bypass",
+      "sequence": [
+        "action-schema",
+        "action-plan-proposal-evidence",
+        "action-plan-claim-version",
+        "action-attempt-start-boundary",
+        "action-attempt-dispatch-evidence",
+        "test-action-chain-placeholder",
+        "action-result-reconciliation-transition",
+        "thread-graph",
+        "action-approval-authority-v1",
+        "action-plan-restore-quarantine",
+        "seal-key-administration-authority"
+      ],
+      "unrecordedSql": ["operational-journal"],
+      "evidence": ["packages/daemon/test/action-approval-service-composed.test.ts"]
+    }
+  ],
+  "runtimeAuthority": {
+    "singleRegistry": "Every writable application database opener imports the one frozen registry. No caller supplies a schema ceiling or migration array.",
+    "packageBoundary": "The storage registry never imports the daemon. Issue 234 moves the unchanged initial-backfill-completion definition from its accepted daemon source to packages/storage/src/migrations/initial-backfill-completion.ts, then makes the daemon consume the storage-owned definition.",
+    "derivedConstants": "CANONICAL_DATABASE_SCHEMA_VERSION is registry.length and NEXT_DATABASE_MIGRATION_VERSION is schemaVersion + 1; no independent numeric ceiling is authoritative.",
+    "conversionBackupCapability": "The application opener is constructed with validated archive-root paths and one pre-conversion backup capability. It invokes that capability only after the no-source-write scratch preflight classifies an exact legacy history, targeting configured privateRoot/backups. A missing capability, failed publication, failed verification, or locked fingerprint drift rejects legacy open before the source is opened read-write; fresh and canonical-prefix opens do not invoke it.",
+    "openOrder": [
+      "lstat and read a stable whole-tree plus main/WAL/SHM source snapshot without opening source SQLite or changing permissions",
+      "materialize the main/WAL bytes into unpublishable owner-only scratch outside privateRoot",
+      "open scratch, set only query_only, foreign_keys, and trusted_schema connection-local pragmas, and read the complete fingerprint",
+      "reject newer, corrupt, unknown, ambiguous, placeholder, direct-SQL, provenance-invalid, or reindex-invalid state; remove scratch with the source tree unchanged",
+      "for an exact supported legacy history, publish and independently verify the complete pre-conversion backup",
+      "acquire the exclusive application write-admission barrier",
+      "repeat the stable source snapshot plus scratch classification and require equality with preflight and backup input",
+      "only now open source SQLite read-write without create, enforce safe permissions/pragmas, and configure WAL",
+      "BEGIN IMMEDIATE and revalidate the full logical fingerprint on the write connection",
+      "convert an exact legacy history atomically or apply an exact canonical suffix, including exact provenance infrastructure and one transaction-gated row",
+      "commit, restore foreign_keys, verify integrity, history, provenance, and reindex overlay, then admit writers",
+      "return the handle only at canonical version 27 with exact canonical history"
+    ],
+    "repeatedOpen": "An exact version-27 database performs no schema, history, conversion-ledger, reindex-actor, or domain write. It revalidates names, checksums, migration infrastructure, and the reindex overlay before return.",
+    "newerVersion": "user_version greater than 27 or any unknown later ledger row fails before mutation. Downgrade and automatic repair are forbidden.",
+    "partialFailure": "The transaction commit is the only registry cutover. Preflight rejection leaves the complete source tree and sidecar presence/bytes/modes unchanged. Backup or locked-revalidation failure leaves the source database unchanged and retains any verified backup. Before commit, ordinary suffix failure leaves the previous canonical prefix and legacy conversion failure leaves the original legacy history, reindex overlay, and data. After commit, the complete new canonical prefix or complete canonical 27 is authoritative even if later opener work fails. No mixed ledger/schema/provenance state is accepted; foreign keys and the persistent always-deny insertion trigger are restored on every non-crash exit.",
+    "metadata": "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows; converted databases preserve and digest the exact old history, base schema, overlay snapshot, target registry, verified backup identity, canonical timestamp, conversion id, and complete record."
+  },
+  "conversionMetadata": {
+    "table": "schema_migration_conversions",
+    "layoutVersion": 1,
+    "historyEncoding": "UTF-8 JSON.stringify of rows ordered by version, each encoded as [version,name,content_hash]",
+    "overlayEncoding": "UTF-8 JSON.stringify([\"agent-mail/search-reindex-overlay/v1\",overlay_id,lease_or_null,progress_rows,schema_objects,source_rows,replacement_docsize_rowids]), where lease_or_null is null or [lease_id,operation_name,replacement_name,phase,last_rowid,processed_rows], progress_rows are [replacement_name,source_rowid,source_digest] ordered by replacement_name/source_rowid, schema_objects are [type,name,tbl_name,sql] ordered by type/name/tbl_name/sql, source_rows are [rowid,message_id,subject,participants,body_plain,body_html,attachment_names] ordered by rowid for an active lease and empty otherwise, and replacement_docsize_rowids are positive integers ordered by rowid. This makes every source digest and progress/index identity independently decodable.",
+    "schemaEncoding": "UTF-8 JSON.stringify of [type,name,tbl_name,sql] rows ordered by type,name,tbl_name,sql after excluding sqlite_ objects, migration infrastructure, and the separately encoded reindex overlay; SQLite null is JSON null",
+    "digestEncoding": "Each history, overlay, and schema SHA-256 is lowercase hexadecimal SHA-256 of its exact UTF-8 JSON bytes",
+    "timestampDomain": "completed_at is exactly Date.toISOString(): 24 ASCII bytes YYYY-MM-DDTHH:mm:ss.sssZ, round-trips through new Date(value).toISOString(), and is the verified backup response createdAt captured before the conversion transaction",
+    "backupIdentityDomain": "backup_id is backup: plus the published backup directory label matching [A-Za-z0-9][A-Za-z0-9._-]{0,127}; backup_manifest_sha256 is the independently re-read published manifest digest",
+    "recordEncoding": "UTF-8 JSON.stringify([\"agent-mail/migration-conversion-record/v1\",conversion_id,source_user_version,source_history_json,source_history_sha256,source_overlay_id,source_overlay_json,source_overlay_sha256,source_schema_json,source_schema_sha256,target_registry_sha256,backup_id,backup_manifest_sha256,completed_at])",
+    "conversionId": "migration-conversion: plus lowercase SHA-256 of UTF-8 JSON.stringify([\"agent-mail/migration-conversion/v1\",source_user_version,source_history_sha256,source_overlay_id,source_overlay_sha256,source_schema_sha256,target_registry_sha256,backup_id,backup_manifest_sha256,completed_at])",
+    "recordSha256": "lowercase SHA-256 of recordEncoding bytes",
+    "decoderAuthority": "One strict decoder is shared by preflight, conversion, reopen, doctor, serialized-backup verification, empty restore, and full restore. It parses canonical JSON and rejects before trusting any stored component or record hash; re-encoding each parsed value must reproduce the exact stored JSON bytes.",
+    "historyDomain": "source_history_json is an array of exact [safe positive integer version, nonempty string name, lowercase SHA-256 content hash] tuples, ordered contiguously from one. Every name/hash pair resolves to exactly one frozen semantic identity, identities are unique, the tuple sequence is one supported historical sequence, and source_user_version equals the final tuple version or zero only for the empty sequence.",
+    "schemaDomain": "source_schema_json is an array of exact [type,name,tbl_name,sql] tuples where type is table, index, trigger, or view; name and tbl_name are nonempty strings; sql is a nonempty string; rows are strictly ordered by type,name,tbl_name,sql with no duplicate tuple or object identity. The complete tuple sequence must equal the in-memory sequence-derived base schema for decoded source_history_json before its digest is accepted.",
+    "overlayDomain": "source_overlay_json is an exact seven-element v1 snapshot. The overlay id matches source_overlay_id; lease, progress, schema-object, source-row, and replacement-docsize tuple types and canonical order are exact; operation grammar and replacement derivation hold; the full expected FTS5 [type,name,tbl_name,sql] family, lease/progress/counter/source-row/indexed-row relations, recomputed source digests, and overlay classification all agree before its digest is accepted.",
+    "crossFieldRelations": "The decoded history, source_user_version, schema, overlay id/snapshot, target registry, verified backup id/manifest digest/timestamp, conversion id, component digests, record encoding, and record digest must all identify one conversion. Recomputed hashes never excuse an invalid domain or cross-field relation.",
+    "forgedCases": [
+      "self-consistent unknown or noncontiguous history with every dependent component, conversion, and record hash recomputed",
+      "self-consistent sequence-mismatched schema tuples with every dependent component, conversion, and record hash recomputed",
+      "self-consistent invalid overlay grammar or relation with every dependent component, conversion, and record hash recomputed"
+    ],
+    "columns": [
+      "conversion_id TEXT PRIMARY KEY NOT NULL",
+      "source_user_version INTEGER NOT NULL",
+      "source_history_json TEXT NOT NULL",
+      "source_history_sha256 TEXT NOT NULL",
+      "source_overlay_id TEXT NOT NULL",
+      "source_overlay_json TEXT NOT NULL",
+      "source_overlay_sha256 TEXT NOT NULL",
+      "source_schema_json TEXT NOT NULL",
+      "source_schema_sha256 TEXT NOT NULL",
+      "target_registry_sha256 TEXT NOT NULL",
+      "backup_id TEXT NOT NULL",
+      "backup_manifest_sha256 TEXT NOT NULL",
+      "completed_at TEXT NOT NULL",
+      "record_sha256 TEXT NOT NULL"
+    ],
+    "targetRegistrySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+    "insertionGateMechanism": "transactional always-deny trigger replacement",
+    "insertionGate": "The exact persistent BEFORE INSERT trigger always aborts. Only inside the same BEGIN IMMEDIATE conversion transaction, after exact revalidation, verified-backup binding, and all semantic SQL checks, the converter verifies and drops that trigger, executes exactly one bound INSERT with changes=1, recreates and re-verifies the exact trigger, then commits. SQLite transactional DDL restores the closed trigger on rollback; every opener rejects a missing or altered gate.",
+    "ddl": {
+      "tableSql": "CREATE TABLE schema_migration_conversions (conversion_id TEXT PRIMARY KEY NOT NULL CHECK (length(conversion_id) = 85 AND substr(conversion_id, 1, 21) = 'migration-conversion:' AND substr(conversion_id, 22) NOT GLOB '*[^0-9a-f]*'), source_user_version INTEGER NOT NULL CHECK (typeof(source_user_version) = 'integer' AND source_user_version >= 0), source_history_json TEXT NOT NULL CHECK (json_valid(source_history_json) AND json_type(source_history_json) = 'array'), source_history_sha256 TEXT NOT NULL CHECK (length(source_history_sha256) = 64 AND source_history_sha256 NOT GLOB '*[^0-9a-f]*'), source_overlay_id TEXT NOT NULL CHECK (source_overlay_id IN ('O-REINDEX-ABSENT', 'O-REINDEX-PARTIAL-EMPTY', 'O-REINDEX-IDLE', 'O-REINDEX-BUILDING-EMPTY-ABSENT', 'O-REINDEX-BUILDING-EMPTY-PRESENT', 'O-REINDEX-BUILDING', 'O-REINDEX-ACTIVATING')), source_overlay_json TEXT NOT NULL CHECK (json_valid(source_overlay_json) AND json_type(source_overlay_json) = 'array'), source_overlay_sha256 TEXT NOT NULL CHECK (length(source_overlay_sha256) = 64 AND source_overlay_sha256 NOT GLOB '*[^0-9a-f]*'), source_schema_json TEXT NOT NULL CHECK (json_valid(source_schema_json) AND json_type(source_schema_json) = 'array'), source_schema_sha256 TEXT NOT NULL CHECK (length(source_schema_sha256) = 64 AND source_schema_sha256 NOT GLOB '*[^0-9a-f]*'), target_registry_sha256 TEXT NOT NULL CHECK (length(target_registry_sha256) = 64 AND target_registry_sha256 NOT GLOB '*[^0-9a-f]*'), backup_id TEXT NOT NULL CHECK (length(backup_id) BETWEEN 8 AND 135 AND substr(backup_id, 1, 7) = 'backup:' AND substr(backup_id, 8, 1) GLOB '[A-Za-z0-9]' AND substr(backup_id, 8) NOT GLOB '*[^A-Za-z0-9._-]*'), backup_manifest_sha256 TEXT NOT NULL CHECK (length(backup_manifest_sha256) = 64 AND backup_manifest_sha256 NOT GLOB '*[^0-9a-f]*'), completed_at TEXT NOT NULL CHECK (length(completed_at) = 24 AND completed_at GLOB '????-??-??T??:??:??.???Z'), record_sha256 TEXT NOT NULL CHECK (length(record_sha256) = 64 AND record_sha256 NOT GLOB '*[^0-9a-f]*')) STRICT",
+      "tableSha256": "c5d6e635aee87ac8a2c0578a8b3d768520c7b4597ffaa67ae995f83f9f96246a",
+      "indexSql": "CREATE UNIQUE INDEX schema_migration_conversions_source_identity ON schema_migration_conversions (source_history_sha256, source_overlay_sha256, source_schema_sha256, target_registry_sha256)",
+      "indexSha256": "6c766a4586f9a4c0723c21571ecd8aa61801cd767ecad3d4b59b5d23d3e6064c",
+      "insertGateTriggerSql": "CREATE TRIGGER schema_migration_conversions_insert_gate BEFORE INSERT ON schema_migration_conversions BEGIN SELECT RAISE(ABORT, 'migration conversion insert is not authorized'); END",
+      "insertGateTriggerSha256": "e287d65473d90dc8d2bbac50b48d0ff2a3bce402b5ac0d76a2adb826b70fc968",
+      "updateTriggerSql": "CREATE TRIGGER schema_migration_conversions_no_update BEFORE UPDATE ON schema_migration_conversions BEGIN SELECT RAISE(ABORT, 'migration conversion provenance is immutable'); END",
+      "updateTriggerSha256": "dfe272490683874ff104816ecb1b6923621ba8c87a4ade071f4929b00cee4849",
+      "deleteTriggerSql": "CREATE TRIGGER schema_migration_conversions_no_delete BEFORE DELETE ON schema_migration_conversions BEGIN SELECT RAISE(ABORT, 'migration conversion provenance is immutable'); END",
+      "deleteTriggerSha256": "5a39db52a2517bc7e1c41e97235e869814839395774ced7eb248ef49034b93e4",
+      "bundleSha256": "a997440aa4bc93eff47ef806ae89e9115cc4c6b5c92c90f41c559e7b21a58802"
+    },
+    "immutability": "Every opener and verifier compares the exact table, explicit unique index, and three trigger SQL bytes and hashes. It re-encodes every row, checks every component digest plus conversion_id and record_sha256, rejects duplicate source identities, and proves unauthorized INSERT plus all UPDATE and DELETE statements abort. Fresh databases contain the exact empty infrastructure."
+  },
+  "preflightAuthority": {
+    "sourceAccess": "Never open the source database with SQLite before classification. lstat/open(O_RDONLY)/read only the canonical nonsymlink main database and existing -wal/-shm siblings; never create a missing path, chmod, lock, checkpoint, configure journaling, or touch a source sidecar.",
+    "sourceTreeSnapshotEncoding": "UTF-8 JSON.stringify of recursively sorted [relative_path,type,dev,ino,mode,size,mtime_ns,ctime_ns,content_sha256_or_null] rows beneath privateRoot. content_sha256 is required for archive.sqlite, archive.sqlite-wal, archive.sqlite-shm, and every regular file in focused whole-tree fixtures; production may use null for unrelated large blob/journal/config files while retaining metadata.",
+    "scratchSnapshot": "Copy the stable main database and optional WAL bytes into a newly created owner-only OS temporary directory outside privateRoot; do not copy SHM because it is a derived WAL index. Re-read source metadata and hashes after the copy and reject change. SQLite may create or modify sidecars only inside this unpublishable scratch directory, which is removed on every result.",
+    "allowedPragmas": [
+      "PRAGMA query_only = ON",
+      "PRAGMA foreign_keys = ON",
+      "PRAGMA trusted_schema = OFF"
+    ],
+    "classificationReads": [
+      "PRAGMA user_version",
+      "PRAGMA integrity_check",
+      "PRAGMA foreign_key_check",
+      "SELECT type,name,tbl_name,sql FROM sqlite_schema",
+      "SELECT version,name,content_hash FROM schema_migrations ORDER BY version",
+      "SELECT exact conversion provenance columns FROM schema_migration_conversions ORDER BY conversion_id",
+      "SELECT exact reindex lease/progress/replacement rows"
+    ],
+    "sequenceSchemaDerivation": "After strict history decoding, remap each recognized frozen semantic definition to the recorded contiguous position, execute that complete sequence in isolated in-memory SQLite, and derive the expected base-schema tuples. Compare exact tuples and their SHA-256 with the scratch database; no hand-authored object list participates.",
+    "baseSchemaTupleDomain": "The projection contains every explicit table, index, trigger, and view tuple as [type,name,tbl_name,sql], strictly ordered by type,name,tbl_name,sql. Any arbitrary added object or any changed SQL/tbl_name/type/name is a mismatch even when all known objects remain present.",
+    "infrastructureExclusionGate": "Before exclusion, schema_migrations must match the exact runner-derived DDL and decoded rows; conversion provenance must match all byte-frozen DDL and every row through the shared strict decoder; a reindex overlay must match one complete classified state and its full derived FTS5 tuples. Only those validated objects are removed from the base projection.",
+    "schemaMutationCases": [
+      "added table",
+      "changed table",
+      "added index",
+      "changed index",
+      "added trigger",
+      "changed trigger",
+      "added view",
+      "changed view"
+    ],
+    "rejectionOrder": "On the scratch connection, set only allowedPragmas, then reject corruption, newer version, missing/gapped/duplicate/unknown/mismatched history, placeholder, direct-SQL or schema fingerprint mismatch, invalid provenance, and invalid reindex overlay. Close and remove scratch before returning one stable error.",
+    "forbiddenBeforeSupportedClassification": [
+      "opening the source database through SQLite",
+      "PRAGMA journal_mode or wal_checkpoint",
+      "chmod, chown, rename, truncate, create, delete, lockfile, or sidecar creation",
+      "backup staging/publication",
+      "schema/history/conversion/reindex writes"
+    ],
+    "backupThenLock": "For an exact supported legacy history, close/remove scratch, publish and independently verify the complete pre-conversion backup, acquire the exclusive application database-write admission barrier, and reject if any writer is active.",
+    "lockedRevalidation": "While the exclusive barrier is held, take a second stable source snapshot and scratch classification. Require exact equality of user_version, history bytes/digest, base schema bytes/digest, overlay id/bytes/digest, provenance bytes/digest, and source database/WAL hashes with both the preflight decision and verified backup input. Any difference releases the barrier without opening the source read-write and restarts from preflight.",
+    "writeSequence": "Only after locked revalidation may the opener enforce already-required owner-only permissions, open the source read-write without create, configure WAL and safe pragmas, verify the closed persistent conversion insert gate, BEGIN IMMEDIATE, revalidate the same logical fingerprint on that connection, convert, COMMIT, verify, and admit ordinary writers.",
+    "probeContract": "For every reject class and success case, snapshot the whole focused private-root fixture and explicit main/WAL/SHM presence, bytes, mode, and link identity before/after. Rejection and preflight success leave them byte-for-byte identical; only scratch paths may appear and they are gone at return."
+  },
+  "operationsAuthority": {
+    "doctor": "Doctor imports the canonical registry directly, uses the no-source-write preflight, and emits separate bounded evidence for invalid user_version, missing history, gap or duplicate, unknown name, checksum mismatch, noncanonical known history, conversion DDL/index/trigger or row/digest mismatch, unauthorized provenance shape, partial conversion, invalid reindex control DDL, invalid lease/progress/counter/replacement overlay, and newer schema. It never accepts caller-supplied migration definitions, touches source sidecars, or erases one finding behind another.",
+    "backup": "The production backup service pauses all database writers, verifies exact canonical version 27, history, byte-exact conversion infrastructure and rows, and reindex overlay before serialization, then reopens the serialized snapshot and verifies the same bytes/digests. A valid active reindex overlay is resumable and may be backed up; a legacy, partial, corrupt, unknown, provenance-invalid, or newer database is not published as a new backup.",
+    "emptyRootRestore": "Restore verifies manifest, artifact hashes, SQLite integrity, foreign keys, exact canonical version 27, exact canonical history, byte-exact conversion table/index/triggers and every row re-encoding/digest, and any active reindex overlay before the final rename. It never migrates or repairs a backup during restore.",
+    "fullRestore": "Offline root replacement invokes the same registry verifier on the staged root before swap and again through repository verification after swap. Registry failure preserves the live root or rolls it back, with target, stage, and rollback disposition reported.",
+    "restoreAuthority": "A historical backup must first be upgraded by the matching application version into a newly verified canonical backup. Restore does not infer or convert history."
+  },
+  "lifecycleCases": [
+    {
+      "id": "LC-FRESH",
+      "input": "empty SQLite database",
+      "expected": "canonical 1..27",
+      "writes": "27 semantic migrations plus empty conversion metadata"
+    },
+    {
+      "id": "LC-CREATE-EMPTY-FILE",
+      "input": "existing empty SQLite file at version 0",
+      "expected": "same as fresh",
+      "writes": "same as fresh"
+    },
+    {
+      "id": "LC-CANONICAL-UPGRADE",
+      "input": "exact canonical prefix 0..26",
+      "expected": "apply missing suffix to 27",
+      "writes": "one transaction per missing semantic migration"
+    },
+    {
+      "id": "LC-LEGACY-UPGRADE",
+      "input": "exact supported legacy prefix",
+      "expected": "no-source-write preflight, verified backup, exclusive barrier, locked revalidation, then atomic conversion to 27",
+      "writes": "all-or-nothing conversion"
+    },
+    {
+      "id": "LC-PREFLIGHT-REJECT",
+      "input": "newer, unknown, corrupt, placeholder, direct-SQL, provenance-invalid, or reindex-invalid source",
+      "expected": "stable rejection from disposable scratch",
+      "writes": "none in privateRoot; main/WAL/SHM presence, bytes, modes, and whole focused fixture remain exact"
+    },
+    {
+      "id": "LC-REOPEN",
+      "input": "exact canonical 27 with idle or valid active reindex overlay",
+      "expected": "validated no-op",
+      "writes": "none"
+    },
+    {
+      "id": "LC-ORDINARY-FAILURE",
+      "input": "injected failure on both sides of each pending commit",
+      "expected": "pre-commit exact predecessor; post-commit exact new prefix",
+      "writes": "only fully committed migration transactions"
+    },
+    {
+      "id": "LC-CONVERSION-FAILURE",
+      "input": "injected failure on both sides of the one conversion commit",
+      "expected": "pre-commit exact legacy state; post-commit exact canonical 27",
+      "writes": "no mixed database state; verified backup retained"
+    },
+    {
+      "id": "LC-NEWER",
+      "input": "user_version 28 or later",
+      "expected": "stable newer-schema rejection",
+      "writes": "none"
+    },
+    {
+      "id": "LC-REINDEX-OVERLAY",
+      "input": "exact canonical or convertible ledger with idle, either building-empty variant, generic-name building, or generic-name activating accepted reindex state",
+      "expected": "registry open preserves actor state; explicit reindex owner resumes it",
+      "writes": "opener none for canonical; conversion changes registry only and preserves actor rows/objects"
+    },
+    {
+      "id": "LC-PROVENANCE",
+      "input": "fresh, converted, reopened, doctor, backup, empty-restore, or full-restore database",
+      "expected": "exact conversion table/index/triggers and every canonical row encoding/digest verify",
+      "writes": "fresh infrastructure only or one gated conversion INSERT; UPDATE/DELETE/ungated INSERT always abort"
+    },
+    {
+      "id": "LC-UNKNOWN",
+      "input": "unknown, ambiguous, corrupt, placeholder, or direct-SQL history",
+      "expected": "stable unsupported-history rejection",
+      "writes": "none"
+    },
+    {
+      "id": "LC-DOCTOR",
+      "input": "each independent history defect and combinations",
+      "expected": "all exact findings retained",
+      "writes": "none"
+    },
+    {
+      "id": "LC-BACKUP-RESTORE",
+      "input": "canonical database with durable rows",
+      "expected": "history and domain parity after empty-root restore",
+      "writes": "new verified root only"
+    },
+    {
+      "id": "LC-FULL-RESTORE",
+      "input": "canonical backup replacing an offline live root",
+      "expected": "canonical staged and post-swap verification with rollback",
+      "writes": "atomic root swap only after verification"
+    }
+  ],
+  "retirement": [
+    {
+      "id": "RET-PLACEHOLDER",
+      "current": "four test-action-chain-placeholder occurrences",
+      "required": "zero; never accepted as a semantic migration or conversion input"
+    },
+    {
+      "id": "RET-THREAD-COMPOSER",
+      "current": "composeThreadGraphMigrations plus two callers/imports",
+      "required": "remove dynamic production composition and migrate callers to the canonical registry"
+    },
+    {
+      "id": "RET-DIRECT-SQL",
+      "current": "three accepted migration SQL bodies executed outside the runner",
+      "required": "zero outside the conversion executor and focused synthetic runner tests"
+    },
+    {
+      "id": "RET-VERSION-REMAP",
+      "current": "accepted migrations are repeatedly cloned with caller-selected versions",
+      "required": "only the canonical registry and frozen legacy conversion fixture may assign versions"
+    },
+    {
+      "id": "RET-CALLER-CEILING",
+      "current": "31 supportedSchemaVersion references",
+      "required": "no production caller override; tests use explicit corrupt/newer fixtures through the registry harness"
+    },
+    {
+      "id": "RET-DOCTOR-ARRAY",
+      "current": "DoctorIntegrityOptions accepts caller-supplied migrations",
+      "required": "doctor imports the registry and accepts no migration authority from callers"
+    },
+    {
+      "id": "RET-AD-HOC-TESTS",
+      "current": "30 production *Migrations array/alias exports and 61 non-runner execution roots participate in the 62-file/94-call applyMigrations corpus",
+      "required": "zero production aggregate registry exports outside the canonical registry; integration tests use the canonical opener; only migration-runner unit tests and the centralized frozen legacy fixture construct alternate histories"
+    },
+    {
+      "id": "RET-CAPACITY-COMPOSERS",
+      "current": "scripts/capacity/benchmark-search.ts and scripts/capacity/generate-search-corpus.ts each compose a caller-selected migration subset",
+      "required": "both scripts consume the canonical opener/registry and contain no local migration array, version remap, direct semantic SQL, or applyMigrations bypass"
+    },
+    {
+      "id": "RET-CROSS-PACKAGE-SOURCE",
+      "current": "initial-backfill-completion is defined in the daemon although the canonical registry belongs to storage",
+      "required": "move the unchanged single definition into storage, update daemon consumers, and forbid a storage-to-daemon import"
+    },
+    {
+      "id": "RET-LAZY-REINDEX-SCHEMA",
+      "current": "SEARCH_REINDEX_SCHEMA_SQL creates two durable tables lazily without a schema_migrations row",
+      "required": "canonical slot 20 owns the frozen SQL; rebuildSearchIndex no longer creates persistent control schema ad hoc"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-IDENTITY",
+      "text": "Freeze every accepted semantic migration name, SQL checksum, execution mode, legacy declared version, and canonical slot."
+    },
+    {
+      "id": "REQ-ORDER",
+      "text": "Expose one contiguous canonical order from 1 through 27 and derive the next legal slot as 28."
+    },
+    {
+      "id": "REQ-HISTORY",
+      "text": "Classify and convert every exact supported historical ledger without data loss or silent rewrite."
+    },
+    {
+      "id": "REQ-OPEN",
+      "text": "Route every writable production opener through the one registry and reject bypass."
+    },
+    {
+      "id": "REQ-LIFECYCLE",
+      "text": "Define fresh, create, upgrade, repeated-open, partial-failure, unknown, and newer-version behavior."
+    },
+    {
+      "id": "REQ-PREFLIGHT",
+      "text": "Reject unsafe histories from a disposable read-only preflight without opening or changing the source database, WAL, SHM, permissions, or private-root tree."
+    },
+    {
+      "id": "REQ-PROVENANCE",
+      "text": "Freeze conversion provenance DDL, domains, encodings, insertion authority, immutability, and verification across every database operation."
+    },
+    {
+      "id": "REQ-REINDEX-OVERLAY",
+      "text": "Adopt the accepted unledgered reindex control schema and preserve every valid idle or resumable dynamic reindex state without treating arbitrary schema as canonical."
+    },
+    {
+      "id": "REQ-DOCTOR",
+      "text": "Diagnose exact migration defects read-only without caller-supplied authority or collapsed findings."
+    },
+    {
+      "id": "REQ-BACKUP",
+      "text": "Back up only exact canonical history and prove snapshot history parity."
+    },
+    {
+      "id": "REQ-RESTORE",
+      "text": "Verify exact canonical history before empty-root publication and full-root swap."
+    },
+    {
+      "id": "REQ-RETIRE",
+      "text": "Retire placeholders, dynamic composition, direct SQL, caller ceilings, and ad hoc integration registries."
+    },
+    {
+      "id": "REQ-CURRENT-TREE",
+      "text": "Enforce exact issue 234 mutation scope and audit tracked plus untracked execution roots by importing the implemented registry/converter and rejecting every bypass or unknown path."
+    },
+    {
+      "id": "REQ-DOWNSTREAM",
+      "text": "Bound issue 234 implementation and reserve report creation at exact slot 28 without creating it."
+    }
+  ],
+  "decisions": [
+    {
+      "id": "DEC-ORDER-COMMITS",
+      "text": "Canonical order follows first accepted commit ancestry rather than filenames, feature families, or the schema ceiling."
+    },
+    {
+      "id": "DEC-SEMANTIC-REMAP",
+      "text": "The registry remaps only version metadata; accepted names, SQL bytes, and execution modes remain unchanged."
+    },
+    {
+      "id": "DEC-REINDEX-SEMANTIC",
+      "text": "The accepted unledgered SEARCH_REINDEX_SCHEMA_SQL becomes canonical slot 20 with declaredVersion null; exact idle and resumable actor overlays are preserved, while invalid overlays fail closed."
+    },
+    {
+      "id": "DEC-EXACT-CONVERSION",
+      "text": "Conversion is whitelist and fingerprint based, never heuristic or table-presence based."
+    },
+    {
+      "id": "DEC-ATOMIC-CONVERSION",
+      "text": "Legacy conversion is one BEGIN IMMEDIATE transaction with foreign keys disabled only around the transaction and checked before commit."
+    },
+    {
+      "id": "DEC-BACKUP-FIRST",
+      "text": "File-backed legacy conversion requires an automatically verified pre-conversion backup."
+    },
+    {
+      "id": "DEC-READONLY-PREFLIGHT",
+      "text": "Classification reads a stable main/WAL copy in disposable scratch and never opens source SQLite; backup precedes an exclusive write barrier and exact locked revalidation before WAL configuration or conversion."
+    },
+    {
+      "id": "DEC-BYTE-PROVENANCE",
+      "text": "Conversion infrastructure and records use byte-frozen SQL and canonical JSON/digest domains, with one transaction-gated INSERT and aborting UPDATE/DELETE triggers."
+    },
+    {
+      "id": "DEC-FAIL-UNKNOWN",
+      "text": "Unknown, ambiguous, direct-SQL, and placeholder histories fail before mutation."
+    },
+    {
+      "id": "DEC-ONE-OPENER",
+      "text": "The database opener owns registry application and callers cannot select a version or subset."
+    },
+    {
+      "id": "DEC-OPERATIONS",
+      "text": "Doctor, backup, empty restore, and full restore consume the same registry verifier."
+    },
+    {
+      "id": "DEC-NO-RESTORE-UPGRADE",
+      "text": "Restore verifies canonical backups and never upgrades or repairs the staged database."
+    },
+    {
+      "id": "DEC-CURRENT-TREE",
+      "text": "Issue 234 acceptance scans all tracked and untracked source roots against exact allow/protected/unknown sets, imports the real registry/converter, and permits no execution-root bypass."
+    },
+    {
+      "id": "DEC-REPORT-28",
+      "text": "The exact next legal migration and report creation slot is 28."
+    }
+  ],
+  "rejectedAlternatives": [
+    {
+      "id": "ALT-CEILING-REGISTRY",
+      "alternative": "Treat supported schema ceiling 11 as the canonical history",
+      "reason": "It contains no names, checksums, dependency order, or composition authority."
+    },
+    {
+      "id": "ALT-ACTION-CHAIN",
+      "alternative": "Treat the action-specific 1..11 test chain as global",
+      "reason": "It omits most application migrations and uses remapped journal/thread entries plus placeholder variants."
+    },
+    {
+      "id": "ALT-REPORT-12",
+      "alternative": "Append report creation at version 12",
+      "reason": "The canonical registry contains 27 accepted semantic migrations; 12 is occupied by identity-only-content."
+    },
+    {
+      "id": "ALT-FILENAME-SORT",
+      "alternative": "Sort migration filenames",
+      "reason": "Independent modules reuse prefixes and one file named 0004 declares version 1."
+    },
+    {
+      "id": "ALT-SCHEMA-INFERENCE",
+      "alternative": "Infer installed migrations from table presence",
+      "reason": "Partial/direct SQL states and later ALTER or rebuild migrations make presence ambiguous."
+    },
+    {
+      "id": "ALT-SILENT-REWRITE",
+      "alternative": "Replace old schema_migrations rows without preserving them",
+      "reason": "That destroys durable provenance and hides the compatibility decision."
+    },
+    {
+      "id": "ALT-RESTORE-MIGRATE",
+      "alternative": "Upgrade a backup during restore",
+      "reason": "It mixes recovery with mutation and breaks byte/provenance parity before publication."
+    }
+  ],
+  "proofs": [
+    {
+      "id": "PROOF-FRESH-COMPOSITION",
+      "kind": "real-sqlite",
+      "postcondition": "all 27 migrations apply; user_version 27; exact history; integrity ok; no foreign-key rows"
+    },
+    {
+      "id": "PROOF-HASH-PROJECTION",
+      "kind": "source",
+      "postcondition": "all 27 runtime definitions, including the SQL-only reindex semantic, match frozen names, content hashes, modes, and declared versions"
+    },
+    {
+      "id": "PROOF-REINDEX-OVERLAY",
+      "kind": "real-sqlite",
+      "postcondition": "absent, exact partial-empty, idle, both building-empty variants, nondefault generic-name building, and nondefault generic-name activating overlays converge or remain resumable; the complete derived FTS5 object tuples match; all 12 forged operation/name/object/progress/counter/digest/ordinary-table/altered-tuple cases reject before write"
+    },
+    {
+      "id": "PROOF-PREFLIGHT",
+      "kind": "real-filesystem-sqlite",
+      "postcondition": "valid main/WAL state classifies from disposable scratch; sequence-derived full tuple validation rejects every newer/unknown/corrupt/placeholder/direct-SQL case and each added/changed table/index/trigger/view case while leaving the whole focused source tree and main/WAL/SHM presence, bytes, modes, and identities unchanged"
+    },
+    {
+      "id": "PROOF-PROVENANCE",
+      "kind": "real-sqlite",
+      "postcondition": "fresh, conversion, reopen, doctor, serialized backup, and restore projections share one strict decoder and preserve exact DDL plus canonical row bytes/domains/relations/digests; DDL/row/trigger mutations, three self-consistent forged history/schema/overlay records, ungated INSERT, UPDATE, and DELETE fail"
+    },
+    {
+      "id": "PROOF-CONVERSION-MATRIX",
+      "kind": "real-sqlite",
+      "postcondition": "every supported history and every prefix converges to the same canonical schema while fixture domain rows remain equal"
+    },
+    {
+      "id": "PROOF-FAILURE-MATRIX",
+      "kind": "injection",
+      "postcondition": "each pre-commit boundary leaves its exact predecessor, each post-commit boundary leaves its exact successor, no mixed state appears, and foreign_keys is on after reopen"
+    },
+    {
+      "id": "PROOF-REOPEN",
+      "kind": "real-sqlite",
+      "postcondition": "second open changes no registry, conversion, or domain row"
+    },
+    {
+      "id": "PROOF-DOCTOR",
+      "kind": "mutation",
+      "postcondition": "each independent and combined history defect remains visible and the tree is unchanged"
+    },
+    {
+      "id": "PROOF-BACKUP-RESTORE",
+      "kind": "real-filesystem",
+      "postcondition": "backup, empty restore, and full restore preserve exact registry plus domain parity"
+    },
+    {
+      "id": "PROOF-RETIREMENT",
+      "kind": "source",
+      "postcondition": "forbidden placeholder, direct SQL, dynamic composer, caller ceiling, capacity-script subset, and integration arrays are absent"
+    },
+    {
+      "id": "PROOF-CURRENT-TREE",
+      "kind": "source-mutation",
+      "postcondition": "tracked/untracked scope includes deletions and both rename endpoints before filesystem inspection, real registry/converter imports match the oracle, and protected/unknown deletion plus remove/duplicate/change/new-DDL/all-27 migration-object/slot-20-sql-constant/import-alias/registry-index/direct-bracket-at-find-destructuring/bypass source mutations each make the checker exit nonzero"
+    },
+    {
+      "id": "PROOF-REPORT-SLOT",
+      "kind": "structural",
+      "postcondition": "exported next version is 28 and no report migration exists"
+    }
+  ],
+  "coverage": {
+    "REQ-IDENTITY": ["DEC-SEMANTIC-REMAP", "DEC-REINDEX-SEMANTIC", "PROOF-HASH-PROJECTION"],
+    "REQ-ORDER": ["DEC-ORDER-COMMITS", "PROOF-FRESH-COMPOSITION", "PROOF-REPORT-SLOT"],
+    "REQ-HISTORY": [
+      "DEC-EXACT-CONVERSION",
+      "DEC-ATOMIC-CONVERSION",
+      "DEC-BACKUP-FIRST",
+      "DEC-READONLY-PREFLIGHT",
+      "DEC-BYTE-PROVENANCE",
+      "PROOF-CONVERSION-MATRIX",
+      "PROOF-FAILURE-MATRIX",
+      "PROOF-PREFLIGHT",
+      "PROOF-PROVENANCE"
+    ],
+    "REQ-OPEN": ["DEC-ONE-OPENER", "PROOF-REOPEN", "PROOF-RETIREMENT"],
+    "REQ-LIFECYCLE": [
+      "DEC-FAIL-UNKNOWN",
+      "PROOF-FRESH-COMPOSITION",
+      "PROOF-CONVERSION-MATRIX",
+      "PROOF-FAILURE-MATRIX",
+      "PROOF-REOPEN",
+      "PROOF-PREFLIGHT",
+      "PROOF-PROVENANCE"
+    ],
+    "REQ-PREFLIGHT": [
+      "DEC-READONLY-PREFLIGHT",
+      "DEC-FAIL-UNKNOWN",
+      "PROOF-PREFLIGHT",
+      "PROOF-FAILURE-MATRIX"
+    ],
+    "REQ-PROVENANCE": [
+      "DEC-BYTE-PROVENANCE",
+      "DEC-OPERATIONS",
+      "PROOF-PROVENANCE",
+      "PROOF-BACKUP-RESTORE"
+    ],
+    "REQ-REINDEX-OVERLAY": [
+      "DEC-REINDEX-SEMANTIC",
+      "DEC-EXACT-CONVERSION",
+      "PROOF-REINDEX-OVERLAY",
+      "PROOF-BACKUP-RESTORE"
+    ],
+    "REQ-DOCTOR": ["DEC-OPERATIONS", "PROOF-DOCTOR"],
+    "REQ-BACKUP": ["DEC-OPERATIONS", "PROOF-BACKUP-RESTORE"],
+    "REQ-RESTORE": ["DEC-OPERATIONS", "DEC-NO-RESTORE-UPGRADE", "PROOF-BACKUP-RESTORE"],
+    "REQ-RETIRE": ["DEC-ONE-OPENER", "PROOF-RETIREMENT", "PROOF-CURRENT-TREE"],
+    "REQ-CURRENT-TREE": [
+      "DEC-CURRENT-TREE",
+      "DEC-ONE-OPENER",
+      "PROOF-CURRENT-TREE",
+      "PROOF-RETIREMENT"
+    ],
+    "REQ-DOWNSTREAM": ["DEC-REPORT-28", "PROOF-REPORT-SLOT"]
+  },
+  "shields": [
+    {
+      "id": "S01",
+      "applicability": "required",
+      "proof": "conversion and restore reject missing or ineligible source history"
+    },
+    {
+      "id": "S02",
+      "applicability": "required",
+      "proof": "one registry boundary has source and composed parity"
+    },
+    {
+      "id": "S03",
+      "applicability": "required",
+      "proof": "transactional suffix and conversion failure matrices"
+    },
+    {
+      "id": "S04",
+      "applicability": "required",
+      "proof": "single opener and verifier ownership with no alternate production authority"
+    },
+    {
+      "id": "S05",
+      "applicability": "required",
+      "proof": "fresh, repeated-open, partial-failure, and restart traces"
+    },
+    {
+      "id": "S06",
+      "applicability": "required",
+      "proof": "no history inference or automatic retry after ambiguous state"
+    },
+    {
+      "id": "S07",
+      "applicability": "required",
+      "proof": "immutable name and checksum plus history archive"
+    },
+    {
+      "id": "S08",
+      "applicability": "required",
+      "proof": "real SQLite and filesystem probes, not mock-only evidence"
+    },
+    {
+      "id": "S09",
+      "applicability": "required",
+      "proof": "bounded history/schema classification and no corpus scan at ordinary open"
+    },
+    {
+      "id": "S10",
+      "applicability": "required",
+      "proof": "doctor and stable errors preserve exact bounded evidence"
+    },
+    {
+      "id": "S11",
+      "applicability": "required",
+      "proof": "backup-first conversion and verified restore/full-restore rollback"
+    },
+    {
+      "id": "S12",
+      "applicability": "required",
+      "proof": "source drift, immutable semantic projection, and append-only next slot"
+    }
+  ],
+  "issue234": {
+    "productionPaths": [
+      "packages/storage/src/migration-registry.ts",
+      "packages/storage/src/migration-history-conversion.ts",
+      "packages/storage/src/migrations/initial-backfill-completion.ts",
+      "packages/storage/src/database.ts",
+      "packages/storage/src/migration-runner.ts",
+      "packages/storage/src/doctor-integrity.ts",
+      "packages/storage/src/backup-writer.ts",
+      "packages/storage/src/backup-restore.ts",
+      "packages/storage/src/offline-root-replacement.ts",
+      "packages/storage/src/thread-migration.ts",
+      "packages/storage/src/search-reindex.ts",
+      "packages/storage/src/index.ts",
+      "packages/daemon/src/backup-service.ts",
+      "packages/daemon/src/doctor-service.ts",
+      "packages/daemon/src/initial-backfill-loop.ts"
+    ],
+    "testPaths": [
+      "packages/storage/test/helpers/legacy-migration-history-fixtures.ts",
+      "packages/storage/test/migration-registry.test.ts",
+      "packages/storage/test/migration-history-conversion.test.ts",
+      "packages/storage/test/database-preflight.test.ts",
+      "packages/storage/test/migration-conversion-provenance.test.ts",
+      "packages/storage/test/search-reindex-p7-c03.test.ts",
+      "packages/storage/test/migration-runner.test.ts",
+      "packages/storage/test/database.test.ts",
+      "packages/storage/test/doctor-integrity-p7-c01.test.ts",
+      "packages/storage/test/backup-writer-p2-c17.test.ts",
+      "packages/storage/test/backup-restore-p2-c18.test.ts",
+      "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
+      "packages/storage/test/offline-root-replacement-p7-c05.test.ts",
+      "packages/daemon/test/backup-service-p7-c04.test.ts",
+      "packages/daemon/test/doctor-service-p7-c02.test.ts"
+    ],
+    "executionRootPaths": [
+      "scripts/capacity/benchmark-search.ts",
+      "scripts/capacity/generate-search-corpus.ts"
+    ],
+    "compositionCorpus": {
+      "acceptedHead": "547f70dd67959541324688b7b737749bc43791ab",
+      "selection": "git grep -l -F applyMigrations( <acceptedHead> -- *.ts",
+      "files": 62,
+      "calls": 94,
+      "sha256": "e35638caca271c94c87421d10f12f204b8a3ae38daee54e928323943cfaafa70",
+      "implementationRule": "Every tracked TypeScript execution root selected at acceptedHead, including both capacity scripts, is in issue 234 mutation and retirement scope even when it is not repeated in testPaths; the checker freezes the exact selected path-and-file-hash set."
+    },
+    "semanticSourceScope": {
+      "pathsFrom": "canonicalRegistry.migrations[].source",
+      "count": 27,
+      "allowedChanges": "Only remove obsolete aggregate/lazy-schema exports, wrap SEARCH_REINDEX_SCHEMA_SQL as canonical slot 20 without changing its bytes, or relocate initial-backfill-completion into its registrySource; every other accepted name, SQL byte, execution mode, declared version, checksum, and canonical slot remains frozen."
+    },
+    "currentTreeAuthority": {
+      "mode": "--implementation-check",
+      "enumeration": "First parse git diff --name-status -z --find-renames HEAD, retaining every deletion and both source and destination endpoints of renames/copies as virtual change records; union git ls-files --others --exclude-standard -z; normalize and enforce protected/allowed/unknown scope before any filesystem inspection. Only then enumerate existing tracked/untracked paths, reject symlinks, and scan every TypeScript file outside exact generated exclusions node_modules/, package dist/, __pycache__/, and *.pyc.",
+      "allowedMutationPaths": "exact union of productionPaths, testPaths, executionRootPaths, the 62 accepted compositionCorpus paths, and canonicalRegistry registrySource relocations",
+      "protectedPaths": [
+        "AGENTS.md",
+        "PLAN.md",
+        "docs/planning/EVIDENCE.md",
+        "METRICS.md",
+        "docs/architecture/report-creation-check.v1.mjs",
+        "docs/architecture/report-creation-coverage.v1.md",
+        "docs/architecture/report-creation-decisions.v1.md",
+        "docs/architecture/report-creation-design.v1.md",
+        "docs/architecture/report-creation-oracle.v1.json"
+      ],
+      "protectedPrefixes": ["packages/contracts/", ".agents/skills/plan-agent-mail/", ".github/"],
+      "unknownPathRule": "Any added, modified, deleted, renamed, or copied tracked endpoint or untracked source/test/script path outside allowedMutationPaths fails. Any protected path or prefix change fails even if another rule would allow it. Scope is enforced against virtual Git change records before lstat, so deletion cannot disappear and rename/copy cannot hide either endpoint. Exact generated dependency/build/cache paths are excluded from source scanning but never become implementation evidence.",
+      "registryImport": "Import packages/storage/src/migration-registry.ts and require frozen exports canonicalDatabaseMigrations, CANONICAL_DATABASE_SCHEMA_VERSION, and NEXT_DATABASE_MIGRATION_VERSION to project exactly to the oracle.",
+      "converterImport": "Import packages/storage/src/migration-history-conversion.ts and require callable exports classifyMigrationHistory, convertMigrationHistory, verifyCanonicalMigrationState, and installMigrationConversionInfrastructure.",
+      "postImplementationApplyMigrationPaths": [
+        "packages/storage/src/migration-runner.ts",
+        "packages/storage/src/database.ts",
+        "packages/storage/test/helpers/legacy-migration-history-fixtures.ts",
+        "packages/storage/test/migration-runner.test.ts",
+        "packages/storage/test/migration-registry.test.ts",
+        "packages/storage/test/migration-history-conversion.test.ts"
+      ],
+      "directSqlAllowedPaths": [
+        "packages/storage/src/migration-registry.ts",
+        "packages/storage/src/migration-runner.ts",
+        "packages/storage/src/migration-history-conversion.ts",
+        "packages/storage/test/helpers/legacy-migration-history-fixtures.ts"
+      ],
+      "directSqlDetection": "Resolve named and namespace imports for every one of the 27 frozen semantic-definition source/export pairs and canonicalDatabaseMigrations, including relative module normalization. Use each frozen sourceKind: ordinary migration-object exports expose semantic SQL through .sql, ['sql'], or destructuring, while a sql-constant export such as slot 20 SEARCH_REINDEX_SCHEMA_SQL is itself semantic SQL when imported or reached through any direct assignment alias. Propagate import aliases, direct assignment aliases, destructured sql aliases, and registry element aliases produced by literal indexing, .at(index), or .find(...). Recognize destructuring both from an element alias and directly from canonicalDatabaseMigrations[index], .at(index), or .find(...). Outside directSqlAllowedPaths reject every reached or extracted semantic SQL reference; no hardcoded migration-name subset is authoritative.",
+      "sourceMutationIds": [
+        "remove-semantic-source",
+        "duplicate-semantic-source",
+        "change-semantic-sql",
+        "new-durable-ddl",
+        "new-direct-semantic-sql",
+        "new-apply-migrations-bypass",
+        "protected-deletion",
+        "unknown-deletion",
+        "rename-endpoints",
+        "third-migration-direct-sql",
+        "registry-index-direct-sql",
+        "alias-direct-sql",
+        "slot20-sql-constant-alias",
+        "registry-bracket-destructure",
+        "registry-at-destructure",
+        "registry-find-destructure"
+      ],
+      "mutationExitRule": "--source-self-test spawns one fresh checker process per sourceMutationId against real accepted source bytes or explicit virtual Git change records for deletion/rename cases; each child must exit nonzero for its independent mutation or the self-test fails."
+    },
+    "obligations": [
+      {
+        "id": "IMP-REGISTRY",
+        "text": "Create and export the exact immutable 1..27 storage registry and derived version 27/28 constants; adopt unledgered SEARCH_REINDEX_SCHEMA_SQL at slot 20 with declaredVersion null; relocate the unchanged daemon-owned initial-backfill-completion definition into storage without changing its semantic identity."
+      },
+      {
+        "id": "IMP-CONVERTER",
+        "text": "Implement no-source-write main/WAL scratch preflight, automatic verified backup, exclusive barrier and locked revalidation, exact generic-name reindex-overlay classification, byte-frozen provenance, atomic conversion, active reindex preservation, and stable rejection."
+      },
+      {
+        "id": "IMP-OPENER",
+        "text": "Make the writable database opener the sole production migration consumer and remove caller-selected ceilings/arrays."
+      },
+      {
+        "id": "IMP-DOCTOR",
+        "text": "Bind doctor to the registry and preserve exact independent defects read-only."
+      },
+      {
+        "id": "IMP-BACKUP",
+        "text": "Verify canonical registry before and after backup serialization."
+      },
+      {
+        "id": "IMP-RESTORE",
+        "text": "Verify canonical registry before empty-root publication and before/after full-root swap."
+      },
+      {
+        "id": "IMP-RETIRE",
+        "text": "Centralize legacy fixtures and remove every placeholder, lazy reindex schema initializer, direct accepted SQL call, dynamic composer, caller ceiling, aggregate registry export, capacity-script subset, and ad hoc integration registry across all 62 execution roots."
+      },
+      {
+        "id": "IMP-PROOFS",
+        "text": "Run fresh, all-prefix plus every generic reindex-overlay conversion/forgery, no-source-write preflight and whole-tree/sidecar probes, byte-exact provenance and mutation probes, failure injection, no-op reopen, newer/unknown, doctor, backup, empty restore, full restore, current-tree source mutations, and slot proofs."
+      },
+      {
+        "id": "IMP-NO-REPORT",
+        "text": "Export slot 28 but do not create or absorb the report migration."
+      }
+    ]
+  },
+  "frozenInputs": [
+    {
+      "id": "AGENTS",
+      "path": "AGENTS.md",
+      "sha256": "ae21373d9647b748cef009da572b9ea74556fb4560df839ebf08bde3f08a06f3",
+      "kind": "project-guidance"
+    },
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "sha256": "75e65967b8302e22582826d6bfc4beeb3d0520eb0ed502a1a65602fe5b2bfe48",
+      "kind": "planning"
+    },
+    {
+      "id": "EVIDENCE",
+      "path": "docs/planning/EVIDENCE.md",
+      "sha256": "59d846e6033f748042aa894e9c4c0a232fc97d60af89338a4149259b7e060d21",
+      "kind": "planning"
+    },
+    {
+      "id": "METRICS",
+      "path": "METRICS.md",
+      "sha256": "5c286a31365fe9b84108d38875724395ca4281b041ab9d9b24d4b998db22ec3c",
+      "kind": "coordination"
+    },
+    {
+      "id": "DATABASE",
+      "path": "packages/storage/src/database.ts",
+      "sha256": "f130ee5e1edfdde98fc426a07343ef2b96f7229eb1f919bab61ee60b08fbdac6",
+      "kind": "implementation-seam"
+    },
+    {
+      "id": "RUNNER",
+      "path": "packages/storage/src/migration-runner.ts",
+      "sha256": "7529d819a0199b8537b729c0f16137b32aceb679bea9b87363e688f2604fd566",
+      "kind": "implementation-seam"
+    },
+    {
+      "id": "DOCTOR",
+      "path": "packages/storage/src/doctor-integrity.ts",
+      "sha256": "b3705fc9c326d017a4029c82c5d0356703624d2de7ddc12890ac9b0f459105eb",
+      "kind": "implementation-seam"
+    },
+    {
+      "id": "BACKUP-MANIFEST",
+      "path": "packages/storage/src/backup-manifest.ts",
+      "sha256": "edfae5713e3209d9483bbc08d8e75d8ede438308459551f7b0ce106115102ac7",
+      "kind": "recovery-seam"
+    },
+    {
+      "id": "BACKUP-WRITER",
+      "path": "packages/storage/src/backup-writer.ts",
+      "sha256": "02f4a4e09467498d912cbba946b7cc124746f79f034f955c72bb8c990dcc12a1",
+      "kind": "recovery-seam"
+    },
+    {
+      "id": "BACKUP-RESTORE",
+      "path": "packages/storage/src/backup-restore.ts",
+      "sha256": "2774c4caba171d945b3b8fb89dcda9a413ebdf7c99c0c4f780812879ed1de25c",
+      "kind": "recovery-seam"
+    },
+    {
+      "id": "FULL-RESTORE",
+      "path": "packages/storage/src/offline-root-replacement.ts",
+      "sha256": "8b3b92349be0386f9f18bd4aeaf5dfae934ac5de88a8d4bcef07fcedf78b86b9",
+      "kind": "recovery-seam"
+    },
+    {
+      "id": "DAEMON-BACKUP",
+      "path": "packages/daemon/src/backup-service.ts",
+      "sha256": "81c2049b653848a7bab94243bd8e33742d7d9db9c9a2b897118597802605699f",
+      "kind": "recovery-seam"
+    },
+    {
+      "id": "DAEMON-DOCTOR",
+      "path": "packages/daemon/src/doctor-service.ts",
+      "sha256": "c9e90f7ff9249c4ae1431eabb78b0b5678a4f4af4b730f187ebdf70d016bc83b",
+      "kind": "implementation-seam"
+    },
+    {
+      "id": "STORAGE-EXPORT",
+      "path": "packages/storage/src/index.ts",
+      "sha256": "f1715f0bad6548c7ccc5cb07e795136607b57789bff740dc2b5618a37e6e86b1",
+      "kind": "implementation-seam"
+    },
+    {
+      "id": "THREAD-COMPOSER",
+      "path": "packages/storage/src/thread-migration.ts",
+      "sha256": "7d1fc9e0d02d163c8f376c40da4efc40ef910e2792b634347b2220558cccd005",
+      "kind": "retirement-seam"
+    },
+    {
+      "id": "SEARCH-REINDEX",
+      "path": "packages/storage/src/search-reindex.ts",
+      "sha256": "b85be9ca98eec5259bb576b580786463221bb68e7ab54ae9f64a5bf08887ece4",
+      "kind": "unledgered-schema-seam"
+    }
+  ],
+  "blockers": []
+}
