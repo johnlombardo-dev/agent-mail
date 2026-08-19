@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   defineOperation,
+  parseErrorDefinition,
   publicErrorEnvelopeSchema,
   retrievalInstantSchema,
   streamMetadataSchema,
@@ -10,29 +11,30 @@ import {
   validateThreadSuccess,
 } from "../src/index";
 import { cliCommandRegistry, publicCliOperations } from "../../cli/src/command-registry";
+import { publicOperationDefinitions } from "../../daemon/src/http";
 import {
   assertCorpusComplete,
   operationCorpus,
   parseNdjsonRecord,
   parseByteStreamMetadata,
   parseStreamMetadata,
-  registeredPublicErrorApplicability,
 } from "./operation-corpus";
 
 const jsonRoundTrip = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
 describe("public operation corpus", () => {
   it("proves completeness before parsing and covers the exact CLI registry", () => {
-    assertCorpusComplete(publicCliOperations, operationCorpus);
+    assertCorpusComplete(publicOperationDefinitions, operationCorpus);
     expect(Object.keys(operationCorpus)).toHaveLength(25);
+    expect(publicOperationDefinitions).toHaveLength(25);
     expect(cliCommandRegistry.commands.map(({ operationKey }) => operationKey)).toEqual(
       publicCliOperations.map(({ key }) => key),
     );
   });
 
   it("round-trips every request, success, applicable error, and stream through shared schemas", () => {
-    assertCorpusComplete(publicCliOperations, operationCorpus);
-    for (const operation of publicCliOperations) {
+    assertCorpusComplete(publicOperationDefinitions, operationCorpus);
+    for (const operation of publicOperationDefinitions) {
       const entry = operationCorpus[operation.key];
       if (entry === undefined) throw new Error(`missing corpus entry for ${operation.key}`);
       const requests = [entry.request, ...(entry.requestVariants ?? [])];
@@ -47,8 +49,10 @@ describe("public operation corpus", () => {
         expect(operation.response.parse(jsonRoundTrip(responseCanonical))).toEqual(responseCanonical);
       }
       for (const error of entry.errors) {
-        const errorCanonical = operation.response.parse(error.response);
-        expect(operation.response.parse(jsonRoundTrip(errorCanonical))).toEqual(errorCanonical);
+        const definition = operation.errors.find(({ code }) => code === error.code);
+        if (definition === undefined) throw new Error(`missing error definition for ${error.code}`);
+        const errorCanonical = parseErrorDefinition(definition, error.response);
+        expect(parseErrorDefinition(definition, jsonRoundTrip(errorCanonical))).toEqual(errorCanonical);
       }
 
       if (entry.stream !== undefined) {
@@ -102,8 +106,8 @@ describe("public operation corpus", () => {
   });
 
   it("rejects unknown fields at every strict request and response root", () => {
-    assertCorpusComplete(publicCliOperations, operationCorpus);
-    for (const operation of publicCliOperations) {
+    assertCorpusComplete(publicOperationDefinitions, operationCorpus);
+    for (const operation of publicOperationDefinitions) {
       const entry = operationCorpus[operation.key];
       if (entry === undefined) throw new Error(`missing corpus entry for ${operation.key}`);
       expect(() => operation.request.parse({ ...(entry.request as Record<string, unknown>), unknownField: true })).toThrow();
@@ -127,10 +131,60 @@ describe("public operation corpus", () => {
     const action = operationCorpus["action-plans.create"];
     expect(JSON.stringify(search)).toContain("réunion");
     expect(JSON.stringify(action)).toContain("9007199254740991");
-    expect(registeredPublicErrorApplicability["messages.get"]).toEqual(["not_found"]);
-    expect(registeredPublicErrorApplicability["messages.search"]).toEqual([
+    expect(publicOperationDefinitions.find(({ key }) => key === "messages.get")?.errors.map(({ code }) => code)).toEqual([
+      "not_found",
+    ]);
+    expect(publicOperationDefinitions.find(({ key }) => key === "messages.search")?.errors.map(({ code }) => code)).toEqual([
       "invalid_query",
       "invalid_cursor",
     ]);
+  });
+
+  it("rejects missing routing errors and status/detail drift", () => {
+    const routing = operationCorpus["routing.commit"];
+    if (routing === undefined) throw new Error("routing.commit corpus fixture is missing");
+    const withoutTampered = {
+      ...operationCorpus,
+      "routing.commit": { ...routing, errors: routing.errors.slice(0, 2) },
+    };
+    expect(() => assertCorpusComplete(publicOperationDefinitions, withoutTampered)).toThrow(
+      /routing\.commit has incorrect applicable error fixtures/,
+    );
+
+    const statusDrift = {
+      ...operationCorpus,
+      "routing.commit": {
+        ...routing,
+        errors: routing.errors.map((error) =>
+          error.code === "routing.preview_replayed" ? { ...error, status: 400 } : error,
+        ),
+      },
+    };
+    expect(() => assertCorpusComplete(publicOperationDefinitions, statusDrift)).toThrow(
+      /routing\.commit error routing\.preview_replayed has status 400; expected 409/,
+    );
+
+    const detailDrift = {
+      ...operationCorpus,
+      "routing.commit": {
+        ...routing,
+        errors: routing.errors.map((error) =>
+          error.code === "routing.preview_tampered"
+            ? {
+                ...error,
+                response: {
+                  code: "routing.preview_tampered",
+                  message: "routing preview authority does not match",
+                  correlationId: "correlation:routing-preview-tampered-例",
+                  details: { previewId: "preview:authority", digest: "a".repeat(64) },
+                },
+              }
+            : error,
+        ),
+      },
+    };
+    expect(() => assertCorpusComplete(publicOperationDefinitions, detailDrift)).toThrow(
+      /routing\.commit error routing\.preview_tampered has invalid response/,
+    );
   });
 });

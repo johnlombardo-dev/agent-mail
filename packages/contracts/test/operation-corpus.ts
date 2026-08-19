@@ -5,14 +5,17 @@ import {
 import {
   reportAdminExportResponseSchema,
   reportAdminExportRecordSchema,
+  parseErrorDefinition,
   streamMetadataSchema,
   type OperationDefinition,
   type OperationSchema,
+  type PublicErrorStatus,
 } from "../src/index";
 
 /** A fixture for one registered public error branch of an operation response. */
 export type OperationErrorFixture = Readonly<{
   readonly code: string;
+  readonly status: PublicErrorStatus;
   readonly response: unknown;
 }>;
 
@@ -142,6 +145,7 @@ const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
   const common = [
     {
       code: "sync.control-rejected",
+      status: 500,
       response: {
         code: "sync.control-rejected",
         message: "Sync control was rejected.",
@@ -151,6 +155,7 @@ const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
     },
     {
       code: "sync.control-failed",
+      status: 500,
       response: {
         code: "sync.control-failed",
         message: "Sync control failed before completion.",
@@ -160,6 +165,7 @@ const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
     },
     {
       code: "sync.control-cancelled",
+      status: 500,
       response: {
         code: "sync.control-cancelled",
         message: "Sync control was superseded.",
@@ -169,6 +175,7 @@ const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
     },
     {
       code: "sync.control-timeout",
+      status: 500,
       response: {
         code: "sync.control-timeout",
         message: "Sync control did not complete before the deadline.",
@@ -182,6 +189,7 @@ const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
     ...common,
     {
       code: "sync.control-idempotency-conflict",
+      status: 500,
       response: {
         code: "sync.control-idempotency-conflict",
         message: "Sync control idempotency key conflicts with an earlier request.",
@@ -195,6 +203,7 @@ const syncControlErrors = (command: "start" | "pause" | "resume" | "stop") => {
     },
     {
       code: "sync.control-capacity",
+      status: 500,
       response: {
         code: "sync.control-capacity",
         message: "Sync control idempotency capacity is exhausted.",
@@ -310,14 +319,14 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
       nextCursor: null,
     },
     errors: [
-      { code: "invalid_query", response: invalidSearchQuery },
-      { code: "invalid_cursor", response: invalidSearchCursor },
+      { code: "invalid_query", status: 400, response: invalidSearchQuery },
+      { code: "invalid_cursor", status: 400, response: invalidSearchCursor },
     ],
   },
   "messages.get": {
     request: { messageId },
     success: { message: hydratedMessage },
-    errors: [{ code: "not_found", response: notFound("message", messageId) }],
+    errors: [{ code: "not_found", status: 404, response: notFound("message", messageId) }],
   },
   "threads.get": {
     request: { threadId },
@@ -370,14 +379,14 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
       },
     ],
     errors: [
-      { code: "invalid_cursor", response: invalidThreadCursor },
-      { code: "not_found", response: notFound("thread", threadId) },
+      { code: "invalid_cursor", status: 400, response: invalidThreadCursor },
+      { code: "not_found", status: 404, response: notFound("thread", threadId) },
     ],
   },
   "messages.raw": {
     request: { messageId },
     success: streamMetadata,
-    errors: [{ code: "not_found", response: notFound("raw-message", messageId) }],
+    errors: [{ code: "not_found", status: 404, response: notFound("raw-message", messageId) }],
     stream: { metadata: streamMetadata },
   },
   "attachments.get": {
@@ -387,7 +396,7 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
       messageId,
       metadata: streamMetadata,
     },
-    errors: [{ code: "not_found", response: notFound("attachment", attachmentId) }],
+    errors: [{ code: "not_found", status: 404, response: notFound("attachment", attachmentId) }],
     stream: {
       metadata: { ...streamMetadata, contentType: "application/pdf", filename: "réunion.pdf" },
     },
@@ -410,7 +419,38 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
       committedAt: laterInstant,
       provenance: routingProvenance,
     },
-    errors: [],
+    errors: [
+      {
+        code: "routing.preview_replayed",
+        status: 409,
+        response: {
+          code: "routing.preview_replayed",
+          message: "routing preview was already consumed",
+          correlationId: "correlation:routing-preview-replayed-例",
+          details: { previewId: routingPreview.previewId },
+        },
+      },
+      {
+        code: "routing.preview_expired",
+        status: 409,
+        response: {
+          code: "routing.preview_expired",
+          message: "routing preview has expired",
+          correlationId: "correlation:routing-preview-expired-例",
+          details: { previewId: routingPreview.previewId },
+        },
+      },
+      {
+        code: "routing.preview_tampered",
+        status: 409,
+        response: {
+          code: "routing.preview_tampered",
+          message: "routing preview authority does not match",
+          correlationId: "correlation:routing-preview-tampered-例",
+          details: { previewId: routingPreview.previewId },
+        },
+      },
+    ],
   },
   "messages.label": {
     request: { messageId, label: "label:important", provenance: routingProvenance, dryRun: false },
@@ -613,47 +653,10 @@ const corpusEntries: Readonly<Record<string, OperationCorpusEntry>> = {
 /** The corpus is keyed from the exact CLI registry, so stale entries cannot hide drift. */
 export const operationCorpus: OperationCorpus = Object.freeze(corpusEntries);
 
-/** Applicability is explicit: no operation receives an invented error fixture. */
-export const registeredPublicErrorApplicability: Readonly<Record<string, readonly string[]>> =
-  Object.freeze(
-    Object.fromEntries(
-      publicCliOperations.map((operation) => [
-        operation.key,
-        operation.key === "sync.start"
-          ? [
-              "sync.control-rejected",
-              "sync.control-failed",
-              "sync.control-cancelled",
-              "sync.control-timeout",
-            ]
-          : operation.key === "sync.pause" ||
-              operation.key === "sync.resume" ||
-              operation.key === "sync.stop"
-            ? [
-                "sync.control-rejected",
-                "sync.control-failed",
-                "sync.control-cancelled",
-                "sync.control-timeout",
-                "sync.control-idempotency-conflict",
-                "sync.control-capacity",
-              ]
-            : operation.key === "messages.get" ||
-                operation.key === "threads.get" ||
-                operation.key === "messages.raw" ||
-                operation.key === "attachments.get"
-              ? operation.key === "threads.get"
-                ? ["invalid_cursor", "not_found"]
-                : ["not_found"]
-              : operation.key === "messages.search"
-                ? ["invalid_query", "invalid_cursor"]
-                : [],
-      ]),
-    ),
-  );
-
 /**
- * Check only corpus shape and registry coverage. This intentionally does not parse fixtures;
- * callers can prove this gate runs before any round-trip assertion.
+ * Check corpus shape, registry coverage, and every declared error fixture.
+ * Error applicability is derived from the operation definition itself, so a
+ * second hand-maintained code table cannot silently omit a newly declared error.
  */
 export function assertCorpusComplete(
   operations: readonly OperationDefinition<OperationSchema, OperationSchema>[],
@@ -674,12 +677,26 @@ export function assertCorpusComplete(
     if (entry.request === undefined) throw new Error(`operation ${operation.key} missing request fixture`);
     if (entry.success === undefined) throw new Error(`operation ${operation.key} missing success fixture`);
     if (!Array.isArray(entry.errors)) throw new Error(`operation ${operation.key} missing error applicability`);
-    const expectedErrors = registeredPublicErrorApplicability[operation.key] ?? [];
+    const expectedErrors = operation.errors.map(({ code }) => code);
     const actualErrors = entry.errors.map(({ code }) => code);
     if (new Set(actualErrors).size !== actualErrors.length)
       throw new Error(`operation ${operation.key} has duplicate error fixtures`);
     if (JSON.stringify([...actualErrors].sort()) !== JSON.stringify([...expectedErrors].sort()))
       throw new Error(`operation ${operation.key} has incorrect applicable error fixtures`);
+    for (const fixture of entry.errors) {
+      const definition = operation.errors.find(({ code }) => code === fixture.code);
+      if (definition === undefined) continue;
+      if (fixture.status !== definition.status)
+        throw new Error(
+          `operation ${operation.key} error ${fixture.code} has status ${fixture.status}; expected ${definition.status}`,
+        );
+      try {
+        parseErrorDefinition(definition, fixture.response);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "invalid error fixture";
+        throw new Error(`operation ${operation.key} error ${fixture.code} has invalid response: ${message}`);
+      }
+    }
     if (operation.streaming !== "none" && entry.stream === undefined)
       throw new Error(`operation ${operation.key} missing ${operation.streaming} stream metadata fixture`);
     if (operation.streaming === "none" && entry.stream !== undefined)

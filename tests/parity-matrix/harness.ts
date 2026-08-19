@@ -5,6 +5,7 @@ import {
   parseStreamMetadata,
   type OperationCorpus,
 } from "../../packages/contracts/test/operation-corpus";
+import { parseErrorDefinition } from "../../packages/contracts/src/index";
 import type {
   OperationDefinition,
   OperationSchema,
@@ -306,7 +307,16 @@ function validateCorpus(
       if (entry === undefined) continue;
       operation.request.parse(entry.request);
       operation.response.parse(entry.success);
-      for (const error of entry.errors) operation.response.parse(error.response);
+      for (const error of entry.errors) {
+        const definition = operation.errors.find(({ code }) => code === error.code);
+        if (definition === undefined)
+          throw new Error(`operation ${operation.key} has no declared error ${error.code}`);
+        if (error.status !== definition.status)
+          throw new Error(
+            `operation ${operation.key} error ${error.code} has status ${error.status}; expected ${definition.status}`,
+          );
+        parseErrorDefinition(definition, error.response);
+      }
       if (entry.stream !== undefined) {
         const parseMetadata =
           operation.key === "exports.selected" ? parseByteStreamMetadata : parseStreamMetadata;

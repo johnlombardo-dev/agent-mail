@@ -72,7 +72,11 @@ const expectedOperationErrors = {
   "messages.raw": ["not_found"],
   "attachments.get": ["not_found"],
   "routing.preview": [],
-  "routing.commit": [],
+  "routing.commit": [
+    "routing.preview_replayed",
+    "routing.preview_expired",
+    "routing.preview_tampered",
+  ],
   "messages.label": [],
   "action-plans.create": [],
   "action-plans.inspect": [],
@@ -134,6 +138,29 @@ describe("P6-C09A HTTP metadata authorities", () => {
         ]),
       ),
     ).toEqual(expectedOperationErrors);
+    expect(
+      publicOperationRegistry.get("routing.commit")?.errors.map(({ code, status, message }) => ({
+        code,
+        status,
+        message,
+      })),
+    ).toEqual([
+      {
+        code: "routing.preview_replayed",
+        status: 409,
+        message: "routing preview was already consumed",
+      },
+      {
+        code: "routing.preview_expired",
+        status: 409,
+        message: "routing preview has expired",
+      },
+      {
+        code: "routing.preview_tampered",
+        status: 409,
+        message: "routing preview authority does not match",
+      },
+    ]);
   });
 
   it("freezes one status for each registered public error", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { publicCliOperations } from "../../packages/cli/src/command-registry";
+import { publicOperationDefinitions } from "../../packages/daemon/src/http";
 import { operationCorpus } from "../../packages/contracts/test/operation-corpus";
 import {
   absentSurfaceEvidence,
@@ -9,12 +9,12 @@ import {
 } from "./harness";
 
 const baseline = () => ({
-  operations: publicCliOperations,
+  operations: publicOperationDefinitions,
   corpus: operationCorpus,
-  restDirect: absentSurfaceEvidence(publicCliOperations, "rest-direct"),
-  cliComposed: absentSurfaceEvidence(publicCliOperations, "cli-composed"),
-  productionAdapter: absentSurfaceEvidence(publicCliOperations, "production-adapter"),
-  stream: corpusStreamEvidence(publicCliOperations, operationCorpus),
+  restDirect: absentSurfaceEvidence(publicOperationDefinitions, "rest-direct"),
+  cliComposed: absentSurfaceEvidence(publicOperationDefinitions, "cli-composed"),
+  productionAdapter: absentSurfaceEvidence(publicOperationDefinitions, "production-adapter"),
+  stream: corpusStreamEvidence(publicOperationDefinitions, operationCorpus),
 });
 
 describe("REST/CLI operation parity matrix", () => {
@@ -22,16 +22,16 @@ describe("REST/CLI operation parity matrix", () => {
     const matrix = buildParityMatrix(baseline());
 
     expect(matrix.rows.map(({ operationKey }) => operationKey)).toEqual(
-      publicCliOperations.map(({ key }) => key),
+      publicOperationDefinitions.map(({ key }) => key),
     );
-    expect(matrix.rows).toHaveLength(24);
+    expect(matrix.rows).toHaveLength(25);
     expect(matrix.complete).toBe(false);
     expect(matrix.diagnostics).toEqual([]);
     expect(matrix.rows.every(({ sharedContract }) => sharedContract.status === "pass")).toBe(true);
     expect(matrix.rows.every(({ restDirectSurface }) => restDirectSurface.status === "blocked")).toBe(true);
     expect(matrix.rows.every(({ cliComposedSurface }) => cliComposedSurface.status === "blocked")).toBe(true);
     expect(matrix.rows.every(({ productionAdapter }) => productionAdapter.status === "blocked")).toBe(true);
-    expect(matrix.rows.filter(({ streamMode }) => streamMode === "none")).toHaveLength(21);
+    expect(matrix.rows.filter(({ streamMode }) => streamMode === "none")).toHaveLength(22);
     expect(matrix.rows.filter(({ streamMode }) => streamMode === "bytes")).toHaveLength(3);
     expect(matrix.rows.filter(({ streamMode }) => streamMode === "ndjson")).toHaveLength(0);
     expect(matrix.rows.find(({ operationKey }) => operationKey === "exports.selected")?.streamBehavior.status).toBe("blocked");
@@ -174,7 +174,7 @@ describe("REST/CLI operation parity matrix", () => {
   });
 
   test("rejects stream evidence whose declared mode differs from the contract", () => {
-    const streamEvidence = corpusStreamEvidence(publicCliOperations, operationCorpus).map((cell) =>
+    const streamEvidence = corpusStreamEvidence(publicOperationDefinitions, operationCorpus).map((cell) =>
       cell.operationKey === "messages.raw" ? { ...cell, streaming: "ndjson" as const } : cell,
     );
     const matrix = buildParityMatrix({ ...baseline(), stream: streamEvidence });
@@ -185,6 +185,52 @@ describe("REST/CLI operation parity matrix", () => {
       surface: "stream",
       operationKey: "messages.raw",
       message: "stream cell for operation messages.raw declares ndjson; expected bytes",
+    });
+  });
+
+  test("rejects routing error removal and status/detail drift", () => {
+    const routing = operationCorpus["routing.commit"];
+    if (routing === undefined) throw new Error("routing.commit corpus fixture is missing");
+    const removed = buildParityMatrix({
+      ...baseline(),
+      corpus: {
+        ...operationCorpus,
+        "routing.commit": { ...routing, errors: routing.errors.slice(0, 2) },
+      },
+    });
+    expect(removed.complete).toBe(false);
+    expect(removed.diagnostics[0]).toMatchObject({
+      code: "incomplete-corpus",
+      operationKey: "*",
+    });
+
+    const drifted = buildParityMatrix({
+      ...baseline(),
+      corpus: {
+        ...operationCorpus,
+        "routing.commit": {
+          ...routing,
+          errors: routing.errors.map((error) =>
+            error.code === "routing.preview_tampered"
+              ? {
+                  ...error,
+                  status: 400,
+                  response: {
+                    code: "routing.preview_tampered",
+                    message: "routing preview authority does not match",
+                    correlationId: "correlation:routing-preview-tampered-例",
+                    details: { previewId: "preview:authority", digest: "a".repeat(64) },
+                  },
+                }
+              : error,
+          ),
+        },
+      },
+    });
+    expect(drifted.complete).toBe(false);
+    expect(drifted.diagnostics[0]).toMatchObject({
+      code: "incomplete-corpus",
+      operationKey: "*",
     });
   });
 });
