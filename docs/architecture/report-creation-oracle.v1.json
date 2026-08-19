@@ -1,0 +1,1582 @@
+{
+  "format": "agent-mail.report-creation-oracle/v1",
+  "schemaVersion": 1,
+  "modelVersion": "1.0.0",
+  "status": "frozen-design",
+  "oracle": {
+    "normative": true,
+    "signable": true,
+    "signatureState": "signed",
+    "issue": 231,
+    "acceptedHead": "896405ac9734e60a84c8cb7690f4688da86383fd",
+    "sourceDate": "2026-08-19",
+    "description": "This JSON file is the single signed and normative authority for report creation, normalized-text materialization, persistence, source serving, and CLI behavior. It freezes user-selected capacity Policy A and consumes the accepted #233 canonical migration registry plus the #234 implementation at the accepted head. The design, decisions, and coverage Markdown files are exact checked projections of this authority.",
+    "scope": "One reports.create request through trusted HTTP admission, production MIME normalization for new and legacy canonical mail, deterministic construction, one SQLite report-publication transaction, authenticated report and source serving, and the reports create CLI observation. No network mail fetch, remote mutation, raw mail proxy, report deletion, general runtime assembly, or public-schema change is authorized.",
+    "compatibilityRule": "Version 1 preserves the accepted reports.create request and response, report renderer, serving routes, HTTP error registry, CLI client, and command-outcome authority. A changed identity input, projection, citation, renderer, retention rule, public field, status, or CLI semantic requires a new oracle version and an explicit migration decision.",
+    "implementationRule": "Issue 232 may implement only this signed authority from the exact accepted head and within its checked mutation boundary. Any capacity-policy, migration-slot, public-schema, protected-path, or frozen-input drift requires a new explicit authority revision before implementation continues."
+  },
+  "resolvedAuthorities": [
+    {
+      "id": "AUTH-CAPACITY-POLICY-A",
+      "status": "selected-and-frozen",
+      "choice": "A",
+      "source": "User Policy A selection recorded on live issue #231 on 2026-08-19.",
+      "rule": "Freeze exactly 10000 committed reports and 2147483648 logical charged bytes account-wide, plus 10 authenticated non-replay attempts per principal in every rolling 60000 milliseconds. Exact committed replay precedes and bypasses all capacity admission. Committed report graphs are immutable and retained indefinitely without deletion, eviction, TTL, LRU, or cleanup. Capacity denial reuses request_too_large/413 with strict empty details and no public or configuration schema widening."
+    },
+    {
+      "id": "AUTH-MIGRATION-SLOT-28",
+      "status": "accepted-and-consumed",
+      "dependencies": [233, 234],
+      "architectureCommit": "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
+      "architectureOracleSha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "implementationCommit": "896405ac9734e60a84c8cb7690f4688da86383fd",
+      "predecessorRegistryIdentitySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+      "historicalConversionTargetVersion": 27,
+      "historicalConversionTargetSha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+      "predecessorSchemaVersion": 27,
+      "migrationVersion": 28,
+      "migrationPath": "packages/storage/src/migrations/0028-report-creation.ts",
+      "rule": "Append report-creation-v1 at the accepted registry's exact reserved report slot 28 after the immutable 1..27 predecessor. Preserve the explicit historical conversion target as version 27 with digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; the real converter must execute and ledger only the frozen 1..27 target slice and return at user_version 27. The common production opener must then route slot 28 through applyMigrations and the inside-BEGIN beforePendingMigration verifier before any slot-28 SQL, history, user_version, or commit effect. The live full-registry digest evolves at slot 28 and never replaces or rewrites the target-27 row. Do not renumber, replace, or semantically alter a predecessor, bypass the common suffix runner, or advance any schema authority outside the sole canonical registry."
+    }
+  ],
+  "acceptedArtifacts": [
+    {
+      "issue": 107,
+      "commit": "a3f12f2",
+      "use": "escape-only static Markdown and HTML renderer, fixed local citation links, no raw HTML or remote resources"
+    },
+    {
+      "issue": 141,
+      "commit": "dd224e5",
+      "use": "authenticated owner-and-scope report and text-source serving with private inert response headers"
+    },
+    {
+      "issue": 155,
+      "commit": "778e01b",
+      "use": "shared operation client, strict response parsing, bounded response retention, and typed transport failures"
+    },
+    {
+      "issue": 206,
+      "commit": "20e4d0e",
+      "use": "typed terminal output contexts and hostile-value containment"
+    },
+    {
+      "issue": 213,
+      "commit": "f4a3604",
+      "oracleSha256": "428c4043a5cfa031d237bf9638911b8a2ec71d7c919c11dacfde31b70f3bcfa8",
+      "use": "reports.create success semantics, central errors, destinations, framing, and exit ownership"
+    },
+    {
+      "issue": 214,
+      "commit": "b9aafae",
+      "use": "implemented command result algebra, error classifier, safe output renderer, sink ownership, and process exits"
+    },
+    {
+      "issue": 233,
+      "commit": "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
+      "oracleSha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "registryIdentitySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+      "use": "signed canonical 1..27 migration registry, explicit append-stable historical target 27, real legacy converter target-slice sequence, common verified suffix runner, immutable predecessor identity, next legal migration/report slot 28, and downstream implementation contract"
+    },
+    {
+      "issue": 234,
+      "commit": "896405ac9734e60a84c8cb7690f4688da86383fd",
+      "use": "accepted sole canonical migration registry, explicit target-27 converter slice, common post-conversion suffix runner, prefix digest helper, verified inside-transaction suffix hook, strict conversion provenance, and registry-bound database, doctor, backup, and restore admission"
+    }
+  ],
+  "frozenInputs": [
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "sha256": "1b50f59a6df4af0419707fb740c94c2fa08dde2c127267c7f68778f33f4c30b5",
+      "kind": "baseline"
+    },
+    {
+      "id": "EVIDENCE",
+      "path": "docs/planning/EVIDENCE.md",
+      "sha256": "9d6666a4f850f7452f7bda80b14a28a74e434f3f99c26daf55fcb9e7d244953e",
+      "kind": "baseline"
+    },
+    {
+      "id": "METRICS",
+      "path": "METRICS.md",
+      "sha256": "5c286a31365fe9b84108d38875724395ca4281b041ab9d9b24d4b998db22ec3c",
+      "kind": "baseline"
+    },
+    {
+      "id": "REPORT-CONTRACT",
+      "path": "packages/contracts/src/report-admin-operations.ts",
+      "sha256": "6378e599f9325c03892924422494a31a34d90d9a9ad72f9155defc89127aa27f",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "REPORT-RENDERER",
+      "path": "packages/contracts/src/report-renderer.ts",
+      "sha256": "43ad589f76ea1b08552619e4452884df903de140cda0429ff7086849f43a71c6",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "HTTP-ERROR-AUTHORITY",
+      "path": "packages/contracts/src/http-error-authority.ts",
+      "sha256": "e300cdc29f27f3184080020e149a999f4f1da736b323fe16f1f31732d7fc28f5",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "ERROR-ENVELOPE",
+      "path": "packages/contracts/src/error-envelope.ts",
+      "sha256": "511a6ef675f87237a1394cfc81ac9b7d94f7d6031e0922ea4e062a1f0040ddb6",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "REPORT-HANDLERS",
+      "path": "packages/daemon/src/report-admin-handlers.ts",
+      "sha256": "4c06cf25443a0b5c915078145843e491d69c63d0ffdfb96d893bcbf7d874661c",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "REPORT-SERVING",
+      "path": "packages/daemon/src/report-serving.ts",
+      "sha256": "8a5cbe5d374f4c8cb177397c456128cbfb3db6006def3f4f418e1561879b1412",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "HTTP-BOUNDARY",
+      "path": "packages/daemon/src/http.ts",
+      "sha256": "89037a9d849b13a8cbf9e62879959ac3427879aba6512f879cf2fb73273c3e05",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "TRUSTED-AUTH-CONTEXT",
+      "path": "packages/daemon/src/trusted-auth-context.ts",
+      "sha256": "e69b1bd6001d332d027b0a22c4202901e7bd9d6490ce631d15aa8b730ff0fb70",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "SINGLE-MESSAGE-INGESTION",
+      "path": "packages/daemon/src/single-message-ingestion.ts",
+      "sha256": "f6b20ddd61e243a9b9568320ed094bba5d8c46a94f3ed87d067a2a76cbfb7b7c",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "MIME-PARSER",
+      "path": "packages/imap/src/mime-parser.ts",
+      "sha256": "e003194a3655f7c5aeec105d13e9a55be05328d84df606b833394d86c6d6a600",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "CANONICAL-PROMOTION",
+      "path": "packages/storage/src/canonical-promotion.ts",
+      "sha256": "2f3d081efbd15f3ad12935e723bd2d1194b45fba03d1798cd4d4bcf912f50173",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "PROMOTION-ADAPTER",
+      "path": "packages/storage/src/promotion-adapter.ts",
+      "sha256": "f1e588e4316390c495a3b1a6af402982c9a8f30869c224fc7fd03155ed2cd6f2",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "STRUCTURED-CONTENT-MIGRATION",
+      "path": "packages/storage/src/migrations/0002-structured-content.ts",
+      "sha256": "77d14d98925f5a60762f00d242abab5f9d6c049e638b63d1c4f0faae6534c010",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "MESSAGE-BLOB-REFERENCES-MIGRATION",
+      "path": "packages/storage/src/migrations/0003-message-blob-references.ts",
+      "sha256": "30ab3805fbcd0a2cb88c85dacc2896d8787b83a3291bb61cdf788b5ef97ab979",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "BLOB-PROMOTION",
+      "path": "packages/storage/src/blob-promotion.ts",
+      "sha256": "7eb895e21beb16ff5b081d121835104845e4ac6f1be80672d23dfb8ba33035d7",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "DATABASE",
+      "path": "packages/storage/src/database.ts",
+      "sha256": "6a4a1620698b9709a1a036747c7caf27ee82e1319d044117a2cf3b908e81e6e4",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "MIGRATION-RUNNER",
+      "path": "packages/storage/src/migration-runner.ts",
+      "sha256": "c51d194bd66e644159df609c1c0644f8d725bad27968c2ec9ee6eba821cf59e7",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "BACKUP-MANIFEST",
+      "path": "packages/storage/src/backup-manifest.ts",
+      "sha256": "edfae5713e3209d9483bbc08d8e75d8ede438308459551f7b0ce106115102ac7",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "BACKUP-WRITER",
+      "path": "packages/storage/src/backup-writer.ts",
+      "sha256": "c1a7b1ded5b0dbf99bbc827d15806aa999ab679ec8d72d5f6ddabb58075b4129",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "BACKUP-RESTORE",
+      "path": "packages/storage/src/backup-restore.ts",
+      "sha256": "4f954adaf189fccf13430e9847ab7725d350e68c05eaf0d1352854d6d7f3ccc5",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "CLI-CLIENT",
+      "path": "packages/cli/src/client.ts",
+      "sha256": "ee587cd36b0879a7e5fbc688d6767513351970146e7f25087fa98e724ecd3797",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "CLI-REGISTRY",
+      "path": "packages/cli/src/command-registry.ts",
+      "sha256": "7bf11d1b61b2c9021b498d72e914b70ebc2364331fe1cea5684468fca5347097",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "CLI-OUTCOME",
+      "path": "packages/cli/src/command-outcome.ts",
+      "sha256": "10bfe2929de187658471c85125402864549c65a0508792f35b0822aa60282d50",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "CLI-OUTPUT-CONTEXT",
+      "path": "packages/cli/src/output-context.ts",
+      "sha256": "5e0812f3f82da977f5349cd30a264a9af58ea8ff25ae9402e86c8cb60f28641c",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "CLI-OUTCOME-ORACLE",
+      "path": "docs/architecture/cli-command-outcome-oracle.v1.json",
+      "sha256": "428c4043a5cfa031d237bf9638911b8a2ec71d7c919c11dacfde31b70f3bcfa8",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "MIGRATION-REGISTRY-ORACLE",
+      "path": "docs/architecture/database-migration-registry-oracle.v1.json",
+      "sha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "MIGRATION-REGISTRY-CHECKER",
+      "path": "docs/architecture/database-migration-registry-check.v1.mjs",
+      "sha256": "e813cefdc9a90c321677372ab3d7fbaf147ab313363f33f4b5803d346863d5ee",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "MIGRATION-REGISTRY-DESIGN",
+      "path": "docs/architecture/database-migration-registry-design.v1.md",
+      "sha256": "f4505e553c82e4f0a232b547f4eb71c1abf1aadfba4a56025f6bdc55aba138e2",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "MIGRATION-REGISTRY-DECISIONS",
+      "path": "docs/architecture/database-migration-registry-decisions.v1.md",
+      "sha256": "07fb450ce919edc47be1fa7701fa48f93ee8a67657426d569bdd6716267dd09d",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "MIGRATION-REGISTRY-COVERAGE",
+      "path": "docs/architecture/database-migration-registry-coverage.v1.md",
+      "sha256": "2e1c6445f2119fbb248e86865e080bed87122bc0d5f0e13f6983d636a4e1be84",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "MIGRATION-REGISTRY",
+      "path": "packages/storage/src/migration-registry.ts",
+      "sha256": "846fae2accd33257a87d3688eeef0e6a267bb6f3c629df2b54b0f4f4601174a0",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "MIGRATION-HISTORY-CONVERSION",
+      "path": "packages/storage/src/migration-history-conversion.ts",
+      "sha256": "d23e9767a5145a532ccb5f5123693d8d1782a69f20bbefcc71a6922a1b9665cb",
+      "kind": "public-frozen"
+    },
+    {
+      "id": "MIGRATION-REGISTRY-TEST",
+      "path": "packages/storage/test/migration-registry.test.ts",
+      "sha256": "c22932c218eeb767ad29e2030a2e5902c9c5c922926a7c59df208c0d6aec69db",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "MIGRATION-HISTORY-CONVERSION-TEST",
+      "path": "packages/storage/test/migration-history-conversion.test.ts",
+      "sha256": "587172453926385307b1f8100cdf1698674490708d485106ffd5d72f9590a1d8",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "MIGRATION-RUNNER-TEST",
+      "path": "packages/storage/test/migration-runner.test.ts",
+      "sha256": "d6ecda0f83c120d3c9f18111f4d6502ede848b333c64150ea36a9d36139a1447",
+      "kind": "public-frozen"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-IDENTITY",
+      "text": "One canonical material, fingerprint, report ID, and creation request ID make exact requests idempotent while keeping distinct account, principal, title, source order, and metadata inputs distinct."
+    },
+    {
+      "id": "REQ-SOURCE",
+      "text": "First creation requires reports:write plus mail:read.message. After an exact-replay miss that passes rolling-rate admission, it durably retains exactly one rate-ledger attempt before checking mail:read.message; missing source scope performs zero source reads, materializer invocations, report/artifact/citation/capacity-total/publication writes, but never claims zero total writes. Authorized creation then resolves every source under the configured account, obtains bounded normalized text from the production parser/promotion projection or the production-faithful legacy materializer, rejects missing, identity-only, tombstoned-only, cross-account-only, and textless identities without disclosure, and stores exact text-only evidence snapshots."
+    },
+    {
+      "id": "REQ-RENDER",
+      "text": "A deterministic report model uses bounded text excerpts and stable citations; only the accepted renderer creates Markdown and HTML, with no raw mail HTML, URLs, active content, filesystem path, or remote resource."
+    },
+    {
+      "id": "REQ-DURABILITY",
+      "text": "Report, artifact, source snapshot, source-link, and provenance records publish and read back in one SQLite transaction, reject UPDATE, DELETE, REPLACE, and duplicate-key INSERT, reopen intact, and ride the verified whole-database backup and empty-root restore path. The private principal rate ledger is durable admission state, not a mutable report graph."
+    },
+    {
+      "id": "REQ-PROVENANCE",
+      "text": "Owner, account, scope, authorization method, body digest, creation request ID, and creation time come only from trusted server dependencies and cannot be overridden by request fields, metadata, headers, or correlation IDs."
+    },
+    {
+      "id": "REQ-REPLAY",
+      "text": "Replay and concurrency return the first committed response exactly; replay requires reports:write but is checked before and exempt from mail:read.message, attempt-rate, report-count, logical-byte, source, and allocation admission because it performs no current-source or snapshot-text read; a collision, corruption, busy timeout, renderer rejection, or storage failure publishes no alternate or partial report."
+    },
+    {
+      "id": "REQ-SERVING",
+      "text": "Serving resolves report and source records by trusted owner and configured account, verifies durable digests before output, rerenders model version 1, and preserves the accepted routes, scopes, headers, and text-only boundary."
+    },
+    {
+      "id": "REQ-CLI",
+      "text": "The reports create adapter uses the shared operation client and #213/#214 outcome authority; JSON is the validated response, human values are branded untrusted segments, errors keep central semantics, and the feature owns no exit number or stream."
+    },
+    {
+      "id": "REQ-CAPACITY",
+      "text": "The shared HTTP boundary enforces an operation-specific non-raiseable 1 MiB reports.create body cap after authentication and reports:write authorization but before body materialization. Policy A then caps the account at 10000 immutable committed reports and 2147483648 logical charged bytes and each authenticated principal at 10 non-replay attempts in every rolling 60000 milliseconds, with exact replay first and each admitted miss durably charged before mail:read.message authorization, no committed-record deletion or eviction, and request_too_large/413 denial without public or configuration schema widening."
+    },
+    {
+      "id": "REQ-STRING-ROUNDTRIP",
+      "text": "Every ECMAScript string accepted by the frozen public schemas and trusted principal boundary survives identity, SQLite, reopen, restore, response serialization, and exact replay without normalization or surrogate replacement by using canonical JSON-string bytes rather than raw SQLite TEXT."
+    },
+    {
+      "id": "REQ-DOWNSTREAM",
+      "text": "Issue 232 has an exact mutation and proof boundary, and issue 165 retains ownership of the production-adapter and composed-CLI parity cells after consuming #232 evidence."
+    }
+  ],
+  "publicBoundary": {
+    "operationKey": "reports.create",
+    "route": "/v1/reports",
+    "method": "POST",
+    "cliName": "reports-create",
+    "commandPath": ["reports", "create"],
+    "scope": "reports:write",
+    "streaming": "none",
+    "strictness": "strict",
+    "requestKeys": ["title", "sourceMessageIds", "metadata"],
+    "responseKeys": ["reportId", "title", "citations", "authorization", "createdAt"],
+    "schemaDisposition": "unchanged",
+    "schemaRationale": "The accepted strict schemas can express the complete operation. The operation retains reports:write in the registry; the service derives the additional mail:read.message requirement only for first-create source materialization, and all limits use existing global errors.",
+    "firstCreateSourceScope": "mail:read.message",
+    "httpBodyHardCapBytes": 1048576
+  },
+  "identityAuthority": {
+    "version": 1,
+    "domain": "agent-mail/report-create/v1",
+    "material": "UTF-8 bytes of ECMAScript JSON.stringify([domain, activeAccountId, authenticatedPrincipalSubject, title, sourceMessageIdsInRequestOrder, metadataEntries])",
+    "metadataOrdering": "metadataEntries is an array of [key,value] pairs sorted ascending by the UTF-8 bytes of JSON.stringify(key); keys and values otherwise retain their parsed code units exactly.",
+    "stringSerialization": "Every durable identity-sensitive ECMAScript string is stored as a SQLite BLOB containing the exact UTF-8 bytes of ECMAScript JSON.stringify(value). Read-back decodes UTF-8 fatally, JSON.parse returns exactly one string, and JSON.stringify(parsed) must reproduce the stored bytes byte-for-byte. Raw SQLite TEXT is forbidden for title, principal, account, metadata, model, and source-text values because binding an isolated surrogate would silently replace it.",
+    "stringComparison": "Compare and index canonical JSON-string BLOB bytes. Do not trim, normalize, case-fold, count Unicode scalars, or compare SQLite-decoded TEXT for an accepted public string. Public Zod validation remains the only value-domain authority.",
+    "fingerprint": "lowercase SHA-256 hexadecimal digest of material",
+    "reportId": "report:<fingerprint>",
+    "creationRequestDomain": "agent-mail/report-create-request/v1",
+    "creationRequestMaterial": "UTF-8 bytes of ECMAScript JSON.stringify([creationRequestDomain, fingerprint])",
+    "creationRequestId": "request:<lowercase SHA-256 hexadecimal digest of creationRequestMaterial>",
+    "accountRule": "Version 1 requires exactly one configured active account. The service injects its canonical account ID; no request, metadata, header, principal claim, or correlation ID selects an account. Startup or construction with zero or multiple active accounts fails closed before serving reports.create.",
+    "orderRule": "Source order is semantic and is never sorted or deduplicated by the service; the strict public request already rejects duplicate message IDs.",
+    "replayRule": "An existing row whose fingerprint, canonical byte material, account, owner, versions, title, metadata, ordered sources, artifact digests, and response provenance all verify returns the first committed response byte-for-value after schema serialization, before any rate/count/byte admission and without resolving current source placement or loading current/snapshot source text again.",
+    "replayReadProjection": "Select only report identity, canonical request/title metadata, provenance, source IDs/ordinals/labels/digests, and artifact version/digest/length columns. Never select report_artifacts.model_json or report_source_snapshots.source_text_json for create replay. Those content-bearing records are verified only by their separately authorized serving routes; their durable existence and metadata, together with exact identity and response reconstruction, are sufficient for a metadata-only create replay.",
+    "replayAuthorizationRule": "Every invocation first passes the registered reports:write HTTP authorization. An exact committed replay then succeeds without mail:read.message or any rate-ledger/capacity operation because it reads only immutable report/link/provenance metadata and allocates nothing. If no exact report exists and rolling-rate admission succeeds, exactly one attempt is committed and retained before mail:read.message is checked. Missing source scope returns the exact insufficient_scope 403 with zero source reads, materializer invocations, report/artifact/citation/capacity-total/publication writes, while the one rate-ledger attempt remains; it is therefore never described as zero total writes.",
+    "collisionRule": "An occupied report ID with any non-exact identity or durable-record mismatch is corruption or a hash collision. Return redacted internal_error, emit only private bounded diagnostics, write nothing, and never mint a random or suffixed identity.",
+    "concurrencyRule": "A process-local identity-scoped single-flight guard serializes identical contenders before replay and capacity; the guard is removed in one finally path when its last waiter exits, so identities do not accumulate. BEGIN IMMEDIATE separately serializes principal-rate admission and account-wide publication admission. A same-identity waiter rereads and returns the winner before capacity. A busy-timeout branch returns internal_error with zero report rows; a later retry returns the winner. Duplicate guards and unique keys make a second report impossible even if another process bypasses the in-memory guard.",
+    "stringRoundTripCorpus": [
+      {
+        "id": "astral",
+        "value": "A🚀Z"
+      },
+      {
+        "id": "nfd",
+        "value": "é"
+      },
+      {
+        "id": "nfc",
+        "value": "é"
+      },
+      {
+        "id": "bidi",
+        "value": "left‮right"
+      },
+      {
+        "id": "isolated-high-surrogate",
+        "canonicalJson": "\"\\ud800\""
+      },
+      {
+        "id": "isolated-low-surrogate",
+        "canonicalJson": "\"\\udfff\""
+      },
+      {
+        "id": "long-principal",
+        "recipe": "255 lowercase p code units followed by one isolated high surrogate",
+        "lengthCodeUnits": 256
+      }
+    ],
+    "knownVector": {
+      "accountId": "account:icloud-primary",
+      "principal": "principal:alice",
+      "title": "Quarterly evidence",
+      "sourceMessageIds": [
+        "message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ],
+      "metadata": {
+        "zeta": "last",
+        "alpha": "first"
+      },
+      "material": "[\"agent-mail/report-create/v1\",\"account:icloud-primary\",\"principal:alice\",\"Quarterly evidence\",[\"message:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"message:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"],[[\"alpha\",\"first\"],[\"zeta\",\"last\"]]]",
+      "fingerprint": "21552cb10143e21ce34f87179a2b0fe63ebb53b851210026c8f97a9ab71bf4ba",
+      "reportId": "report:21552cb10143e21ce34f87179a2b0fe63ebb53b851210026c8f97a9ab71bf4ba",
+      "creationRequestId": "request:40ab520d85f90d402cb292a2f0577a31347ba4329a0514083fdaea7212b4e819"
+    }
+  },
+  "sourceAuthority": {
+    "projectionVersion": 1,
+    "resolutionOrder": "After an exact-replay miss and the mail:read.message guard, resolve each unique source sequentially in request order. Check canonical identity and configured-account placement before reading normalized text; stop at the first ineligible source and return the same public not_found outcome for every ineligible reason.",
+    "eligibility": "The canonical messages row exists; no message_content_states identity-only row exists; at least one remote_placements row for the injected active account has tombstone_observed_at IS NULL; and message_text_projections version 1 contains a non-empty production-normalized text value. A legacy row missing that projection may invoke normalizedTextAuthority.materializer only after the same identity/account/placement checks.",
+    "placementRule": "One active placement in the configured account is sufficient even when another placement for that same account is tombstoned. Active placement only in another account is cross-account-only and ineligible.",
+    "plainSelection": "The production MIME parser emits one bounded message-level normalizedText string. MailParser keeps decoded text/plain when present and, with skipHtmlToText=false plus an explicit bounded maxHtmlLengthToParse, derives text only when HTML supplies the message text. No report-only plain/HTML SQL synthesis exists.",
+    "htmlFallback": "HTML-to-text conversion is owned only by the production MIME parser with its pinned dependency and limits. Report code never reads original HTML, implements a second converter, or selects HTML body blobs directly.",
+    "forbiddenContent": "Report construction and source serving never directly read body blobs, original message HTML, attachments, filenames, headers, URLs, remote resources, IMAP, or the network. The sole exception is the legacy normalized-text materializer: after both scopes and configured-account eligibility, it verifies the canonical raw-EML digest/size, copies exact bytes into an owner-only stage, and invokes the same production parser; only its bounded text projection may reach report code.",
+    "snapshotRule": "Parse the canonical source string from its canonical JSON BLOB, require byte-for-byte reserialization, and store that exact value once under owner, account, message ID, and projection version with a digest of its canonical string bytes and its emitted UTF-8 byte length. Reuse only an exact digest-and-byte match. A mismatch is internal corruption and rolls back.",
+    "servingRule": "After creation, the durable snapshot remains the citation source even if all remote placements later tombstone or disappear. The text route never re-resolves placement and never falls back to current raw or HTML content.",
+    "citationRule": "Citation identity is the request message ID. Label is exactly Source <one-based decimal request ordinal> with no zero padding. Response citations, report-model citations, durable source links, and rendered links use the same ordered pair.",
+    "outcomes": [
+      {
+        "case": "eligible-active-account-text",
+        "publicCode": "success",
+        "status": 200,
+        "writes": "exact replay with no write, or one retained rate-ledger attempt followed by one atomic report publication"
+      },
+      {
+        "case": "missing-message",
+        "publicCode": "not_found",
+        "status": 404,
+        "writes": "one retained rate-ledger attempt; zero report publication writes"
+      },
+      {
+        "case": "identity-only-message",
+        "publicCode": "not_found",
+        "status": 404,
+        "writes": "one retained rate-ledger attempt; zero report publication writes"
+      },
+      {
+        "case": "all-configured-account-placements-tombstoned",
+        "publicCode": "not_found",
+        "status": 404,
+        "writes": "one retained rate-ledger attempt; zero report publication writes"
+      },
+      {
+        "case": "cross-account-only-active-placement",
+        "publicCode": "not_found",
+        "status": 404,
+        "writes": "one retained rate-ledger attempt; zero report publication writes"
+      },
+      {
+        "case": "textless-normalized-projection",
+        "publicCode": "not_found",
+        "status": 404,
+        "writes": "one retained rate-ledger attempt and zero report publication writes; an exact textless legacy projection may already have been materialized"
+      }
+    ]
+  },
+  "normalizedTextAuthority": {
+    "projectionVersion": 1,
+    "table": "message_text_projections",
+    "primaryKey": "message_id, projection_version",
+    "maxNormalizedTextUtf8Bytes": 8388608,
+    "maxNormalizedTextJsonBytes": 50331650,
+    "columns": [
+      "message_id TEXT CHECK message:<64 lowercase hex>",
+      "projection_version INTEGER CHECK 1",
+      "normalized_text_json BLOB CHECK canonical JSON-string bytes, 2..50331650 serialized bytes",
+      "normalized_text_sha256 TEXT CHECK 64 lowercase hex digest of normalized_text_json",
+      "normalized_text_utf8_bytes INTEGER CHECK 0..8388608 and equals emitted UTF-8 length",
+      "raw_eml_sha256 TEXT CHECK 64 lowercase hex and matches the immutable raw-eml reference",
+      "parser_id TEXT CHECK mailparser:3.9.15",
+      "materialized_at TEXT CHECK canonical millisecond UTC"
+    ],
+    "foreignKey": "message_id -> messages.message_id ON UPDATE RESTRICT ON DELETE RESTRICT",
+    "immutabilityRule": "BEFORE UPDATE, BEFORE DELETE, and BEFORE INSERT WHEN the primary key exists all RAISE(ABORT, 'message text projections are immutable'); INSERT OR REPLACE and REPLACE INTO therefore cannot recreate a projection.",
+    "productionRule": "Extend ParsedStagedMime, SingleMessageIngestion, PromotionUnit, parsePromotionUnit, promoteCanonicalMessage, and strict promotion read-back so the exact bounded normalizedText selected by parseStagedEml is committed with every newly parsed canonical message. A direct SQL fixture, search-index body field, body-blob decode, or report-only parser is not evidence.",
+    "parserRule": "Use the production parseStagedEml path with maxDecodedTextBytes 8388608, maxHtmlLengthToParse 8388608, skipHtmlToText false, skipTextToHtml true, and the existing bounded source/header/part/nesting rules. Preserve the emitted ECMAScript string exactly; do not trim or normalize it.",
+    "rowRule": "One immutable STRICT row per message_id and projection_version stores the declared columns. Empty text is stored as the canonical two-byte JSON string \"\" with utf8 length 0 so textless and not-yet-materialized are distinct. The canonical JSON byte ceiling is the exact worst-case six-byte JSON escape expansion of the 8388608-byte parser output plus two quote bytes.",
+    "futureIngestionRule": "The canonical promotion transaction inserts and strict-read-backs the message_text_projections row with the message, raw-blob reference, placements, structured MIME rows, routing decisions, and journal. Failure rolls the complete promotion back.",
+    "legacyMaterializerRule": "For a configured-account eligible legacy canonical message with no projection, read its immutable raw-eml reference, open the canonical blob without following symlinks, verify regular-file identity, exact size, and SHA-256, copy and fsync the exact bytes into an owner-only staging file, invoke parseStagedEml with the same production configuration, atomically insert and strict-read-back the projection, and await idempotent stage cleanup. It is cursor-bounded, restartable, and never fetches mail or writes a report.",
+    "materializerStates": [
+      "checking-existing",
+      "verifying-raw",
+      "staging-exact-bytes",
+      "parsing-production-mime",
+      "publishing-projection",
+      "cleaning-stage",
+      "available",
+      "failed-clean"
+    ],
+    "materializerTransitionRule": "One invocation owns cancellation and exactly one awaited idempotent cleanup barrier. Active states name current work. Success reaches available only after projection read-back and stage cleanup; every failure reaches failed-clean only after cleanup, and restart begins by removing only verified owned stale stages before checking the durable projection.",
+    "legacyConcurrencyRule": "Concurrent materializers serialize on the message/projection key. A loser exact-verifies the winner's raw digest, parser id, canonical text bytes, digest, and lengths; mismatch is corruption. INSERT OR REPLACE and mutation are forbidden.",
+    "reportRule": "A first create reads only the durable projection. If a legacy projection is absent it may invoke the materializer once, then reread the durable projection; report publication remains a later all-or-nothing transaction. Materialized normalized text may persist when later report rendering or publication fails because it is canonical message data, not a partial report.",
+    "backupRule": "The projection is in the primary SQLite database and is included by the accepted database backup. Empty-root restore plus strict reopen must reproduce the row; a legacy restored row without a projection uses the same verified materializer and raw blob.",
+    "proofRule": "At least one composed fixture must begin with staged RFC 5322 EML bytes, run parseStagedEml through real single-message ingestion and canonical promotion, create through real HTTP/service/SQLite, then serve matching report and text evidence after reopen. A direct-SQL-only source fixture cannot satisfy this proof. A second fixture must restore a legacy database/raw blob with no projection, run the safe materializer, and prove byte-identical text/report behavior."
+  },
+  "reportModelAuthority": {
+    "modelVersion": 1,
+    "rendererVersion": 1,
+    "rendererBinding": "packages/contracts/src/report-renderer.ts at SHA-256 43ad589f76ea1b08552619e4452884df903de140cda0429ff7086849f43a71c6",
+    "title": "Exact parsed request title.",
+    "summary": "Evidence report with <N> text-only source. when N is 1; Evidence report with <N> text-only sources. otherwise.",
+    "sectionHeading": "Source evidence",
+    "claimRule": "Create one claim per source in request order. Its text is the bounded excerpt of that source snapshot and its citations array contains exactly that source citation.",
+    "excerptRule": "If source UTF-8 bytes are at most 4096, use the exact source. Otherwise take the longest prefix ending at a Unicode scalar boundary whose UTF-8 bytes are at most 4093 and append U+2026, yielding at most 4096 bytes. Do not trim, normalize, summarize, execute instructions, or follow links.",
+    "metadataRule": "Metadata is opaque durable request data and an identity input. It is never interpreted as a prompt, template, claim, source, provenance, renderer option, path, URL, or authorization value.",
+    "renderRule": "Construct and strict-parse the model, call renderReport version 1 inside the transaction, require the exact accepted CSP, enforce all byte limits, hash canonical model JSON, Markdown, HTML, and CSP, and store the model plus digests and lengths. Never store rendered Markdown or HTML.",
+    "serveRule": "Resolve and strict-parse the stored model, select renderer version 1, render again, and constant-time verify model, Markdown, HTML, and CSP digests and lengths before emitting. Unknown versions or mismatches return redacted internal_error, never damaged content.",
+    "hostileRule": "Mail text remains data. The renderer escapes markup, removes external URL and resource syntax, emits fixed local citation paths, contains no client JavaScript, and never treats mail text or metadata as instructions."
+  },
+  "persistenceAuthority": {
+    "logicalMigrationName": "report-creation-v1",
+    "migrationVersion": 28,
+    "migrationPath": "packages/storage/src/migrations/0028-report-creation.ts",
+    "migrationTestPath": "packages/storage/test/report-creation-migration.test.ts",
+    "registryPath": "packages/storage/src/migration-registry.ts",
+    "registryTestPath": "packages/storage/test/migration-registry.test.ts",
+    "predecessorSchemaVersion": 27,
+    "predecessorRegistryIdentitySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+    "migrationDependencies": [233, 234],
+    "prefixEvolutionAuthority": {
+      "architectureCommit": "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
+      "architectureOracleSha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "implementationCommit": "896405ac9734e60a84c8cb7690f4688da86383fd",
+      "predecessorVersion": 27,
+      "historicalTargetVersion": 27,
+      "historicalTargetRegistrySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+      "reportVersion": 28,
+      "registryPath": "packages/storage/src/migration-registry.ts",
+      "converterPath": "packages/storage/src/migration-history-conversion.ts",
+      "conversionCompositionTestPath": "packages/storage/test/migration-history-conversion.test.ts",
+      "beforePendingMigrationHook": "verifyCanonicalMigrationPrefixState",
+      "legacyConversionSequence": [
+        "resolve the sole accepted historical target before conversion and freeze targetVersion 27 plus digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+        "derive targetMigrations as canonicalDatabaseMigrations.slice(0, targetVersion); never iterate the complete live registry",
+        "inside one BEGIN IMMEDIATE execute only missing targetMigrations 1..27, install conversion infrastructure, insert the immutable target-27 provenance row, rewrite schema_migrations exactly to targetMigrations 1..27, and set user_version exactly 27",
+        "verify the complete target-27 state and commit without executing, ledgering, or setting user_version for any migration above targetVersion",
+        "after conversion returns, the production opener always invokes applyMigrations with the complete live registry and beforePendingMigration; this common suffix path is not confined to a non-legacy else branch",
+        "each pending 28-or-later definition runs in its own BEGIN IMMEDIATE transaction only after verifyCanonicalMigrationPrefixState accepts the locked predecessor"
+      ],
+      "implementationSequenceMode": "--implementation-sequence-check",
+      "implementationSequenceMutationIds": [
+        "converter-live-tip-loop",
+        "legacy-opener-skips-suffix-runner"
+      ],
+      "rule": "Append slot 28 only through the accepted canonical registry. The accepted real legacy converter resolves explicit target 27, executes and ledgers only canonicalDatabaseMigrations.slice(0, 27), sets user_version 27, verifies that exact base, and returns without observing the live suffix. The common production opener then always invokes applyMigrations over the complete live registry; inside the slot-28 BEGIN IMMEDIATE transaction, beforePendingMigration verifies exact prefix 27 before any report SQL, schema_migrations INSERT, user_version write, or commit. Preserve every 1..27 semantic byte and immutable target-27 provenance byte; the new live full-registry digest must differ from and never replace target_registry_sha256. The converter source remains byte-protected; update only the focused conversion composition test to assert the exact historical prefix-27 digest, exact live registry-28 digest, real legacy-to-27-to-gated-28 sequence, append stability, and full-digest-substitution rejection."
+    },
+    "migrationRule": "Create report-creation-v1 only at packages/storage/src/migrations/0028-report-creation.ts and append that exact semantic migration as canonical registry slot 28 after the accepted immutable 1..27 prefix whose identity is 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab. Preserve accepted historical conversion target 27: the protected converter must execute and ledger only the 1..27 target slice and return at user_version 27, after which the common opener runs slot 28 only through applyMigrations and the inside-BEGIN verifyCanonicalMigrationPrefixState hook before any suffix effect. Update the registry-derived live full digest, schema and next-slot constants, registry test, and focused conversion composition test; do not change the protected converter or #233 artifacts, renumber or edit a predecessor, substitute the live full digest into historical provenance, loop the converter over the live registry, move the suffix runner behind a non-legacy branch, or bypass opener, doctor, backup, or restore authority.",
+    "databaseOnly": true,
+    "tablePolicy": "All four report tables are SQLite STRICT tables. Every listed column is NOT NULL, every named primary, unique, foreign-key, and CHECK constraint is enforced with foreign_keys=ON, every parent action is ON UPDATE RESTRICT ON DELETE RESTRICT, no table has an omitted nullable column, and no report table uses a cascade. Identity-sensitive strings use canonical JSON BLOB bytes, never raw TEXT.",
+    "tables": [
+      {
+        "name": "reports",
+        "purpose": "canonical identity, owner/account, request material, title/metadata, first trusted provenance, source count, and creation timestamps",
+        "primaryKey": "report_id",
+        "unique": [
+          "fingerprint_sha256",
+          "authorization_request_id",
+          "report_id, owner_principal_json, account_id_json"
+        ],
+        "columns": [
+          "report_id TEXT CHECK report:<64 lowercase hex> and suffix equals fingerprint_sha256",
+          "fingerprint_sha256 TEXT CHECK 64 lowercase hex",
+          "identity_material_json BLOB CHECK 1..1048576 canonical JSON array bytes",
+          "account_id_json BLOB CHECK canonical JSON-string bytes that strict-decode to the injected account ID",
+          "owner_principal_json BLOB CHECK canonical JSON-string bytes that strict-decode to the authenticated subject",
+          "create_scope TEXT CHECK reports:write",
+          "read_scope TEXT CHECK reports:read",
+          "authorization_method TEXT CHECK bearer",
+          "authorization_request_id TEXT CHECK request:<64 lowercase hex>",
+          "authorization_at TEXT CHECK canonical millisecond UTC",
+          "request_body_sha256 TEXT CHECK 64 lowercase hex",
+          "created_at TEXT CHECK canonical millisecond UTC and equals authorization_at",
+          "title_json BLOB CHECK canonical JSON-string bytes whose parsed string passes the frozen report title schema",
+          "metadata_json BLOB CHECK canonical metadataEntries JSON-array bytes at most 1048576 bytes",
+          "source_count INTEGER CHECK 1..100"
+        ],
+        "immutable": true
+      },
+      {
+        "name": "report_artifacts",
+        "purpose": "one versioned canonical model and verified model/Markdown/HTML/CSP digests and UTF-8 byte lengths",
+        "primaryKey": "report_id",
+        "unique": [],
+        "columns": [
+          "report_id TEXT CHECK report namespace",
+          "model_version INTEGER CHECK 1",
+          "projection_version INTEGER CHECK 1",
+          "renderer_version INTEGER CHECK 1",
+          "model_json BLOB CHECK 1..1048576 canonical JSON-object bytes",
+          "model_sha256 TEXT CHECK 64 lowercase hex",
+          "markdown_sha256 TEXT CHECK 64 lowercase hex",
+          "html_sha256 TEXT CHECK 64 lowercase hex",
+          "csp_sha256 TEXT CHECK 64 lowercase hex",
+          "model_bytes INTEGER CHECK 1..1048576 and equals UTF-8 length of model_json",
+          "markdown_bytes INTEGER CHECK 1..16777216",
+          "html_bytes INTEGER CHECK 1..16777216"
+        ],
+        "immutable": true
+      },
+      {
+        "name": "report_source_snapshots",
+        "purpose": "one exact text-only snapshot per owner, account, message ID, and projection version",
+        "primaryKey": "owner_principal_json, account_id_json, message_id, projection_version",
+        "unique": [
+          "owner_principal_json, account_id_json, message_id, projection_version, source_text_sha256"
+        ],
+        "columns": [
+          "owner_principal_json BLOB CHECK canonical JSON-string bytes",
+          "account_id_json BLOB CHECK canonical JSON-string bytes",
+          "message_id TEXT CHECK message:<64 lowercase hex>",
+          "projection_version INTEGER CHECK 1",
+          "source_text_json BLOB CHECK canonical non-empty JSON-string bytes and at most 50331650 serialized bytes",
+          "source_text_sha256 TEXT CHECK 64 lowercase hex digest of source_text_json",
+          "source_text_bytes INTEGER CHECK 1..10485760 and equals emitted UTF-8 length of parsed source_text_json",
+          "created_at TEXT CHECK canonical millisecond UTC"
+        ],
+        "immutable": true
+      },
+      {
+        "name": "report_sources",
+        "purpose": "ordered report-to-snapshot links with stable citation label and source digest",
+        "primaryKey": "report_id, ordinal",
+        "unique": ["report_id, message_id"],
+        "columns": [
+          "report_id TEXT CHECK report namespace",
+          "ordinal INTEGER CHECK 1..100",
+          "owner_principal_json BLOB CHECK canonical JSON-string bytes",
+          "account_id_json BLOB CHECK canonical JSON-string bytes",
+          "message_id TEXT CHECK message:<64 lowercase hex>",
+          "projection_version INTEGER CHECK 1",
+          "citation_label TEXT CHECK equals 'Source ' concatenated with ordinal",
+          "source_text_sha256 TEXT CHECK 64 lowercase hex"
+        ],
+        "immutable": true
+      }
+    ],
+    "requiredReportColumns": [
+      "report_id",
+      "fingerprint_sha256",
+      "identity_material_json",
+      "account_id_json",
+      "owner_principal_json",
+      "create_scope",
+      "read_scope",
+      "authorization_method",
+      "authorization_request_id",
+      "authorization_at",
+      "request_body_sha256",
+      "created_at",
+      "title_json",
+      "metadata_json",
+      "source_count"
+    ],
+    "requiredArtifactColumns": [
+      "report_id",
+      "model_version",
+      "projection_version",
+      "renderer_version",
+      "model_json",
+      "model_sha256",
+      "markdown_sha256",
+      "html_sha256",
+      "csp_sha256",
+      "model_bytes",
+      "markdown_bytes",
+      "html_bytes"
+    ],
+    "requiredSnapshotColumns": [
+      "owner_principal_json",
+      "account_id_json",
+      "message_id",
+      "projection_version",
+      "source_text_json",
+      "source_text_sha256",
+      "source_text_bytes",
+      "created_at"
+    ],
+    "requiredSourceColumns": [
+      "report_id",
+      "ordinal",
+      "owner_principal_json",
+      "account_id_json",
+      "message_id",
+      "projection_version",
+      "citation_label",
+      "source_text_sha256"
+    ],
+    "foreignKeys": [
+      "report_artifacts.report_id -> reports.report_id, DEFERRABLE INITIALLY DEFERRED",
+      "report_source_snapshots.message_id -> messages.message_id, immediate",
+      "report_sources.(report_id,owner_principal_json,account_id_json) -> reports.(report_id,owner_principal_json,account_id_json), DEFERRABLE INITIALLY DEFERRED",
+      "report_sources.(owner_principal_json,account_id_json,message_id,projection_version,source_text_sha256) -> report_source_snapshots.(owner_principal_json,account_id_json,message_id,projection_version,source_text_sha256), DEFERRABLE INITIALLY DEFERRED"
+    ],
+    "indexes": [
+      "reports_owner_account_created on reports(owner_principal_json,account_id_json,created_at,report_id)",
+      "report_snapshots_owner_account_bytes on report_source_snapshots(owner_principal_json,account_id_json,source_text_bytes,message_id)",
+      "report_sources_snapshot_lookup on report_sources(owner_principal_json,account_id_json,message_id,projection_version,source_text_sha256,report_id)"
+    ],
+    "canonicalSerializations": [
+      "identity_material_json is the exact BLOB byte sequence identityAuthority.material",
+      "account_id_json, owner_principal_json, title_json, and source_text_json are canonical JSON-string BLOB bytes under identityAuthority.stringSerialization",
+      "metadata_json is a BLOB containing ECMAScript JSON.stringify(metadataEntries) using identityAuthority.metadataOrdering",
+      "model_json is a BLOB containing ECMAScript JSON.stringify of the constructed object with key order title,summary,sections; section key order heading,claims; claim key order text,citations; citation key order id,label",
+      "model_sha256 and source_text_sha256 hash the exact canonical BLOB bytes; markdown_sha256, html_sha256, and csp_sha256 hash the exact UTF-8 transport bytes of renderer outputs"
+    ],
+    "duplicateInsertGuards": [
+      {
+        "table": "reports",
+        "trigger": "reports_reject_duplicate_insert",
+        "when": "EXISTS report_id OR fingerprint_sha256 OR authorization_request_id conflict",
+        "effect": "BEFORE INSERT RAISE(ABORT, 'reports are immutable')"
+      },
+      {
+        "table": "report_artifacts",
+        "trigger": "report_artifacts_reject_duplicate_insert",
+        "when": "EXISTS report_id conflict",
+        "effect": "BEFORE INSERT RAISE(ABORT, 'report artifacts are immutable')"
+      },
+      {
+        "table": "report_source_snapshots",
+        "trigger": "report_source_snapshots_reject_duplicate_insert",
+        "when": "EXISTS primary-key or declared unique-key conflict using canonical owner/account BLOB equality",
+        "effect": "BEFORE INSERT RAISE(ABORT, 'report source snapshots are immutable')"
+      },
+      {
+        "table": "report_sources",
+        "trigger": "report_sources_reject_duplicate_insert",
+        "when": "EXISTS (report_id, ordinal) or (report_id, message_id) conflict",
+        "effect": "BEFORE INSERT RAISE(ABORT, 'report sources are immutable')"
+      }
+    ],
+    "publicationGuards": [
+      "Every report table has BEFORE UPDATE and BEFORE DELETE triggers that abort; committed rows are insert-only.",
+      "Every report table has the declared BEFORE INSERT duplicate-key guard, so INSERT OR REPLACE, REPLACE INTO, and any conflict algorithm cannot delete and recreate an occupied immutable identity even when recursive_triggers is off.",
+      "Before a new snapshot INSERT, a matching report_sources row with the exact owner, account, message, projection, and digest must already exist in the same transaction; an unreferenced snapshot cannot publish.",
+      "Before the final reports INSERT, exactly one matching artifact and exactly source_count source links must already exist; link ordinals must cover 1 through source_count; every link owner/account must equal the report; every linked snapshot must exist and match its digest.",
+      "Deferred foreign keys make an artifact/link without its final report and a link without its snapshot fail COMMIT even if application read-back were bypassed.",
+      "The repository is the sole writer capability and must perform strict read-back before COMMIT; direct SQL is not a supported report publication API."
+    ],
+    "schemaRules": "Strict CHECK constraints cover namespaces, lowercase SHA-256, canonical millisecond UTC instants, fixed scopes/method/versions, canonical JSON BLOB types and byte lengths, positive ordinals/counts, identity equality, and exact Source <ordinal> labels. Strict decoders, not SQL Unicode functions, reparse and byte-verify accepted ECMAScript strings. Composite foreign keys bind each source link to both its report owner/account and exact snapshot digest. INSERT into an absent key is the only allowed lifecycle operation.",
+    "transactionMode": "BEGIN IMMEDIATE",
+    "transactionSteps": [
+      "Validate the already parsed request, trusted context, configured single account, fixed versions, canonical string bytes, and per-request source count before acquiring an identity-scoped single-flight guard.",
+      "Compute canonical identity, report ID, and server-derived creation request ID; under the guard perform the metadata-only exact-replay lookup before any capacity, source, snapshot-text, or materializer operation.",
+      "Exact-verify and return an existing report under reports:write alone, or fail collision/corruption. On an exact-replay miss, atomically evaluate rolling-rate admission; a rate-denied miss changes no ledger or report row, while every admitted miss commits and retains exactly one principal attempt before mail:read.message authorization or source materialization.",
+      "Still before any source read, reject an account already at 10000 committed reports or 2147483648 logical charged bytes; then require mail:read.message. Missing source scope returns the frozen 403 after exactly one retained rate-ledger attempt, with zero source reads, materializer invocations, report/artifact/citation/capacity-total/publication writes, and never a zero-total-writes claim.",
+      "Resolve every first-create source from its production-normalized durable projection in request order; a legacy-safe materializer completes before the report publication transaction and may remain as canonical message data if later report work fails.",
+      "Build and strict-parse the model, render with renderer version 1, enforce CSP and every per-request byte bound, compute all digests, classify reusable snapshots, and compute the exact prospective logical charge.",
+      "Begin BEGIN IMMEDIATE, defensively rerun the metadata-only exact-replay lookup, then recompute committed report count and logical charged bytes from immutable rows. Return an exact concurrent replay, or reject if count plus one or charge plus the prospective graph would exceed Policy A before the first report-table INSERT.",
+      "Obtain one canonical millisecond UTC instant from the injected server clock for both authorized_at and created_at.",
+      "Stage the artifact and ordered source-link rows under deferred report/snapshot foreign keys; insert or exact-verify each referenced snapshot; insert the report row last so publication guards observe one complete graph.",
+      "Read every inserted row back through strict decoders; reconstruct identity, response, citations, model, digests, report count, and logical charge and require exact equality and Policy A compliance.",
+      "Commit the report publication once and release the identity guard. Any throw, renderer rejection, injected failure, constraint failure, busy timeout, decode mismatch, or read-back mismatch rolls back the publication once and returns no partial public value; a previously admitted non-replay attempt remains durable rate evidence."
+    ],
+    "failureInjectionBoundaries": [
+      "after-initial-replay-miss",
+      "after-rate-admission",
+      "after-source-resolution",
+      "after-render",
+      "after-publication-begin",
+      "after-capacity-admission",
+      "after-artifact-stage",
+      "after-each-source-link",
+      "after-each-snapshot",
+      "after-final-report-insert",
+      "after-read-back",
+      "before-publication-commit"
+    ],
+    "orphanRule": "No report artifact or source artifact exists outside SQLite. Foreign keys, one transaction, immutable rows, and rollback make report-without-artifact, artifact-without-report, link-without-report, and link-without-snapshot states unpublishable.",
+    "reopenRule": "Close and reopen through the sole canonical database boundary at schema version 28, run canonical migration-history verification plus integrity and foreign-key checks, strict-decode all canonical byte records, verify every digest and every duplicate-insert trigger, recompute Policy A count and logical charge, retain the durable rolling-rate state, and serve the same response, report HTML, and source text.",
+    "backupRule": "Because every report artifact and source snapshot is in the SQLite database, the accepted serialized SQLite backup, manifest hash, artifact rehash, integrity check, foreign-key check, and atomic empty-root restore include reports without a new manifest role or sidecar. A proof must create before backup and serve after restore; table-existence alone is insufficient.",
+    "restoreRule": "Restore only to a new or empty private root, verify the accepted canonical registry before publication, reopen through the sole registry at schema version 28, and verify report/source/projection records, canonical string round trips, all digests, all UPDATE/DELETE/REPLACE/duplicate-key guards, recomputed Policy A count/logical charge, and restored rolling-rate state without reset or double charge. A converted database retains its exact immutable historical target-27 provenance after slot 28; an unknown target or recomputed live-full-digest substitution rejects in preflight, pre-suffix, reopen, doctor, backup, and restore. Preserve owner/account authorization. A legacy database first converts only to target 27, then applies report slot 28 through the verified suffix path, and retains raw EML for the safe materializer."
+  },
+  "provenanceAuthority": {
+    "owner": "OperationHandlerContext.principal.subject after shared authentication and exact reports:write authorization, serialized as canonical JSON-string bytes without normalization.",
+    "account": "The sole active account ID injected by daemon configuration into the service/repository composition.",
+    "createScope": "reports:write",
+    "readScope": "reports:read",
+    "sourceReadScope": "mail:read.message",
+    "firstCreateScopeRule": "The shared boundary authenticates and enforces reports:write before reading the body. After canonical identity lookup proves there is no exact replay, a miss that passes rolling-rate admission commits and retains exactly one rate-ledger attempt before the service checks mail:read.message. The scope guard still precedes every message, placement, normalized-text, raw-blob, or snapshot query/materialization. Missing scope returns insufficient_scope/403 with exact message 'request credentials are not authorized' and strict {}; it performs zero source reads, materializer invocations, message-text-projection, report, artifact, citation, capacity-total, or publication writes, while retaining the one admitted rate-ledger attempt, so total writes are not zero.",
+    "missingSourceScopePostcondition": {
+      "rateLedgerAttemptsCommitted": 1,
+      "rateLedgerAttemptsRetained": 1,
+      "sourceReads": 0,
+      "materializerInvocations": 0,
+      "messageTextProjectionWrites": 0,
+      "reportWrites": 0,
+      "artifactWrites": 0,
+      "citationWrites": 0,
+      "capacityTotalWrites": 0,
+      "publicationWrites": 0,
+      "zeroTotalWritesClaim": false,
+      "totalWriteRule": "Exactly one durable rate-ledger attempt is committed and retained; this terminal never claims zero total writes.",
+      "instrumentationRule": "Instrument every source read and materializer invocation plus every write to report_create_rate_windows, message_text_projections, reports, report_artifacts, report_source_snapshots, report_sources, any capacity-total state, and any publication sink. The missing-scope branch must observe only the one committed rate-ledger attempt."
+    },
+    "replayScopeRule": "An exact committed replay requires reports:write only and returns without mail:read.message, current-source reads, normalized-text materialization, snapshot-text reads, allocation, rate charge, or write. A caller with mail:read.message but without reports:write is rejected by the shared boundary before body read and cannot probe replay.",
+    "authorizationMethod": "bearer",
+    "methodRule": "The current public reports.create route admits Bearer credentials only. CLI uses that same HTTP route and therefore records bearer, not local-cli. A future trusted-proxy or offline-local method requires a trusted boundary discriminator and a new authority version; headers and User-Agent never choose the method.",
+    "requestId": "The server-derived creation request ID from identityAuthority; x-correlation-id and any metadata/request value are excluded.",
+    "authorizedAt": "One canonical millisecond UTC value supplied by an injected server clock on first creation and persisted unchanged for replay.",
+    "requestBodySha256": "The lowercase SHA-256 supplied by OperationHandlerContext.requestBodySha256 after bounded HTTP admission. It is retained privately for the first request, is not an identity input, and never appears in the public response.",
+    "handlerContextChange": "Issue 232 may add required requestBodySha256 and the already-authenticated immutable principal scope set to the internal ReportAdminServiceContext projection for reports.create only. It must not change OperationHandlerContext or any public request/response schema.",
+    "forbiddenSources": [
+      "request title",
+      "sourceMessageIds",
+      "metadata",
+      "x-correlation-id",
+      "x-forwarded-user",
+      "tailscale-user-login",
+      "User-Agent",
+      "filesystem path",
+      "report model",
+      "stored caller object"
+    ]
+  },
+  "servingAuthority": {
+    "reportRoute": "/v1/reports/{reportId}",
+    "reportScope": "reports:read",
+    "sourceRoute": "/v1/messages/{messageId}/text",
+    "sourceScope": "mail:read.message",
+    "repositoryRule": "Issue 232 changes the internal repository calls to resolveReport(reportId, canonicalPrincipalBytes) and resolveSource(messageId, canonicalPrincipalBytes), with canonical active-account bytes fixed at repository construction. SQL predicates include report/message ID plus byte-exact owner and account BLOBs before model or source materialization. Public routes and schemas do not change.",
+    "defenseInDepth": "Returned records still contain owner and fixed read scope and are strict-parsed and compared with the authenticated principal and required route scope before rendering or returning text.",
+    "reportIntegrity": "Before report output, verify canonical model bytes, versions, all stored digests and lengths, rerender using version 1, and compare the accepted CSP. Mismatch is internal_error with no artifact bytes.",
+    "sourceIntegrity": "Before source output, verify snapshot owner/account/message/version, canonical source_text_json bytes and SHA-256, exact JSON-string round trip, and emitted UTF-8 byte length. Mismatch is internal_error with no source bytes.",
+    "notFoundRule": "Unauthenticated and insufficient-scope behavior stays at the accepted boundary. Missing, malformed, other-owner, and other-account report or source identities return the accepted not_found behavior without revealing a record or filesystem path.",
+    "headers": [
+      "Content-Security-Policy: accepted REPORT_CONTENT_SECURITY_POLICY",
+      "Cache-Control: private, no-store",
+      "X-Content-Type-Options: nosniff",
+      "Referrer-Policy: no-referrer"
+    ],
+    "reportContentType": "text/html; charset=utf-8",
+    "sourceContentType": "text/plain; charset=utf-8"
+  },
+  "cliAuthority": {
+    "adapter": "runReportCreateCommand",
+    "argv": ["reports", "create"],
+    "inputRule": "The focused adapter receives an unknown request object from future parser wiring, requires exact argv, parses it with reportAdminReportRequestSchema, and invokes reportAdminReportOperation through the shared CliClient. It does not invent flag syntax or bypass the operation registry.",
+    "successRule": "Strict-parse reportAdminReportResponseSchema and create one #214 value result with operationKey reports.create and semanticKind success. JSON mode emits exactly the validated response as one canonical JSON line on stdout; no wrapper or extra provenance is added.",
+    "humanLines": [
+      "report id: <reportId>",
+      "title: <title>",
+      "created: <createdAt>",
+      "authorized principal: <authorization.principal>",
+      "authorization method: <authorization.method>",
+      "authorization scope: <authorization.scope>",
+      "request id: <authorization.requestId>",
+      "source: <citation.label> <citation.id> for each citation in order"
+    ],
+    "humanSafety": "Every fixed label and separator is trustedChrome. Every response-derived value, including numeric formatting and citation label, is a separate untrustedValue segment. The adapter never concatenates untrusted values into trusted chrome and never prints source text, metadata, paths, credentials, or body digests.",
+    "errorMappings": [
+      {
+        "codes": ["invalid_request", "request_too_large"],
+        "semanticKind": "invalid_input",
+        "exit": 65
+      },
+      {
+        "codes": ["not_found"],
+        "semanticKind": "not_found",
+        "exit": 66
+      },
+      {
+        "codes": [
+          "missing_credentials",
+          "invalid_credentials",
+          "expired_credentials",
+          "insufficient_scope"
+        ],
+        "semanticKind": "authorization",
+        "exit": 77
+      },
+      {
+        "codes": ["internal_error"],
+        "semanticKind": "internal",
+        "exit": 70
+      }
+    ],
+    "failureRule": "Usage, local input, client, protocol, output, signal, and EPIPE outcomes remain entirely owned by #213/#214. The report adapter supplies no numeric exit, stream destination, direct process write, retry, private error map, or message parser.",
+    "composedRule": "The acceptance proof executes reports create through the adapter, shared client, real loopback HTTP app, concrete reports.create handler/service, and private SQLite repository, then executes the #214 runner in human and JSON modes. A direct service or mock HTTP result is not composed CLI evidence."
+  },
+  "capacityAuthority": {
+    "selectedPolicy": "A",
+    "httpRequestBytes": 1048576,
+    "maxIdentityMaterialBytes": 1048576,
+    "maxMetadataJsonBytes": 1048576,
+    "maxSourceIds": 100,
+    "maxSourceProjectionBytesEach": 10485760,
+    "maxSourceProjectionBytesTotal": 10485760,
+    "maxSourceProjectionJsonBytesEach": 50331650,
+    "maxSourceProjectionJsonBytesTotal": 62914760,
+    "maxClaimExcerptBytesEach": 4096,
+    "maxModelJsonBytes": 1048576,
+    "maxRenderedMarkdownBytes": 16777216,
+    "maxRenderedHtmlBytes": 16777216,
+    "maxCommittedReports": 10000,
+    "maxLogicalChargedBytes": 2147483648,
+    "maxNonReplayAttemptsPerRollingWindow": 10,
+    "rollingWindowMilliseconds": 60000,
+    "httpAdmissionRule": "Issue 232 changes the shared HTTP boundary so reports.create uses min(configured global maxRequestBodyBytes, 1048576). Authentication and the registered reports:write authorization happen before declared-length inspection or body-reader acquisition. A raised global limit cannot raise this operation cap. Declared Content-Length over 1048576 is cancelled and rejected before reader/handler; an undeclared or chunked body is cancelled as soon as received bytes would exceed 1048576, before JSON parsing or handler. Both use request_too_large/413, exact message 'request body exceeds configured limit', strict {}, and zero handler/source/write calls.",
+    "admissionOrder": "After reports:write authentication and bounded parsing: canonicalize identity; acquire the identity single-flight guard; perform metadata-only exact replay and return it without any capacity charge; on a miss atomically evaluate and record the principal rolling attempt; reject an account already at either committed limit; require mail:read.message; resolve bounded sources and construct bounded outputs; then under BEGIN IMMEDIATE defensively recheck replay and atomically admit count plus exact prospective logical charge before the first report-table INSERT.",
+    "admissionSequence": [
+      "reports:write-authorization",
+      "bounded-body-parse",
+      "canonical-identity",
+      "identity-single-flight",
+      "metadata-only-exact-replay",
+      "durable-rate-ledger-admission",
+      "account-capacity-read",
+      "mail:read.message-authorization",
+      "source-resolution-and-materialization",
+      "bounded-model-and-render",
+      "publication-BEGIN-IMMEDIATE",
+      "publication-exact-replay-recheck",
+      "count-and-logical-charge-admission",
+      "report-publication"
+    ],
+    "admissionRule": "Reject canonical identity material, metadata JSON, and source count before identity admission. On exact-replay miss, resolve at most 100 sources sequentially while maintaining checked UTF-8 and canonical-JSON byte totals; abort before exceeding a per-source or aggregate bound. Render only the bounded model. Every per-request and Policy A boundary is inclusive at its stated maximum and rejects one byte, row, source, or attempt over.",
+    "rateLedgerTable": "report_create_rate_windows",
+    "rateLedgerRule": "Migration 28 creates one private SQLite STRICT admission row per canonical principal with principal_json BLOB primary key, attempts_json BLOB containing the canonical JSON array of at most 10 nondecreasing canonical millisecond UTC instants, and last_observed_at TEXT. This mutable bounded window is admission bookkeeping, not a committed report or citation record; report immutability triggers do not apply. Rows are never deleted. Exact replay performs no rate-ledger read or write.",
+    "rateAdmissionRule": "For every authenticated exact-replay miss, use injected canonical millisecond UTC now and effectiveNow=max(now,last_observed_at) so wall-clock rollback cannot reopen the window. In one BEGIN IMMEDIATE transaction, strict-decode the principal row, retain only attempts with instant > effectiveNow-60000, and deny when 10 remain without changing the row. Otherwise append exactly one effectiveNow attempt, persist the canonical array and last_observed_at, strict-read it back, and commit before mail:read.message authorization, source scope, or materialization. Missing source scope and every later source, renderer, publication, or storage failure retain this admitted attempt. Backup and restore retain the ledger; elapsed restored windows expire only by the same calculation.",
+    "logicalChargeRule": "Account-wide logical charged bytes are recomputed from the four immutable report tables. Charge the exact length in bytes of every stored TEXT or BLOB column and exactly 8 bytes for every stored INTEGER column, count each physical row once, count a reusable report_source_snapshots row only when first inserted, and exclude SQLite page/index/trigger/schema overhead, the mutable rate ledger, and canonical mail tables including message_text_projections. Before publication, compute the same sum for the exact prospective new rows and require committedCharge+prospectiveCharge <= 2147483648 under BEGIN IMMEDIATE; checked integer arithmetic overflow is internal corruption and publishes nothing.",
+    "accountAdmissionRule": "Committed report count is COUNT(*) of reports across every owner in the sole configured account. Before source materialization reject when count is already 10000 or logical charge is already 2147483648. At publication require count+1 <= 10000 and exact recomputed charge plus prospective charge <= 2147483648. Account admission and publication are serialized by SQLite; restore and reopen recompute rather than trust a mutable counter.",
+    "capacityOutcome": "Every per-request bound uses global request_too_large/413 with exact message 'report request exceeds configured limit' and strict empty details. Every Policy A rate, committed-count, or logical-charge denial uses that same registered code/status/details with exact message 'report capacity is exhausted'. A denial commits no report row. A rate denial leaves its bounded ledger unchanged; an account count/byte denial occurs after and retains exactly one admitted rate-ledger attempt. An exact committed replay bypasses rate, count, byte, source, renderer, and allocation admission.",
+    "writeInstrumentationRule": "Every focused admission proof instruments report_create_rate_windows, message_text_projections, all four immutable report tables, any capacity-total state, and every publication sink. It distinguishes zero report-publication writes from zero total writes and proves that a missing mail:read.message terminal after an admitted replay miss retains exactly one rate-ledger attempt and no other write.",
+    "memoryRule": "Repository queries are ordinal and incremental; parsed source strings never exceed the 10 MiB aggregate and their worst-case canonical JSON escape bytes never exceed 62914760 aggregate; model construction never exceeds its declared bound, hashes consume bounded chunks where available, and no whole archive or attachment set is loaded.",
+    "durableGrowthRule": "Policy A bounds committed report graphs at both 10000 reports and 2147483648 logical charged bytes and bounds each principal's admitted non-replay attempt rate. The database can still encounter physical SQLITE_FULL, I/O, or commit failure below a logical limit; that is redacted internal_error with complete report-publication rollback, never a quota reinterpretation.",
+    "retentionRule": "Committed reports, artifacts, source snapshots, source links, and creation provenance are immutable and retained indefinitely in backup. There is no report TTL, LRU, automatic compaction, delete route, cascade, quota eviction, or cleanup, including after either fixed limit is reached. Raising, lowering, or configuring the fixed constants is not authorized by version 1.",
+    "cleanupRule": "Rollback is the only cleanup for an uncommitted report create. Because no report filesystem artifact exists, crash recovery has no report staging directory, partial HTML, or orphan file to sweep. Updating a principal's bounded rolling-attempt array to discard expired instants changes only private rate bookkeeping and never deletes a committed report graph or rate-ledger row.",
+    "restoreAccountingRule": "Whole-database backup includes immutable report rows and the rate ledger. Empty-root restore verifies canonical migration history, integrity, and foreign keys, recomputes exact count and logical charge before accepting a create, strict-verifies every rate row, and never resets, duplicates, discounts, deletes, or evicts committed report evidence. Restoring a database already at a limit succeeds read-only but denies each distinct create under the frozen 413 outcome.",
+    "configurationRule": "All four Policy A constants are private code authority. Issue 232 adds no configuration key, environment variable, request field, response field, OpenAPI shape, CLI flag, public error code, or status."
+  },
+  "serviceDispositionAuthority": {
+    "coreRule": "The repository and report-construction service return a strict transport-free terminal union. The reports.create handler alone maps registered terminals to RegisteredFeatureOutcome envelopes; unknown throws, malformed terminals, constraint errors, and private diagnostics remain redacted internal_error.",
+    "ownershipRule": "The global HTTP error authority owns each registered code, HTTP status, and strict details schema. Its general definitions intentionally do not freeze messages. This report authority therefore freezes the exact report-service messages below without changing the global registry or public schemas; the shared HTTP admission boundary retains its own already-implemented exact authentication and request-body messages.",
+    "boundaryMessages": {
+      "authenticationOrScope": "request credentials are not authorized",
+      "httpRequestTooLarge": "request body exceeds configured limit",
+      "sourceUnavailable": "report source was not found",
+      "serviceCapacityExceeded": "report request exceeds configured limit",
+      "policyCapacityExhausted": "report capacity is exhausted",
+      "internalFailure": "internal server error"
+    },
+    "terminals": [
+      {
+        "kind": "created-or-replayed",
+        "publicCode": "success",
+        "status": 200,
+        "message": null,
+        "details": "validated ReportAdminReportResponse value"
+      },
+      {
+        "kind": "source-scope-required",
+        "publicCode": "insufficient_scope",
+        "status": 403,
+        "message": "request credentials are not authorized",
+        "details": "strict empty object"
+      },
+      {
+        "kind": "source-unavailable",
+        "publicCode": "not_found",
+        "status": 404,
+        "message": "report source was not found",
+        "details": "strict empty object"
+      },
+      {
+        "kind": "capacity-exceeded",
+        "publicCode": "request_too_large",
+        "status": 413,
+        "message": "report request exceeds configured limit",
+        "details": "strict empty object"
+      },
+      {
+        "kind": "policy-capacity-exhausted",
+        "publicCode": "request_too_large",
+        "status": 413,
+        "message": "report capacity is exhausted",
+        "details": "strict empty object"
+      },
+      {
+        "kind": "internal-failure",
+        "publicCode": "internal_error",
+        "status": 500,
+        "message": "internal server error",
+        "details": "strict empty object"
+      }
+    ],
+    "messageRule": "No public or CLI decision parses an exception, SQLite message, private reason, source case, or renderer text. The handler emits only the exact boundaryMessages value assigned to that branch; every report-create error detail is {}. The global registry validates code/status/details and any definition-level message, but the current five general definitions have no definition-level message.",
+    "rollbackRule": "Every non-success terminal proves zero new committed report rows. A rate-denied request also leaves its ledger row unchanged. Every admitted non-replay attempt remains in the bounded rate ledger after a missing mail:read.message terminal or any later source, renderer, or publication failure. The missing-scope terminal therefore has zero report/artifact/citation/capacity-total/publication writes but not zero total writes. Only exact replay may return success without a new report row and it changes no ledger."
+  },
+  "publicOutcomes": [
+    {
+      "case": "first-create",
+      "code": "success",
+      "status": 200,
+      "effect": "one durable atomic report publication"
+    },
+    {
+      "case": "exact-replay-or-serialized-concurrent-waiter",
+      "code": "success",
+      "status": 200,
+      "effect": "return first response exactly; no new row or timestamp"
+    },
+    {
+      "case": "invalid-or-duplicate-public-request",
+      "code": "invalid_request",
+      "status": 400,
+      "effect": "no service write"
+    },
+    {
+      "case": "first-create-missing-source-read-scope",
+      "code": "insufficient_scope",
+      "status": 403,
+      "effect": "after an admitted replay miss, retain exactly one rate-ledger attempt; reject before every source read/materializer and with zero report/artifact/citation/capacity-total/publication writes, not zero total writes"
+    },
+    {
+      "case": "source-ineligible",
+      "code": "not_found",
+      "status": 404,
+      "effect": "retain the admitted rate-ledger attempt and publish no report graph; an exact legacy text projection may persist independently"
+    },
+    {
+      "case": "per-request-bound",
+      "code": "request_too_large",
+      "status": 413,
+      "effect": "no report write; exact message report request exceeds configured limit"
+    },
+    {
+      "case": "policy-capacity-bound",
+      "code": "request_too_large",
+      "status": 413,
+      "effect": "no report write; rate denial leaves its ledger unchanged; exact message report capacity is exhausted"
+    },
+    {
+      "case": "collision-corruption-renderer-storage-busy-or-readback-failure",
+      "code": "internal_error",
+      "status": 500,
+      "effect": "rollback and redacted public details"
+    }
+  ],
+  "constructiveTraces": [
+    {
+      "id": "TRACE-FIRST-SUCCESS",
+      "setup": "both required scopes and two eligible active-account sources whose production-normalized projections came from plain and HTML-only staged EML",
+      "action": "create through real HTTP service and SQLite",
+      "expected": "deterministic IDs, Source 1/2 citations, exact safe model, four durable record classes, read-back, one retained rate-ledger attempt commit followed by one report-publication commit"
+    },
+    {
+      "id": "TRACE-STAGED-EML-REPORT",
+      "setup": "owner-only staged RFC 5322 EML with bounded plain and HTML-only fixtures, real parseStagedEml, real single-message ingestion, and real canonical promotion",
+      "action": "ingest, create through shared HTTP/service/SQLite, close/reopen, then serve report and source",
+      "expected": "message_text_projections holds exact production parser output; report and source match it after reopen; no direct SQL source seeding"
+    },
+    {
+      "id": "TRACE-LEGACY-MATERIALIZER",
+      "setup": "restored legacy canonical message with verified raw-eml reference/blob and no message_text_projections row",
+      "action": "first create with both scopes invokes the owner-only staged safe materializer, then retries after crash/reopen",
+      "expected": "one immutable exact projection, awaited stage cleanup, byte-identical report/source evidence, idempotent resume, and no network or direct report raw read"
+    },
+    {
+      "id": "TRACE-FIRST-CREATE-SCOPES",
+      "setup": "distinct first-create identities under principals with reports:write only, mail:read.message only, both, and neither, plus an exact committed replay under reports:write only",
+      "action": "invoke through the real shared HTTP boundary and instrument body, report lookup, every message/placement/projection/blob/snapshot read, every materializer invocation, and every write to report_create_rate_windows, message_text_projections, reports, report_artifacts, report_source_snapshots, report_sources, capacity-total state, and publication sinks",
+      "expected": "missing reports:write is 403 before body read; replay under reports:write only succeeds with metadata-only reads and no rate write; an admitted first-create replay miss without mail:read.message commits and retains exactly one rate-ledger attempt before the exact 403, then performs zero source reads, materializer invocations, report/artifact/citation/capacity-total/publication writes and never claims zero total writes; both scopes can create"
+    },
+    {
+      "id": "TRACE-STRING-ROUNDTRIP",
+      "setup": "accepted titles, metadata keys/values, and principals covering astral, distinct NFD/NFC, bidi, isolated high/low surrogates, and the 256-code-unit principal recipe",
+      "action": "create, concurrent replay, close/reopen, backup/empty-root restore, serve, emit public and CLI JSON, and separately exercise accepted report-renderer and human-output projections",
+      "expected": "canonical BLOB bytes, identity hashes, strict parsed strings, public and CLI JSON, and replay remain exact; NFD/NFC stay distinct; isolated surrogates remain canonical escaped bytes at durable and JSON boundaries. Report renderer and human-terminal bytes match their frozen deterministic/safety projections and are not identity round-trip authorities"
+    },
+    {
+      "id": "TRACE-HTTP-OP-CAP",
+      "setup": "global maxRequestBodyBytes raised above 1 MiB; correct and wrong reports:write credentials; declared and chunked bodies at 1 MiB and one byte over",
+      "action": "invoke reports.create through the shared admission boundary with reader/handler/source/write probes",
+      "expected": "authentication and reports:write precede body read; exactly 1 MiB reaches parsing; declared overflow rejects before reader/handler; chunked overflow cancels at the cap before parse/handler; both overflow branches are exact 413 with zero source/write calls"
+    },
+    {
+      "id": "TRACE-REPLAY",
+      "setup": "committed report, then tombstone every current placement and remove mail:read.message while retaining reports:write",
+      "action": "repeat semantically identical parsed request with reordered JSON object keys",
+      "expected": "same response including requestId and createdAt, metadata-only report/link reads, no current/snapshot source read, no materialization, and no new rows"
+    },
+    {
+      "id": "TRACE-CONCURRENT",
+      "setup": "two simultaneous identical creates and deterministic transaction barriers",
+      "action": "release the first commit while the second waits",
+      "expected": "one admitted non-replay attempt, one publication, and two equal successes; the waiter performs exact replay before capacity and adds no rate entry; busy-timeout branch is separately zero-report-write internal_error"
+    },
+    {
+      "id": "TRACE-SOURCE-DENIALS",
+      "setup": "missing, identity-only, tombstoned-only, cross-account-only, and textless fixtures",
+      "action": "create once per fixture",
+      "expected": "same 404 not_found shape, exactly one retained admitted rate-ledger attempt, and zero report-publication rows for every fixture; a textless legacy materializer may retain only its exact canonical message projection"
+    },
+    {
+      "id": "TRACE-PLACEMENT-MIX",
+      "setup": "same configured-account message has one active and one tombstoned placement",
+      "action": "create",
+      "expected": "success using canonical normalized text, without reading either placement body remotely"
+    },
+    {
+      "id": "TRACE-HOSTILE-CONTENT",
+      "setup": "source and title contain markup, URLs, CSS resources, OSC, bidi controls, and instruction-like text",
+      "action": "create, serve report, serve source, render CLI human and JSON",
+      "expected": "report inert and local-only; source exact text/plain; human terminal safe; JSON schema-faithful; no instruction execution"
+    },
+    {
+      "id": "TRACE-RENDERER-REJECTION",
+      "setup": "renderer throws, returns wrong CSP, or exceeds a byte bound",
+      "action": "first create",
+      "expected": "500 internal_error, zero report/snapshot/artifact/link rows, no HTML or path"
+    },
+    {
+      "id": "TRACE-STORAGE-ROLLBACK",
+      "setup": "inject one failure at each declared transaction boundary",
+      "action": "first create and reopen",
+      "expected": "zero rows in all four report tables at every publication boundary, integrity and foreign-key checks pass, a denied rate admission mutates nothing, and an earlier admitted attempt remains exact after a later failure"
+    },
+    {
+      "id": "TRACE-MIGRATION-28",
+      "setup": "fresh database, every canonical 1..27 prefix, and a real supported legacy database whose converter must create immutable historical target version 27/digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab before any live suffix, plus unknown, forged, newer, and recomputed-live-full-digest-substituted provenance",
+      "action": "append report-creation-v1 as canonical slot 28, run the signed #233 implementation-sequence proof, and open through the sole database boundary so the real converter commits only target 1..27 before the common opener routes slot 28 through applyMigrations and the inside-BEGIN beforePendingMigration prefix hook",
+      "expected": "fresh, exact prefixes, and real legacy conversion first reach exact target 27, after which the common gated suffix path reaches schema 28 with the report and rate-ledger schema once; all 1..27 semantic identities and target-27 provenance bytes remain exact while the live full-registry digest advances separately; both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore agree; converter-live-tip and legacy-opener-bypass counterexamples reject; unknown, forged, newer, and full-digest-substituted histories remain untouched and fail before any slot-28 SQL/history/user_version/commit effect"
+    },
+    {
+      "id": "TRACE-REOPEN",
+      "setup": "committed report and later-tombstoned placements",
+      "action": "close and reopen through the sole canonical registry at schema version 28",
+      "expected": "same create replay, report HTML, source text, provenance, canonical string bytes, IDs, digests, Policy A accounting, rate state, and immutable triggers"
+    },
+    {
+      "id": "TRACE-BACKUP-RESTORE",
+      "setup": "committed report in WAL-capable database",
+      "action": "verified backup, empty-root restore, and reopen through the sole canonical registry at schema version 28",
+      "expected": "manifest, canonical-history, integrity, and foreign-key checks pass; canonical strings, report/source outputs, projection rows, exact recomputed count/logical charge, unreset rate state, and immutable triggers match pre-backup state"
+    },
+    {
+      "id": "TRACE-IMMUTABILITY-REPLACE",
+      "setup": "one committed graph, recursive_triggers both off and on, and duplicate values for every primary/unique key in all four report tables",
+      "action": "attempt UPDATE, DELETE, plain duplicate INSERT, INSERT OR REPLACE, and REPLACE INTO before reopen and after empty-root restore",
+      "expected": "every mutation aborts in a named BEFORE guard, original row bytes/digests remain exact, and integrity/foreign-key checks pass"
+    },
+    {
+      "id": "TRACE-SERVING-AUTH",
+      "setup": "owner, other owner, wrong account, missing ID, correct and insufficient scopes",
+      "action": "serve report and source",
+      "expected": "only exact owner/account plus route scope succeeds; denials retain accepted 401/403/404 behavior and emit no content"
+    },
+    {
+      "id": "TRACE-CAPACITY",
+      "setup": "101 source IDs, every resolved per-request byte boundary, one-byte overflow, exact replay, and injected SQLITE_FULL below a Policy A logical limit",
+      "action": "create",
+      "expected": "per-request boundaries accept exactly, one-unit overflow is zero-report-write request_too_large/413 with message report request exceeds configured limit, replay skips every admission/allocation step, and physical exhaustion rolls report publication back as redacted 500 without changing logical limits"
+    },
+    {
+      "id": "TRACE-POLICY-A-RATE",
+      "setup": "two authenticated principals, one committed replay, ten distinct replay misses inside a rolling 60000-millisecond window, an eleventh, exact-boundary expiry, injected clock rollback, reopen, backup, and empty-root restore",
+      "action": "invoke reports.create through the real authenticated HTTP/service/repository boundary with injected time and rate-ledger probes",
+      "expected": "replay runs first and never reads or writes the ledger; attempts one through ten are admitted and durable per principal; eleven is request_too_large/413 with message report capacity is exhausted and no ledger/report mutation; an instant exactly 60000 milliseconds old expires; clock rollback cannot reopen capacity; reopen and restore preserve the same decision"
+    },
+    {
+      "id": "TRACE-POLICY-A-ACCOUNT",
+      "setup": "account-wide immutable graphs at 9999, 10000, and 10001 prospective reports and at 2147483648 logical charged bytes plus one byte below/over, including shared snapshots, multiple principals, exact replay, reopen, backup, and empty-root restore",
+      "action": "create under BEGIN IMMEDIATE while independently recomputing every charged column and prospective row",
+      "expected": "10000 reports and exactly 2147483648 charged bytes are allowed terminal states; each distinct create that would exceed either limit is request_too_large/413 with message report capacity is exhausted and zero report rows; physical snapshots charge once; replay is exempt; recomputation is identical after reopen/restore; no report row is deleted or evicted"
+    },
+    {
+      "id": "TRACE-CLI",
+      "setup": "real loopback HTTP and concrete storage plus every registered shared error",
+      "action": "run reports create through adapter and #214 runner in human and JSON modes",
+      "expected": "success exits 0 with exact destinations/framing; 400/413 exit 65, 404 exits 66, auth exits 77, 500 exits 70; no direct write or private mapping"
+    }
+  ],
+  "forbiddenStates": [
+    {
+      "id": "FORBID-PUBLIC-SCHEMA-DRIFT",
+      "text": "Any new request/response field, changed route/scope/method/streaming, report ID namespace, or report-specific public error."
+    },
+    {
+      "id": "FORBID-CALLER-PROVENANCE",
+      "text": "Principal, account, scope, method, request ID, time, or body digest copied from request content, metadata, correlation ID, forwarded identity header, or User-Agent."
+    },
+    {
+      "id": "FORBID-ALTERNATE-IDENTITY",
+      "text": "Random report IDs, database row IDs, sorted source IDs, omitted metadata/account/principal, collision suffixes, or new identity after replay."
+    },
+    {
+      "id": "FORBID-SOURCE-LEAK",
+      "text": "Different public outcomes for missing, identity-only, tombstoned-only, cross-account-only, or textless first-create sources."
+    },
+    {
+      "id": "FORBID-RAW-OR-HTML-SOURCE",
+      "text": "Raw EML, original HTML, attachments, filenames, blob decoding, network fetch, IMAP, URL following, or remote-resource proxy as direct report evidence; only the verified production-parser legacy materializer may consume canonical raw EML and it exposes bounded normalized text, never raw or HTML bytes."
+    },
+    {
+      "id": "FORBID-UNSTABLE-CITATION",
+      "text": "Subject/UID/placement labels, reordered citations, post-create placement lookup, or a source URL that can resolve another owner/account snapshot."
+    },
+    {
+      "id": "FORBID-STORED-RENDERED-ARTIFACT",
+      "text": "Persisted Markdown, HTML, arbitrary report path, caller HTML, renderer bypass, or output without digest/CSP verification."
+    },
+    {
+      "id": "FORBID-SPLIT-PUBLICATION",
+      "text": "Separate commits, filesystem publication, artifact without report, report without artifact, source link without snapshot, or success before durable read-back."
+    },
+    {
+      "id": "FORBID-STRING-LOSS",
+      "text": "Raw SQLite TEXT for accepted identity-sensitive strings, Unicode normalization, scalar-count narrowing, isolated-surrogate replacement, lossy UTF-8 binding, or equality that differs from canonical JSON-string bytes."
+    },
+    {
+      "id": "FORBID-REPLACE-MUTATION",
+      "text": "UPDATE, DELETE, INSERT OR REPLACE, REPLACE INTO, or duplicate-key INSERT that changes, deletes, or recreates any occupied row in the four report tables."
+    },
+    {
+      "id": "FORBID-SOURCE-READ-WITHOUT-SCOPE",
+      "text": "Any message, placement, normalized-text, raw-blob, snapshot-text, or materializer read for a first-create replay miss before mail:read.message authorization; checking mail:read.message before an admitted miss commits exactly one rate-ledger attempt; erasing that attempt on missing scope; claiming the missing-scope terminal has zero total writes; any report/artifact/citation/capacity-total/publication write on that terminal; or requiring mail:read.message for an exact metadata-only replay."
+    },
+    {
+      "id": "FORBID-RAISED-REPORT-BODY-CAP",
+      "text": "Letting a raised global body limit raise reports.create above 1048576 bytes, acquiring a declared-oversize reader, parsing an oversize chunked body, or calling a handler after the operation cap rejects."
+    },
+    {
+      "id": "FORBID-MIGRATION-AUTHORITY-DRIFT",
+      "text": "Any report migration other than report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts and canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; replacing immutable historical target-27 provenance with the new live full-registry digest; converting or ledgering any live suffix inside the legacy converter; placing the suffix runner only in a non-legacy opener branch; slot-28 SQL/history/user_version/commit before the inside-BEGIN prefix verifier; changing protected converter production bytes or #233 artifacts; any predecessor renumbering, semantic edit, alternate registry, caller ceiling, or conversion/reopen/doctor/backup/empty-restore/full-restore bypass."
+    },
+    {
+      "id": "FORBID-REPLAY-REVALIDATION",
+      "text": "Re-resolving source placement, changing timestamp/requestId/citations, rerunning capacity, or returning a new report for an exact committed replay."
+    },
+    {
+      "id": "FORBID-UNBOUNDED-WORK",
+      "text": "More than 100 sources, more than 10 MiB aggregate source text per create, unbounded report model/output, more than 10000 reports or 2147483648 logical charged bytes, more than 10 admitted non-replay attempts per principal in any rolling 60000 milliseconds, capacity admission after a report INSERT, whole-archive materialization, unbounded rate rows per principal, or a hidden retry loop."
+    },
+    {
+      "id": "FORBID-AUTOMATIC-DELETION",
+      "text": "TTL, LRU, cascade, quota eviction, manual route, or cleanup that removes or mutates a committed report, artifact, source link, cited snapshot, or provenance row; reaching either Policy A limit never authorizes reclamation."
+    },
+    {
+      "id": "FORBID-CLI-AUTHORITY-FORK",
+      "text": "Report-specific exit numbers, process writes, retry, error/message parsing, raw mode, unbranded human values, or JSON wrapper."
+    }
+  ],
+  "planningShieldApplicability": [
+    {
+      "id": "S01",
+      "status": "required",
+      "reason": "Accepted head, artifacts, source digests, issue ownership, and precedence are pinned."
+    },
+    {
+      "id": "S02",
+      "status": "required",
+      "reason": "HTTP, source resolution, renderer, transaction, backup, serving, CLI, and parity seams are separated."
+    },
+    {
+      "id": "S03",
+      "status": "required",
+      "reason": "Production-normalized mail text and every transformed durable report value have staged-input, write/read-back, reopen, and restore proof."
+    },
+    {
+      "id": "S04",
+      "status": "required",
+      "reason": "Publication outcome and complete durable records share one transaction."
+    },
+    {
+      "id": "S05",
+      "status": "required",
+      "reason": "Report publication is one bounded transaction, while the legacy normalized-text materializer has explicit verify/stage/parse/publish/cleanup states, owns cancellation, and awaits one idempotent cleanup barrier."
+    },
+    {
+      "id": "S06",
+      "status": "required",
+      "reason": "Whole-database backup plus empty-root restore must reproduce served report and source bytes."
+    },
+    {
+      "id": "S07",
+      "status": "required",
+      "reason": "Public request/response and internal rows are strict-parsed from unknown at their owning boundaries."
+    },
+    {
+      "id": "S08",
+      "status": "required",
+      "reason": "Hostile mail, report, source, human terminal, JSON, and HTTP contexts have distinct controls."
+    },
+    {
+      "id": "S09",
+      "status": "required",
+      "reason": "Policy A freezes exact operation, per-request, 10000-report, 2147483648-logical-byte, and 10-per-principal rolling-60000-millisecond budgets; replay ordering, durable rate admission, immutable retention, and restore recomputation have constructive boundary proofs."
+    },
+    {
+      "id": "S10",
+      "status": "required",
+      "reason": "Email, bearer identity, account isolation, provenance, report serving, and local persistence are security boundaries."
+    },
+    {
+      "id": "S11",
+      "status": "not-applicable",
+      "reason": "No package or SDK version decision changes in this design."
+    },
+    {
+      "id": "S12",
+      "status": "required",
+      "reason": "Issue 232 is unblocked only from accepted head 896405ac9734e60a84c8cb7690f4688da86383fd within the exact checked files, the signed real legacy-to-target-27-to-gated-suffix sequence, append-stable migration slot 28, and Policy A obligations; issue 165 retains final parity-promotion ownership."
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D01",
+      "choice": "Hash one canonical account-, principal-, order-, and metadata-bound material into report and creation request IDs.",
+      "reason": "Exact replay and concurrency become constructive without a new idempotency field or random identity.",
+      "rejected": "random IDs, database row IDs, source sorting, caller idempotency keys, and collision suffixes"
+    },
+    {
+      "id": "D02",
+      "choice": "Resolve first-create sources only in the sole configured account and collapse all ineligible reasons to not_found.",
+      "reason": "The Phase 1 one-account boundary is server-authoritative and does not become an enumeration oracle.",
+      "rejected": "request-selected account, cross-account fallback, tombstoned-only acceptance, and reason-specific errors"
+    },
+    {
+      "id": "D03",
+      "choice": "Persist the production MIME parser's bounded normalized text during canonical promotion, safely materialize missing legacy projections from verified raw EML through that same parser, then snapshot exact canonical string bytes as the permanent citation source.",
+      "reason": "New and existing archive mail reach one production-faithful text seam, while citations survive tombstones, reopen, backup, and parser drift without direct report HTML/raw access.",
+      "rejected": "direct-SQL-only fixtures, search-index text as authority, report-only parsers, placement lookups on serve, stored mail HTML, and network fallback"
+    },
+    {
+      "id": "D04",
+      "choice": "Build a deterministic source-evidence index with bounded excerpts and one citation per claim.",
+      "reason": "The frozen request contains sources, title, and metadata but no trusted generation instruction or external model contract.",
+      "rejected": "hidden prompt semantics, metadata templates, uncited synthesis, external inference, and title-only reports"
+    },
+    {
+      "id": "D05",
+      "choice": "Persist canonical model and output digests, but rerender instead of storing Markdown or HTML.",
+      "reason": "The accepted safe renderer stays the only HTML authority and stored arbitrary markup is structurally impossible.",
+      "rejected": "stored HTML, stored Markdown, arbitrary paths, and caller renderer options"
+    },
+    {
+      "id": "D06",
+      "choice": "Publish all four report record classes under one BEGIN IMMEDIATE transaction with strict read-back and BEFORE UPDATE/DELETE/duplicate-INSERT guards.",
+      "reason": "It makes concurrency, rollback, restart, orphan prevention, and REPLACE-safe immutability observable at the same boundary.",
+      "rejected": "split report transactions, post-commit render, eventual artifact repair, unguarded REPLACE, and filesystem report staging"
+    },
+    {
+      "id": "D07",
+      "choice": "Record bearer creation provenance from trusted context, a server-derived request ID, body digest, and one server time.",
+      "reason": "Current HTTP and CLI both use bearer admission, while correlation and forwarded headers are caller-controlled.",
+      "rejected": "x-correlation-id as request provenance, User-Agent method inference, and metadata identity"
+    },
+    {
+      "id": "D08",
+      "choice": "Keep public schemas unchanged, preserve global ownership of error code/status/details, and freeze exact report-service messages locally.",
+      "reason": "No contradiction requires a new public field or report-specific error, while the current global general-error definitions intentionally do not freeze their messages.",
+      "rejected": "new idempotency key, account field, replay flag, quota error, or citation route"
+    },
+    {
+      "id": "D09",
+      "choice": "Freeze user-selected Policy A: 10000 immutable committed reports and 2147483648 logical charged bytes account-wide, 10 authenticated non-replay attempts per principal in every rolling 60000 milliseconds, exact replay before all capacity checks, indefinite retention without eviction/deletion, existing request_too_large/413, and no public or configuration schema widening.",
+      "reason": "The fixed dual account budget plus durable principal window closes the denial-of-service growth gap while preserving exact replay, citations, frozen public contracts, and the absence of any delete workflow.",
+      "rejected": "configurable limits, new 409/429 outcomes, rolling report retention, reset-on-restart rate state, mutable counters as quota truth, unbounded growth, and SQLITE_FULL as admission"
+    },
+    {
+      "id": "D10",
+      "choice": "Implement one focused reports create adapter under #213/#214 and prove it through real HTTP and SQLite.",
+      "reason": "Command semantics remain central and #165 can promote only demonstrated production/composed cells.",
+      "rejected": "direct process writes, mock-only CLI proof, private exit maps, and general dispatcher work"
+    },
+    {
+      "id": "D11",
+      "choice": "Require reports:write for every invocation; after an exact-replay miss, commit and retain exactly one admitted rate-ledger attempt before checking mail:read.message, while keeping that source scope before every current-source read or materialization.",
+      "reason": "The registered create operation owns report write authority; the accepted message-read scope is needed exactly when current mail content is read, but Policy A charges authenticated admitted misses before that guard. An exact replay returns immutable metadata without source text or rate charge, while missing source scope retains only the one rate-ledger attempt.",
+      "rejected": "source reads under reports:write alone, replay source revalidation, and requiring mail:read.message for metadata-only exact replay"
+    },
+    {
+      "id": "D12",
+      "choice": "Serialize accepted identity-sensitive ECMAScript strings as canonical JSON-string BLOB bytes.",
+      "reason": "This preserves astral, normalization-distinct, bidi, isolated-surrogate, and maximum-length accepted strings across SQLite and hashing without narrowing the frozen schemas.",
+      "rejected": "raw SQLite TEXT, NFC normalization, scalar-only domains, surrogate rejection, and lossy UTF-8 replacement"
+    },
+    {
+      "id": "D13",
+      "choice": "Enforce a non-raiseable reports.create 1 MiB body cap in the shared authenticated HTTP admission boundary.",
+      "reason": "The global configuration can be raised for other operations; a per-operation minimum preserves this report authority for declared and chunked bodies before the handler.",
+      "rejected": "handler-local length checks, default-only limits, post-JSON admission, and trusting Content-Length alone"
+    },
+    {
+      "id": "D14",
+      "choice": "Consume accepted #233 at 62b3eaf02cf001dfb6847f356cc533c6d3122d50 / oracle 503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456 and #234 at 896405ac9734e60a84c8cb7690f4688da86383fd by appending report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts as canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab.",
+      "reason": "The accepted registry explicitly reserves report slot 28 and proves the real legacy converter commits only target 1..27 before the common opener routes slot 28 through its inside-BEGIN verify-before-suffix hook. Slot 28 evolves the live full-registry digest without rewriting converted target-27 rows; reopen, doctor, backup, empty restore, and full restore share that authority at the accepted head.",
+      "rejected": "renumbering any predecessor, substituting the live full digest for historical target 27, changing protected converter bytes, looping conversion over the live registry, skipping the common suffix runner after legacy conversion, applying suffix effects before prefix verification, a second registry, direct applyMigrations use, caller-selected ceilings, conversion bypass, and any migration path or slot other than the frozen one"
+    },
+    {
+      "id": "D15",
+      "choice": "Pin #232 change authority to base 896405ac9734e60a84c8cb7690f4688da86383fd and fail frozen-input drift, protected paths, and unknown paths.",
+      "reason": "The implementation proof must apply to the reviewed production seams and cannot silently widen into public contracts, #165, or unrelated code.",
+      "rejected": "warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths"
+    }
+  ],
+  "downstream": {
+    "issue232": {
+      "model": "gpt-5.6-luna",
+      "minimumReasoning": "xhigh",
+      "status": "ready-for-implementation",
+      "implementationBase": "896405ac9734e60a84c8cb7690f4688da86383fd",
+      "hardDependencies": [
+        {
+          "issue": 231,
+          "required": "this signed Policy A oracle, checker, exact projections, and pinned digests",
+          "current": "signed"
+        },
+        {
+          "issue": 233,
+          "required": "signed append-stable canonical registry authority at commit 62b3eaf02cf001dfb6847f356cc533c6d3122d50 and oracle 503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456, with explicit historical target 27, real target-slice conversion sequence, common verified suffix runner, and reserved report slot 28",
+          "current": "accepted"
+        },
+        {
+          "issue": 234,
+          "required": "implemented target-27 converter slice, common post-conversion applyMigrations path, prefix digest helper, explicit target decoder, inside-BEGIN beforePendingMigration verifier, and sole registry/conversion/opener/doctor/backup/restore authority at 896405ac9734e60a84c8cb7690f4688da86383fd",
+          "current": "implemented"
+        }
+      ],
+      "productionFiles": [
+        "packages/imap/src/mime-parser.ts",
+        "packages/storage/src/canonical-promotion.ts",
+        "packages/storage/src/promotion-adapter.ts",
+        "packages/storage/src/message-text-materializer.ts",
+        "packages/storage/src/report-creation-repository.ts",
+        "packages/storage/src/migrations/0028-report-creation.ts",
+        "packages/storage/src/migration-registry.ts",
+        "packages/storage/src/database.ts",
+        "packages/storage/src/index.ts",
+        "packages/daemon/src/single-message-ingestion.ts",
+        "packages/daemon/src/http.ts",
+        "packages/daemon/src/report-creation-service.ts",
+        "packages/daemon/src/report-admin-handlers.ts",
+        "packages/daemon/src/report-serving.ts",
+        "packages/daemon/src/index.ts",
+        "packages/cli/src/report-create-command.ts",
+        "packages/cli/src/index.ts"
+      ],
+      "testFiles": [
+        "packages/imap/test/mime-parser-p2-c10.test.ts",
+        "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+        "packages/storage/test/promotion-adapter-p2-c20.test.ts",
+        "packages/storage/test/message-text-materializer.test.ts",
+        "packages/storage/test/report-creation-migration.test.ts",
+        "packages/storage/test/report-creation-repository.test.ts",
+        "packages/storage/test/report-creation-backup-restore.test.ts",
+        "packages/storage/test/migration-registry.test.ts",
+        "packages/storage/test/migration-history-conversion.test.ts",
+        "packages/daemon/test/single-message-ingestion-p3-c08.test.ts",
+        "packages/daemon/test/http-admission-sec-r03.test.ts",
+        "packages/daemon/test/report-creation-service.test.ts",
+        "packages/daemon/test/report-create-http.test.ts",
+        "packages/daemon/test/report-admin-handlers-p6-c08.test.ts",
+        "packages/daemon/test/report-serving-p6-c17.test.ts",
+        "packages/daemon/test/report-create-composed.test.ts",
+        "packages/cli/src/report-create-command.test.ts"
+      ],
+      "protectedFiles": [
+        "packages/contracts/src/report-admin-operations.ts",
+        "packages/contracts/src/report-renderer.ts",
+        "packages/contracts/src/http-error-authority.ts",
+        "packages/contracts/src/error-envelope.ts",
+        "packages/daemon/src/config.ts",
+        "packages/daemon/src/trusted-auth-context.ts",
+        "packages/cli/src/client.ts",
+        "packages/cli/src/command-registry.ts",
+        "packages/cli/src/command-outcome.ts",
+        "packages/cli/src/output-context.ts",
+        "packages/storage/src/migration-history-conversion.ts",
+        "docs/architecture/database-migration-registry-oracle.v1.json",
+        "docs/architecture/database-migration-registry-check.v1.mjs",
+        "docs/architecture/database-migration-registry-design.v1.md",
+        "docs/architecture/database-migration-registry-decisions.v1.md",
+        "docs/architecture/database-migration-registry-coverage.v1.md",
+        "packages/daemon/test/operation-parity-issue-165.ts",
+        "packages/daemon/test/operation-parity-issue-165.test.ts"
+      ],
+      "migrationFiles": {
+        "production": "packages/storage/src/migrations/0028-report-creation.ts",
+        "test": "packages/storage/test/report-creation-migration.test.ts",
+        "registry": "packages/storage/src/migration-registry.ts",
+        "registryTest": "packages/storage/test/migration-registry.test.ts",
+        "conversionCompositionTest": "packages/storage/test/migration-history-conversion.test.ts",
+        "rule": "Create only the exact report migration/test paths, append only canonical slot 28 to the accepted registry, and update the focused registry plus conversion-composition expectations. The conversion test must preserve the signed real converter sequence that lands exactly on target 27, then prove the common opener applies the new slot 28 through beforePendingMigration; it must separately assert exact historical prefix-27 digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab, the new exact live registry-28 digest, append stability, both suffix crash boundaries, reopen, doctor, backup, empty/full restore, and full-digest-substitution rejection. The #233 artifacts and packages/storage/src/migration-history-conversion.ts remain byte-frozen."
+      },
+      "changePolicy": {
+        "base": "896405ac9734e60a84c8cb7690f4688da86383fd",
+        "allowedRule": "Every changed path must equal one productionFiles or testFiles entry in this signed oracle. Protected paths fail even if also injected into an allowlist; every other path is unknown and fails.",
+        "driftRule": "Every frozen input must match its accepted-base digest. A missing live frozen input always fails. After implementation, every changed live frozen input must be declared in the same checker invocation and must be an allowed #232 path; undeclared drift and declared protected or unknown paths fail. Declared allowed implementation drift is expected, never silent authority drift.",
+        "invocation": "node docs/architecture/report-creation-check.v1.mjs --changed-path=<path> [repeat for the complete #232 diff] --self-test",
+        "selfTests": ["frozen-input-drift", "protected-path", "unknown-path"]
+      },
+      "implementationObligations": [
+        "Implement report-creation-v1 only at packages/storage/src/migrations/0028-report-creation.ts and append it as canonical slot 28 after exact accepted prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab. Preserve the signed production sequence: the protected real converter resolves target 27, executes and ledgers only canonicalDatabaseMigrations.slice(0, 27), commits user_version and immutable provenance at 27, and returns; the common opener then routes slot 28 through applyMigrations and beforePendingMigration. Preserve every 1..27 semantic byte; advance the live full-registry digest, schema/next-slot constants, registry test, and packages/storage/test/migration-history-conversion.test.ts. Prove prefix 27 is verified before slot-28 SQL/history/user_version/commit and that converter-live-tip, legacy-opener-bypass, and recomputed live-full-digest substitutions reject. Do not change #233 artifacts or packages/storage/src/migration-history-conversion.ts.",
+        "Extend the production MIME parser, single-message ingestion, promotion adapter, canonical promotion, and strict read-back to persist one bounded message_text_projections value for every new parsed message; implement the verified raw-EML staging materializer for legacy rows with explicit states and one awaited idempotent cleanup barrier.",
+        "Implement canonical identity and canonical JSON BLOB string serialization, bounded excerpt/model/rendering, one report publication transaction, exact replay, read-back, typed failures, and BEFORE UPDATE/DELETE/duplicate-INSERT guards that defeat INSERT OR REPLACE and REPLACE INTO for all four immutable report tables.",
+        "Change the shared HTTP boundary only for a non-raiseable reports.create min(global,1048576) cap after authentication/reports:write but before body materialization; prove raised-global-limit declared and chunked overflow rejection before handler.",
+        "Implement Policy A exactly: identity-serialized replay first; private durable per-principal rolling-rate admission at 10 non-replay attempts per 60000 milliseconds; every admitted exact-replay miss commits and retains exactly one rate-ledger attempt before mail:read.message; account-wide recomputed COUNT(reports) <= 10000 and exact immutable-row logical charge <= 2147483648; inclusive boundaries; no report deletion/eviction; restored accounting; fixed private constants; and existing request_too_large/413 with the two frozen report messages and no public/config schema widening.",
+        "Extend only the internal report service context needed to carry the trusted body digest, principal scopes, and injected capacity clock. Require mail:read.message after the admitted replay-miss rate commit but before every source/materializer read; exact replay requires reports:write only. Missing source scope retains exactly one rate-ledger attempt and performs zero source reads, materializer invocations, message-text-projection, report, artifact, citation, capacity-total, or publication writes; never assert zero total writes. Map exact frozen service messages to existing registered global code/status/details without public-schema change.",
+        "Make report/source serving query owner and configured account before materialization, consume the durable model/snapshot records, and verify all digests and renderer/CSP versions before output.",
+        "Implement the focused reports create command adapter with shared request/response parsing, shared client, branded human segments, and #214 result construction.",
+        "Prove every constructive trace, including the signed #233 --implementation-sequence-check over a real supported legacy database: real converter to exact target 27, then common-opener gated slot 28, both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore; retain exact target-27 provenance while the live digest evolves, and reject converter-live-tip, legacy-opener-bypass, and full-digest substitutions before suffix effects. Also prove staged EML through real ingestion/promotion to HTTP report, legacy materialization, both-scope first create, reports:write-only replay, all-write missing-scope instrumentation, canonical-string round trips, operation-specific body admission, rate/count/logical-byte exact boundaries and recovery, every failure boundary, REPLACE-safe immutability before/after reopen/restore, hostile corpus, and CLI branches. Direct-SQL-only mail source fixtures do not count.",
+        "Run this checker before implementation and after implementation with the complete changed-path set in one invocation. Leave protected/unknown files, #165 drafts, planning, GitHub, metrics, #233 authority artifacts, and packages/storage/src/migration-history-conversion.ts unchanged; only its declared focused test may change for slot-28 composition. Missing or undeclared frozen drift and every scope expansion fail."
+      ],
+      "retirement": "No production report-creation path exists to retire. Replace only fixture repositories in focused composed proofs; retain accepted renderer and serving behavior."
+    },
+    "issue165": {
+      "owner": 165,
+      "protectedDuring232": true,
+      "cells": [
+        {
+          "operation": "reports.create",
+          "surface": "production-adapter",
+          "requiredEvidence": "Invoke the concrete registered handler through trusted HTTP context into report service and SQLite repository, assert durable postconditions and failure dimensions, and mark real/pass only from retained executable evidence."
+        },
+        {
+          "operation": "reports.create",
+          "surface": "cli-composed",
+          "requiredEvidence": "Invoke the reports create adapter through shared client, real loopback HTTP, concrete handler/service/repository, and #214 runner in human and JSON modes; mock client or fixture handler remains blocked."
+        }
+      ],
+      "outcomeDimensions": [
+        "first success",
+        "both-scope first create and reports:write-only exact replay",
+        "serialized concurrency",
+        "production-ingested and legacy-materialized normalized text",
+        "missing/tombstoned/cross-account/textless source with rate-before-scope, retained-attempt, zero-source/read/materializer/report-publication, and nonzero-total-write probes",
+        "renderer rejection",
+        "storage rollback and REPLACE-safe immutable guards",
+        "operation body, per-request, and selected cumulative capacity rejection",
+        "ECMAScript string round trip",
+        "restart/reopen",
+        "backup/full restore",
+        "authorized and unauthorized serving",
+        "hostile report/source/terminal content",
+        "CLI JSON/human framing and central exits"
+      ],
+      "promotionRule": "Issue 232 may start only from this signed oracle and exact accepted base, but it still does not edit or promote #165. After completed #232 evidence, issue 165 reruns its own complete matrix and changes only the two reports.create cells whose exact production-ingestion/materializer, HTTP, SQLite, Policy A, recovery, and CLI invocations are real and green; all unrelated red cells remain red."
+    }
+  }
+}
