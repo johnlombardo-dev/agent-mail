@@ -1,6 +1,7 @@
 import * as http from "node:http";
 import * as https from "node:https";
 import type { IncomingHttpHeaders, IncomingMessage } from "node:http";
+import type { Socket } from "node:net";
 import { TextDecoder } from "node:util";
 import {
   createOperationRegistry,
@@ -170,8 +171,10 @@ function asBytes(chunk: unknown): Uint8Array {
 type ConnectedResponse = Readonly<{
   readonly request: http.ClientRequest;
   readonly response: IncomingMessage;
+  readonly socket: Socket;
   readonly requestClosed: () => boolean;
   readonly responseClosed: () => boolean;
+  readonly socketClosed: () => boolean;
 }>;
 
 async function awaitClose(
@@ -197,7 +200,10 @@ async function awaitClose(
     const ignoreError = (): void => undefined;
     resource.once("close", finish);
     resource.once("error", ignoreError);
-    if (!resource.destroyed) resource.destroy();
+    if (!resource.destroyed) {
+      resource.destroy();
+    }
+    if (resource.isClosed?.() === true) finish();
   });
 }
 
@@ -213,11 +219,20 @@ function openRequest(
   return new Promise((resolve, reject) => {
     const transport = url.protocol === "https:" ? https : http;
     let request: http.ClientRequest | undefined;
+    let socket: Socket | undefined;
     let requestClosed = false;
+    let socketClosed = false;
     let settled = false;
     let connected = false;
     let connectTimer: ReturnType<typeof setTimeout> | undefined;
     let controlTimer: ReturnType<typeof setTimeout> | undefined;
+    const rememberSocket = (connectedSocket: Socket): void => {
+      if (socket === connectedSocket) return;
+      socket = connectedSocket;
+      connectedSocket.once("close", () => {
+        socketClosed = true;
+      });
+    };
     const clearTimers = (): void => {
       if (connectTimer !== undefined) clearTimeout(connectTimer);
       if (controlTimer !== undefined) clearTimeout(controlTimer);
@@ -232,7 +247,7 @@ function openRequest(
       if (request !== undefined)
         await awaitClose({
           destroyed: request.destroyed,
-          isClosed: () => requestClosed,
+          isClosed: () => requestClosed || request?.destroyed === true,
           destroy: () => {
             const activeRequest = request;
             if (activeRequest === undefined) return;
@@ -272,13 +287,16 @@ function openRequest(
           response.destroy();
           return;
         }
-        if (request === undefined) {
+        const requestSocket = request?.socket;
+        const connectedSocket = socket ?? requestSocket;
+        if (request === undefined || connectedSocket === null || connectedSocket === undefined) {
           response.destroy();
           void finishError(
             new CliClientError("transport_error", operationKey, "HTTP request was not established"),
           );
           return;
         }
+        rememberSocket(connectedSocket);
         settled = true;
         clearTimers();
         signal?.removeEventListener("abort", onAbort);
@@ -289,18 +307,21 @@ function openRequest(
         resolve({
           request,
           response,
+          socket: connectedSocket,
           requestClosed: () => requestClosed,
           responseClosed: () => responseClosed,
+          socketClosed: () => socketClosed,
         });
       });
       request.once("close", () => {
         requestClosed = true;
       });
-      request.once("socket", (socket: import("node:net").Socket) => {
-        if (url.protocol === "https:") socket.once("secureConnect", onConnected);
+      request.once("socket", (connectedSocket: Socket) => {
+        rememberSocket(connectedSocket);
+        if (url.protocol === "https:") connectedSocket.once("secureConnect", onConnected);
         else {
-          socket.once("connect", onConnected);
-          if (!socket.connecting) onConnected();
+          connectedSocket.once("connect", onConnected);
+          if (!connectedSocket.connecting) onConnected();
         }
       });
       request.once("error", (error: Error) => {
@@ -423,20 +444,29 @@ async function closeOpened(opened: ConnectedResponse): Promise<void> {
   await Promise.all([
     awaitClose({
       destroyed: opened.response.destroyed,
-      isClosed: () => opened.responseClosed() || opened.response.closed === true,
+      isClosed: () =>
+        opened.responseClosed() || opened.response.closed === true || opened.response.destroyed,
       destroy: () => opened.response.destroy(),
       once: (event, listener) => opened.response.once(event, listener),
       removeListener: (event, listener) => opened.response.removeListener(event, listener),
     }),
     awaitClose({
       destroyed: opened.request.destroyed,
-      isClosed: () => opened.requestClosed() || opened.request.closed === true,
+      isClosed: () =>
+        opened.requestClosed() || opened.request.closed === true || opened.request.destroyed,
       destroy: () => {
         opened.request.abort();
         return opened.request.destroy();
       },
       once: (event, listener) => opened.request.once(event, listener),
       removeListener: (event, listener) => opened.request.removeListener(event, listener),
+    }),
+    awaitClose({
+      destroyed: opened.socket.destroyed,
+      isClosed: () => opened.socketClosed() || opened.socket.destroyed,
+      destroy: () => opened.socket.destroy(),
+      once: (event, listener) => opened.socket.once(event, listener),
+      removeListener: (event, listener) => opened.socket.removeListener(event, listener),
     }),
   ]);
 }
@@ -590,10 +620,12 @@ export class CliClient {
         operation,
         opened.request,
         opened.response,
+        opened.socket,
         metadata,
         options.signal,
         opened.requestClosed,
         opened.responseClosed,
+        opened.socketClosed,
       );
       return Object.freeze({ kind: "stream", operationKey: operation.key, status: 200, stream });
     }
@@ -619,10 +651,12 @@ export class CliClient {
     operation: OperationDefinition,
     request: http.ClientRequest,
     response: IncomingMessage,
+    socket: Socket,
     metadata: unknown,
     signal: AbortSignal | undefined,
     requestClosed: () => boolean,
     responseClosed: () => boolean,
+    socketClosed: () => boolean,
   ): CliByteStream {
     let done = false;
     let aborted = false;
@@ -649,20 +683,27 @@ export class CliClient {
         await Promise.all([
           awaitClose({
             destroyed: response.destroyed,
-            isClosed: () => responseClosed() || response.closed === true,
+            isClosed: () => responseClosed() || response.closed === true || response.destroyed,
             destroy: () => response.destroy(),
             once: (event, listener) => response.once(event, listener),
             removeListener: (event, listener) => response.removeListener(event, listener),
           }),
           awaitClose({
             destroyed: request.destroyed,
-            isClosed: () => requestClosed() || request.closed === true,
+            isClosed: () => requestClosed() || request.closed === true || request.destroyed,
             destroy: () => {
               request.abort();
               return request.destroy();
             },
             once: (event, listener) => request.once(event, listener),
             removeListener: (event, listener) => request.removeListener(event, listener),
+          }),
+          awaitClose({
+            destroyed: socket.destroyed,
+            isClosed: () => socketClosed() || socket.destroyed,
+            destroy: () => socket.destroy(),
+            once: (event, listener) => socket.once(event, listener),
+            removeListener: (event, listener) => socket.removeListener(event, listener),
           }),
         ]);
       })();
