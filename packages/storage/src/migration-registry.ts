@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { Migration } from "./migration-runner";
 import { mailboxCheckpointMigration } from "./checkpoint-repository";
 import { localLabelMigration } from "./local-label-migration";
@@ -67,5 +68,37 @@ export const canonicalDatabaseMigrations: readonly Migration[] = Object.freeze([
 export const CANONICAL_DATABASE_SCHEMA_VERSION = canonicalDatabaseMigrations.length;
 export const NEXT_DATABASE_MIGRATION_VERSION = CANONICAL_DATABASE_SCHEMA_VERSION + 1;
 export const NEXT_REPORT_MIGRATION_VERSION = NEXT_DATABASE_MIGRATION_VERSION;
+
+/**
+ * Return the immutable identity of a contiguous canonical prefix.
+ *
+ * Prefix identity is useful evidence, but it does not by itself make a
+ * prefix an accepted historical conversion target. Callers must resolve the
+ * result through the explicit accepted-target table owned by conversion
+ * provenance.
+ */
+export function canonicalRegistryDigestAtVersion(targetVersion: number): string {
+  if (
+    !Number.isSafeInteger(targetVersion) ||
+    targetVersion < 0 ||
+    targetVersion > canonicalDatabaseMigrations.length
+  ) {
+    throw new RangeError("canonical migration prefix version is out of range");
+  }
+  const migrations = canonicalDatabaseMigrations.slice(0, targetVersion).map((migration) => [
+    migration.version,
+    migration.name,
+    createHash("sha256")
+      .update(
+        migration.requiresForeignKeysOff === true
+          ? `${migration.sql}\n/* migration-requires-foreign-keys-off:v1 */`
+          : migration.sql,
+        "utf8",
+      )
+      .digest("hex"),
+    migration.requiresForeignKeysOff === true,
+  ]);
+  return createHash("sha256").update(JSON.stringify(migrations), "utf8").digest("hex");
+}
 
 export type CanonicalDatabaseMigration = (typeof canonicalDatabaseMigrations)[number];

@@ -151,4 +151,40 @@ describe("SQLite migration runner", () => {
     });
     opened.close();
   });
+
+  test("runs the pre-pending hook inside the migration transaction", () => {
+    const opened = new Database(":memory:", { strict: true });
+    const observed: Array<readonly [number, number]> = [];
+
+    applyMigrations(opened, migrationSet(), {
+      beforePendingMigration: ({ currentPrefixVersion, pendingMigration }) => {
+        observed.push([currentPrefixVersion, pendingMigration.version]);
+      },
+    });
+
+    expect(observed).toEqual([
+      [0, 1],
+      [1, 2],
+    ]);
+    opened.close();
+  });
+
+  test("rolls back a rejected pre-pending hook without suffix effects", () => {
+    const opened = new Database(":memory:", { strict: true });
+
+    expect(() =>
+      applyMigrations(opened, migrationSet(), {
+        beforePendingMigration: ({ pendingMigration }) => {
+          if (pendingMigration.version === 1) throw new Error("prefix rejected");
+        },
+      }),
+    ).toThrow("storage migration 1 failed");
+    expect(opened.query("PRAGMA user_version").get()).toEqual({ user_version: 0 });
+    expect(
+      opened
+        .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'")
+        .get(),
+    ).toBeNull();
+    opened.close();
+  });
 });

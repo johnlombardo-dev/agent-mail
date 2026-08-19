@@ -4,6 +4,7 @@ import { runMigrations, migrationContentHash } from "./migration-runner";
 import {
   CANONICAL_DATABASE_SCHEMA_VERSION,
   canonicalDatabaseMigrations,
+  canonicalRegistryDigestAtVersion,
 } from "./migration-registry";
 import { applySearchReindexSchema } from "./search-reindex";
 
@@ -48,6 +49,36 @@ const CONVERSION_COLUMNS = Object.freeze([
   "completed_at",
   "record_sha256",
 ] as const);
+
+export type AcceptedHistoricalTarget = Readonly<{
+  readonly targetVersion: number;
+  readonly targetRegistrySha256: string;
+}>;
+
+/** Explicit admission authority for immutable conversion targets. */
+export const acceptedHistoricalTargets: readonly AcceptedHistoricalTarget[] = Object.freeze([
+  Object.freeze({
+    targetVersion: 27,
+    targetRegistrySha256: "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+  }),
+]);
+
+function resolveAcceptedHistoricalTarget(targetRegistrySha256: string): AcceptedHistoricalTarget {
+  const target = acceptedHistoricalTargets.find(
+    (candidate) => candidate.targetRegistrySha256 === targetRegistrySha256,
+  );
+  if (target === undefined)
+    throw new MigrationHistoryConversionError(
+      "provenance-invalid",
+      "conversion provenance target registry is not an accepted historical target",
+    );
+  if (canonicalRegistryDigestAtVersion(target.targetVersion) !== target.targetRegistrySha256)
+    throw new MigrationHistoryConversionError(
+      "provenance-invalid",
+      "accepted historical target does not match its canonical prefix",
+    );
+  return target;
+}
 
 export type MigrationHistoryClassificationKind =
   | "supported-empty"
@@ -281,6 +312,20 @@ function canonicalHistory(): MigrationHistoryTuple[] {
     migration.name,
     migrationContentHash(migration),
   ]);
+}
+
+function canonicalHistoryPrefix(targetVersion: number): MigrationHistoryTuple[] {
+  if (
+    !Number.isSafeInteger(targetVersion) ||
+    targetVersion < 0 ||
+    targetVersion > CANONICAL_DATABASE_SCHEMA_VERSION
+  ) {
+    throw new MigrationHistoryConversionError(
+      "unsupported-history",
+      "canonical migration prefix version is out of range",
+    );
+  }
+  return canonicalHistory().slice(0, targetVersion);
 }
 
 function identityMap(): Map<string, string> {
@@ -974,7 +1019,7 @@ function historyClassification(database: DatabaseLike): MigrationHistoryClassifi
   }
   if (conversionInfrastructurePresent(database)) {
     try {
-      verifyConversionInfrastructure(database);
+      verifyConversionProvenance(database);
     } catch (error: unknown) {
       return {
         classification: "schema-mismatch",
@@ -1288,11 +1333,17 @@ function verifyConversionRow(database: DatabaseLike, row: unknown): void {
   const sourceHistorySha = sha256(sourceHistoryJson);
   const sourceOverlaySha = sha256(sourceOverlayJson);
   const sourceSchemaSha = sha256(sourceSchemaJson);
+  const targetRegistrySha256 = row.target_registry_sha256;
+  if (typeof targetRegistrySha256 !== "string")
+    throw new MigrationHistoryConversionError(
+      "provenance-invalid",
+      "conversion provenance target registry is invalid",
+    );
+  const target = resolveAcceptedHistoricalTarget(targetRegistrySha256);
   if (
     row.source_history_sha256 !== sourceHistorySha ||
     row.source_overlay_sha256 !== sourceOverlaySha ||
     row.source_schema_sha256 !== sourceSchemaSha ||
-    row.target_registry_sha256 !== CANONICAL_DATABASE_REGISTRY_SHA256 ||
     !BACKUP_ID.test(backupId) ||
     !SHA256.test(backupManifestSha256) ||
     !INSTANT.test(completedAt) ||
@@ -1348,6 +1399,14 @@ function verifyConversionRow(database: DatabaseLike, row: unknown): void {
       "conversion provenance history cardinality is invalid",
     );
   const ids = decodeHistory(historyRows, row.source_user_version);
+  const targetNames = new Set(
+    canonicalDatabaseMigrations.slice(0, target.targetVersion).map((migration) => migration.name),
+  );
+  if (row.source_user_version > target.targetVersion || ids.some((id) => !targetNames.has(id)))
+    throw new MigrationHistoryConversionError(
+      "provenance-invalid",
+      "conversion provenance source history is outside its accepted target prefix",
+    );
   if (!equalJson(schemaRowsValue, expectedSchema(ids)))
     throw new MigrationHistoryConversionError(
       "provenance-invalid",
@@ -1418,7 +1477,7 @@ export function convertMigrationHistory(
     source_overlay_sha256: sha256(overlayJson),
     source_schema_json: schemaJson,
     source_schema_sha256: sha256(schemaJson),
-    target_registry_sha256: CANONICAL_DATABASE_REGISTRY_SHA256,
+    target_registry_sha256: acceptedHistoricalTargets[0].targetRegistrySha256,
     backup_id: proof.backupId,
     backup_manifest_sha256: proof.manifestSha256,
     completed_at: proof.createdAt,
@@ -1497,18 +1556,7 @@ export function convertMigrationHistory(
   }
 }
 
-export function verifyCanonicalMigrationState(input: unknown): MigrationHistoryClassification {
-  const database = getDatabase(input);
-  const state = historyClassification(database);
-  if (
-    state.classification !== "supported-canonical-prefix" ||
-    state.userVersion !== CANONICAL_DATABASE_SCHEMA_VERSION ||
-    !equalJson(state.history, canonicalHistory())
-  )
-    throw new MigrationHistoryConversionError(
-      "unsupported-history",
-      "database is not at the exact canonical schema version",
-    );
+function verifyConversionProvenance(database: DatabaseLike): void {
   verifyConversionInfrastructure(database);
   const row = database.query("SELECT count(*) AS count FROM schema_migration_conversions").get();
   if (!isRecord(row) || !isSafeInteger(row.count))
@@ -1532,6 +1580,47 @@ export function verifyCanonicalMigrationState(input: unknown): MigrationHistoryC
       );
     verifyConversionRow(database, provenance[0]);
   }
+}
+
+/**
+ * Verify the exact canonical prefix and all currently present conversion
+ * provenance before a pending suffix migration is allowed to execute.
+ */
+export function verifyCanonicalMigrationPrefixState(
+  input: unknown,
+  expectedPrefixVersion: number,
+): MigrationHistoryClassification {
+  const database = getDatabase(input);
+  const expectedHistory = canonicalHistoryPrefix(expectedPrefixVersion);
+  const state = historyClassification(database);
+  if (
+    state.userVersion !== expectedPrefixVersion ||
+    !equalJson(state.history, expectedHistory) ||
+    (expectedPrefixVersion === 0
+      ? state.classification !== "supported-empty"
+      : state.classification !== "supported-canonical-prefix")
+  )
+    throw new MigrationHistoryConversionError(
+      "unsupported-history",
+      "database is not at the exact canonical migration prefix",
+    );
+  if (conversionInfrastructurePresent(database)) verifyConversionProvenance(database);
+  return state;
+}
+
+export function verifyCanonicalMigrationState(input: unknown): MigrationHistoryClassification {
+  const database = getDatabase(input);
+  const state = historyClassification(database);
+  if (
+    state.classification !== "supported-canonical-prefix" ||
+    state.userVersion !== CANONICAL_DATABASE_SCHEMA_VERSION ||
+    !equalJson(state.history, canonicalHistory())
+  )
+    throw new MigrationHistoryConversionError(
+      "unsupported-history",
+      "database is not at the exact canonical schema version",
+    );
+  verifyConversionProvenance(database);
   const integrity: unknown = database.query("PRAGMA integrity_check").get();
   if (
     !isRecord(integrity) ||
@@ -1570,3 +1659,5 @@ export const migrationConversionDdl = Object.freeze({
   updateTriggerSql: CONVERSION_UPDATE_TRIGGER_SQL,
   deleteTriggerSql: CONVERSION_DELETE_TRIGGER_SQL,
 });
+
+export { canonicalRegistryDigestAtVersion };

@@ -42,6 +42,18 @@ export class MigrationRunnerError extends Error {
 
 type MigrationConnection = Database | Pick<OpenDatabase, "db">;
 
+export type BeforePendingMigration = (
+  input: Readonly<{
+    readonly database: Database;
+    readonly currentPrefixVersion: number;
+    readonly pendingMigration: Migration;
+  }>,
+) => void;
+
+export type ApplyMigrationsOptions = Readonly<{
+  readonly beforePendingMigration?: BeforePendingMigration;
+}>;
+
 type MigrationHistoryRow = {
   readonly version: unknown;
   readonly name: unknown;
@@ -65,6 +77,7 @@ type AppliedMigration = Readonly<{
 export function applyMigrations(
   connection: MigrationConnection,
   migrations: readonly Migration[],
+  options: ApplyMigrationsOptions = {},
 ): void {
   const database = getDatabase(connection);
   hardenFileBackedDatabase(database);
@@ -78,7 +91,7 @@ export function applyMigrations(
   const appliedVersions = new Set(applied.map((migration) => migration.version));
   for (const migration of normalized) {
     if (appliedVersions.has(migration.version)) continue;
-    applyOne(database, migration);
+    applyOne(database, migration, options.beforePendingMigration);
   }
 }
 
@@ -235,13 +248,22 @@ function reconcileHistory(
   }
 }
 
-function applyOne(database: Database, migration: Migration): void {
+function applyOne(
+  database: Database,
+  migration: Migration,
+  beforePendingMigration: BeforePendingMigration | undefined,
+): void {
   let transactionStarted = false;
   const foreignKeysOff = migration.requiresForeignKeysOff === true;
   try {
     if (foreignKeysOff) database.exec("PRAGMA foreign_keys = OFF;");
     database.exec("BEGIN IMMEDIATE;");
     transactionStarted = true;
+    beforePendingMigration?.({
+      database,
+      currentPrefixVersion: migration.version - 1,
+      pendingMigration: migration,
+    });
     database.exec(
       "CREATE TABLE IF NOT EXISTS schema_migrations (" +
         "version INTEGER PRIMARY KEY NOT NULL, " +

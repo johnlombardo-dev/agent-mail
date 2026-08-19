@@ -10,6 +10,7 @@ import {
   classifyMigrationHistory,
   convertMigrationHistory,
   installMigrationConversionInfrastructure,
+  verifyCanonicalMigrationPrefixState,
   verifyCanonicalMigrationState,
   type ConversionBackupProof,
 } from "./migration-history-conversion";
@@ -115,7 +116,11 @@ export async function openDatabase(
         });
       }
     } else {
-      applyMigrations(db, canonicalDatabaseMigrations);
+      applyMigrations(db, canonicalDatabaseMigrations, {
+        beforePendingMigration: ({ database: lockedDatabase, currentPrefixVersion }) => {
+          verifyCanonicalMigrationPrefixState(lockedDatabase, currentPrefixVersion);
+        },
+      });
       installMigrationConversionInfrastructure(db);
     }
     verifyCanonicalMigrationState(db);
