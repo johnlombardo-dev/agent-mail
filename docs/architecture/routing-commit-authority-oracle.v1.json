@@ -1,0 +1,1265 @@
+{
+  "format": "agent-mail.routing-commit-authority-oracle/v1",
+  "schemaVersion": 1,
+  "modelVersion": "1.0.0",
+  "status": "frozen-design",
+  "oracle": {
+    "normative": true,
+    "issue": 220,
+    "acceptedHead": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+    "sourceDate": "2026-08-19",
+    "scope": "The terminal disposition of an admitted routing.commit request from preview lookup and SQLite preview consumption through the daemon service and HTTP projection, the shared CLI client, and the accepted CLI semantic/exit authority.",
+    "invariant": "Every admitted routing-commit terminal disposition has exactly one strict public representation and one CLI semantic/exit, and no private string can choose it.",
+    "precedence": "This oracle owns routing.commit terminal-disposition codes, operation applicability, and their mapping to semantic kinds already registered by issue 213. The issue 213 oracle remains the sole numeric exit authority. Existing contracts and runtime source are evidence of the pre-implementation state, not competing authority.",
+    "compatibilityRule": "Within v1, a disposition, code, status, fixed message, detail schema, operation applicability, storage/service mapping, semantic kind, or exit pair cannot change. Additive behavior outside routing.commit requires a separate authority."
+  },
+  "frozenInputs": [
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "3f80537d53e1c06b6434d94a1ae0bc689c19275046787a9de216f7d93ff21f56"
+    },
+    {
+      "id": "EVIDENCE",
+      "path": "docs/planning/EVIDENCE.md",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "07845a1ed7e79e484e2c3ea35a4ce060a9e5cb5d564e8da2982cddc788b45eaf"
+    },
+    {
+      "id": "CONTEXT",
+      "path": "CONTEXT.md",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "a833e3b4ed7c9cb34daad1a0b4d74522f7b47fe2e7d40b8e7b11c034a9140395"
+    },
+    {
+      "id": "STORAGE-CONSUMPTION",
+      "path": "packages/storage/src/routing-preview-consumption.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "f931a43d67cb6a541248d6d5a47c387d320ba8ffeffed9650c1a108bf0637c9a"
+    },
+    {
+      "id": "STORAGE-CONSUMPTION-TEST",
+      "path": "packages/storage/test/routing-preview-consumption-p4-c13.test.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "4b38dd984030bc61d0f465d8fda6c112e3e1a0e73754e588ac6a0e6bddca9223"
+    },
+    {
+      "id": "DAEMON-ROUTING-HANDLERS",
+      "path": "packages/daemon/src/routing-handlers.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "5f6eb5dfa38dad2a19a574e61545a3ca2a34ad9853ffed920ce33abebaf304fd"
+    },
+    {
+      "id": "DAEMON-HTTP",
+      "path": "packages/daemon/src/http.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "89037a9d849b13a8cbf9e62879959ac3427879aba6512f879cf2fb73273c3e05"
+    },
+    {
+      "id": "DAEMON-ROUTING-TEST",
+      "path": "packages/daemon/test/routing-handlers-p6-c06.test.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "ba3a9c407f1261ab279934b2ed04655dd27413e327335696bb25e8542b1cfb54"
+    },
+    {
+      "id": "ROUTING-OPERATIONS",
+      "path": "packages/contracts/src/routing-operations.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "b66568c78a2966e909720a7bacb3116a54122e5401ba5a08e4c2fdffcc4c2984"
+    },
+    {
+      "id": "OPERATION-REGISTRY",
+      "path": "packages/contracts/src/operation-registry.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "6c8a12157ab986eb4537cf220baf54c5d2e496c698d95e34a7ea42a7843564ab"
+    },
+    {
+      "id": "HTTP-ERROR-AUTHORITY",
+      "path": "packages/contracts/src/http-error-authority.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "e300cdc29f27f3184080020e149a999f4f1da736b323fe16f1f31732d7fc28f5"
+    },
+    {
+      "id": "ERROR-ENVELOPE",
+      "path": "packages/contracts/src/error-envelope.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "511a6ef675f87237a1394cfc81ac9b7d94f7d6031e0922ea4e062a1f0040ddb6"
+    },
+    {
+      "id": "OPENAPI-GENERATOR",
+      "path": "packages/contracts/src/openapi.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "4b3620f821c143ad0481f360197c6b74f1628c855f01d2eef3f651bc1b8193cf"
+    },
+    {
+      "id": "OPENAPI-DOCUMENT",
+      "path": "docs/openapi.json",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "ff9c2286e461c0402857e51f727d1fc36ae7f4cb0037308de76ba4ef7e4483ac"
+    },
+    {
+      "id": "CLI-CLIENT",
+      "path": "packages/cli/src/client.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "af2fbc8cae50c19b287b346e094e96a9928baa53a756042eb372f0a5674f5cdd"
+    },
+    {
+      "id": "CLI-CLIENT-TEST",
+      "path": "packages/cli/test/client.test.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "4264cada22b854a6bc890d43e30f8ad4ee7f2732e7843339ad445564682f6caf"
+    },
+    {
+      "id": "CLI-COMMAND-OUTCOME",
+      "path": "packages/cli/src/command-outcome.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "219778d3ebfcebb7b9ad3597c169c337126f292ca1ffe82dc55e76a84a49f645"
+    },
+    {
+      "id": "CLI-COMMAND-OUTCOME-TEST",
+      "path": "packages/cli/src/command-outcome.test.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "886f9830d99b7cddf70769e21c9dec3759f23a1b092b829ea25ac2037acbd376"
+    },
+    {
+      "id": "CLI-HTTP-AUTHORITY-TEST",
+      "path": "packages/cli/test/http-error-authority-p6-c10a.test.ts",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "5d840970941246a31362b10ad3f3430263d6464f3aaa780d6f4dfce206cb7077"
+    },
+    {
+      "id": "CLI-OUTCOME-ORACLE",
+      "path": "docs/architecture/cli-command-outcome-oracle.v1.json",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "d0f569cbb3364bebbf3e02ef33b69997a05b4bf6d5dd9485cf386e8ab7768c6d"
+    },
+    {
+      "id": "CLI-OUTCOME-CHECKER",
+      "path": "docs/architecture/cli-command-outcome-check.v1.mjs",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "41686485496db2452cca6cd6c958637a8d34358fb56ae1fa09aa723c625b5deb"
+    },
+    {
+      "id": "CLI-OUTCOME-DESIGN",
+      "path": "docs/architecture/cli-command-outcome-design.v1.md",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "b230d2e7aa72ff18839249914191844b50d2a15ddb054821e1d374a4f0e71d5b"
+    },
+    {
+      "id": "CLI-OUTCOME-DECISIONS",
+      "path": "docs/architecture/cli-command-outcome-decisions.v1.md",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "36a35b59aa1bc60717d0f84b8140579bb4b44cd772ffb123efa0d576722e22bd"
+    },
+    {
+      "id": "CLI-OUTCOME-COVERAGE",
+      "path": "docs/architecture/cli-command-outcome-coverage.v1.md",
+      "gitCommit": "fc321ceba7cacf09f892e46363880625c2db9b8b",
+      "sha256": "25518f4397e10594f0034746fe9b2c7b55d72a3c67c4df1562824b63d95f9e51"
+    }
+  ],
+  "protectedWorktree": [
+    {
+      "id": "ISSUE-156-CANDIDATE-SOURCE",
+      "path": "packages/cli/src/routing-commands.ts",
+      "sha256": "6d1874648291d2cb73ce4190e698691ec44d76bc209f5075dc13b1aecd1d5363",
+      "status": "untracked-protected"
+    },
+    {
+      "id": "ISSUE-156-CANDIDATE-TEST",
+      "path": "packages/cli/src/routing-commands.test.ts",
+      "sha256": "4e1e201202c6c54f76bdd18b74a3be288a0d8cead2f73caadb50ac2674d2f49a",
+      "status": "untracked-protected"
+    },
+    {
+      "id": "CLI-PACKAGE-INDEX",
+      "path": "packages/cli/src/index.ts",
+      "sha256": "e796e1d871c6ce2b02a9436b608be1cd419e4226c086fe5ead4fe1ff590218d5",
+      "status": "tracked-protected"
+    }
+  ],
+  "issueEvidence": [
+    {
+      "issue": 140,
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/140",
+      "state": "closed",
+      "acceptedCommit": "7fabce5",
+      "use": "The accepted handler and real-SQLite path collapse replay into the dry-run value and expiry/tamper into non-distinct failures."
+    },
+    {
+      "issue": 156,
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/156",
+      "state": "open-blocked",
+      "acceptedCommit": null,
+      "use": "The protected candidate proves that replay and expiry currently exit success and tamper exits internal, contrary to the feature contract."
+    },
+    {
+      "issue": 212,
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/212",
+      "state": "closed",
+      "acceptedCommit": "4648396",
+      "use": "Contracts owns the shared public HTTP registry; operation-owned errors remain declared on their operation definitions."
+    },
+    {
+      "issue": 213,
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/213",
+      "state": "closed",
+      "acceptedCommit": "f4a3604",
+      "acceptedDigest": "d0f569cbb3364bebbf3e02ef33b69997a05b4bf6d5dd9485cf386e8ab7768c6d",
+      "use": "Registered codes and typed details select replay 82, expired 81, and tampered 83; messages and status alone cannot select semantics."
+    },
+    {
+      "issue": 214,
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/214",
+      "state": "closed",
+      "acceptedCommit": "b9aafae",
+      "use": "The shared CLI implementation enforces operation applicability and the issue 213 semantic/exit pairs."
+    },
+    {
+      "issue": 220,
+      "url": "https://github.com/johnlombardo-dev/agent-mail/issues/220",
+      "state": "open",
+      "acceptedCommit": null,
+      "use": "This corrective issue owns one undecomposed routing-commit terminal-disposition authority."
+    }
+  ],
+  "terms": [
+    {
+      "id": "TERM-TERMINAL-DISPOSITION",
+      "term": "RoutingCommitTerminalDisposition",
+      "meaning": "The one final domain meaning selected after an admitted routing.commit request either deliberately avoids consumption, consumes the preview, or reaches a typed consumption failure."
+    },
+    {
+      "id": "TERM-INTENTIONAL-DRY-RUN",
+      "term": "IntentionalDryRun",
+      "meaning": "A request with dryRun=true that resolves its preview and deliberately does not call preview consumption. It is not a replay or an expiry result."
+    },
+    {
+      "id": "TERM-REGISTERED-ROUTING-ERROR",
+      "term": "RegisteredRoutingError",
+      "meaning": "An operation-scoped PublicErrorEnvelope whose code, status, fixed message, strict details, and routing.commit applicability are owned by the contracts operation definition."
+    },
+    {
+      "id": "TERM-PRIVATE-FAILURE",
+      "term": "PrivateFailure",
+      "meaning": "A storage, SQLite, schema, rollback, or service failure that is not one of the registered routing terminal errors and is projected only as the existing redacted internal_error."
+    },
+    {
+      "id": "TERM-REPLAY",
+      "term": "Replay",
+      "meaning": "A non-dry-run attempt to consume a preview whose one-way consumption receipt already exists."
+    },
+    {
+      "id": "TERM-TAMPER",
+      "term": "Tamper",
+      "meaning": "A non-dry-run attempt whose supplied or stored authority does not match the canonical frozen preview commitment. The public result never identifies the mismatched field."
+    }
+  ],
+  "productDecision": {
+    "id": "CHOICE-REGISTERED-ERRORS",
+    "selected": "operation-scoped-registered-errors",
+    "rejected": "strict-success-value-discriminants",
+    "reason": "Replay, expiry, and tamper are failed attempts, not successful routing values. The accepted HTTP transport, OpenAPI generator, shared client, and CLI outcome authority already compose operation-owned registered errors with strict details and semantic exits. Adding success-value variants would widen routingCommitResponseSchema, retain HTTP 200 for failed authority, and create a second classification path.",
+    "publicValueVariants": ["committed", "intentional-dry-run"],
+    "publicErrorVariants": ["replayed", "expired", "tampered", "not-found", "internal-failure"]
+  },
+  "contractSchemaAuthority": [
+    {
+      "id": "SCHEMA-REQUEST",
+      "sourcePinId": "ROUTING-OPERATIONS",
+      "symbol": "routingCommitRequestSchema",
+      "role": "Strict input with previewId, digest, and dryRun. Invalid input is rejected before this terminal algebra."
+    },
+    {
+      "id": "SCHEMA-COMMITTED",
+      "sourcePinId": "ROUTING-OPERATIONS",
+      "symbol": "committedDecisionSchema",
+      "role": "The only committed=true,dryRun=false success value, with durable decision identity and committedAt."
+    },
+    {
+      "id": "SCHEMA-DRY-RUN",
+      "sourcePinId": "ROUTING-OPERATIONS",
+      "symbol": "uncommittedResponseSchema",
+      "role": "The only committed=false,dryRun=true success value; v1 requires request.dryRun=true."
+    },
+    {
+      "id": "SCHEMA-SUCCESS-UNION",
+      "sourcePinId": "ROUTING-OPERATIONS",
+      "symbol": "routingCommitResponseSchema",
+      "role": "Success-only response union. Registered terminal failures are non-200 operation errors and are not added to this union."
+    },
+    {
+      "id": "SCHEMA-PUBLIC-ERROR",
+      "sourcePinId": "ERROR-ENVELOPE",
+      "symbol": "publicErrorEnvelopeSchema",
+      "role": "Exact public error envelope with code, message, correlationId, and details."
+    },
+    {
+      "id": "SCHEMA-ROUTING-ERROR-DETAILS",
+      "sourcePinId": "ROUTING-OPERATIONS",
+      "symbol": "routingPreviewIdentityErrorDetailsSchema",
+      "role": "New shared strict detail schema for the three operation-owned routing errors."
+    }
+  ],
+  "detailSchemas": [
+    {
+      "id": "DETAIL-ROUTING-PREVIEW-IDENTITY",
+      "schema": {
+        "$id": "RoutingPreviewIdentityErrorDetailsV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["previewId"],
+        "properties": {
+          "previewId": {
+            "type": "string",
+            "minLength": 9,
+            "maxLength": 256,
+            "pattern": "^preview:[^\\s:\\u0000-\\u001f\\u007f-\\u009f][^\\s\\u0000-\\u001f\\u007f-\\u009f]*$"
+          }
+        }
+      },
+      "allowedPublicFacts": ["request.previewId"],
+      "forbiddenPublicFacts": [
+        "digest",
+        "nonce",
+        "rule",
+        "ruleVersion",
+        "candidateTargets",
+        "stored payload",
+        "private reason",
+        "cause",
+        "stack"
+      ]
+    },
+    {
+      "id": "DETAIL-EMPTY",
+      "schema": {
+        "$id": "EmptyErrorDetailsV1",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [],
+        "properties": {}
+      },
+      "allowedPublicFacts": [],
+      "forbiddenPublicFacts": [
+        "previewId",
+        "digest",
+        "nonce",
+        "rule",
+        "candidateTargets",
+        "private reason",
+        "cause",
+        "stack"
+      ]
+    }
+  ],
+  "errorDefinitions": [
+    {
+      "id": "ERROR-REPLAYED",
+      "disposition": "replayed",
+      "owner": "operation:routing.commit",
+      "code": "routing.preview_replayed",
+      "status": 409,
+      "fixedMessage": "routing preview was already consumed",
+      "detailsSchemaId": "DETAIL-ROUTING-PREVIEW-IDENTITY",
+      "applicableOperations": ["routing.commit"],
+      "semanticKind": "replay",
+      "exitCode": 82,
+      "messageSelectsSemantic": false
+    },
+    {
+      "id": "ERROR-EXPIRED",
+      "disposition": "expired",
+      "owner": "operation:routing.commit",
+      "code": "routing.preview_expired",
+      "status": 409,
+      "fixedMessage": "routing preview has expired",
+      "detailsSchemaId": "DETAIL-ROUTING-PREVIEW-IDENTITY",
+      "applicableOperations": ["routing.commit"],
+      "semanticKind": "expired",
+      "exitCode": 81,
+      "messageSelectsSemantic": false
+    },
+    {
+      "id": "ERROR-TAMPERED",
+      "disposition": "tampered",
+      "owner": "operation:routing.commit",
+      "code": "routing.preview_tampered",
+      "status": 409,
+      "fixedMessage": "routing preview authority does not match",
+      "detailsSchemaId": "DETAIL-ROUTING-PREVIEW-IDENTITY",
+      "applicableOperations": ["routing.commit"],
+      "semanticKind": "tampered",
+      "exitCode": 83,
+      "messageSelectsSemantic": false
+    },
+    {
+      "id": "ERROR-NOT-FOUND",
+      "disposition": "not-found",
+      "owner": "shared:httpErrorRegistry",
+      "code": "not_found",
+      "status": 404,
+      "fixedMessage": null,
+      "projectionMessage": "routing commit resource was not found",
+      "detailsSchemaId": "DETAIL-EMPTY",
+      "applicableOperations": ["shared"],
+      "semanticKind": "not_found",
+      "exitCode": 66,
+      "messageSelectsSemantic": false
+    },
+    {
+      "id": "ERROR-INTERNAL",
+      "disposition": "internal-failure",
+      "owner": "shared:httpErrorRegistry",
+      "code": "internal_error",
+      "status": 500,
+      "fixedMessage": null,
+      "projectionMessage": "internal server error",
+      "detailsSchemaId": "DETAIL-EMPTY",
+      "applicableOperations": ["shared"],
+      "semanticKind": "internal",
+      "exitCode": 70,
+      "messageSelectsSemantic": false
+    }
+  ],
+  "serviceTerminalAlgebra": [
+    {
+      "id": "SERVICE-COMMITTED",
+      "disposition": "committed",
+      "kind": "success",
+      "strictShape": ["kind", "value"],
+      "valueSchema": "committedDecisionSchema",
+      "publicErrorCode": null
+    },
+    {
+      "id": "SERVICE-DRY-RUN",
+      "disposition": "intentional-dry-run",
+      "kind": "success",
+      "strictShape": ["kind", "value"],
+      "valueSchema": "uncommittedResponseSchema",
+      "publicErrorCode": null
+    },
+    {
+      "id": "SERVICE-REPLAYED",
+      "disposition": "replayed",
+      "kind": "routing-commit-terminal",
+      "strictShape": ["kind", "disposition", "previewId"],
+      "valueSchema": null,
+      "publicErrorCode": "routing.preview_replayed"
+    },
+    {
+      "id": "SERVICE-EXPIRED",
+      "disposition": "expired",
+      "kind": "routing-commit-terminal",
+      "strictShape": ["kind", "disposition", "previewId"],
+      "valueSchema": null,
+      "publicErrorCode": "routing.preview_expired"
+    },
+    {
+      "id": "SERVICE-TAMPERED",
+      "disposition": "tampered",
+      "kind": "routing-commit-terminal",
+      "strictShape": ["kind", "disposition", "previewId"],
+      "valueSchema": null,
+      "publicErrorCode": "routing.preview_tampered"
+    },
+    {
+      "id": "SERVICE-NOT-FOUND",
+      "disposition": "not-found",
+      "kind": "routing-commit-terminal",
+      "strictShape": ["kind", "disposition"],
+      "valueSchema": null,
+      "publicErrorCode": "not_found"
+    },
+    {
+      "id": "SERVICE-INTERNAL",
+      "disposition": "internal-failure",
+      "kind": "private-failure",
+      "strictShape": ["kind"],
+      "valueSchema": null,
+      "publicErrorCode": "internal_error"
+    }
+  ],
+  "sourceMapping": [
+    {
+      "id": "SOURCE-PREVIEW-MISSING",
+      "stage": "service.preview-lookup",
+      "signal": "not-found",
+      "requestDryRun": "either",
+      "disposition": "not-found",
+      "consumptionInvoked": false
+    },
+    {
+      "id": "SOURCE-DRY-RUN",
+      "stage": "service.preview-lookup",
+      "signal": "found-and-dry-run",
+      "requestDryRun": true,
+      "disposition": "intentional-dry-run",
+      "consumptionInvoked": false
+    },
+    {
+      "id": "SOURCE-CONSUMED",
+      "stage": "storage.consume",
+      "signal": "result:consumed",
+      "requestDryRun": false,
+      "disposition": "committed",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-REPLAYED",
+      "stage": "storage.consume",
+      "signal": "result:replayed",
+      "requestDryRun": false,
+      "disposition": "replayed",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-EXPIRED",
+      "stage": "storage.consume",
+      "signal": "result:expired",
+      "requestDryRun": false,
+      "disposition": "expired",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-TAMPERED",
+      "stage": "storage.consume",
+      "signal": "error:tampered",
+      "requestDryRun": false,
+      "disposition": "tampered",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-PREVIEW-NOT-FOUND",
+      "stage": "storage.consume",
+      "signal": "error:not-found",
+      "requestDryRun": false,
+      "disposition": "not-found",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-TARGET-NOT-FOUND",
+      "stage": "storage.consume",
+      "signal": "error:target",
+      "requestDryRun": false,
+      "disposition": "not-found",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-INVALID-INTERNAL",
+      "stage": "storage.consume",
+      "signal": "error:invalid-input",
+      "requestDryRun": false,
+      "disposition": "internal-failure",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-SCHEMA-INTERNAL",
+      "stage": "storage.consume",
+      "signal": "error:schema",
+      "requestDryRun": false,
+      "disposition": "internal-failure",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-UNKNOWN-INTERNAL",
+      "stage": "storage.consume",
+      "signal": "throw:unknown-or-aggregate",
+      "requestDryRun": false,
+      "disposition": "internal-failure",
+      "consumptionInvoked": true
+    },
+    {
+      "id": "SOURCE-SERVICE-INTERNAL",
+      "stage": "service.invoke",
+      "signal": "unregistered-failure-or-blocked",
+      "requestDryRun": "either",
+      "disposition": "internal-failure",
+      "consumptionInvoked": "unknown"
+    }
+  ],
+  "dispositionMatrix": [
+    {
+      "id": "DISPOSITION-COMMITTED",
+      "disposition": "committed",
+      "requestDryRun": false,
+      "storage": "consumeRoutingPreview result kind=consumed after durable COMMIT",
+      "service": "success with committedDecisionSchema",
+      "http": {
+        "status": 200,
+        "representation": "value",
+        "schema": "committedDecisionSchema",
+        "code": null,
+        "detailsSchemaId": null
+      },
+      "client": "CliSuccess",
+      "cli": {
+        "semanticKind": "success",
+        "exitCode": 0,
+        "primaryOutput": "stdout"
+      },
+      "mutationPostcondition": "Exactly the frozen decisions, assignments, labels, and one-way consumption receipt are durable before the response exists."
+    },
+    {
+      "id": "DISPOSITION-DRY-RUN",
+      "disposition": "intentional-dry-run",
+      "requestDryRun": true,
+      "storage": "preview resolves; consumeRoutingPreview is not called",
+      "service": "success with uncommittedResponseSchema",
+      "http": {
+        "status": 200,
+        "representation": "value",
+        "schema": "uncommittedResponseSchema",
+        "code": null,
+        "detailsSchemaId": null
+      },
+      "client": "CliSuccess",
+      "cli": {
+        "semanticKind": "success",
+        "exitCode": 0,
+        "primaryOutput": "stdout"
+      },
+      "mutationPostcondition": "No decision, assignment, label, or consumption receipt is written."
+    },
+    {
+      "id": "DISPOSITION-REPLAYED",
+      "disposition": "replayed",
+      "requestDryRun": false,
+      "storage": "consumeRoutingPreview result kind=replayed",
+      "service": "routing-commit-terminal replayed",
+      "http": {
+        "status": 409,
+        "representation": "registered-error",
+        "schema": "publicErrorEnvelopeSchema",
+        "code": "routing.preview_replayed",
+        "detailsSchemaId": "DETAIL-ROUTING-PREVIEW-IDENTITY"
+      },
+      "client": "CliClientError kind=http_error",
+      "cli": {
+        "semanticKind": "replay",
+        "exitCode": 82,
+        "primaryOutput": "stderr"
+      },
+      "mutationPostcondition": "The first receipt and durable routing rows remain unchanged; no second effect occurs."
+    },
+    {
+      "id": "DISPOSITION-EXPIRED",
+      "disposition": "expired",
+      "requestDryRun": false,
+      "storage": "consumeRoutingPreview result kind=expired",
+      "service": "routing-commit-terminal expired",
+      "http": {
+        "status": 409,
+        "representation": "registered-error",
+        "schema": "publicErrorEnvelopeSchema",
+        "code": "routing.preview_expired",
+        "detailsSchemaId": "DETAIL-ROUTING-PREVIEW-IDENTITY"
+      },
+      "client": "CliClientError kind=http_error",
+      "cli": {
+        "semanticKind": "expired",
+        "exitCode": 81,
+        "primaryOutput": "stderr"
+      },
+      "mutationPostcondition": "No decision, assignment, label, or consumption receipt is written."
+    },
+    {
+      "id": "DISPOSITION-TAMPERED",
+      "disposition": "tampered",
+      "requestDryRun": false,
+      "storage": "RoutingPreviewConsumptionError reason=tampered",
+      "service": "routing-commit-terminal tampered",
+      "http": {
+        "status": 409,
+        "representation": "registered-error",
+        "schema": "publicErrorEnvelopeSchema",
+        "code": "routing.preview_tampered",
+        "detailsSchemaId": "DETAIL-ROUTING-PREVIEW-IDENTITY"
+      },
+      "client": "CliClientError kind=http_error",
+      "cli": {
+        "semanticKind": "tampered",
+        "exitCode": 83,
+        "primaryOutput": "stderr"
+      },
+      "mutationPostcondition": "No decision, assignment, label, or consumption receipt is written; no mismatched field or stored value is exposed."
+    },
+    {
+      "id": "DISPOSITION-NOT-FOUND",
+      "disposition": "not-found",
+      "requestDryRun": "either",
+      "storage": "preview lookup absent or RoutingPreviewConsumptionError reason=not-found|target",
+      "service": "routing-commit-terminal not-found",
+      "http": {
+        "status": 404,
+        "representation": "registered-error",
+        "schema": "publicErrorEnvelopeSchema",
+        "code": "not_found",
+        "detailsSchemaId": "DETAIL-EMPTY"
+      },
+      "client": "CliClientError kind=http_error",
+      "cli": {
+        "semanticKind": "not_found",
+        "exitCode": 66,
+        "primaryOutput": "stderr"
+      },
+      "mutationPostcondition": "No routing write occurs and no missing frozen target identity is exposed."
+    },
+    {
+      "id": "DISPOSITION-INTERNAL",
+      "disposition": "internal-failure",
+      "requestDryRun": "either",
+      "storage": "invalid-input|schema|unknown|AggregateError or unregistered service failure",
+      "service": "private-failure; no public reason field",
+      "http": {
+        "status": 500,
+        "representation": "registered-error",
+        "schema": "publicErrorEnvelopeSchema",
+        "code": "internal_error",
+        "detailsSchemaId": "DETAIL-EMPTY"
+      },
+      "client": "CliClientError kind=http_error",
+      "cli": {
+        "semanticKind": "internal",
+        "exitCode": 70,
+        "primaryOutput": "stderr"
+      },
+      "mutationPostcondition": "The transaction rolls back and the public envelope contains no private reason, storage detail, cause, or stack."
+    }
+  ],
+  "classificationPolicy": {
+    "orderedStages": [
+      "shared request and authorization admission",
+      "server preview lookup",
+      "intentional dry-run branch",
+      "atomic storage consumption",
+      "strict service-terminal projection",
+      "operation-owned error validation",
+      "CLI registered-code mapping"
+    ],
+    "semanticSelector": "registered-code-and-strict-details",
+    "messageParser": "forbidden",
+    "statusOnlySelector": "forbidden",
+    "privateReasonSelector": "forbidden",
+    "unknownDisposition": "internal_error/500 then internal/70",
+    "dryRunRule": "Only request.dryRun=true may produce the uncommittedResponseSchema success. A storage replay or expiry from request.dryRun=false can never produce that value."
+  },
+  "operationApplicability": [
+    {
+      "code": "routing.preview_replayed",
+      "status": 409,
+      "allowedOperations": ["routing.commit"],
+      "deniedOperations": "all-other-public-operations"
+    },
+    {
+      "code": "routing.preview_expired",
+      "status": 409,
+      "allowedOperations": ["routing.commit"],
+      "deniedOperations": "all-other-public-operations"
+    },
+    {
+      "code": "routing.preview_tampered",
+      "status": 409,
+      "allowedOperations": ["routing.commit"],
+      "deniedOperations": "all-other-public-operations"
+    }
+  ],
+  "cliAuthorityPins": {
+    "oraclePath": "docs/architecture/cli-command-outcome-oracle.v1.json",
+    "oracleSha256": "d0f569cbb3364bebbf3e02ef33b69997a05b4bf6d5dd9485cf386e8ab7768c6d",
+    "semanticExitPairs": [
+      { "semanticKind": "success", "exitCode": 0 },
+      { "semanticKind": "not_found", "exitCode": 66 },
+      { "semanticKind": "internal", "exitCode": 70 },
+      { "semanticKind": "expired", "exitCode": 81 },
+      { "semanticKind": "replay", "exitCode": 82 },
+      { "semanticKind": "tampered", "exitCode": 83 }
+    ],
+    "additiveOperationMappings": [
+      {
+        "code": "routing.preview_replayed",
+        "status": 409,
+        "selector": "constant",
+        "semanticKind": "replay",
+        "operationKey": "routing.commit"
+      },
+      {
+        "code": "routing.preview_expired",
+        "status": 409,
+        "selector": "constant",
+        "semanticKind": "expired",
+        "operationKey": "routing.commit"
+      },
+      {
+        "code": "routing.preview_tampered",
+        "status": 409,
+        "selector": "constant",
+        "semanticKind": "tampered",
+        "operationKey": "routing.commit"
+      }
+    ]
+  },
+  "constructiveProofs": [
+    {
+      "id": "PROOF-DIRECT-COMMITTED",
+      "pathKind": "direct",
+      "disposition": "committed",
+      "trigger": "strict service success with a validated durable committed value",
+      "requiredObservation": "handler value -> HTTP 200 -> CliSuccess -> success/0"
+    },
+    {
+      "id": "PROOF-SQLITE-COMMITTED",
+      "pathKind": "real-sqlite",
+      "disposition": "committed",
+      "trigger": "create preview then consume once through real SQLite and real Hono/client/CLI",
+      "requiredObservation": "one receipt and exact durable rows exist before HTTP 200 and success/0"
+    },
+    {
+      "id": "PROOF-DIRECT-DRY-RUN",
+      "pathKind": "direct",
+      "disposition": "intentional-dry-run",
+      "trigger": "request dryRun=true with resolved preview",
+      "requiredObservation": "uncommitted value -> HTTP 200 -> success/0 and consumption call count zero"
+    },
+    {
+      "id": "PROOF-SQLITE-DRY-RUN",
+      "pathKind": "real-sqlite",
+      "disposition": "intentional-dry-run",
+      "trigger": "real stored preview with dryRun=true through Hono/client/CLI",
+      "requiredObservation": "zero decision, assignment, label, and receipt writes; success/0"
+    },
+    {
+      "id": "PROOF-DIRECT-REPLAYED",
+      "pathKind": "direct",
+      "disposition": "replayed",
+      "trigger": "strict service replayed terminal",
+      "requiredObservation": "routing.preview_replayed/409 -> CliClientError http_error -> replay/82"
+    },
+    {
+      "id": "PROOF-SQLITE-REPLAYED",
+      "pathKind": "real-sqlite",
+      "disposition": "replayed",
+      "trigger": "consume once, close and reopen the real SQLite database, then consume the same preview through Hono/client/CLI",
+      "requiredObservation": "routing.preview_replayed/409, the first receipt and original rows unchanged after reopen, replay/82"
+    },
+    {
+      "id": "PROOF-DIRECT-EXPIRED",
+      "pathKind": "direct",
+      "disposition": "expired",
+      "trigger": "strict service expired terminal",
+      "requiredObservation": "routing.preview_expired/409 -> CliClientError http_error -> expired/81"
+    },
+    {
+      "id": "PROOF-SQLITE-EXPIRED",
+      "pathKind": "real-sqlite",
+      "disposition": "expired",
+      "trigger": "consume at expiresAt and after expiresAt through real SQLite/Hono/client/CLI",
+      "requiredObservation": "routing.preview_expired/409, zero writes, expired/81"
+    },
+    {
+      "id": "PROOF-DIRECT-TAMPERED",
+      "pathKind": "direct",
+      "disposition": "tampered",
+      "trigger": "strict service tampered terminal",
+      "requiredObservation": "routing.preview_tampered/409 with previewId-only details -> tampered/83"
+    },
+    {
+      "id": "PROOF-SQLITE-TAMPERED",
+      "pathKind": "real-sqlite",
+      "disposition": "tampered",
+      "trigger": "mutate each authority field and canonical stored commitment independently",
+      "requiredObservation": "routing.preview_tampered/409, zero writes, no mismatched field disclosure, tampered/83"
+    },
+    {
+      "id": "PROOF-DIRECT-NOT-FOUND",
+      "pathKind": "direct",
+      "disposition": "not-found",
+      "trigger": "strict service not-found terminal",
+      "requiredObservation": "not_found/404 with empty details -> not_found/66"
+    },
+    {
+      "id": "PROOF-SQLITE-NOT-FOUND",
+      "pathKind": "real-sqlite",
+      "disposition": "not-found",
+      "trigger": "missing preview and missing frozen target cases through real SQLite/Hono/client/CLI",
+      "requiredObservation": "not_found/404, no target identity disclosure, zero writes, not_found/66"
+    },
+    {
+      "id": "PROOF-DIRECT-INTERNAL",
+      "pathKind": "direct",
+      "disposition": "internal-failure",
+      "trigger": "unregistered failure, blocked outcome, malformed typed terminal, and thrown unknown",
+      "requiredObservation": "redacted internal_error/500 with empty details -> internal/70"
+    },
+    {
+      "id": "PROOF-SQLITE-INTERNAL",
+      "pathKind": "real-sqlite",
+      "disposition": "internal-failure",
+      "trigger": "inject failure after label writes but before the consumption transaction commits",
+      "requiredObservation": "full rollback, internal_error/500 with no private reason, internal/70"
+    }
+  ],
+  "mutationTests": [
+    { "id": "MUT-MISSING-DISPOSITION", "mustFail": "Delete one terminal disposition." },
+    {
+      "id": "MUT-DUPLICATE-DISPOSITION",
+      "mustFail": "Duplicate a terminal disposition or public code."
+    },
+    {
+      "id": "MUT-OVERLAPPING-SOURCE",
+      "mustFail": "Assign one stage/signal source case to two dispositions."
+    },
+    { "id": "MUT-CROSS-PAIRED-CODE", "mustFail": "Pair replay with the expiry code or exit." },
+    {
+      "id": "MUT-WRONG-OPERATION",
+      "mustFail": "Make a routing terminal error applicable to routing.preview or another operation."
+    },
+    {
+      "id": "MUT-MESSAGE-PARSED",
+      "mustFail": "Select a semantic kind from an exception or public message."
+    },
+    {
+      "id": "MUT-UNSAFE-DETAIL",
+      "mustFail": "Expose digest, nonce, targets, rule data, private reason, cause, or stack."
+    },
+    {
+      "id": "MUT-DRY-RUN-CONFUSION",
+      "mustFail": "Allow dryRun=false replay or expiry to use the dry-run success value."
+    },
+    {
+      "id": "MUT-WRONG-STATUS",
+      "mustFail": "Change any new routing terminal status away from 409."
+    },
+    {
+      "id": "MUT-PERMISSIVE-DETAILS",
+      "mustFail": "Allow additional properties in a public detail schema."
+    },
+    {
+      "id": "MUT-MISSING-LAYER",
+      "mustFail": "Omit storage, service, HTTP, client, or CLI representation from a disposition."
+    },
+    {
+      "id": "MUT-GLOBAL-WIDENING",
+      "mustFail": "Move a new routing error into the shared global registry."
+    },
+    {
+      "id": "MUT-SUCCESS-NONZERO",
+      "mustFail": "Give committed or intentional dry-run a nonzero exit."
+    },
+    {
+      "id": "MUT-MISSING-COMPOSITION",
+      "mustFail": "Omit either direct or real-SQLite proof for a disposition."
+    },
+    {
+      "id": "MUT-BASE-CLI-DRIFT",
+      "mustFail": "Change a referenced issue 213 semantic/exit pair or oracle digest."
+    }
+  ],
+  "decisions": [
+    {
+      "id": "D01",
+      "decision": "Use operation-scoped registered errors for replay, expiry, and tamper; keep routingCommitResponseSchema success-only.",
+      "reason": "These are failed authority attempts and the existing transport/client/CLI path already validates operation-owned errors."
+    },
+    {
+      "id": "D02",
+      "decision": "Register routing.preview_replayed, routing.preview_expired, and routing.preview_tampered at HTTP 409.",
+      "reason": "Each request conflicts with the current one-use preview authority; authentication and route admission already succeeded."
+    },
+    {
+      "id": "D03",
+      "decision": "Expose only strict details {previewId} for the three new errors.",
+      "reason": "The request identity is already public and useful for correlation; every stored commitment field and private reason remains hidden."
+    },
+    {
+      "id": "D04",
+      "decision": "Map preview absence and vanished frozen targets to the existing not_found/404 with empty details.",
+      "reason": "The issue requires preserving existing not-found authority and must not reveal which frozen target vanished."
+    },
+    {
+      "id": "D05",
+      "decision": "Map invalid-input, schema, unknown, aggregate, malformed typed terminal, failure, and blocked cases to existing redacted internal_error/500.",
+      "reason": "These indicate service, durable-state, or transaction failure; caller-visible private reasons would be unstable and unsafe."
+    },
+    {
+      "id": "D06",
+      "decision": "Only request.dryRun=true can produce the existing uncommitted success; it never invokes preview consumption.",
+      "reason": "This preserves intentional dry-run success while making a non-dry-run replay or expiry impossible to confuse with it."
+    },
+    {
+      "id": "D07",
+      "decision": "Add one strict routing-commit service terminal variant and map it to RegisteredFeatureError using contracts-owned definitions.",
+      "reason": "Typed service dispositions prevent private reason strings from becoming public classifiers without changing generic HTTP projection."
+    },
+    {
+      "id": "D08",
+      "decision": "Keep issue 213 as the sole numeric authority and add only code-to-existing-kind mappings: replay/82, expired/81, tampered/83.",
+      "reason": "No new semantic kind or numeric process policy is needed."
+    },
+    {
+      "id": "D09",
+      "decision": "Do not add the routing errors to httpErrorRegistry or accept them for another operation.",
+      "reason": "The failures are specific to routing.commit; global registration would silently widen client and OpenAPI applicability."
+    },
+    {
+      "id": "D10",
+      "decision": "Treat this checker as design evidence only; implementation requires direct and real-SQLite composed proofs before issue 156 resumes.",
+      "reason": "A self-consistent oracle cannot prove production projection, rollback, OpenAPI, client, or CLI behavior."
+    }
+  ],
+  "requirements": [
+    {
+      "id": "REQ-ALGEBRA",
+      "text": "The seven terminal dispositions are closed, unique, and total over every admitted v1 source case."
+    },
+    {
+      "id": "REQ-PUBLIC",
+      "text": "Each disposition has exactly one value or registered-error representation with exact schema, code, status, and details."
+    },
+    {
+      "id": "REQ-DRY-RUN",
+      "text": "Committed and intentional dry-run are success/0; a non-dry-run replay or expiry cannot enter the dry-run value branch."
+    },
+    {
+      "id": "REQ-SAFE",
+      "text": "Public routing terminal details expose only the request previewId and never a commitment field, target, private reason, cause, or stack."
+    },
+    {
+      "id": "REQ-APPLICABILITY",
+      "text": "The three new errors are accepted only for routing.commit and are rejected for every other operation."
+    },
+    {
+      "id": "REQ-CLI",
+      "text": "The shared client validates registered errors and the CLI maps by registered code and typed details to the issue 213 semantic/exit pair without message or status-only parsing."
+    },
+    {
+      "id": "REQ-COMPOSITION",
+      "text": "Every disposition has both direct and real-SQLite storage-to-CLI proof with mutation postconditions."
+    },
+    {
+      "id": "REQ-HANDOFF",
+      "text": "A bounded implementation packet closes contracts, handler, OpenAPI, client/CLI mapping, and tests before the protected issue 156 candidate resumes."
+    }
+  ],
+  "coverage": {
+    "REQ-ALGEBRA": {
+      "decisions": ["D01", "D04", "D05", "D06"],
+      "proofs": [
+        "PROOF-DIRECT-COMMITTED",
+        "PROOF-DIRECT-DRY-RUN",
+        "PROOF-DIRECT-REPLAYED",
+        "PROOF-DIRECT-EXPIRED",
+        "PROOF-DIRECT-TAMPERED",
+        "PROOF-DIRECT-NOT-FOUND",
+        "PROOF-DIRECT-INTERNAL"
+      ],
+      "mutations": [
+        "MUT-MISSING-DISPOSITION",
+        "MUT-DUPLICATE-DISPOSITION",
+        "MUT-OVERLAPPING-SOURCE"
+      ]
+    },
+    "REQ-PUBLIC": {
+      "decisions": ["D01", "D02", "D03", "D04", "D05"],
+      "proofs": [
+        "PROOF-DIRECT-REPLAYED",
+        "PROOF-DIRECT-EXPIRED",
+        "PROOF-DIRECT-TAMPERED",
+        "PROOF-DIRECT-NOT-FOUND",
+        "PROOF-DIRECT-INTERNAL"
+      ],
+      "mutations": ["MUT-CROSS-PAIRED-CODE", "MUT-WRONG-STATUS", "MUT-MISSING-LAYER"]
+    },
+    "REQ-DRY-RUN": {
+      "decisions": ["D06", "D08"],
+      "proofs": [
+        "PROOF-DIRECT-DRY-RUN",
+        "PROOF-SQLITE-DRY-RUN",
+        "PROOF-SQLITE-REPLAYED",
+        "PROOF-SQLITE-EXPIRED"
+      ],
+      "mutations": ["MUT-DRY-RUN-CONFUSION", "MUT-SUCCESS-NONZERO"]
+    },
+    "REQ-SAFE": {
+      "decisions": ["D03", "D04", "D05"],
+      "proofs": ["PROOF-SQLITE-TAMPERED", "PROOF-SQLITE-NOT-FOUND", "PROOF-SQLITE-INTERNAL"],
+      "mutations": ["MUT-UNSAFE-DETAIL", "MUT-PERMISSIVE-DETAILS"]
+    },
+    "REQ-APPLICABILITY": {
+      "decisions": ["D09"],
+      "proofs": ["PROOF-DIRECT-REPLAYED", "PROOF-DIRECT-EXPIRED", "PROOF-DIRECT-TAMPERED"],
+      "mutations": ["MUT-WRONG-OPERATION", "MUT-GLOBAL-WIDENING"]
+    },
+    "REQ-CLI": {
+      "decisions": ["D07", "D08"],
+      "proofs": [
+        "PROOF-DIRECT-REPLAYED",
+        "PROOF-DIRECT-EXPIRED",
+        "PROOF-DIRECT-TAMPERED",
+        "PROOF-DIRECT-NOT-FOUND",
+        "PROOF-DIRECT-INTERNAL"
+      ],
+      "mutations": ["MUT-MESSAGE-PARSED", "MUT-CROSS-PAIRED-CODE", "MUT-BASE-CLI-DRIFT"]
+    },
+    "REQ-COMPOSITION": {
+      "decisions": ["D10"],
+      "proofs": [
+        "PROOF-SQLITE-COMMITTED",
+        "PROOF-SQLITE-DRY-RUN",
+        "PROOF-SQLITE-REPLAYED",
+        "PROOF-SQLITE-EXPIRED",
+        "PROOF-SQLITE-TAMPERED",
+        "PROOF-SQLITE-NOT-FOUND",
+        "PROOF-SQLITE-INTERNAL"
+      ],
+      "mutations": ["MUT-MISSING-COMPOSITION"]
+    },
+    "REQ-HANDOFF": {
+      "decisions": ["D10"],
+      "proofs": ["PROOF-DIRECT-COMMITTED", "PROOF-SQLITE-COMMITTED"],
+      "mutations": ["MUT-MISSING-LAYER"]
+    }
+  },
+  "planningShieldApplicability": [
+    {
+      "id": "S01",
+      "status": "required",
+      "reason": "Live issues, accepted commits, oracle digest, repository head, and exact source hashes are frozen."
+    },
+    {
+      "id": "S02",
+      "status": "required",
+      "reason": "The storage, service, HTTP, client, CLI, durable-write, and trust seams are mapped."
+    },
+    {
+      "id": "S03",
+      "status": "required",
+      "reason": "Success values and strict error details are traced through every transformation and public surface."
+    },
+    {
+      "id": "S04",
+      "status": "not-applicable",
+      "reason": "Routing commit has no external effect; its local decisions, labels, and receipt share one SQLite transaction."
+    },
+    {
+      "id": "S05",
+      "status": "required",
+      "reason": "The closed terminal-disposition algebra replaces implicit boolean/reason-string protocol state."
+    },
+    {
+      "id": "S06",
+      "status": "not-applicable",
+      "reason": "Full product backup/restore is outside this corrective public-classification seam; replay after reopen remains a composed proof."
+    },
+    {
+      "id": "S07",
+      "status": "required",
+      "reason": "Direct versus real-SQLite and HTTP/client/CLI parity are explicit for all seven dispositions."
+    },
+    {
+      "id": "S08",
+      "status": "required",
+      "reason": "Every direct service fixture has a corresponding real SQLite composition obligation."
+    },
+    {
+      "id": "S09",
+      "status": "not-applicable",
+      "reason": "The correction adds bounded constant-size error envelopes and no growing collection or stream."
+    },
+    {
+      "id": "S10",
+      "status": "required",
+      "reason": "Tamper semantics, operation applicability, and strict non-disclosing details are authority boundaries."
+    },
+    {
+      "id": "S11",
+      "status": "required",
+      "reason": "Stable nonzero CLI exits remove the need for users and agents to infer failures from text."
+    },
+    {
+      "id": "S12",
+      "status": "required",
+      "reason": "The artifacts remain specified design; production, composed, security, and delivery evidence stay separate."
+    }
+  ],
+  "downstreamImplementationPacket": {
+    "id": "PACKET-LUNA-ROUTING-COMMIT-AUTHORITY",
+    "worker": "luna_worker",
+    "minimumReasoningEffort": "high",
+    "outcomeBoundary": "Implement this exact routing.commit disposition and registered-error authority without widening routing features.",
+    "mutationFiles": [
+      "packages/contracts/src/routing-operations.ts",
+      "packages/contracts/test/routing-operations.test.ts",
+      "packages/daemon/src/routing-handlers.ts",
+      "packages/daemon/test/routing-handlers-p6-c06.test.ts",
+      "packages/cli/src/command-outcome.ts",
+      "packages/cli/src/command-outcome.test.ts",
+      "packages/cli/test/client.test.ts",
+      "docs/openapi.json"
+    ],
+    "conditionallyOwnedFiles": ["packages/daemon/test/http-authority-p6-c10a.test.ts"],
+    "protectedFiles": [
+      "packages/storage/src/routing-preview-consumption.ts",
+      "packages/storage/test/routing-preview-consumption-p4-c13.test.ts",
+      "packages/contracts/src/http-error-authority.ts",
+      "packages/contracts/src/error-envelope.ts",
+      "packages/contracts/src/openapi.ts",
+      "packages/daemon/src/http.ts",
+      "packages/cli/src/client.ts",
+      "packages/cli/src/routing-commands.ts",
+      "packages/cli/src/routing-commands.test.ts",
+      "PLAN.md",
+      "docs/planning/EVIDENCE.md",
+      "docs/architecture/cli-command-outcome-oracle.v1.json",
+      "docs/architecture/cli-command-outcome-check.v1.mjs",
+      "docs/architecture/cli-command-outcome-design.v1.md",
+      "docs/architecture/cli-command-outcome-decisions.v1.md",
+      "docs/architecture/cli-command-outcome-coverage.v1.md"
+    ],
+    "requiredChanges": [
+      "Define and export one strict previewId-only detail schema plus the three operation-owned error definitions on routingCommitOperation.errors.",
+      "Do not add the three codes to httpErrorRegistry or routingCommitResponseSchema.",
+      "Add a strict typed routing-commit service terminal and project only its registered dispositions through contracts-owned definitions; generic reason strings remain internal.",
+      "Map storage consumed, replayed, expired, tampered, not-found/target, and internal classes exactly as sourceMapping specifies.",
+      "Add the three constant operation-error mappings to the shared command-outcome implementation without adding a number or private table to the feature adapter.",
+      "Regenerate OpenAPI deterministically; retain 25 paths, add exactly three operation detail schemas, and report the new checked digest.",
+      "Land all 14 constructive proofs plus wrong-operation, unsafe-detail, message-parsing, cross-pairing, rollback, and dry-run-confusion counterexamples."
+    ],
+    "exitGate": "Focused contracts/daemon/client/CLI tests, full tests, typecheck, lint/boundary, build, OpenAPI regeneration/drift, JSON, format, this checker normal+self-test, and plan checker pass."
+  },
+  "redispatchObligations": [
+    {
+      "id": "REDISPATCH-156-DEPENDENCY",
+      "issue": 156,
+      "must": "Keep issue 156 blocked until the bounded Luna implementation packet is accepted with its exact commit and regenerated OpenAPI digest."
+    },
+    {
+      "id": "REDISPATCH-156-PRESERVE",
+      "issue": 156,
+      "must": "Preserve the protected candidate bytes until redispatch; then re-fetch this oracle, issue 213, issue 214, and the accepted implementation before editing."
+    },
+    {
+      "id": "REDISPATCH-156-MATRIX",
+      "issue": 156,
+      "must": "Replace the candidate's tamper=internal and replay/expiry=success assertions with exact registered codes and tampered/83, replay/82, expired/81 while keeping commit and intentional dry-run at success/0."
+    },
+    {
+      "id": "REDISPATCH-156-PARITY",
+      "issue": 156,
+      "must": "Prove commit, dry-run, replay, expiry, tamper, not-found, and internal failure through CLI-to-real-HTTP-to-real-SQLite with no committed claim on any failure."
+    },
+    {
+      "id": "REDISPATCH-156-NO-PRIVATE-POLICY",
+      "issue": 156,
+      "must": "The routing command adapter may select no numeric exit, private error map, storage reason, exception class, or message parser; it consumes only CliClientError and shared command-outcome authority."
+    }
+  ],
+  "remainingConsequentialChoices": [],
+  "limits": [
+    "This oracle is specified design evidence, not production or composed acceptance evidence.",
+    "No live iCloud, remote mutation, launchd, Tailscale, deployed-operations, or complete security-lane evidence was run or claimed.",
+    "The current PLAN.md and EVIDENCE.md still contain historical status text about issue 203; they are protected by issue 220 and were not repaired here.",
+    "The future regenerated OpenAPI digest is an implementation output and is not invented by this design."
+  ]
+}
