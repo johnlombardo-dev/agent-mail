@@ -17,11 +17,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "3ee883873b8f56f2e69bc808e5c7eedebb0e23ae74c4e7fb64e0ad5ee43a698e";
+const EXPECTED_ORACLE_SHA256 = "044e3de8ad36505997d8a4eab96210cebfad5aeaaba37926ab9337c68deafded";
 const EXPECTED_VIEW_SHA256 = [
-  "e09841f773a20105a41107331d1e95caa027db3249440f13e74b8e0fcf4d9fea",
-  "ec5077f5f488a76aaf48fc33e1eecabe00799ee347c7f80af5449d890adfe1d6",
-  "61ed0cf873343143b2469c5b5a2311488309021c433c310304fbef5e7b8198a0",
+  "217b57fb12c8ede76bed00e2b38eeee3e722c44c6867c8f035cc121589a4c99c",
+  "21613658018735b9f9f6c5ccddce6c50a2ed2bac103fccf381b1ecb93728fe43",
+  "e07814c073b5bc2078cf9e476c2595390d765f8bc958d7fd22a68457c0271d2a",
 ];
 const ACCEPTED_HEAD = "547f70dd67959541324688b7b737749bc43791ab";
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -112,6 +112,33 @@ function uniqueRows(rows, key, label) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
+}
+
+function computeRegistryIdentityDigest(migrations) {
+  return sha256(
+    Buffer.from(
+      JSON.stringify(
+        migrations.map((migration) => [
+          migration.version,
+          migration.name,
+          migration.contentHash ?? migration.content_hash,
+          migration.requiresForeignKeysOff ?? false,
+        ]),
+      ),
+      "utf8",
+    ),
+  );
+}
+
+function acceptedConversionTargets(oracle) {
+  const targets = new Map();
+  for (const target of oracle.appendStableProvenance.acceptedHistoricalTargets) {
+    if (targets.has(target.targetRegistrySha256)) {
+      fail("accepted conversion target digest collision: " + target.targetRegistrySha256);
+    }
+    targets.set(target.targetRegistrySha256, target.targetVersion);
+  }
+  return targets;
 }
 
 function git(args, options = {}) {
@@ -352,6 +379,71 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     registryIdentityDigest,
     "registry identity digest",
   );
+  const appendAuthority = oracle.appendStableProvenance;
+  exact(appendAuthority.legacyConversionTargetVersion, 27, "legacy conversion target version");
+  exact(
+    appendAuthority.targetDigestAlgorithm,
+    "sha256(utf8(JSON.stringify(canonicalMigrations.slice(0, targetVersion).map(m => [m.version, m.name, m.contentHash, m.requiresForeignKeysOff]))))",
+    "conversion target digest algorithm",
+  );
+  for (const key of [
+    "currentRegistryIdentity",
+    "historicalTargetIdentity",
+    "targetRelations",
+    "proofSuffixAuthority",
+    "operationRule",
+    "failureRule",
+    "issue234RegistryContract",
+    "issue234ConverterContract",
+    "issue234RunnerContract",
+    "issue234PreflightContract",
+    "issue234ProofContract",
+  ]) {
+    nonempty(appendAuthority[key], "append-stable provenance " + key);
+  }
+  exact(
+    appendAuthority.acceptedHistoricalTargets,
+    [{ targetVersion: 27, targetRegistrySha256: registryIdentityDigest }],
+    "accepted historical conversion targets",
+  );
+  exact(
+    acceptedConversionTargets(oracle).get(registryIdentityDigest),
+    27,
+    "current registry is recognized conversion target",
+  );
+  exact(
+    appendAuthority.suffixTransactionOrder,
+    [
+      "acquire the exclusive application write-admission barrier and complete byte-identical locked revalidation",
+      "BEGIN IMMEDIATE for the next pending canonical suffix",
+      "reconcile the exact current canonical prefix and full schema/reindex fingerprint",
+      "strictly decode every conversion row and resolve its immutable target digest to one unique canonical prefix",
+      "only after that gate succeeds execute the pending migration SQL, insert its exact history row, and set user_version",
+      "commit the complete suffix or roll back to the exact predecessor",
+      "repeat the gate for each later suffix and run the shared final verifier before admitting writers",
+    ],
+    "suffix transaction order",
+  );
+  exact(appendAuthority.proofSuffixes.length, 2, "append proof suffix count");
+  for (const [index, suffix] of appendAuthority.proofSuffixes.entries()) {
+    exact(suffix.version, 28 + index, "append proof suffix version");
+    exact(suffix.name, "append-stability-probe-" + suffix.version, "append proof suffix name");
+    exact(suffix.requiresForeignKeysOff, false, "append proof suffix mode");
+    exact(sha256(Buffer.from(suffix.sql, "utf8")), suffix.contentHash, "append proof suffix hash");
+  }
+  const proof28FullDigest = computeRegistryIdentityDigest([
+    ...migrations,
+    appendAuthority.proofSuffixes[0],
+  ]);
+  exact(
+    acceptedConversionTargets(oracle).has(proof28FullDigest),
+    false,
+    "proof suffix 28 full digest is not an accepted conversion target",
+  );
+  exact(appendAuthority.selfMutationCases.length, 3, "append self-mutation cases");
+  for (const value of appendAuthority.selfMutationCases) {
+    nonempty(value, "append self-mutation case");
+  }
   exact(declaredVersions, oracle.baseline.declaredVersionCollisions, "derived declared versions");
   exact(
     migrations.flatMap((migration) =>
@@ -600,6 +692,7 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     "schemaDomain",
     "overlayDomain",
     "crossFieldRelations",
+    "targetRegistrySha256Semantics",
     "insertionGate",
     "immutability",
   ]) {
@@ -610,7 +703,7 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     "transactional always-deny trigger replacement",
     "conversion insertion gate mechanism",
   );
-  exact(oracle.conversionMetadata.forgedCases.length, 3, "conversion forged-case count");
+  exact(oracle.conversionMetadata.forgedCases.length, 5, "conversion forged-case count");
   for (const value of oracle.conversionMetadata.forgedCases) {
     nonempty(value, "conversion forged case");
   }
@@ -2181,7 +2274,8 @@ function makeConversionRecord(oracle, overrides = {}) {
   const sourceSchemaJson =
     overrides.source_schema_json ?? JSON.stringify(overrides.schemaRows ?? []);
   const sourceSchemaSha256 = sha256(Buffer.from(sourceSchemaJson, "utf8"));
-  const targetRegistrySha256 = oracle.conversionMetadata.targetRegistrySha256;
+  const targetRegistrySha256 =
+    overrides.target_registry_sha256 ?? oracle.conversionMetadata.targetRegistrySha256;
   const backupId = overrides.backup_id ?? "backup:fixture-20260819T000000000Z";
   const backupManifestSha256 = overrides.backup_manifest_sha256 ?? sha256("fixture manifest");
   const completedAt = overrides.completed_at ?? "2026-08-19T00:00:00.000Z";
@@ -2299,6 +2393,36 @@ function insertConversionRecord(database, oracle, record) {
       conversionDdlRows(database),
       expectedConversionDdlRows(oracle),
       "restored conversion DDL",
+    );
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function replaceConversionRecord(database, oracle, record) {
+  const columns = conversionColumnNames(oracle);
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    exact(
+      conversionDdlRows(database),
+      expectedConversionDdlRows(oracle),
+      "pre-replacement conversion DDL",
+    );
+    database.exec("DROP TRIGGER schema_migration_conversions_no_update");
+    const result = database
+      .query(
+        "UPDATE schema_migration_conversions SET " +
+          columns.map((column) => column + " = ?").join(", "),
+      )
+      .run(...columns.map((column) => record[column]));
+    exact(result.changes, 1, "conversion record replacement count");
+    database.exec(oracle.conversionMetadata.ddl.updateTriggerSql);
+    exact(
+      conversionDdlRows(database),
+      expectedConversionDdlRows(oracle),
+      "restored conversion DDL after replacement",
     );
     database.exec("COMMIT");
   } catch (error) {
@@ -2501,9 +2625,25 @@ function validateOverlayTuple(overlay, sourceOverlayId, database, oracle, runtim
   }
 }
 
-function decodeConversionRecord(database, row, oracle, runtime) {
+function decodeConversionRecord(
+  database,
+  row,
+  oracle,
+  runtime,
+  liveRegistryRows = oracle.canonicalRegistry.migrations,
+) {
   const history = parseCanonicalJson(row.source_history_json, "source_history_json");
   const ids = decodeHistoryTuples(history, row.source_user_version, oracle);
+  const targetVersion = acceptedConversionTargets(oracle).get(row.target_registry_sha256);
+  if (targetVersion === undefined) throw new Error("unknown conversion target registry prefix");
+  const canonicalVersionById = new Map(
+    oracle.canonicalRegistry.migrations.map((migration) => [migration.id, migration.version]),
+  );
+  if (
+    ids.some((id) => (canonicalVersionById.get(id) ?? Number.POSITIVE_INFINITY) > targetVersion)
+  ) {
+    throw new Error("conversion source identity is newer than conversion target");
+  }
   const schema = validateSchemaTupleArrays(
     parseCanonicalJson(row.source_schema_json, "source_schema_json"),
     "conversion source schema",
@@ -2523,11 +2663,6 @@ function decodeConversionRecord(database, row, oracle, runtime) {
   ) {
     throw new Error("conversion backup/timestamp domain mismatch");
   }
-  exact(
-    row.target_registry_sha256,
-    oracle.conversionMetadata.targetRegistrySha256,
-    "conversion row target registry",
-  );
   for (const [jsonColumn, digestColumn] of [
     ["source_history_json", "source_history_sha256"],
     ["source_overlay_json", "source_overlay_sha256"],
@@ -2581,10 +2716,16 @@ function decodeConversionRecord(database, row, oracle, runtime) {
     ),
   );
   exact(row.record_sha256, expectedRecordSha256, "conversion record encoding");
-  return { history, ids, schema, overlay };
+  return { history, ids, schema, overlay, targetVersion };
 }
 
-function verifyConversionProjection(database, oracle, expectedRows, runtime) {
+function verifyConversionProjection(
+  database,
+  oracle,
+  expectedRows,
+  runtime,
+  liveRegistryRows = oracle.canonicalRegistry.migrations,
+) {
   exact(
     conversionDdlRows(database),
     expectedConversionDdlRows(oracle),
@@ -2597,10 +2738,56 @@ function verifyConversionProjection(database, oracle, expectedRows, runtime) {
     )
     .all();
   exact(rows.length, expectedRows, "conversion provenance row count");
+  const liveHistory = database
+    .query("SELECT version, name, content_hash FROM schema_migrations ORDER BY version")
+    .all();
+  exact(
+    liveHistory,
+    liveRegistryRows.map((migration) => ({
+      version: migration.version,
+      name: migration.name,
+      content_hash: migration.contentHash,
+    })),
+    "conversion live canonical history",
+  );
   for (const row of rows) {
-    decodeConversionRecord(database, row, oracle, runtime);
+    decodeConversionRecord(database, row, oracle, runtime, liveRegistryRows);
   }
   return rows;
+}
+
+function applyProofSuffixWithProvenanceGate(
+  database,
+  oracle,
+  runtime,
+  currentRegistryRows,
+  suffix,
+  { failBeforeCommit = false, failAfterCommit = false } = {},
+) {
+  database.exec("BEGIN IMMEDIATE");
+  let committed = false;
+  try {
+    verifyConversionProjection(database, oracle, 1, runtime, currentRegistryRows);
+    database.exec(suffix.sql);
+    database
+      .query("INSERT INTO schema_migrations (version, name, content_hash) VALUES (?, ?, ?)")
+      .run(suffix.version, suffix.name, suffix.contentHash);
+    database.exec("PRAGMA user_version = " + suffix.version);
+    if (failBeforeCommit) throw new Error("proof suffix crash before commit");
+    database.exec("COMMIT");
+    committed = true;
+    if (failAfterCommit) throw new Error("proof suffix crash after commit");
+  } catch (error) {
+    if (!committed) database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function proofRegistryRows(oracle, count) {
+  return [
+    ...oracle.canonicalRegistry.migrations,
+    ...oracle.appendStableProvenance.proofSuffixes.slice(0, count),
+  ];
 }
 
 async function provenanceProjection(oracle, runtime) {
@@ -2694,6 +2881,244 @@ async function provenanceProjection(oracle, runtime) {
   exact(reindexOverlaySnapshot(restored), overlaySnapshot, "restored provenance overlay");
   restored.close();
 
+  const conversionColumns = conversionColumnNames(oracle);
+  const target27Snapshot = Database.deserialize(backupBytes, { strict: true });
+  const target27Bytes = JSON.stringify(
+    target27Snapshot
+      .query(
+        "SELECT " +
+          conversionColumns.join(", ") +
+          " FROM schema_migration_conversions ORDER BY conversion_id",
+      )
+      .all(),
+  );
+  target27Snapshot.close();
+  const registry27 = proofRegistryRows(oracle, 0);
+  const registry28 = proofRegistryRows(oracle, 1);
+  const registry29 = proofRegistryRows(oracle, 2);
+  exact(
+    acceptedConversionTargets(oracle).get(oracle.conversionMetadata.targetRegistrySha256),
+    27,
+    "target 27 remains recognized after append 28",
+  );
+  exact(
+    acceptedConversionTargets(oracle).get(oracle.conversionMetadata.targetRegistrySha256),
+    27,
+    "target 27 remains recognized after later append 29",
+  );
+  const target28RegistrySha256 = computeRegistryIdentityDigest(registry28);
+  if (target28RegistrySha256 === oracle.conversionMetadata.targetRegistrySha256) {
+    fail("proof suffix 28 did not change the live full-registry digest");
+  }
+  const fullDigestSubstitutionRecord = makeConversionRecord(oracle, {
+    historyRows: JSON.parse(record.source_history_json),
+    source_overlay_id: record.source_overlay_id,
+    source_overlay_json: record.source_overlay_json,
+    source_schema_json: record.source_schema_json,
+    target_registry_sha256: target28RegistrySha256,
+    backup_id: record.backup_id,
+    backup_manifest_sha256: record.backup_manifest_sha256,
+    completed_at: record.completed_at,
+  });
+  const substituted = Database.deserialize(backupBytes, { strict: true });
+  replaceConversionRecord(substituted, oracle, fullDigestSubstitutionRecord);
+  const substitutedBytes = substituted.serialize();
+  substituted.close();
+
+  const fullDigestSubstitutionStages = ["reopen", "doctor", "backup", "restore"];
+  let fullDigestSubstitutionRejections = 0;
+  for (const stage of fullDigestSubstitutionStages) {
+    const database = Database.deserialize(substitutedBytes, { strict: true });
+    try {
+      let rejected = false;
+      try {
+        verifyConversionProjection(database, oracle, 1, runtime, registry27);
+      } catch {
+        rejected = true;
+      }
+      exact(rejected, true, "full-digest substitution " + stage + " rejection");
+      fullDigestSubstitutionRejections += 1;
+    } finally {
+      database.close();
+    }
+  }
+
+  const substitutedBeforeSuffix = Database.deserialize(substitutedBytes, { strict: true });
+  let fullDigestSubstitutionBeforeSuffixRejected = false;
+  try {
+    applyProofSuffixWithProvenanceGate(
+      substitutedBeforeSuffix,
+      oracle,
+      runtime,
+      registry27,
+      oracle.appendStableProvenance.proofSuffixes[0],
+    );
+  } catch {
+    fullDigestSubstitutionBeforeSuffixRejected = true;
+  }
+  exact(
+    fullDigestSubstitutionBeforeSuffixRejected,
+    true,
+    "full-digest substitution rejects before suffix",
+  );
+  exact(
+    substitutedBeforeSuffix.query("PRAGMA user_version").get()?.user_version,
+    27,
+    "full-digest substitution suffix version unchanged",
+  );
+  exact(
+    hasSchemaObject(substitutedBeforeSuffix, "append_stability_probe_28"),
+    false,
+    "full-digest substitution executes no suffix SQL",
+  );
+  exact(
+    substitutedBeforeSuffix.query("SELECT count(*) AS count FROM schema_migrations").get()?.count,
+    27,
+    "full-digest substitution inserts no suffix history",
+  );
+  substitutedBeforeSuffix.close();
+
+  const beforeCommitCrash = Database.deserialize(backupBytes, { strict: true });
+  let beforeCommitCrashObserved = false;
+  try {
+    applyProofSuffixWithProvenanceGate(
+      beforeCommitCrash,
+      oracle,
+      runtime,
+      registry27,
+      oracle.appendStableProvenance.proofSuffixes[0],
+      { failBeforeCommit: true },
+    );
+  } catch (error) {
+    beforeCommitCrashObserved =
+      error instanceof Error && error.message === "proof suffix crash before commit";
+  }
+  exact(beforeCommitCrashObserved, true, "precommit suffix crash observed");
+  exact(
+    beforeCommitCrash.query("PRAGMA user_version").get()?.user_version,
+    27,
+    "precommit suffix crash version",
+  );
+  exact(hasSchemaObject(beforeCommitCrash, "append_stability_probe_28"), false, "precommit SQL");
+  verifyConversionProjection(beforeCommitCrash, oracle, 1, runtime, registry27);
+  beforeCommitCrash.close();
+
+  const appended = Database.deserialize(backupBytes, { strict: true });
+  applyProofSuffixWithProvenanceGate(
+    appended,
+    oracle,
+    runtime,
+    registry27,
+    oracle.appendStableProvenance.proofSuffixes[0],
+  );
+  verifyConversionProjection(appended, oracle, 1, runtime, registry28);
+  exact(appended.query("PRAGMA user_version").get()?.user_version, 28, "appended version 28");
+  exact(hasSchemaObject(appended, "append_stability_probe_28"), true, "appended SQL 28");
+  exact(
+    JSON.stringify(
+      appended
+        .query(
+          "SELECT " +
+            conversionColumns.join(", ") +
+            " FROM schema_migration_conversions ORDER BY conversion_id",
+        )
+        .all(),
+    ),
+    target27Bytes,
+    "immutable target-27 conversion bytes after append",
+  );
+
+  const appendedBytes = appended.serialize();
+  appended.close();
+  const appendedReopen = Database.deserialize(appendedBytes, { strict: true });
+  verifyConversionProjection(appendedReopen, oracle, 1, runtime, registry28);
+  exact(reindexOverlaySnapshot(appendedReopen), overlaySnapshot, "appended reopen overlay");
+  verifyConversionProjection(appendedReopen, oracle, 1, runtime, registry28);
+  const appendedBackupBytes = appendedReopen.serialize();
+  appendedReopen.close();
+  const appendedRestore = Database.deserialize(appendedBackupBytes, { strict: true });
+  verifyConversionProjection(appendedRestore, oracle, 1, runtime, registry28);
+  exact(reindexOverlaySnapshot(appendedRestore), overlaySnapshot, "appended restore overlay");
+  const fullRestoreStageBytes = appendedRestore.serialize();
+  const fullRestoreStage = Database.deserialize(fullRestoreStageBytes, { strict: true });
+  verifyConversionProjection(fullRestoreStage, oracle, 1, runtime, registry28);
+  exact(reindexOverlaySnapshot(fullRestoreStage), overlaySnapshot, "full restore staged overlay");
+  const fullRestorePublishedBytes = fullRestoreStage.serialize();
+  fullRestoreStage.close();
+  const fullRestorePublished = Database.deserialize(fullRestorePublishedBytes, { strict: true });
+  verifyConversionProjection(fullRestorePublished, oracle, 1, runtime, registry28);
+  exact(
+    reindexOverlaySnapshot(fullRestorePublished),
+    overlaySnapshot,
+    "full restore published overlay",
+  );
+  fullRestorePublished.close();
+  applyProofSuffixWithProvenanceGate(
+    appendedRestore,
+    oracle,
+    runtime,
+    registry28,
+    oracle.appendStableProvenance.proofSuffixes[1],
+  );
+  verifyConversionProjection(appendedRestore, oracle, 1, runtime, registry29);
+  exact(appendedRestore.query("PRAGMA user_version").get()?.user_version, 29, "later append");
+  appendedRestore.close();
+
+  const afterCommitCrash = Database.deserialize(backupBytes, { strict: true });
+  let afterCommitCrashObserved = false;
+  try {
+    applyProofSuffixWithProvenanceGate(
+      afterCommitCrash,
+      oracle,
+      runtime,
+      registry27,
+      oracle.appendStableProvenance.proofSuffixes[0],
+      { failAfterCommit: true },
+    );
+  } catch (error) {
+    afterCommitCrashObserved =
+      error instanceof Error && error.message === "proof suffix crash after commit";
+  }
+  exact(afterCommitCrashObserved, true, "postcommit suffix crash observed");
+  verifyConversionProjection(afterCommitCrash, oracle, 1, runtime, registry28);
+  afterCommitCrash.close();
+
+  const invalidBeforeSuffix = Database.deserialize(backupBytes, { strict: true });
+  invalidBeforeSuffix.exec("DROP TRIGGER schema_migration_conversions_no_update");
+  invalidBeforeSuffix.exec(
+    `UPDATE schema_migration_conversions SET record_sha256 = '${"0".repeat(64)}'`,
+  );
+  invalidBeforeSuffix.exec(oracle.conversionMetadata.ddl.updateTriggerSql);
+  let invalidBeforeSuffixRejected = false;
+  try {
+    applyProofSuffixWithProvenanceGate(
+      invalidBeforeSuffix,
+      oracle,
+      runtime,
+      registry27,
+      oracle.appendStableProvenance.proofSuffixes[0],
+    );
+  } catch {
+    invalidBeforeSuffixRejected = true;
+  }
+  exact(invalidBeforeSuffixRejected, true, "invalid provenance rejects before suffix");
+  exact(
+    invalidBeforeSuffix.query("PRAGMA user_version").get()?.user_version,
+    27,
+    "invalid provenance suffix version unchanged",
+  );
+  exact(
+    hasSchemaObject(invalidBeforeSuffix, "append_stability_probe_28"),
+    false,
+    "invalid provenance executes no suffix SQL",
+  );
+  exact(
+    invalidBeforeSuffix.query("SELECT count(*) AS count FROM schema_migrations").get()?.count,
+    27,
+    "invalid provenance inserts no suffix history",
+  );
+  invalidBeforeSuffix.close();
+
   const mutations = [
     [
       "ddl-index",
@@ -2763,6 +3188,17 @@ async function provenanceProjection(oracle, runtime) {
         source_schema_json: record.source_schema_json,
       }),
     ],
+    [
+      "self-consistent-target",
+      makeConversionRecord(oracle, {
+        target_registry_sha256: sha256("unknown conversion target"),
+        source_overlay_id: "O-REINDEX-BUILDING",
+        source_overlay_json: record.source_overlay_json,
+        source_schema_json: record.source_schema_json,
+        completed_at: "2026-08-19T00:00:01.000Z",
+      }),
+    ],
+    ["full-digest-substitution", fullDigestSubstitutionRecord],
   ];
   let forgedRecordsRejected = 0;
   for (const [id, forgedRecord] of forgedRecords) {
@@ -2782,9 +3218,27 @@ async function provenanceProjection(oracle, runtime) {
     }
   }
   return {
-    stages: ["fresh", "conversion", "reopen", "doctor", "backup", "restore"],
+    stages: [
+      "fresh",
+      "conversion-27",
+      "append-28",
+      "crash-reopen",
+      "doctor",
+      "backup",
+      "restore",
+      "full-restore",
+      "later-append-29",
+    ],
     rows: 1,
     ddlObjects: 5,
+    historicalTargetVersion: 27,
+    appendVersions: [28, 29],
+    target28RegistrySha256,
+    fullDigestSubstitutionRejections,
+    fullDigestSubstitutionBeforeSuffixRejected,
+    beforeCommitCrashObserved,
+    afterCommitCrashObserved,
+    invalidBeforeSuffixRejected,
     unauthorizedInsertRejected,
     immutableStatementsRejected: 2,
     mutationsRejected,
@@ -2876,11 +3330,24 @@ function classifyScratchDatabase(database, oracle, runtime) {
   } catch {
     return "unknown";
   }
+  const hasConversionInfrastructure = expectedConversionDdlRows(oracle).some((row) =>
+    hasSchemaObject(database, row.name),
+  );
   try {
     validateSequenceDerivedSchema(database, oracle, runtime);
     exact(database.query("PRAGMA foreign_key_check").all(), [], "scratch foreign keys");
+    const conversionObjects = expectedConversionDdlRows(oracle).filter((row) =>
+      hasSchemaObject(database, row.name),
+    );
+    if (conversionObjects.length > 0) {
+      const count = database
+        .query("SELECT count(*) AS count FROM schema_migration_conversions")
+        .get()?.count;
+      if (!Number.isSafeInteger(count)) throw new Error("invalid conversion row count");
+      verifyConversionProjection(database, oracle, count, runtime);
+    }
   } catch {
-    return "schema-mismatch";
+    return hasConversionInfrastructure ? "provenance-invalid" : "schema-mismatch";
   }
   return "supported";
 }
@@ -2977,6 +3444,23 @@ async function createPreflightFixture(oracle, runtime, kind) {
         "'' AS attachment_names FROM message_search_documents d",
     );
   }
+  if (kind === "provenance-invalid" || kind === "provenance-full-digest-substitution") {
+    installConversionInfrastructure(writer, oracle);
+    const record = makeConversionRecord(oracle, {
+      source_schema_json: JSON.stringify(
+        schemaTupleArrays(expectedBaseSchemaRows(["message-catalog"], oracle, runtime)),
+      ),
+      ...(kind === "provenance-full-digest-substitution"
+        ? { target_registry_sha256: computeRegistryIdentityDigest(proofRegistryRows(oracle, 1)) }
+        : {}),
+    });
+    insertConversionRecord(writer, oracle, record);
+    if (kind === "provenance-invalid") {
+      writer.exec("DROP TRIGGER schema_migration_conversions_no_update");
+      writer.exec(`UPDATE schema_migration_conversions SET record_sha256 = '${"0".repeat(64)}'`);
+      writer.exec(oracle.conversionMetadata.ddl.updateTriggerSql);
+    }
+  }
   writer.exec("PRAGMA user_version = " + (kind === "newer" ? 28 : 27));
   chmodSync(databasePath, 0o440);
   return { fixtureRoot, privateRoot, databasePath, writer };
@@ -2999,6 +3483,8 @@ async function preflightProjection(oracle, runtime) {
     ["changed-trigger", "schema-mismatch"],
     ["added-view", "schema-mismatch"],
     ["changed-view", "schema-mismatch"],
+    ["provenance-invalid", "provenance-invalid"],
+    ["provenance-full-digest-substitution", "provenance-invalid"],
   ];
   let sidecarCases = 0;
   for (const [fixtureKind, expected] of cases) {
@@ -3783,11 +4269,23 @@ async function implementationCheck(oracle, runtime) {
     "classifyMigrationHistory",
     "convertMigrationHistory",
     "verifyCanonicalMigrationState",
+    "verifyCanonicalMigrationPrefixState",
+    "canonicalRegistryDigestAtVersion",
     "installMigrationConversionInfrastructure",
   ]) {
     if (typeof converter[name] !== "function")
       fail("implemented converter export is absent: " + name);
   }
+  const converterSource = readFileSync(converterPath, "utf8");
+  const runnerSource = sourceMap.get("packages/storage/src/migration-runner.ts") ?? "";
+  const openerSource = sourceMap.get("packages/storage/src/database.ts") ?? "";
+  if (/target_registry_sha256\s*!==\s*CANONICAL_DATABASE_REGISTRY_SHA256/u.test(converterSource)) {
+    fail("implemented converter equates historical target with live full registry");
+  }
+  if (!runnerSource.includes("beforePendingMigration"))
+    fail("implemented runner lacks the locked pre-suffix provenance hook");
+  if (!openerSource.includes("verifyCanonicalMigrationPrefixState"))
+    fail("implemented opener does not supply the pre-suffix provenance verifier");
   return {
     allowedPaths: allowed.size,
     semanticMigrationsValidated: projected.length,
@@ -3999,6 +4497,50 @@ function renderDesign(oracle, digest) {
       oracle.conversionMetadata.decoderAuthority +
       " " +
       oracle.conversionMetadata.crossFieldRelations,
+    "",
+    "### Append-stable historical targets",
+    "",
+    "Current registry identity: " + oracle.appendStableProvenance.currentRegistryIdentity + ".",
+    "",
+    "Historical target identity: " +
+      oracle.appendStableProvenance.historicalTargetIdentity +
+      " " +
+      oracle.appendStableProvenance.targetRelations,
+    "",
+    table(
+      ["Historical target", "Registry SHA-256"],
+      oracle.appendStableProvenance.acceptedHistoricalTargets.map((target) => [
+        target.targetVersion,
+        "`" + target.targetRegistrySha256 + "`",
+      ]),
+    ),
+    "",
+    "Suffix transaction order:",
+    "",
+    ...oracle.appendStableProvenance.suffixTransactionOrder.map(
+      (step, index) => String(index + 1) + ". " + step,
+    ),
+    "",
+    "Proof-only suffixes: " +
+      oracle.appendStableProvenance.proofSuffixes
+        .map((suffix) => [suffix.version, suffix.name, suffix.contentHash].join(" / "))
+        .join("; ") +
+      ". " +
+      oracle.appendStableProvenance.proofSuffixAuthority,
+    "",
+    "Operational rule: " + oracle.appendStableProvenance.operationRule,
+    "",
+    "Failure rule: " + oracle.appendStableProvenance.failureRule,
+    "",
+    "Issue #234 registry contract: " + oracle.appendStableProvenance.issue234RegistryContract,
+    "",
+    "Issue #234 converter contract: " + oracle.appendStableProvenance.issue234ConverterContract,
+    "",
+    "Issue #234 runner/open contract: " + oracle.appendStableProvenance.issue234RunnerContract,
+    "",
+    "Issue #234 preflight contract: " + oracle.appendStableProvenance.issue234PreflightContract,
+    "",
+    "Issue #234 proof contract: " + oracle.appendStableProvenance.issue234ProofContract,
     "",
     "Conversion identity: " + oracle.conversionMetadata.conversionId + ".",
     "",
@@ -4380,6 +4922,28 @@ const mutations = [
   ["conversion-row-domain", (value) => (value.conversionMetadata.recordEncoding = "")],
   ["conversion-decoder", (value) => (value.conversionMetadata.decoderAuthority = "")],
   ["conversion-forgery", (value) => value.conversionMetadata.forgedCases.pop()],
+  [
+    "append-stability",
+    (value) =>
+      (value.appendStableProvenance.acceptedHistoricalTargets[0].targetRegistrySha256 = "0".repeat(
+        64,
+      )),
+  ],
+  [
+    "accepted-target-widening",
+    (value) =>
+      value.appendStableProvenance.acceptedHistoricalTargets.push({
+        targetVersion: 28,
+        targetRegistrySha256: computeRegistryIdentityDigest([
+          ...value.canonicalRegistry.migrations,
+          value.appendStableProvenance.proofSuffixes[0],
+        ]),
+      }),
+  ],
+  [
+    "verify-before-suffix",
+    (value) => value.appendStableProvenance.suffixTransactionOrder.reverse(),
+  ],
   ["conversion-insert-gate", (value) => (value.conversionMetadata.insertionGate = "")],
   [
     "preflight-pragma",

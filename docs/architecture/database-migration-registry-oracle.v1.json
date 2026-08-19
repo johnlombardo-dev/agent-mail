@@ -1080,15 +1080,66 @@
       "acquire the exclusive application write-admission barrier",
       "repeat the stable source snapshot plus scratch classification and require equality with preflight and backup input",
       "only now open source SQLite read-write without create, enforce safe permissions/pragmas, and configure WAL",
-      "BEGIN IMMEDIATE and revalidate the full logical fingerprint on the write connection",
-      "convert an exact legacy history atomically or apply an exact canonical suffix, including exact provenance infrastructure and one transaction-gated row",
+      "BEGIN IMMEDIATE and revalidate the full logical fingerprint on the write connection, including every historical conversion row against the explicit accepted target-27 identity",
+      "convert an exact legacy history atomically, or invoke the mandatory provenance gate before executing any pending canonical suffix SQL, history INSERT, or user_version write",
       "commit, restore foreign_keys, verify integrity, history, provenance, and reindex overlay, then admit writers",
       "return the handle only at canonical version 27 with exact canonical history"
     ],
-    "repeatedOpen": "An exact version-27 database performs no schema, history, conversion-ledger, reindex-actor, or domain write. It revalidates names, checksums, migration infrastructure, and the reindex overlay before return.",
+    "repeatedOpen": "An exact current-version database performs no schema, history, conversion-ledger, reindex-actor, or domain write. It revalidates names, checksums, migration infrastructure, every immutable historical conversion target, and the reindex overlay before return.",
     "newerVersion": "user_version greater than 27 or any unknown later ledger row fails before mutation. Downgrade and automatic repair are forbidden.",
-    "partialFailure": "The transaction commit is the only registry cutover. Preflight rejection leaves the complete source tree and sidecar presence/bytes/modes unchanged. Backup or locked-revalidation failure leaves the source database unchanged and retains any verified backup. Before commit, ordinary suffix failure leaves the previous canonical prefix and legacy conversion failure leaves the original legacy history, reindex overlay, and data. After commit, the complete new canonical prefix or complete canonical 27 is authoritative even if later opener work fails. No mixed ledger/schema/provenance state is accepted; foreign keys and the persistent always-deny insertion trigger are restored on every non-crash exit.",
-    "metadata": "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows; converted databases preserve and digest the exact old history, base schema, overlay snapshot, target registry, verified backup identity, canonical timestamp, conversion id, and complete record."
+    "partialFailure": "The transaction commit is the only registry cutover. Preflight rejection leaves the complete source tree and sidecar presence/bytes/modes unchanged. Backup or locked-revalidation failure leaves the source database unchanged and retains any verified backup. Invalid current provenance aborts inside BEGIN IMMEDIATE before the first pending suffix SQL, history INSERT, or user_version write. Before commit, ordinary suffix failure leaves the previous canonical prefix and legacy conversion failure leaves the original legacy history, reindex overlay, and data. After commit, the complete new canonical prefix is authoritative and its immutable historical conversion-target rows remain valid. No mixed ledger/schema/provenance state is accepted; foreign keys and the persistent always-deny insertion trigger are restored on every non-crash exit.",
+    "metadata": "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows. Every accepted legacy conversion first commits exact canonical target 27 and preserves and digests the exact old history, base schema, overlay snapshot, immutable target-27 identity, verified backup identity, canonical timestamp, conversion id, and complete record. Version 28 and later are applied only as separately verified suffix migrations. The live full-registry identity is separate and may grow by append without rewriting historical rows."
+  },
+  "appendStableProvenance": {
+    "legacyConversionTargetVersion": 27,
+    "targetDigestAlgorithm": "sha256(utf8(JSON.stringify(canonicalMigrations.slice(0, targetVersion).map(m => [m.version, m.name, m.contentHash, m.requiresForeignKeysOff]))))",
+    "currentRegistryIdentity": "canonicalRegistry.identityDigest identifies the complete registry shipped by the running application; it is not a conversion-row equality constant and changes only when a new final migration is appended",
+    "historicalTargetIdentity": "target_registry_sha256 immutably identifies the exact canonical prefix that replaced the preserved source history when that conversion committed. Resolve it only through acceptedHistoricalTargets, never by enumerating every prefix through the live registry tip. The only accepted target is canonical version 27 with digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab, and later appends never rewrite that row.",
+    "acceptedHistoricalTargets": [
+      {
+        "targetVersion": 27,
+        "targetRegistrySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab"
+      }
+    ],
+    "targetRelations": "A decoded target must exactly match one explicit acceptedHistoricalTargets row; currently T must equal 27 and its digest must equal the frozen canonical prefix 1..27. Computing a digest for prefix 28 or later does not authorize it as a conversion target. Every preserved source-history identity must exist within target 27; the live schema_migrations ledger must contain that immutable target prefix plus only exact verified suffix rows. Unknown, ambiguous, forged, truncated, or current-full-digest-substituted targets reject even when every stored component hash, conversion_id, and record_sha256 is recomputed.",
+    "suffixTransactionOrder": [
+      "acquire the exclusive application write-admission barrier and complete byte-identical locked revalidation",
+      "BEGIN IMMEDIATE for the next pending canonical suffix",
+      "reconcile the exact current canonical prefix and full schema/reindex fingerprint",
+      "strictly decode every conversion row and resolve its immutable target digest to one unique canonical prefix",
+      "only after that gate succeeds execute the pending migration SQL, insert its exact history row, and set user_version",
+      "commit the complete suffix or roll back to the exact predecessor",
+      "repeat the gate for each later suffix and run the shared final verifier before admitting writers"
+    ],
+    "proofSuffixes": [
+      {
+        "version": 28,
+        "name": "append-stability-probe-28",
+        "sql": "CREATE TABLE append_stability_probe_28 (id INTEGER PRIMARY KEY) STRICT",
+        "contentHash": "9683801eca4f11c88f59951c65c33c2cee99e1427d3cdd2eafb97215afc7afe3",
+        "requiresForeignKeysOff": false
+      },
+      {
+        "version": 29,
+        "name": "append-stability-probe-29",
+        "sql": "CREATE TABLE append_stability_probe_29 (id INTEGER PRIMARY KEY) STRICT",
+        "contentHash": "8ad0f903b865ae9372fa5cdecfc95b24baf4464dfb715e4daad07299708d314f",
+        "requiresForeignKeysOff": false
+      }
+    ],
+    "proofSuffixAuthority": "The two fixed checker-only migrations prove generic append mechanics at 27 to 28 and 28 to 29. They are not canonical registry entries, production source, report semantics, placeholders, or authority to consume reserved report slot 28.",
+    "operationRule": "Reopen, doctor, backup serialization, empty restore, and full restore use the same strict accepted-target decoder. They report the live full-registry version/digest separately from the explicit historical target-27 version/digest. A current canonical backup may retain valid target-27 provenance after any suffix append; restore never upgrades a historical backup. A recomputed row containing the live prefix-28 full digest rejects in every operation.",
+    "failureRule": "A corrupt or forged existing conversion row, including a target-27 row replaced by the recomputed prefix-28 full digest, fails in disposable preflight and again inside the locked suffix transaction before persistent suffix effects. A crash before suffix commit leaves the exact predecessor; a crash after commit leaves the complete new canonical prefix with unchanged target-27 conversion bytes. Reopen repeats verification before any later append.",
+    "issue234RegistryContract": "Keep CANONICAL_DATABASE_REGISTRY_SHA256 as the live full-registry identity and add canonicalRegistryDigestAtVersion(targetVersion), which accepts only a safe contiguous canonical prefix and computes targetDigestAlgorithm. Digest computation does not confer conversion-target authority. The converter exports it for tests and resolves rows only against the explicit acceptedHistoricalTargets table; no row verifier compares target_registry_sha256 directly with the full-registry constant or derives accepted targets by enumerating live prefixes.",
+    "issue234ConverterContract": "Export verifyCanonicalMigrationPrefixState(input, expectedPrefixVersion). It shares the strict provenance decoder with final verification and operations, requires the exact canonical ledger/schema/reindex state through expectedPrefixVersion, accepts only explicit target 27, and returns bounded live/target identity evidence without writing. Every legacy conversion commits canonical target 27 first; version 28 and later run solely through the verified suffix path.",
+    "issue234RunnerContract": "Extend applyMigrations with a beforePendingMigration callback. For each missing migration, applyOne executes BEGIN IMMEDIATE, invokes the callback with the locked database plus exact current prefix and pending definition, and only then may execute migration SQL, create/insert history, or set user_version. Callback rejection rolls back with no suffix effect; the production canonical opener always supplies it.",
+    "issue234PreflightContract": "historyClassification and disposable scratch preflight validate complete conversion DDL and rows with the same explicit accepted-target decoder whenever infrastructure is present. A provenance-invalid current prefix, including a recomputed full-digest substitution, is not returned as supported-canonical-prefix and cannot reach WAL configuration or suffix application.",
+    "issue234ProofContract": "Extend migration-conversion-provenance, database-preflight, migration-runner, database, doctor, backup-writer, backup-restore parity, and offline-root-replacement tests with legacy conversion always landing on target 27, converted target-27 then synthetic 28 append, before/after-commit crash and reopen, later append, unknown target, and the separate exact full-digest substitution that replaces target 27 with digest 28 and recomputes conversion_id and record_sha256. Require scratch-preflight, pre-suffix, reopen, doctor, backup, and restore rejection with zero suffix effects, separate doctor identities, and exact backup/full-restore target-27 row-byte parity. Test suffixes are local fixtures and never define report semantics.",
+    "selfMutationCases": [
+      "replace historical-prefix target resolution with equality to the current full-registry digest",
+      "move strict provenance verification after pending suffix SQL, history INSERT, user_version write, or commit",
+      "derive accepted conversion targets by enumerating every canonical prefix through the live registry tip"
+    ]
   },
   "conversionMetadata": {
     "table": "schema_migration_conversions",
@@ -1102,15 +1153,17 @@
     "recordEncoding": "UTF-8 JSON.stringify([\"agent-mail/migration-conversion-record/v1\",conversion_id,source_user_version,source_history_json,source_history_sha256,source_overlay_id,source_overlay_json,source_overlay_sha256,source_schema_json,source_schema_sha256,target_registry_sha256,backup_id,backup_manifest_sha256,completed_at])",
     "conversionId": "migration-conversion: plus lowercase SHA-256 of UTF-8 JSON.stringify([\"agent-mail/migration-conversion/v1\",source_user_version,source_history_sha256,source_overlay_id,source_overlay_sha256,source_schema_sha256,target_registry_sha256,backup_id,backup_manifest_sha256,completed_at])",
     "recordSha256": "lowercase SHA-256 of recordEncoding bytes",
-    "decoderAuthority": "One strict decoder is shared by preflight, conversion, reopen, doctor, serialized-backup verification, empty restore, and full restore. It parses canonical JSON and rejects before trusting any stored component or record hash; re-encoding each parsed value must reproduce the exact stored JSON bytes.",
+    "decoderAuthority": "One strict decoder is shared by preflight, conversion, pre-suffix transaction gates, reopen, doctor, serialized-backup verification, empty restore, and full restore. It parses canonical JSON and rejects before trusting any stored component or record hash; re-encoding each parsed value must reproduce the exact stored JSON bytes. It resolves target_registry_sha256 only through the explicit acceptedHistoricalTargets table, currently exact target 27, rather than comparing it with the current full-registry digest or deriving acceptance from every live prefix.",
     "historyDomain": "source_history_json is an array of exact [safe positive integer version, nonempty string name, lowercase SHA-256 content hash] tuples, ordered contiguously from one. Every name/hash pair resolves to exactly one frozen semantic identity, identities are unique, the tuple sequence is one supported historical sequence, and source_user_version equals the final tuple version or zero only for the empty sequence.",
     "schemaDomain": "source_schema_json is an array of exact [type,name,tbl_name,sql] tuples where type is table, index, trigger, or view; name and tbl_name are nonempty strings; sql is a nonempty string; rows are strictly ordered by type,name,tbl_name,sql with no duplicate tuple or object identity. The complete tuple sequence must equal the in-memory sequence-derived base schema for decoded source_history_json before its digest is accepted.",
     "overlayDomain": "source_overlay_json is an exact seven-element v1 snapshot. The overlay id matches source_overlay_id; lease, progress, schema-object, source-row, and replacement-docsize tuple types and canonical order are exact; operation grammar and replacement derivation hold; the full expected FTS5 [type,name,tbl_name,sql] family, lease/progress/counter/source-row/indexed-row relations, recomputed source digests, and overlay classification all agree before its digest is accepted.",
-    "crossFieldRelations": "The decoded history, source_user_version, schema, overlay id/snapshot, target registry, verified backup id/manifest digest/timestamp, conversion id, component digests, record encoding, and record digest must all identify one conversion. Recomputed hashes never excuse an invalid domain or cross-field relation.",
+    "crossFieldRelations": "The decoded history, source_user_version, schema, overlay id/snapshot, explicit immutable target-27 registry prefix, verified backup id/manifest digest/timestamp, conversion id, component digests, record encoding, and record digest must all identify one conversion. The source identities must belong to target 27 and the live canonical ledger must contain that exact prefix plus only exact appended suffix rows. Recomputed hashes never excuse an invalid domain, unaccepted target, or cross-field relation.",
     "forgedCases": [
       "self-consistent unknown or noncontiguous history with every dependent component, conversion, and record hash recomputed",
       "self-consistent sequence-mismatched schema tuples with every dependent component, conversion, and record hash recomputed",
-      "self-consistent invalid overlay grammar or relation with every dependent component, conversion, and record hash recomputed"
+      "self-consistent invalid overlay grammar or relation with every dependent component, conversion, and record hash recomputed",
+      "self-consistent unknown target with conversion id and record hash recomputed",
+      "exact target-27 row changed to the proof-suffix-28 full-registry digest with conversion id and record hash recomputed"
     ],
     "columns": [
       "conversion_id TEXT PRIMARY KEY NOT NULL",
@@ -1129,6 +1182,7 @@
       "record_sha256 TEXT NOT NULL"
     ],
     "targetRegistrySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+    "targetRegistrySha256Semantics": "The sole accepted legacy conversion target for canonical prefix 1..27. Every legacy conversion commits this exact byte before any version-28-or-later suffix. It is immutable historical evidence, not an alias for the running application's complete registry digest.",
     "insertionGateMechanism": "transactional always-deny trigger replacement",
     "insertionGate": "The exact persistent BEFORE INSERT trigger always aborts. Only inside the same BEGIN IMMEDIATE conversion transaction, after exact revalidation, verified-backup binding, and all semantic SQL checks, the converter verifies and drops that trigger, executes exactly one bound INSERT with changes=1, recreates and re-verifies the exact trigger, then commits. SQLite transactional DDL restores the closed trigger on rollback; every opener rejects a missing or altered gate.",
     "ddl": {
@@ -1191,10 +1245,10 @@
     "probeContract": "For every reject class and success case, snapshot the whole focused private-root fixture and explicit main/WAL/SHM presence, bytes, mode, and link identity before/after. Rejection and preflight success leave them byte-for-byte identical; only scratch paths may appear and they are gone at return."
   },
   "operationsAuthority": {
-    "doctor": "Doctor imports the canonical registry directly, uses the no-source-write preflight, and emits separate bounded evidence for invalid user_version, missing history, gap or duplicate, unknown name, checksum mismatch, noncanonical known history, conversion DDL/index/trigger or row/digest mismatch, unauthorized provenance shape, partial conversion, invalid reindex control DDL, invalid lease/progress/counter/replacement overlay, and newer schema. It never accepts caller-supplied migration definitions, touches source sidecars, or erases one finding behind another.",
-    "backup": "The production backup service pauses all database writers, verifies exact canonical version 27, history, byte-exact conversion infrastructure and rows, and reindex overlay before serialization, then reopens the serialized snapshot and verifies the same bytes/digests. A valid active reindex overlay is resumable and may be backed up; a legacy, partial, corrupt, unknown, provenance-invalid, or newer database is not published as a new backup.",
-    "emptyRootRestore": "Restore verifies manifest, artifact hashes, SQLite integrity, foreign keys, exact canonical version 27, exact canonical history, byte-exact conversion table/index/triggers and every row re-encoding/digest, and any active reindex overlay before the final rename. It never migrates or repairs a backup during restore.",
-    "fullRestore": "Offline root replacement invokes the same registry verifier on the staged root before swap and again through repository verification after swap. Registry failure preserves the live root or rolls it back, with target, stage, and rollback disposition reported.",
+    "doctor": "Doctor imports the canonical registry directly, uses the no-source-write preflight, and emits separate bounded evidence for the live full-registry version/digest, explicit historical target-27 version/digest, invalid user_version, missing history, gap or duplicate, unknown name, checksum mismatch, noncanonical known history, conversion DDL/index/trigger or row/digest mismatch, unknown target, full-digest-substituted target, unauthorized provenance shape, partial conversion, invalid reindex control DDL, invalid lease/progress/counter/replacement overlay, and newer schema. It never accepts caller-supplied migration definitions, touches source sidecars, or erases one finding behind another.",
+    "backup": "The production backup service pauses all database writers, verifies the exact current canonical version and history, byte-exact conversion infrastructure and rows including explicit append-stable target 27, and reindex overlay before serialization, then reopens the serialized snapshot and verifies the same bytes/digests. A valid active reindex overlay and valid target-27 row are resumable and may be backed up after suffix append; a legacy, partial, corrupt, unknown-target, full-digest-substituted, provenance-invalid, or newer database is not published as a new backup.",
+    "emptyRootRestore": "Restore verifies manifest, artifact hashes, SQLite integrity, foreign keys, exact current canonical version/history, byte-exact conversion table/index/triggers and every row re-encoding/digest including explicit append-stable target 27, and any active reindex overlay before the final rename. An unknown or full-digest-substituted target rejects. Restore never migrates or repairs a backup.",
+    "fullRestore": "Offline root replacement invokes the same explicit accepted-target verifier on the staged root before swap and again through repository verification after swap. An unknown or full-digest-substituted target preserves the live root or rolls it back, with target, stage, and rollback disposition reported.",
     "restoreAuthority": "A historical backup must first be upgraded by the matching application version into a newly verified canonical backup. Restore does not infer or convert history."
   },
   "lifecycleCases": [
@@ -1212,15 +1266,15 @@
     },
     {
       "id": "LC-CANONICAL-UPGRADE",
-      "input": "exact canonical prefix 0..26",
-      "expected": "apply missing suffix to 27",
-      "writes": "one transaction per missing semantic migration"
+      "input": "exact canonical prefix below the current registry, with absent provenance or one valid immutable target-27 conversion row",
+      "expected": "apply each missing suffix only after its locked strict provenance gate",
+      "writes": "one transaction per missing semantic migration; no suffix write when current provenance is invalid"
     },
     {
       "id": "LC-LEGACY-UPGRADE",
       "input": "exact supported legacy prefix",
-      "expected": "no-source-write preflight, verified backup, exclusive barrier, locked revalidation, then atomic conversion to 27",
-      "writes": "all-or-nothing conversion"
+      "expected": "no-source-write preflight, verified backup, exclusive barrier, locked revalidation, then atomic conversion to exact accepted target 27; any 28-or-later migration follows only as a separately gated suffix",
+      "writes": "all-or-nothing conversion to target 27, followed by zero or more independently verified suffix transactions"
     },
     {
       "id": "LC-PREFLIGHT-REJECT",
@@ -1230,8 +1284,8 @@
     },
     {
       "id": "LC-REOPEN",
-      "input": "exact canonical 27 with idle or valid active reindex overlay",
-      "expected": "validated no-op",
+      "input": "exact current canonical ledger with idle or valid active reindex overlay and zero or one immutable target-27 conversion row",
+      "expected": "validated no-op with any row resolved only to the explicit accepted target-27 identity",
       "writes": "none"
     },
     {
@@ -1260,8 +1314,8 @@
     },
     {
       "id": "LC-PROVENANCE",
-      "input": "fresh, converted, reopened, doctor, backup, empty-restore, or full-restore database",
-      "expected": "exact conversion table/index/triggers and every canonical row encoding/digest verify",
+      "input": "fresh, converted, appended, reopened, doctor, backup, empty-restore, or full-restore database",
+      "expected": "exact conversion table/index/triggers and every canonical row encoding/digest verify; explicit target 27 remains valid after later registry append while a recomputed full-digest substitution rejects",
       "writes": "fresh infrastructure only or one gated conversion INSERT; UPDATE/DELETE/ungated INSERT always abort"
     },
     {
@@ -1273,7 +1327,7 @@
     {
       "id": "LC-DOCTOR",
       "input": "each independent history defect and combinations",
-      "expected": "all exact findings retained",
+      "expected": "all exact findings retained, including separate live-registry and historical-target identities",
       "writes": "none"
     },
     {
@@ -1430,7 +1484,7 @@
     },
     {
       "id": "DEC-BYTE-PROVENANCE",
-      "text": "Conversion infrastructure and records use byte-frozen SQL and canonical JSON/digest domains, with one transaction-gated INSERT and aborting UPDATE/DELETE triggers."
+      "text": "Conversion infrastructure and records use byte-frozen SQL and canonical JSON/digest domains, with one transaction-gated INSERT and aborting UPDATE/DELETE triggers. target_registry_sha256 resolves only through the explicit accepted target-27 row, never every live prefix; every legacy conversion first commits target 27, and every later suffix verifies all existing rows inside BEGIN IMMEDIATE before persistent effects."
     },
     {
       "id": "DEC-FAIL-UNKNOWN",
@@ -1513,12 +1567,12 @@
     {
       "id": "PROOF-PREFLIGHT",
       "kind": "real-filesystem-sqlite",
-      "postcondition": "valid main/WAL state classifies from disposable scratch; sequence-derived full tuple validation rejects every newer/unknown/corrupt/placeholder/direct-SQL case and each added/changed table/index/trigger/view case while leaving the whole focused source tree and main/WAL/SHM presence, bytes, modes, and identities unchanged"
+      "postcondition": "valid main/WAL state classifies from disposable scratch; sequence-derived full tuple validation rejects every newer/unknown/corrupt/placeholder/direct-SQL case, a target-27 row replaced by recomputed full digest 28, and each added/changed table/index/trigger/view case while leaving the whole focused source tree and main/WAL/SHM presence, bytes, modes, and identities unchanged"
     },
     {
       "id": "PROOF-PROVENANCE",
       "kind": "real-sqlite",
-      "postcondition": "fresh, conversion, reopen, doctor, serialized backup, and restore projections share one strict decoder and preserve exact DDL plus canonical row bytes/domains/relations/digests; DDL/row/trigger mutations, three self-consistent forged history/schema/overlay records, ungated INSERT, UPDATE, and DELETE fail"
+      "postcondition": "fresh, legacy conversion always landing on explicit target 27, append to 28 and later 29, crash/reopen, doctor, serialized backup, and restore projections share one strict accepted-target decoder and preserve exact DDL plus canonical row bytes/domains/relations/digests; a target-27 row changed to full digest 28 with conversion_id and record_sha256 recomputed rejects in scratch preflight, the pre-suffix transaction gate with zero effects, reopen, doctor, backup, and restore; unknown target remains a separate failure; DDL/row/trigger mutations, self-consistent forged history/schema/overlay/target records, ungated INSERT, UPDATE, and DELETE fail"
     },
     {
       "id": "PROOF-CONVERSION-MATRIX",
@@ -1528,7 +1582,7 @@
     {
       "id": "PROOF-FAILURE-MATRIX",
       "kind": "injection",
-      "postcondition": "each pre-commit boundary leaves its exact predecessor, each post-commit boundary leaves its exact successor, no mixed state appears, and foreign_keys is on after reopen"
+      "postcondition": "each pre-commit boundary leaves its exact predecessor, each post-commit boundary leaves its exact successor, unknown or full-digest-substituted current provenance commits no suffix effect, immutable target-27 rows remain valid after append, no mixed state appears, and foreign_keys is on after reopen"
     },
     {
       "id": "PROOF-REOPEN",
@@ -1538,12 +1592,12 @@
     {
       "id": "PROOF-DOCTOR",
       "kind": "mutation",
-      "postcondition": "each independent and combined history defect remains visible and the tree is unchanged"
+      "postcondition": "each independent and combined history defect remains visible, live-registry and historical-target identities are reported separately, and the tree is unchanged"
     },
     {
       "id": "PROOF-BACKUP-RESTORE",
       "kind": "real-filesystem",
-      "postcondition": "backup, empty restore, and full restore preserve exact registry plus domain parity"
+      "postcondition": "backup, empty restore, and full restore preserve exact live registry, immutable historical target rows, and domain parity without restore-time upgrade"
     },
     {
       "id": "PROOF-RETIREMENT",
