@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import sys
+from hashlib import sha256
 from pathlib import Path
 
 REQUIRED_PLAN_HEADINGS = (
@@ -45,6 +46,35 @@ DAYBREAK_COLUMNS = (
 )
 AUTHORITY_ORACLE_DIGEST = "8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7"
 AUTHORITY_IMPLEMENTATION_COMMIT = "9d1f777"
+ICLOUD_CREDENTIAL_COMMIT = "3757dfe85bdd9fbeec014f4c183ebfc9fa80effb"
+ICLOUD_CREDENTIAL_ORACLE_DIGEST = "9b685e1293570d8f55f9a11c02b108e0ac5585a3cffdc367762db09f3e687c3c"
+ICLOUD_CREDENTIAL_ARTIFACTS = {
+    "docs/architecture/icloud-credential-authority-check.v1.mjs": "3368a67d75525ba057b6382199de3e33ee4e235c4c34db13b6b7faf578dc3605",
+    "docs/architecture/icloud-credential-authority-coverage.v1.md": "6f567a5973a3050d265c92881d093d9c3c7e9467c110d8b6d40e488175221f47",
+    "docs/architecture/icloud-credential-authority-decisions.v1.md": "a6af40637d1aa4e3642d2c38e465a99d2c25caab312b4e692f30ab84e2f89c84",
+    "docs/architecture/icloud-credential-authority-design.v1.md": "1068bbccf0de7054baaf604e38bf30a3dd400543585bcca2779e0ff33d5fcc28",
+    "docs/architecture/icloud-credential-authority-oracle.v1.json": ICLOUD_CREDENTIAL_ORACLE_DIGEST,
+}
+CREDENTIAL_IDS = tuple(f"CRED-{number:02d}" for number in range(1, 9))
+CREDENTIAL_COLUMNS = (
+    "ID", "Demonstrated defect", "Invariant", "Planned control",
+    "Faithful executable proof", "Owner", "Held issue", "Dependency",
+    "Source / artifact reference", "Evidence tier", "Current evidence status",
+)
+CREDENTIAL_ROW_REQUIREMENTS = {
+    "CRED-01": {"defect": "no usable credential-provisioning path", "invariant": "one signed secure-paste ceremony stores only in keychain", "control": "opaque reference", "owner": "credential-provider implementation", "proof": "plaintext negative matrix"},
+    "CRED-02": {"defect": "signed construction", "invariant": "acyclic nested signing", "control": "inside-out signed bundle", "owner": "credential-provider implementation and signed qualification", "proof": "peer hello"},
+    "CRED-03": {"defect": "non-atomic keychain/config/removal writes", "invariant": "one actor journals before effect", "control": "256-record receipt cap", "owner": "sole actor/journal and local-command implementations", "proof": "crash/compensation/rerun/removal/capacity"},
+    "CRED-04": {"defect": "revoked credential", "invariant": "strict newer-revision release", "control": "three-session", "owner": "connection/recovery implementation", "proof": "authentication rows"},
+    "CRED-05": {"defect": "backup, restore, reinstall, removal", "invariant": "secret-free backup", "control": "Exclude raw secrets", "owner": "local-command implementation and qualification", "proof": "restore/reinstall/remove/uninstall"},
+    "CRED-06": {"defect": "production connection factory", "invariant": "only exact-ref resolution reaches", "control": "constructively type listOnly:true", "owner": "connection/recovery implementation and live qualification", "proof": "real TypeScript compile fixture"},
+    "CRED-07": {"defect": "local administration could be confused", "invariant": "authenticated local XPC registry is absent", "control": "outside HTTP", "owner": "credential-provider and local-command implementations", "proof": "public-reachability"},
+    "CRED-08": {"defect": "guided and structured setup could fork", "invariant": "one local schema/state/outcome model", "control": "canonical actor", "owner": "local-command implementation and #215", "proof": "guided/structured"},
+}
+EVIDENCE_TIER_IDS = (
+    "design", "local", "signed-installed", "live-read-only", "deployed",
+    "security", "documentation", "delivery",
+)
 # The shape checks deliberately require the distinctive control/proof contract
 # for each row. They are not a substitute for running the named proof.
 ROW_REQUIREMENTS = {
@@ -130,6 +160,101 @@ def check_daybreak(text: str, label: str, errors: list[str]) -> None:
                 errors.append(f"{label} {row_id} faithful proof is weakened: missing {term!r}")
 
 
+def credential_table(text: str) -> tuple[dict[str, dict[str, str]], list[str]]:
+    headers = [normalized(cell) for cell in CREDENTIAL_COLUMNS]
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if [normalized(cell) for cell in table_cells(line)] != headers:
+            continue
+        rows: dict[str, dict[str, str]] = {}
+        duplicate: list[str] = []
+        for row_line in lines[index + 2 :]:
+            cells = table_cells(row_line)
+            if not cells:
+                if rows:
+                    break
+                continue
+            if all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+                continue
+            if len(cells) != len(CREDENTIAL_COLUMNS):
+                continue
+            row = dict(zip(CREDENTIAL_COLUMNS, cells))
+            row_id = row["ID"]
+            if row_id in rows:
+                duplicate.append(row_id)
+            rows[row_id] = row
+        return rows, duplicate
+    return {}, []
+
+
+def check_credential_rows(text: str, label: str, errors: list[str]) -> None:
+    rows, duplicate = credential_table(text)
+    if not rows:
+        errors.append(f"{label} is missing the CRED-01..CRED-08 traceability table")
+        return
+    if duplicate:
+        errors.append(f"{label} has duplicate credential IDs: {', '.join(sorted(set(duplicate)))}")
+    missing = [row_id for row_id in CREDENTIAL_IDS if row_id not in rows]
+    if missing:
+        errors.append(f"{label} is missing credential rows: {', '.join(missing)}")
+        return
+    unexpected = sorted(set(rows) - set(CREDENTIAL_IDS))
+    if unexpected:
+        errors.append(f"{label} has unexpected credential rows: {', '.join(unexpected)}")
+    for row_id in CREDENTIAL_IDS:
+        row = rows[row_id]
+        for column in CREDENTIAL_COLUMNS[1:]:
+            if not row[column].strip():
+                errors.append(f"{label} {row_id} has an empty {column} field")
+        normalized_cells = {column: normalized(row[column]) for column in CREDENTIAL_COLUMNS}
+        requirements = CREDENTIAL_ROW_REQUIREMENTS[row_id]
+        for column, term in (("Demonstrated defect", requirements["defect"]), ("Invariant", requirements["invariant"]), ("Planned control", requirements["control"]), ("Owner", requirements["owner"]), ("Faithful executable proof", requirements["proof"])):
+            if term.casefold() not in normalized_cells[column]:
+                errors.append(f"{label} {row_id} {column} is weakened: missing {term!r}")
+        held = normalized_cells["Held issue"]
+        if not re.search(r"#\d+", held):
+            errors.append(f"{label} {row_id} must name a held issue")
+        dependency = normalized_cells["Dependency"]
+        for token in ("#236", ICLOUD_CREDENTIAL_COMMIT, ICLOUD_CREDENTIAL_ORACLE_DIGEST):
+            if token.casefold() not in dependency:
+                errors.append(f"{label} {row_id} dependency is missing {token!r}")
+        source = normalized_cells["Source / artifact reference"]
+        for token in (
+            "icloud-credential-authority-oracle.v1.json",
+            "icloud-credential-authority-coverage.v1.md",
+            row_id,
+        ):
+            if token.casefold() not in source:
+                errors.append(f"{label} {row_id} source reference is missing {token!r}")
+        tier = normalized_cells["Evidence tier"]
+        if not any(token in tier for token in EVIDENCE_TIER_IDS):
+            errors.append(f"{label} {row_id} must name an evidence tier")
+        status = normalized_cells["Current evidence status"]
+        if "design" not in status or "unverified" not in status:
+            errors.append(f"{label} {row_id} must retain design and unverified status language")
+        if any(token in status for token in ("signed-installed verified", "live verified", "deployed verified", "security verified", "delivery verified")):
+            errors.append(f"{label} {row_id} overclaims a non-design evidence tier")
+
+
+def check_credential_authority(root: Path, combined: str, errors: list[str]) -> None:
+    required_markers = (
+        "#235", "#236", ICLOUD_CREDENTIAL_COMMIT, ICLOUD_CREDENTIAL_ORACLE_DIGEST,
+        "accepted #236 artifact set", "local", "signed-installed", "live-read-only",
+        "deployed", "security", "documentation", "delivery", "unverified",
+    )
+    for marker in required_markers:
+        if marker.casefold() not in combined.casefold():
+            errors.append(f"planning pack is missing credential authority marker: {marker}")
+    for relative_path, expected_digest in ICLOUD_CREDENTIAL_ARTIFACTS.items():
+        path = root / relative_path
+        if not path.is_file():
+            errors.append(f"missing accepted #236 artifact: {relative_path}")
+            continue
+        actual_digest = sha256(path.read_bytes()).hexdigest()
+        if actual_digest != expected_digest:
+            errors.append(f"accepted #236 artifact digest changed: {relative_path}")
+
+
 def main() -> int:
     root = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else Path.cwd()
     plan_path = root / "PLAN.md"
@@ -181,8 +306,11 @@ def main() -> int:
         errors.append("planning pack contains stale unresolved #203 authority wording")
     if "implementation not started" in combined or "no implementation evidence attached" in combined:
         errors.append("planning pack contains stale pre-implementation status wording")
+    check_credential_authority(root, combined, errors)
     check_daybreak(plan, "PLAN.md", errors)
     check_daybreak(evidence, "EVIDENCE.md", errors)
+    check_credential_rows(plan, "PLAN.md", errors)
+    check_credential_rows(evidence, "EVIDENCE.md", errors)
     check_daybreak(shields, "failure-shields.md", errors)
     if re.search(r"\b(?:TODO|TBD|PLACEHOLDER)\b", plan, flags=re.IGNORECASE):
         errors.append("PLAN.md contains unresolved planning markers")
