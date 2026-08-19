@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Database } from "bun:sqlite";
-import { runMigrations, migrationContentHash } from "./migration-runner";
+import { runMigrations, migrationContentHash, type Migration } from "./migration-runner";
 import {
   CANONICAL_DATABASE_SCHEMA_VERSION,
   canonicalDatabaseMigrations,
@@ -1259,14 +1259,14 @@ function insertConversion(
   }
 }
 
-function canonicalHistorySql(database: DatabaseLike): void {
+function canonicalHistorySql(database: DatabaseLike, targetMigrations: readonly Migration[]): void {
   database.exec("DELETE FROM schema_migrations");
-  for (const migration of canonicalDatabaseMigrations) {
+  for (const migration of targetMigrations) {
     database
       .query("INSERT INTO schema_migrations (version, name, content_hash) VALUES (?, ?, ?)")
       .run(migration.version, migration.name, migrationContentHash(migration));
   }
-  database.exec(`PRAGMA user_version = ${CANONICAL_DATABASE_SCHEMA_VERSION}`);
+  database.exec(`PRAGMA user_version = ${targetMigrations.length}`);
 }
 
 function parseCanonicalJson(value: unknown, label: string): unknown {
@@ -1438,6 +1438,8 @@ export function convertMigrationHistory(
       "unsupported-history",
       before.reason ?? "database history is not an exact supported legacy composition",
     );
+  const target = resolveAcceptedHistoricalTarget(canonicalRegistryDigestAtVersion(27));
+  const targetMigrations = canonicalDatabaseMigrations.slice(0, target.targetVersion);
   if (options.backupProof === undefined && options.backup === undefined)
     throw new MigrationHistoryConversionError(
       "conversion-failed",
@@ -1477,7 +1479,7 @@ export function convertMigrationHistory(
     source_overlay_sha256: sha256(overlayJson),
     source_schema_json: schemaJson,
     source_schema_sha256: sha256(schemaJson),
-    target_registry_sha256: acceptedHistoricalTargets[0].targetRegistrySha256,
+    target_registry_sha256: target.targetRegistrySha256,
     backup_id: proof.backupId,
     backup_manifest_sha256: proof.manifestSha256,
     completed_at: proof.createdAt,
@@ -1501,7 +1503,7 @@ export function convertMigrationHistory(
       );
     }
     installMigrationConversionInfrastructure(database);
-    for (const migration of canonicalDatabaseMigrations) {
+    for (const migration of targetMigrations) {
       if (before.migrationIds.includes(migration.name)) continue;
       if (
         migration.name === "search-reindex-schema" &&
@@ -1512,14 +1514,14 @@ export function convertMigrationHistory(
       database.exec(migration.sql);
     }
     insertConversion(database, values);
-    canonicalHistorySql(database);
+    canonicalHistorySql(database, targetMigrations);
     if (database.query("PRAGMA foreign_key_check").all().length !== 0)
       throw new Error("conversion produced foreign-key violations");
     options.beforeCommit?.();
     database.exec("COMMIT");
     transactionStarted = false;
     database.exec("PRAGMA foreign_keys = ON");
-    const after = verifyCanonicalMigrationState(database);
+    const after = verifyCanonicalMigrationPrefixState(database, target.targetVersion);
     const provenance = database
       .query("SELECT * FROM schema_migration_conversions ORDER BY conversion_id")
       .all();
@@ -1602,7 +1604,7 @@ export function verifyCanonicalMigrationPrefixState(
   )
     throw new MigrationHistoryConversionError(
       "unsupported-history",
-      "database is not at the exact canonical migration prefix",
+      `database is not at the exact canonical migration prefix${state.reason === undefined ? "" : `: ${state.reason}`}`,
     );
   if (conversionInfrastructurePresent(database)) verifyConversionProvenance(database);
   return state;

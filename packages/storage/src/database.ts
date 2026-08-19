@@ -115,14 +115,13 @@ export async function openDatabase(
           cause: error,
         });
       }
-    } else {
-      applyMigrations(db, canonicalDatabaseMigrations, {
-        beforePendingMigration: ({ database: lockedDatabase, currentPrefixVersion }) => {
-          verifyCanonicalMigrationPrefixState(lockedDatabase, currentPrefixVersion);
-        },
-      });
-      installMigrationConversionInfrastructure(db);
     }
+    applyMigrations(db, canonicalDatabaseMigrations, {
+      beforePendingMigration: ({ database: lockedDatabase, currentPrefixVersion }) => {
+        verifyCanonicalMigrationPrefixState(lockedDatabase, currentPrefixVersion);
+      },
+    });
+    installMigrationConversionInfrastructure(db);
     verifyCanonicalMigrationState(db);
     verifyIntegrity(db);
 
