@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { cliCommandDefinitions } from "../../packages/cli/src/command-registry.ts";
 import { httpErrorRegistry } from "../../packages/contracts/src/http-error-authority.ts";
 
-const EXPECTED_ORACLE_SHA256 = "d0f569cbb3364bebbf3e02ef33b69997a05b4bf6d5dd9485cf386e8ab7768c6d";
+const EXPECTED_ORACLE_SHA256 = "428c4043a5cfa031d237bf9638911b8a2ec71d7c919c11dacfde31b70f3bcfa8";
 const ACCEPTED_HEAD = "778e01b16cbdbe8917975c85818eaff967dc0a7f";
 const architectureDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(architectureDirectory, "../..");
@@ -17,9 +17,9 @@ const viewPaths = [
   join(architectureDirectory, "cli-command-outcome-coverage.v1.md"),
 ];
 const EXPECTED_VIEW_SHA256 = [
-  "b230d2e7aa72ff18839249914191844b50d2a15ddb054821e1d374a4f0e71d5b",
-  "36a35b59aa1bc60717d0f84b8140579bb4b44cd772ffb123efa0d576722e22bd",
-  "25518f4397e10594f0034746fe9b2c7b55d72a3c67c4df1562824b63d95f9e51",
+  "201f0cb2e748b580610178c703fdc9a120e8ed76d984307d9c3f446d8238df9f",
+  "cfda46242844efbf5f3f56803aeb2682bc428c9952eb4f6ef7ac56dcb85e43f0",
+  "12793068f43a163e3eaed644d16bb65ab909c0073d4d7fece1378704600db6ea",
 ];
 
 function fail(message) {
@@ -664,6 +664,24 @@ const expectedClientMappings = [
 }));
 
 const expectedOperationMappings = [
+  {
+    code: "routing.preview_replayed",
+    status: 409,
+    selector: "constant",
+    semanticKind: "replay",
+  },
+  {
+    code: "routing.preview_expired",
+    status: 409,
+    selector: "constant",
+    semanticKind: "expired",
+  },
+  {
+    code: "routing.preview_tampered",
+    status: 409,
+    selector: "constant",
+    semanticKind: "tampered",
+  },
   { code: "invalid_query", status: 400, selector: "constant", semanticKind: "invalid_input" },
   { code: "invalid_cursor", status: 400, selector: "constant", semanticKind: "invalid_input" },
   { code: "not_found", status: 404, selector: "constant", semanticKind: "not_found" },

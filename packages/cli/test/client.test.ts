@@ -7,6 +7,8 @@ import {
   createOperationRegistry,
   defineError,
   defineOperation,
+  routingCommitOperation,
+  routingPreviewOperation,
 } from "@agent-mail/contracts";
 
 const requestSchema = z.strictObject({ id: z.string().min(1) });
@@ -48,6 +50,7 @@ async function withServer(
   handler: (request: IncomingMessage, response: ServerResponse) => void,
   run: (client: CliClient, port: number) => Promise<void>,
   timeouts: Readonly<{ connectMs: number; controlMs: number; streamIdleMs: number }> = { connectMs: 100, controlMs: 100, streamIdleMs: 100 },
+  clientRegistry = registry,
 ): Promise<void> {
   const server = createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -58,7 +61,7 @@ async function withServer(
     await run(
       createCliClient({
         baseUrl: `http://127.0.0.1:${port}`,
-        registry,
+        registry: clientRegistry,
         timeouts,
       }),
       port,
@@ -104,6 +107,56 @@ describe("CLI shared operation client", () => {
       mode = "transport";
       await expect(client.request({ operation: "fixture.read", input: { id: "one" } })).rejects.toMatchObject({ kind: "http_error", status: 413 });
     });
+  });
+
+  it("validates routing commit errors by operation-owned code and strict details", async () => {
+    const routingRegistry = createOperationRegistry([routingPreviewOperation, routingCommitOperation]);
+    let code = "routing.preview_replayed";
+    await withServer((_request, response) => {
+      response.writeHead(409, { "content-type": "application/json" });
+      response.end(
+        JSON.stringify({
+          code,
+          message:
+            code === "routing.preview_replayed"
+              ? "routing preview was already consumed"
+              : code === "routing.preview_expired"
+                ? "routing preview has expired"
+                : "routing preview authority does not match",
+          correlationId: "request:routing",
+          details: { previewId: "preview:authority" },
+        }),
+      );
+    }, async (client) => {
+      const request = {
+        operation: "routing.commit",
+        input: { previewId: "preview:authority", digest: "a".repeat(64), dryRun: false },
+      } as const;
+      for (const expected of [
+        ["routing.preview_replayed", 409],
+        ["routing.preview_expired", 409],
+        ["routing.preview_tampered", 409],
+      ] as const) {
+        code = expected[0];
+        await expect(client.request(request)).rejects.toMatchObject({
+          kind: "http_error",
+          status: expected[1],
+        });
+      }
+      await expect(
+        client.request({
+          operation: "routing.preview",
+          input: {
+            rule: {
+              version: 1,
+              ruleId: "rule:authority",
+              ruleVersion: 1,
+              predicate: { kind: "exactSender", sender: "authority@example.com" },
+            },
+          },
+        }),
+      ).rejects.toMatchObject({ kind: "client_contract_error" });
+    }, { connectMs: 100, controlMs: 100, streamIdleMs: 100 }, routingRegistry);
   });
 
   it("classifies connect and control deadlines separately", async () => {

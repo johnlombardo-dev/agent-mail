@@ -360,6 +360,45 @@
         "properties": {},
         "type": "object"
       },
+      "ErrorDetails_routing_commit_routing_preview_expired": {
+        "additionalProperties": false,
+        "properties": {
+          "previewId": {
+            "maxLength": 256,
+            "minLength": 9,
+            "pattern": "^preview:[^\\s:][^\\s]*$",
+            "type": "string"
+          }
+        },
+        "required": ["previewId"],
+        "type": "object"
+      },
+      "ErrorDetails_routing_commit_routing_preview_replayed": {
+        "additionalProperties": false,
+        "properties": {
+          "previewId": {
+            "maxLength": 256,
+            "minLength": 9,
+            "pattern": "^preview:[^\\s:][^\\s]*$",
+            "type": "string"
+          }
+        },
+        "required": ["previewId"],
+        "type": "object"
+      },
+      "ErrorDetails_routing_commit_routing_preview_tampered": {
+        "additionalProperties": false,
+        "properties": {
+          "previewId": {
+            "maxLength": 256,
+            "minLength": 9,
+            "pattern": "^preview:[^\\s:][^\\s]*$",
+            "type": "string"
+          }
+        },
+        "required": ["previewId"],
+        "type": "object"
+      },
       "ErrorDetails_sync_pause_sync_control_cancelled": {
         "additionalProperties": false,
         "properties": {
@@ -22113,12 +22152,66 @@
                           "type": "object"
                         }
                       ]
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PublicError"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "const": "routing.preview_replayed"
+                            },
+                            "details": {
+                              "$ref": "#/components/schemas/ErrorDetails_routing_commit_routing_preview_replayed"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PublicError"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "const": "routing.preview_expired"
+                            },
+                            "details": {
+                              "$ref": "#/components/schemas/ErrorDetails_routing_commit_routing_preview_expired"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/PublicError"
+                        },
+                        {
+                          "properties": {
+                            "code": {
+                              "const": "routing.preview_tampered"
+                            },
+                            "details": {
+                              "$ref": "#/components/schemas/ErrorDetails_routing_commit_routing_preview_tampered"
+                            }
+                          },
+                          "type": "object"
+                        }
+                      ]
                     }
                   ]
                 }
               }
             },
-            "description": "Registered public error (action.operator_challenge_expired, action.operator_challenge_consumed, action.approval_not_found, action.approval_mismatch, action.approval_expired, action.approval_cancelled, action.approval_invalidated, action.approval_consumed, action.plan_version_stale, action.plan_not_pending, action.plan_expired, action.legacy_authority)"
+            "description": "Registered public error (action.operator_challenge_expired, action.operator_challenge_consumed, action.approval_not_found, action.approval_mismatch, action.approval_expired, action.approval_cancelled, action.approval_invalidated, action.approval_consumed, action.plan_version_stale, action.plan_not_pending, action.plan_expired, action.legacy_authority, routing.preview_replayed, routing.preview_expired, routing.preview_tampered)"
           },
           "413": {
             "content": {

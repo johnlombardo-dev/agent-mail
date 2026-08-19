@@ -118,7 +118,7 @@ describe("P6-C10A shared HTTP error authority", () => {
       .update(readFileSync(new URL("../../../docs/openapi.json", import.meta.url)))
       .digest("hex");
     expect(Object.keys(document.paths)).toHaveLength(25);
-    expect(Object.keys(document.components.schemas)).toHaveLength(106);
-    expect(checkedDigest).toBe("ff9c2286e461c0402857e51f727d1fc36ae7f4cb0037308de76ba4ef7e4483ac");
+    expect(Object.keys(document.components.schemas)).toHaveLength(109);
+    expect(checkedDigest).toBe("96dad7ab17bf97291b9edf24b613d177b7cbb1e3e9cd528aefa68d96d4f99c6e");
   });
 });

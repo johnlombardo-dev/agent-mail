@@ -425,6 +425,9 @@ const sharedSemanticKinds: Readonly<Record<string, SemanticKind>> = Object.freez
 const operationErrorSemanticKinds: Readonly<
   Record<string, SemanticKind | Readonly<Record<string, SemanticKind>>>
 > = Object.freeze({
+  "routing.preview_replayed": "replay",
+  "routing.preview_expired": "expired",
+  "routing.preview_tampered": "tampered",
   invalid_query: "invalid_input",
   invalid_cursor: "invalid_input",
   not_found: "not_found",

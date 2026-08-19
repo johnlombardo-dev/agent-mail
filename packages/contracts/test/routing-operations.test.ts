@@ -8,6 +8,9 @@ import {
   RoutingRuleSchema,
   labelOperation,
   routingCommitOperation,
+  routingCommitErrorDefinitions,
+  routingCommitTerminalSchema,
+  routingPreviewIdentityErrorDetailsSchema,
   routingOperationDefinitions,
   routingPreviewOperation,
 } from "../src/routing-operations";
@@ -173,5 +176,53 @@ describe("routing and label operation contracts", () => {
       assignedAt: "2026-08-18T00:01:00.000Z",
       provenance,
     });
+  });
+
+  it("closes routing commit terminal errors to strict preview identity details", () => {
+    expect(routingCommitOperation.errors).toEqual(routingCommitErrorDefinitions);
+    expect(routingCommitErrorDefinitions.map(({ code, status, message }) => ({ code, status, message }))).toEqual([
+      {
+        code: "routing.preview_replayed",
+        status: 409,
+        message: "routing preview was already consumed",
+      },
+      {
+        code: "routing.preview_expired",
+        status: 409,
+        message: "routing preview has expired",
+      },
+      {
+        code: "routing.preview_tampered",
+        status: 409,
+        message: "routing preview authority does not match",
+      },
+    ]);
+    expect(
+      routingPreviewIdentityErrorDetailsSchema.parse({ previewId: preview.previewId }),
+    ).toEqual({ previewId: preview.previewId });
+    expect(() =>
+      routingPreviewIdentityErrorDetailsSchema.parse({
+        previewId: preview.previewId,
+        digest: preview.digest,
+      }),
+    ).toThrow();
+    expect(routingCommitTerminalSchema.parse({
+      kind: "routing-commit-terminal",
+      disposition: "replayed",
+      previewId: preview.previewId,
+    })).toEqual({
+      kind: "routing-commit-terminal",
+      disposition: "replayed",
+      previewId: preview.previewId,
+    });
+    expect(routingCommitTerminalSchema.parse({
+      kind: "routing-commit-terminal",
+      disposition: "not-found",
+    })).toEqual({ kind: "routing-commit-terminal", disposition: "not-found" });
+    expect(() => routingCommitTerminalSchema.parse({
+      kind: "routing-commit-terminal",
+      disposition: "not-found",
+      previewId: preview.previewId,
+    })).toThrow();
   });
 });

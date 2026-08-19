@@ -1,10 +1,10 @@
 # CLI command outcome coverage v1
 
-Status: checked coverage view. Normative oracle SHA-256: d0f569cbb3364bebbf3e02ef33b69997a05b4bf6d5dd9485cf386e8ab7768c6d.
+Status: checked coverage view. Normative oracle SHA-256: 428c4043a5cfa031d237bf9638911b8a2ec71d7c919c11dacfde31b70f3bcfa8.
 
 [cli-command-outcome-oracle.v1.json](cli-command-outcome-oracle.v1.json) is normative. It contains 11 requirements, 19 decisions, 19 constructive examples, 10 property obligations, 27 downstream obligations, and 12 adjacent counterexamples.
 
-No unresolved #213 policy choices. One downstream contract gap remains: routing operations do not yet expose strict replay, expiry, or tamper discriminants. I156-01 assigns that gap without allowing a CLI-private substitute.
+No unresolved #213 policy choices. Issue #220 reconciles the downstream routing contract by adding exactly three operation-scoped `routing.commit` mappings: replay/82, expired/81, and tampered/83 at HTTP 409. The #213 registry and all prior mappings remain unchanged; I156-01 still forbids CLI-private substitutes.
 
 ## Requirement closure
 
@@ -103,6 +103,8 @@ The checker extracts the accepted CliClientErrorKind union and requires this exa
 | action.plan_expired                  |  409 | expired/81       |
 | action.legacy_authority              |  409 | authorization/77 |
 
+The three #220 routing errors are operation-scoped and are intentionally absent from this shared table.
+
 ## Operation-scoped error coverage
 
 | Code                              | HTTP | Selector       | Exact projection                                                                      |
@@ -110,6 +112,9 @@ The checker extracts the accepted CliClientErrorKind union and requires this exa
 | invalid_query                     |  400 | constant       | invalid_input/65                                                                      |
 | invalid_cursor                    |  400 | constant       | invalid_input/65                                                                      |
 | not_found                         |  404 | constant       | not_found/66                                                                          |
+| routing.preview_replayed          |  409 | constant       | replay/82                                                                             |
+| routing.preview_expired           |  409 | constant       | expired/81                                                                            |
+| routing.preview_tampered          |  409 | constant       | tampered/83                                                                           |
 | sync.control-rejected             |  500 | details.reason | stale-version to stale/80; incompatible-state, busy, shutdown-terminal to conflict/79 |
 | sync.control-failed               |  500 | details.reason | terminal-failure to internal/70; auth-blocked to authorization/77                     |
 | sync.control-cancelled            |  500 | constant       | cancelled/84                                                                          |
@@ -117,7 +122,7 @@ The checker extracts the accepted CliClientErrorKind union and requires this exa
 | sync.control-idempotency-conflict |  500 | constant       | conflict/79                                                                           |
 | sync.control-capacity             |  500 | constant       | temporary/75                                                                          |
 
-All 29 accepted applicability rows:
+All 32 accepted applicability rows:
 
 | Operation       | Applicable code/status rows                                                                                                                                                |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -125,6 +130,7 @@ All 29 accepted applicability rows:
 | messages.get    | not_found/404                                                                                                                                                              |
 | messages.raw    | not_found/404                                                                                                                                                              |
 | messages.search | invalid_query/400, invalid_cursor/400                                                                                                                                      |
+| routing.commit  | routing.preview_replayed/409, routing.preview_expired/409, routing.preview_tampered/409                                                                                    |
 | sync.pause      | sync.control-rejected/500, sync.control-failed/500, sync.control-cancelled/500, sync.control-timeout/500, sync.control-idempotency-conflict/500, sync.control-capacity/500 |
 | sync.resume     | sync.control-rejected/500, sync.control-failed/500, sync.control-cancelled/500, sync.control-timeout/500, sync.control-idempotency-conflict/500, sync.control-capacity/500 |
 | sync.start      | sync.control-rejected/500, sync.control-failed/500, sync.control-cancelled/500, sync.control-timeout/500                                                                   |

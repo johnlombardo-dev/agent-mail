@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
+import { unlink } from "node:fs/promises";
 import {
   publicErrorEnvelopeSchema,
   routingCommitResponseSchema,
@@ -24,6 +25,7 @@ import { applyMigrations, type Migration } from "../../storage/src/migration-run
 import { assignLocalLabel } from "../../storage/src/local-label-assignment";
 import {
   consumeRoutingPreview,
+  RoutingPreviewConsumptionError,
   type RoutingPreviewConsumptionResult,
 } from "../../storage/src/routing-preview-consumption";
 import { routingPreviewConsumptionMigration } from "../../storage/src/routing-preview-consumption-migration";
@@ -115,11 +117,11 @@ const sqlitePreviewDependencies: RoutingPreviewCreationDependencies = {
 };
 const sqliteDatabases: Database[] = [];
 
-function openRoutingSqlite(): Database {
-  const database = new Database(":memory:", { strict: true });
+function openRoutingSqlite(path = ":memory:", seedMessage = true): Database {
+  const database = new Database(path, { strict: true });
   applyMigrations(database, sqliteMigrations);
   database.exec("PRAGMA foreign_keys = ON;");
-  database.query("INSERT INTO messages (message_id) VALUES (?);").run(sqliteMessageId);
+  if (seedMessage) database.query("INSERT INTO messages (message_id) VALUES (?);").run(sqliteMessageId);
   sqliteDatabases.push(database);
   return database;
 }
@@ -227,25 +229,42 @@ function sqliteRoutingServices(
     },
     commitPreview: (request, context) => {
       const preview = previews.get(request.previewId);
-      if (preview === undefined) throw new Error("stored preview authority is missing");
+      if (preview === undefined)
+        return { kind: "routing-commit-terminal", disposition: "not-found" };
       if (request.dryRun) return sqliteUncommittedResponse(preview);
-      const result = consumeRoutingPreview(
-        database,
-        {
-          previewId: request.previewId,
-          scope: preview.scope,
-          nonce: preview.nonce,
-          digest: request.digest,
-          ruleVersion: preview.rule.ruleVersion,
-          consumerId: `consumer:${context.principal.subject}`,
-          now: nowFor(preview),
-        },
-        { digestKey: sqliteDigestKey },
-      );
-      if (result.kind === "consumed") {
-        return sqliteCommittedResponse(database, preview, result);
+      try {
+        const result = consumeRoutingPreview(
+          database,
+          {
+            previewId: request.previewId,
+            scope: preview.scope,
+            nonce: preview.nonce,
+            digest: request.digest,
+            ruleVersion: preview.rule.ruleVersion,
+            consumerId: `consumer:${context.principal.subject}`,
+            now: nowFor(preview),
+          },
+          { digestKey: sqliteDigestKey },
+        );
+        if (result.kind === "consumed") return sqliteCommittedResponse(database, preview, result);
+        return {
+          kind: "routing-commit-terminal",
+          disposition: result.kind,
+          previewId: result.previewId,
+        };
+      } catch (error: unknown) {
+        if (error instanceof RoutingPreviewConsumptionError) {
+          if (error.reason === "tampered")
+            return {
+              kind: "routing-commit-terminal",
+              disposition: "tampered",
+              previewId: preview.previewId,
+            };
+          if (error.reason === "not-found" || error.reason === "target")
+            return { kind: "routing-commit-terminal", disposition: "not-found" };
+        }
+        throw error;
       }
-      return sqliteUncommittedResponse(preview);
     },
     assignLabel: (request) => {
       if (request.dryRun) {
@@ -345,6 +364,7 @@ describe("P6-C06 routing and label HTTP handlers", () => {
       },
       commitPreview: async (input, context) => {
         calls.push({ key: `${context.operationKey}:service`, input });
+        if (input.dryRun) return dryRun;
         // The service owns the stored nonce/rule version and forwards them
         // unchanged with the client-supplied preview identity and digest.
         consumptionInputs.push({
@@ -355,8 +375,12 @@ describe("P6-C06 routing and label HTTP handlers", () => {
           ruleVersion: preview.rule.ruleVersion,
         });
         await Promise.resolve();
-        if (input.dryRun) return dryRun;
-        if (consumed) return dryRun;
+        if (consumed)
+          return {
+            kind: "routing-commit-terminal",
+            disposition: "replayed",
+            previewId: preview.previewId,
+          };
         consumed = true;
         return committed;
       },
@@ -377,10 +401,17 @@ describe("P6-C06 routing and label HTTP handlers", () => {
     expect(directPreview).toEqual(preview);
     expect(directPreview).not.toHaveProperty("committed");
 
+    const directDryRun = await commitHandler(
+      { previewId: preview.previewId, digest: preview.digest, dryRun: true },
+      contextFor("routing.commit"),
+    );
+    expect(directDryRun).toEqual(dryRun);
+    expect(consumptionInputs).toHaveLength(0);
+
     const commitRequest = { previewId: preview.previewId, digest: preview.digest, dryRun: false };
     const directCommit = await commitHandler(commitRequest, contextFor("routing.commit"));
     expect(directCommit).toEqual(committed);
-    expect(calls[1]?.input).toEqual(commitRequest);
+    expect(calls[2]?.input).toEqual(commitRequest);
     expect(consumptionInputs[0]).toEqual({
       previewId: preview.previewId,
       scope: "mail:routing:read",
@@ -393,11 +424,13 @@ describe("P6-C06 routing and label HTTP handlers", () => {
     expect(parsedCommit.previewId).toBe(preview.previewId);
     expect(parsedCommit.previewDigest).toBe(preview.digest);
 
-    const replay = await commitHandler(commitRequest, contextFor("routing.commit"));
-    expect(replay).toEqual(dryRun);
-    const parsedReplay = routingCommitResponseSchema.parse(replay);
-    expect(parsedReplay.committed).toBe(false);
-    expect(parsedReplay.decisionId).toBeNull();
+    await expect(commitHandler(commitRequest, contextFor("routing.commit"))).rejects.toMatchObject({
+      featureError: {
+        code: "routing.preview_replayed",
+        message: "routing preview was already consumed",
+        details: { previewId: preview.previewId },
+      },
+    });
   });
 
   test("routes each operation through Hono after the shared exact-scope boundary", async () => {
@@ -457,9 +490,24 @@ describe("P6-C06 routing and label HTTP handlers", () => {
         createPreview: () => preview,
         commitPreview: async (input) => {
           await Promise.resolve();
-          if (input.previewId === "preview:tampered") return failure("digest mismatch");
-          if (input.previewId === "preview:expired") return failure("preview expired");
-          if (input.previewId === "preview:replayed") return dryRun;
+          if (input.previewId === "preview:tampered")
+            return {
+              kind: "routing-commit-terminal",
+              disposition: "tampered",
+              previewId: input.previewId,
+            };
+          if (input.previewId === "preview:expired")
+            return {
+              kind: "routing-commit-terminal",
+              disposition: "expired",
+              previewId: input.previewId,
+            };
+          if (input.previewId === "preview:replayed")
+            return {
+              kind: "routing-commit-terminal",
+              disposition: "replayed",
+              previewId: input.previewId,
+            };
           return failure("durable transaction failed");
         },
         assignLabel: () => {
@@ -469,15 +517,24 @@ describe("P6-C06 routing and label HTTP handlers", () => {
       }),
     });
 
-    for (const previewId of ["preview:tampered", "preview:expired", "preview:storage-failure"]) {
+    for (const candidate of [
+      { previewId: "preview:tampered", code: "routing.preview_tampered", status: 409 },
+      { previewId: "preview:expired", code: "routing.preview_expired", status: 409 },
+      { previewId: "preview:storage-failure", code: "internal_error", status: 500 },
+    ] as const) {
       const response = await app.request(
-        request("/v1/routing/commit", { previewId, digest: preview.digest, dryRun: false }),
+        request("/v1/routing/commit", {
+          previewId: candidate.previewId,
+          digest: preview.digest,
+          dryRun: false,
+        }),
       );
       const body: unknown = await response.json();
-      expect(response.status).toBe(500);
+      expect(response.status).toBe(candidate.status);
       expect(publicErrorEnvelopeSchema.parse(body)).toMatchObject({
-        code: "internal_error",
-        details: {},
+        code: candidate.code,
+        details:
+          candidate.status === 500 ? {} : { previewId: candidate.previewId },
       });
       expect(body).not.toHaveProperty("committed");
     }
@@ -490,9 +547,11 @@ describe("P6-C06 routing and label HTTP handlers", () => {
       }),
     );
     const replayBody: unknown = await replayResponse.json();
-    expect(replayResponse.status).toBe(200);
-    expect(replayBody).toEqual(dryRun);
-    expect(replayBody).toHaveProperty("decision", null);
+    expect(replayResponse.status).toBe(409);
+    expect(publicErrorEnvelopeSchema.parse(replayBody)).toMatchObject({
+      code: "routing.preview_replayed",
+      details: { previewId: "preview:replayed" },
+    });
     expect(calls).toEqual([]);
   });
 
@@ -583,14 +642,195 @@ describe("P6-C06 composed Hono and SQLite acceptance", () => {
 
     const replayResponse = await app.request(request("/v1/routing/commit", commitRequest));
     const replayBody: unknown = await replayResponse.json();
-    expect(replayResponse.status).toBe(200);
-    expect(replayBody).toEqual(sqliteUncommittedResponse(storedPreview));
+    expect(replayResponse.status).toBe(409);
+    expect(publicErrorEnvelopeSchema.parse(replayBody)).toMatchObject({
+      code: "routing.preview_replayed",
+      details: { previewId: storedPreview.previewId },
+    });
     expect(sqliteCounts(database)).toEqual({
       previews: 1,
       decisions: 1,
       assignments: 1,
       labels: 1,
     });
+  });
+
+  test("routing dry-run is inert and coarse not-found terminals disclose no target", async () => {
+    const database = openRoutingSqlite();
+    const previews = new Map<string, RoutingPreview>();
+    const app = createHttpApp({
+      authenticate: authenticated,
+      handlers: createRoutingHandlers(sqliteRoutingServices(database, previews, () => "2026-08-18T00:30:00.000Z")),
+    });
+    const preview = createRoutingPreview(
+      database,
+      sqlitePreviewInput("preview:dry-run"),
+      sqlitePreviewDependencies,
+    );
+    previews.set(preview.previewId, preview);
+    const before = sqliteCounts(database);
+    const dryRunResponse = await app.request(
+      request("/v1/routing/commit", {
+        previewId: preview.previewId,
+        digest: preview.digest,
+        dryRun: true,
+      }),
+    );
+    expect(dryRunResponse.status).toBe(200);
+    expect(await dryRunResponse.json()).toEqual(sqliteUncommittedResponse(preview));
+    expect(sqliteCounts(database)).toEqual(before);
+
+    const expiryResponse = await app.request(
+      request("/v1/routing/commit", {
+        previewId: preview.previewId,
+        digest: preview.digest,
+        dryRun: false,
+      }),
+    );
+    expect(expiryResponse.status).toBe(409);
+    expect(await expiryResponse.json()).toMatchObject({
+      code: "routing.preview_expired",
+      details: { previewId: preview.previewId },
+    });
+    expect(sqliteCounts(database)).toEqual(before);
+
+    const missingResponse = await app.request(
+      request("/v1/routing/commit", {
+        previewId: "preview:missing-authority",
+        digest: preview.digest,
+        dryRun: false,
+      }),
+    );
+    const missingBody: unknown = await missingResponse.json();
+    expect(missingResponse.status).toBe(404);
+    expect(missingBody).toEqual(expect.objectContaining({ code: "not_found", details: {} }));
+    expect(missingBody).not.toHaveProperty("previewId");
+    expect(sqliteCounts(database)).toEqual(before);
+
+    const targetDatabase = openRoutingSqlite();
+    const targetPreviews = new Map<string, RoutingPreview>();
+    const targetPreview = createRoutingPreview(
+      targetDatabase,
+      sqlitePreviewInput("preview:missing-target"),
+      sqlitePreviewDependencies,
+    );
+    targetPreviews.set(targetPreview.previewId, targetPreview);
+    targetDatabase.query("DELETE FROM messages WHERE message_id = ?;").run(sqliteMessageId);
+    const targetApp = createHttpApp({
+      authenticate: authenticated,
+      handlers: createRoutingHandlers(sqliteRoutingServices(targetDatabase, targetPreviews)),
+    });
+    const targetResponse = await targetApp.request(
+      request("/v1/routing/commit", {
+        previewId: targetPreview.previewId,
+        digest: targetPreview.digest,
+        dryRun: false,
+      }),
+    );
+    expect(targetResponse.status).toBe(404);
+    expect(await targetResponse.json()).toEqual(
+      expect.objectContaining({ code: "not_found", details: {} }),
+    );
+    expect(sqliteCounts(targetDatabase)).toEqual({
+      previews: 1,
+      decisions: 0,
+      assignments: 0,
+      labels: 0,
+    });
+  });
+
+  test("reopen preserves the one-way receipt and projects replay", async () => {
+    const path = `/tmp/agent-mail-routing-reopen-${crypto.randomUUID()}.sqlite`;
+    let database = openRoutingSqlite(path);
+    const previews = new Map<string, RoutingPreview>();
+    const preview = createRoutingPreview(
+      database,
+      sqlitePreviewInput("preview:reopen"),
+      sqlitePreviewDependencies,
+    );
+    previews.set(preview.previewId, preview);
+    const firstApp = createHttpApp({
+      authenticate: authenticated,
+      handlers: createRoutingHandlers(sqliteRoutingServices(database, previews)),
+    });
+    const requestBody = {
+      previewId: preview.previewId,
+      digest: preview.digest,
+      dryRun: false,
+    };
+    const first = await firstApp.request(request("/v1/routing/commit", requestBody));
+    expect(first.status).toBe(200);
+    const receipt = database.query("SELECT consumed_at, consumed_by FROM routing_previews;").get();
+    database.close();
+    database = openRoutingSqlite(path, false);
+    const replayApp = createHttpApp({
+      authenticate: authenticated,
+      handlers: createRoutingHandlers(sqliteRoutingServices(database, previews)),
+    });
+    const replay = await replayApp.request(request("/v1/routing/commit", requestBody));
+    expect(replay.status).toBe(409);
+    expect(await replay.json()).toMatchObject({
+      code: "routing.preview_replayed",
+      details: { previewId: preview.previewId },
+    });
+    expect(database.query("SELECT consumed_at, consumed_by FROM routing_previews;").get()).toEqual(receipt);
+    expect(sqliteCounts(database)).toEqual({
+      previews: 1,
+      decisions: 1,
+      assignments: 1,
+      labels: 1,
+    });
+    database.close();
+    await unlink(path);
+  });
+
+  test("independent stored authority-field tamper maps to previewId-only conflict", async () => {
+    const mutations = [
+      ["rule_version", 4],
+      ["facts_json", JSON.stringify({ senderAddrSpec: "other@example.com", listId: null })],
+      ["provenance_json", JSON.stringify({ source: "tampered", evaluationId: "eval:123" })],
+      ["candidate_targets_json", JSON.stringify([{ kind: "local-label", messageId: sqliteMessageId, label: "label:other" }])],
+      ["created_at", "2026-08-18T00:00:01.000Z"],
+      ["expires_at", "2026-08-18T00:30:00.000Z"],
+      ["nonce", "nonce:tampered"],
+      ["digest", "f".repeat(64)],
+    ] as const;
+    for (const [field, value] of mutations) {
+      const database = openRoutingSqlite();
+      const previews = new Map<string, RoutingPreview>();
+      const preview = createRoutingPreview(
+        database,
+        sqlitePreviewInput(`preview:tamper-${field}`),
+        sqlitePreviewDependencies,
+      );
+      previews.set(preview.previewId, preview);
+      database.exec("DROP TRIGGER routing_previews_reject_update;");
+      database.query(`UPDATE routing_previews SET ${field} = ? WHERE preview_id = ?;`).run(value, preview.previewId);
+      const app = createHttpApp({
+        authenticate: authenticated,
+        handlers: createRoutingHandlers(sqliteRoutingServices(database, previews)),
+      });
+      const response = await app.request(
+        request("/v1/routing/commit", {
+          previewId: preview.previewId,
+          digest: preview.digest,
+          dryRun: false,
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toEqual(
+        expect.objectContaining({
+          code: "routing.preview_tampered",
+          details: { previewId: preview.previewId },
+        }),
+      );
+      expect(sqliteCounts(database)).toEqual({
+        previews: 1,
+        decisions: 0,
+        assignments: 0,
+        labels: 0,
+      });
+    }
   });
 
   test("tamper, expiry, and an injected post-label transaction failure leave zero labels", async () => {
@@ -641,13 +881,16 @@ describe("P6-C06 composed Hono and SQLite acceptance", () => {
       );
       const body: unknown = await response.json();
       if (candidate.name === "expiry") {
-        expect(response.status).toBe(200);
-        expect(body).toEqual(sqliteUncommittedResponse(preview));
-      } else {
-        expect(response.status).toBe(500);
+        expect(response.status).toBe(409);
         expect(publicErrorEnvelopeSchema.parse(body)).toMatchObject({
-          code: "internal_error",
-          details: {},
+          code: "routing.preview_expired",
+          details: { previewId: preview.previewId },
+        });
+      } else {
+        expect(response.status).toBe(candidate.name === "tamper" ? 409 : 500);
+        expect(publicErrorEnvelopeSchema.parse(body)).toMatchObject({
+          code: candidate.name === "tamper" ? "routing.preview_tampered" : "internal_error",
+          details: candidate.name === "tamper" ? { previewId: preview.previewId } : {},
         });
         expect(body).not.toHaveProperty("committed", true);
       }

@@ -1,6 +1,6 @@
 # CLI command outcome decisions v1
 
-Status: checked decision view. Normative oracle SHA-256: d0f569cbb3364bebbf3e02ef33b69997a05b4bf6d5dd9485cf386e8ab7768c6d.
+Status: checked decision view. Normative oracle SHA-256: 428c4043a5cfa031d237bf9638911b8a2ec71d7c919c11dacfde31b70f3bcfa8.
 
 [cli-command-outcome-oracle.v1.json](cli-command-outcome-oracle.v1.json) is normative. The table explains its frozen choices and cannot override them.
 
@@ -39,3 +39,7 @@ Status: checked decision view. Normative oracle SHA-256: d0f569cbb3364bebbf3e02e
 ## Change rule
 
 Within v1, an existing kind, number, code/details mapping, destination, framing rule, mode compatibility rule, or classifier meaning cannot change. An additive operation may reuse an existing kind only after the oracle gains exact applicability and constructive proof. A new semantic kind or changed number requires a new oracle version and migration note.
+
+## #220 reconciliation
+
+Issue #220 supplies exactly three additive `routing.commit` error mappings at HTTP 409: `routing.preview_replayed` to replay/82, `routing.preview_expired` to expired/81, and `routing.preview_tampered` to tampered/83. This preserves every #213 semantic, exit, destination, framing, and classifier choice; no global error applicability or CLI-private mapping is added.

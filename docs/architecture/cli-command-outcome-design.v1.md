@@ -1,6 +1,6 @@
 # CLI command outcomes v1
 
-Status: specified, not implemented. Normative oracle SHA-256: d0f569cbb3364bebbf3e02ef33b69997a05b4bf6d5dd9485cf386e8ab7768c6d.
+Status: specified, not implemented. Normative oracle SHA-256: 428c4043a5cfa031d237bf9638911b8a2ec71d7c919c11dacfde31b70f3bcfa8.
 
 [cli-command-outcome-oracle.v1.json](cli-command-outcome-oracle.v1.json) is the single normative authority. This file, the decisions view, and the coverage view are checked projections. If prose conflicts with the JSON, the JSON wins.
 
@@ -80,7 +80,7 @@ The seven accepted client kinds are closed:
 | aborted               | cli.cancelled                   | cancelled           |       84 |
 | transport_error       | cli.transport                   | unavailable         |       69 |
 
-The coverage view contains the constructive 26-row shared mapping, nine operation-code mappings, and all 29 operation applicability rows.
+The coverage view contains the constructive 26-row shared mapping, twelve operation-code mappings, and all 32 operation applicability rows. Issue #220 adds only the three `routing.commit` mappings `routing.preview_replayed`/replay 82, `routing.preview_expired`/expired 81, and `routing.preview_tampered`/tampered 83 at HTTP 409; the #213 exit registry and every existing mapping remain unchanged.
 
 ## HTTP-200 domain values
 
@@ -104,7 +104,7 @@ The oracle encodes these rules as a typed recursive expression schema, typed pro
 
 Doctor healthy is success. Doctor degraded or unhealthy is attention 85 with every finding preserved. Sync authBlocked is attention 85; every other validated status state is success. Routing committed and explicit dry-run values are success. Label committed and dry-run values are success; a validated non-dry-run uncommitted label is attention 85.
 
-Routing preview/commit currently expose no strict public replay, expiry, or tamper discriminants. The CLI must not parse storage exceptions or messages and must not invent private error codes. The contract/route owner must register those discriminants before issue #156 can select replay 82, expired 81, or tampered 83.
+Routing preview has no error rows; routing commit now consumes the three strict operation-scoped #220 discriminants: `routing.preview_replayed` maps to replay 82, `routing.preview_expired` maps to expired 81, and `routing.preview_tampered` maps to tampered 83, all at HTTP 409. The CLI still must not parse storage exceptions or messages or invent private error codes. These additive rows do not change any #213 semantic kind, exit, destination, framing, or classifier rule.
 
 ## Emission and termination protocol
 

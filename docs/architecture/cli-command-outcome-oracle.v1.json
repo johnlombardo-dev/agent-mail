@@ -516,6 +516,9 @@
             "action.plan_not_pending",
             "action.plan_expired",
             "action.legacy_authority",
+            "routing.preview_replayed",
+            "routing.preview_expired",
+            "routing.preview_tampered",
             "invalid_query",
             "invalid_cursor",
             "sync.control-rejected",
@@ -1655,6 +1658,24 @@
   ],
   "operationErrorMappings": [
     {
+      "code": "routing.preview_replayed",
+      "status": 409,
+      "selector": "constant",
+      "semanticKind": "replay"
+    },
+    {
+      "code": "routing.preview_expired",
+      "status": 409,
+      "selector": "constant",
+      "semanticKind": "expired"
+    },
+    {
+      "code": "routing.preview_tampered",
+      "status": 409,
+      "selector": "constant",
+      "semanticKind": "tampered"
+    },
+    {
       "code": "invalid_query",
       "status": 400,
       "selector": "constant",
@@ -1710,6 +1731,9 @@
     }
   ],
   "operationErrorApplicability": [
+    { "operationKey": "routing.commit", "code": "routing.preview_replayed", "status": 409 },
+    { "operationKey": "routing.commit", "code": "routing.preview_expired", "status": 409 },
+    { "operationKey": "routing.commit", "code": "routing.preview_tampered", "status": 409 },
     { "operationKey": "messages.search", "code": "invalid_query", "status": 400 },
     { "operationKey": "messages.search", "code": "invalid_cursor", "status": 400 },
     { "operationKey": "messages.get", "code": "not_found", "status": 404 },

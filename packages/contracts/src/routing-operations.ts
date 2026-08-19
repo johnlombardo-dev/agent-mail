@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { defineError, type ErrorDefinition } from "./error-envelope";
 import { defineOperation, type OperationDefinition } from "./operation-registry";
 
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -272,6 +273,66 @@ export const routingCommitResponseSchema = z.discriminatedUnion("committed", [
   uncommittedResponseSchema,
 ]);
 
+/** Public correlation details for a routing commit authority conflict. */
+export const routingPreviewIdentityErrorDetailsSchema = z.strictObject({
+  previewId: z
+    .string()
+    .min(9)
+    .max(256)
+    .regex(/^preview:[^\s:][^\s]*$/u, "preview ID must use the preview: namespace")
+    .refine((value) => !hasControlCharacters(value), "preview ID has control characters"),
+});
+
+export type RoutingPreviewIdentityErrorDetails = z.infer<
+  typeof routingPreviewIdentityErrorDetailsSchema
+>;
+
+/** Operation-owned errors: these never become global HTTP error codes. */
+export const routingCommitErrorDefinitions = [
+  defineError({
+    code: "routing.preview_replayed",
+    status: 409,
+    message: "routing preview was already consumed",
+    details: routingPreviewIdentityErrorDetailsSchema,
+  }),
+  defineError({
+    code: "routing.preview_expired",
+    status: 409,
+    message: "routing preview has expired",
+    details: routingPreviewIdentityErrorDetailsSchema,
+  }),
+  defineError({
+    code: "routing.preview_tampered",
+    status: 409,
+    message: "routing preview authority does not match",
+    details: routingPreviewIdentityErrorDetailsSchema,
+  }),
+] as const satisfies readonly ErrorDefinition[];
+
+export const RoutingCommitTerminalDispositionSchema = z.enum([
+  "replayed",
+  "expired",
+  "tampered",
+  "not-found",
+]);
+export type RoutingCommitTerminalDisposition = z.infer<
+  typeof RoutingCommitTerminalDispositionSchema
+>;
+
+/** Strict service terminal algebra for non-success routing.commit outcomes. */
+export const routingCommitTerminalSchema = z.discriminatedUnion("disposition", [
+  z.strictObject({
+    kind: z.literal("routing-commit-terminal"),
+    disposition: z.enum(["replayed", "expired", "tampered"]),
+    previewId: routingPreviewIdSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("routing-commit-terminal"),
+    disposition: z.literal("not-found"),
+  }),
+]);
+export type RoutingCommitTerminal = z.infer<typeof routingCommitTerminalSchema>;
+
 export const labelRequestSchema = z.strictObject({
   messageId: messageIdSchema,
   label: localLabelSchema,
@@ -333,6 +394,7 @@ export const routingCommitOperation: OperationDefinition<
   scope: "mail:routing:write",
   request: routingCommitRequestSchema,
   response: routingCommitResponseSchema,
+  errors: routingCommitErrorDefinitions,
   streaming: "none",
   strictness: "strict",
 });
@@ -383,5 +445,7 @@ export const RoutingPreviewRequestSchema = routingPreviewRequestSchema;
 export const RoutingPreviewResponseSchema = routingPreviewResponseSchema;
 export const RoutingCommitRequestSchema = routingCommitRequestSchema;
 export const RoutingCommitResponseSchema = routingCommitResponseSchema;
+export const RoutingPreviewIdentityErrorDetailsSchema = routingPreviewIdentityErrorDetailsSchema;
+export const RoutingCommitTerminalSchema = routingCommitTerminalSchema;
 export const LabelRequestSchema = labelRequestSchema;
 export const LabelResponseSchema = labelResponseSchema;

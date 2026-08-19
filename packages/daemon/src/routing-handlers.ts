@@ -3,10 +3,13 @@ import {
   labelResponseSchema,
   routingCommitRequestSchema,
   routingCommitResponseSchema,
+  routingCommitErrorDefinitions,
+  routingCommitTerminalSchema,
   routingPreviewRequestSchema,
   routingPreviewResponseSchema,
   type LabelRequest,
   type RoutingCommitRequest,
+  type RoutingCommitTerminal,
   type RoutingPreviewRequest,
 } from "@agent-mail/contracts";
 import { z } from "zod";
@@ -16,6 +19,7 @@ import type {
   OperationHandlerContext,
   OperationHandlerMap,
 } from "./http";
+import { RegisteredFeatureErrorException } from "./http";
 
 /** The typed authority context forwarded to every routing/label service. */
 export type RoutingServiceContext = Readonly<{
@@ -49,14 +53,27 @@ export type RoutingServiceResult<TResponse> =
   | RoutingServiceOutcome<TResponse>
   | Promise<TResponse | RoutingServiceOutcome<TResponse>>;
 
+export type RoutingCommitServiceResult =
+  | RoutingCommitResponse
+  | RoutingServiceOutcome<RoutingCommitResponse>
+  | RoutingCommitTerminal
+  | Promise<
+      RoutingCommitResponse | RoutingServiceOutcome<RoutingCommitResponse> | RoutingCommitTerminal
+    >;
+
 export type RoutingService<TRequest, TResponse> = (
   request: TRequest,
   context: RoutingServiceContext,
 ) => RoutingServiceResult<TResponse>;
 
+export type RoutingCommitService = (
+  request: RoutingCommitRequest,
+  context: RoutingServiceContext,
+) => RoutingCommitServiceResult;
+
 export type RoutingServices = Readonly<{
   readonly createPreview: RoutingService<RoutingPreviewRequest, RoutingPreviewResponse>;
-  readonly commitPreview: RoutingService<RoutingCommitRequest, RoutingCommitResponse>;
+  readonly commitPreview: RoutingCommitService;
   readonly assignLabel: RoutingService<LabelRequest, LabelResponse>;
 }>;
 
@@ -66,6 +83,30 @@ type LabelResponse = z.infer<typeof labelResponseSchema>;
 
 type RoutingServiceFailureOutcome = RoutingServiceFailure | RoutingServiceBlocked;
 type ServiceSuccess = Readonly<{ readonly value: unknown }>;
+
+function routingCommitTerminalError(terminal: RoutingCommitTerminal): Readonly<{
+  readonly code: string;
+  readonly message: string;
+  readonly details: Readonly<Record<string, unknown>>;
+}> {
+  if (terminal.disposition === "not-found") {
+    return {
+      code: "not_found",
+      message: "routing commit resource was not found",
+      details: {},
+    };
+  }
+  const code =
+    terminal.disposition === "replayed"
+      ? "routing.preview_replayed"
+      : terminal.disposition === "expired"
+        ? "routing.preview_expired"
+        : "routing.preview_tampered";
+  const definition = routingCommitErrorDefinitions.find((candidate) => candidate.code === code);
+  if (definition === undefined || definition.message === undefined)
+    throw new TypeError(`missing routing error definition: ${code}`);
+  return { code, message: definition.message, details: { previewId: terminal.previewId } };
+}
 
 /**
  * Thrown only after a routing service reports failure or blocked work. The
@@ -123,12 +164,22 @@ async function invokeService<TRequest, TResponse>(
   context: RoutingServiceContext,
   requestSchema: { parse(value: unknown): TRequest },
   responseSchema: { parse(value: unknown): TResponse },
-  service: RoutingService<TRequest, TResponse>,
+  service: (
+    request: TRequest,
+    context: RoutingServiceContext,
+  ) => RoutingServiceResult<TResponse> | RoutingCommitServiceResult,
+  terminalSchema?: typeof routingCommitTerminalSchema,
 ): Promise<TResponse> {
   // Keep this parse for direct adapter callers. The shared transport also
   // parses the request, but an exported handler must not trust an untyped call.
   const request = requestSchema.parse(input);
   const result: unknown = await service(request, context);
+  if (terminalSchema !== undefined) {
+    const terminal = terminalSchema.safeParse(result);
+    if (terminal.success) {
+      throw new RegisteredFeatureErrorException(routingCommitTerminalError(terminal.data));
+    }
+  }
   const failure = serviceFailure(result);
   if (failure !== undefined) throw new RoutingServiceOutcomeError(failure);
 
@@ -142,10 +193,21 @@ async function invokeService<TRequest, TResponse>(
 function handlerFor<TRequest, TResponse>(
   requestSchema: { parse(value: unknown): TRequest },
   responseSchema: { parse(value: unknown): TResponse },
-  service: RoutingService<TRequest, TResponse>,
+  service: (
+    request: TRequest,
+    context: RoutingServiceContext,
+  ) => RoutingServiceResult<TResponse> | RoutingCommitServiceResult,
+  terminalSchema?: typeof routingCommitTerminalSchema,
 ): OperationHandler {
   return (input: unknown, context: OperationHandlerContext) =>
-    invokeService(input, serviceContext(context), requestSchema, responseSchema, service);
+    invokeService(
+      input,
+      serviceContext(context),
+      requestSchema,
+      responseSchema,
+      service,
+      terminalSchema,
+    );
 }
 
 /** Create the three routing and local-label handlers for the public registry. */
@@ -160,6 +222,7 @@ export function createRoutingHandlers(services: RoutingServices): OperationHandl
       routingCommitRequestSchema,
       routingCommitResponseSchema,
       services.commitPreview,
+      routingCommitTerminalSchema,
     ),
     "messages.label": handlerFor(labelRequestSchema, labelResponseSchema, services.assignLabel),
   });

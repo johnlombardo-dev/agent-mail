@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { actionPlanInspectResponseSchema, createOperationRegistry, httpErrorRegistry } from "@agent-mail/contracts";
+import {
+  actionPlanInspectResponseSchema,
+  createOperationRegistry,
+  httpErrorRegistry,
+  routingCommitOperation,
+} from "@agent-mail/contracts";
 import { z } from "zod";
 import acceptedOracle from "../../../docs/architecture/cli-command-outcome-oracle.v1.json" with {
   type: "json",
@@ -87,6 +92,7 @@ const errorDetailCandidates: readonly Readonly<Record<string, unknown>>[] = [
   { planId: "plan:example", state: "pending" },
   { planId: "plan:example", expiredAt: "2026-01-01T00:00:00.000Z" },
   { planId: "plan:example" },
+  { previewId: "preview:example" },
   { commandId: "command:pause", command: "pause", actorState: "watching", version: 12, incarnationId: "incarnation:example", reason: "stale-version" },
   { commandId: "command:pause", command: "pause", actorState: "watching", version: 12, incarnationId: "incarnation:example", reason: "deadline-elapsed", deadlineMs: 1000 },
   { commandId: "command:pause", command: "pause", actorState: "watching", version: 12, incarnationId: "incarnation:example", reason: "key-reused-with-different-fingerprint", idempotencyKey: "idempotency:example" },
@@ -369,7 +375,7 @@ describe("command outcome authority", () => {
       expect(() => parseRegisteredError({ ...envelope, details: { hostile: true } }, "unknown.operation")).toThrow();
     }
 
-    expect(oracle.operationErrorApplicability).toHaveLength(29);
+    expect(oracle.operationErrorApplicability).toHaveLength(32);
     for (const row of oracle.operationErrorApplicability) {
       const operation = must(publicCliOperations.find((candidate) => candidate.key === row.operationKey), `missing operation ${row.operationKey}`);
       const definition = must(operation.errors.find((candidate) => candidate.code === row.code), `missing operation error ${row.code}`);
@@ -404,6 +410,36 @@ describe("command outcome authority", () => {
     const registered = createCommandValue({ operationKey: "messages.search", data: precedence, semanticKind: "success", humanLines });
     expect(registered).toMatchObject({ kind: "failure", semanticKind: "invalid_input" });
     expect(() => parseRegisteredError(precedence, "messages.get")).toThrow();
+  });
+
+  it("maps routing commit authority errors by code and rejects cross-operation use", () => {
+    const rows = [
+      ["routing.preview_replayed", "replay", 82],
+      ["routing.preview_expired", "expired", 81],
+      ["routing.preview_tampered", "tampered", 83],
+    ] as const;
+    for (const [code, semanticKind, exitCode] of rows) {
+      const definition = must(
+        routingCommitOperation.errors.find((candidate) => candidate.code === code),
+        `missing routing error ${code}`,
+      );
+      const envelope = {
+        code,
+        message: definition.message,
+        correlationId: "cli:routing",
+        details: { previewId: "preview:authority" },
+      };
+      const mapped = parseRegisteredError(envelope, "routing.commit");
+      expect(mapped.semanticKind).toBe(semanticKind);
+      expect(exitCodes[mapped.semanticKind]).toBe(exitCode);
+      expect(() => parseRegisteredError(envelope, "routing.preview")).toThrow();
+      expect(() =>
+        parseRegisteredError({ ...envelope, message: "hostile message" }, "routing.commit"),
+      ).toThrow();
+      expect(() =>
+        parseRegisteredError({ ...envelope, details: { previewId: "preview:authority", digest: "secret" } }, "routing.commit"),
+      ).toThrow();
+    }
   });
 
   it("classifies every CliClientError matrix row with its registered local mapping", () => {
