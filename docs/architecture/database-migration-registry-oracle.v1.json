@@ -1102,6 +1102,14 @@
       }
     ],
     "targetRelations": "A decoded target must exactly match one explicit acceptedHistoricalTargets row; currently T must equal 27 and its digest must equal the frozen canonical prefix 1..27. Computing a digest for prefix 28 or later does not authorize it as a conversion target. Every preserved source-history identity must exist within target 27; the live schema_migrations ledger must contain that immutable target prefix plus only exact verified suffix rows. Unknown, ambiguous, forged, truncated, or current-full-digest-substituted targets reject even when every stored component hash, conversion_id, and record_sha256 is recomputed.",
+    "legacyConversionSequence": [
+      "resolve the sole accepted historical target before conversion and freeze targetVersion 27 plus digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+      "derive targetMigrations as canonicalDatabaseMigrations.slice(0, targetVersion); never iterate the complete live registry",
+      "inside one BEGIN IMMEDIATE execute only missing targetMigrations 1..27, install conversion infrastructure, insert the immutable target-27 provenance row, rewrite schema_migrations exactly to targetMigrations 1..27, and set user_version exactly 27",
+      "verify the complete target-27 state and commit without executing, ledgering, or setting user_version for any migration above targetVersion",
+      "after conversion returns, the production opener always invokes applyMigrations with the complete live registry and beforePendingMigration; this common suffix path is not confined to a non-legacy else branch",
+      "each pending 28-or-later definition runs in its own BEGIN IMMEDIATE transaction only after verifyCanonicalMigrationPrefixState accepts the locked predecessor"
+    ],
     "suffixTransactionOrder": [
       "acquire the exclusive application write-admission barrier and complete byte-identical locked revalidation",
       "BEGIN IMMEDIATE for the next pending canonical suffix",
@@ -1131,14 +1139,22 @@
     "operationRule": "Reopen, doctor, backup serialization, empty restore, and full restore use the same strict accepted-target decoder. They report the live full-registry version/digest separately from the explicit historical target-27 version/digest. A current canonical backup may retain valid target-27 provenance after any suffix append; restore never upgrades a historical backup. A recomputed row containing the live prefix-28 full digest rejects in every operation.",
     "failureRule": "A corrupt or forged existing conversion row, including a target-27 row replaced by the recomputed prefix-28 full digest, fails in disposable preflight and again inside the locked suffix transaction before persistent suffix effects. A crash before suffix commit leaves the exact predecessor; a crash after commit leaves the complete new canonical prefix with unchanged target-27 conversion bytes. Reopen repeats verification before any later append.",
     "issue234RegistryContract": "Keep CANONICAL_DATABASE_REGISTRY_SHA256 as the live full-registry identity and add canonicalRegistryDigestAtVersion(targetVersion), which accepts only a safe contiguous canonical prefix and computes targetDigestAlgorithm. Digest computation does not confer conversion-target authority. The converter exports it for tests and resolves rows only against the explicit acceptedHistoricalTargets table; no row verifier compares target_registry_sha256 directly with the full-registry constant or derives accepted targets by enumerating live prefixes.",
-    "issue234ConverterContract": "Export verifyCanonicalMigrationPrefixState(input, expectedPrefixVersion). It shares the strict provenance decoder with final verification and operations, requires the exact canonical ledger/schema/reindex state through expectedPrefixVersion, accepts only explicit target 27, and returns bounded live/target identity evidence without writing. Every legacy conversion commits canonical target 27 first; version 28 and later run solely through the verified suffix path.",
+    "issue234ConverterContract": "Export verifyCanonicalMigrationPrefixState(input, expectedPrefixVersion). It shares the strict provenance decoder with final verification and operations, requires the exact canonical ledger/schema/reindex state through expectedPrefixVersion, accepts only explicit target 27, and returns bounded live/target identity evidence without writing. convertMigrationHistory resolves acceptedHistoricalTargets[0], freezes targetVersion 27, derives targetMigrations = canonicalDatabaseMigrations.slice(0, targetVersion), executes and ledgers only targetMigrations, sets user_version exactly targetVersion, verifies target 27, and returns without observing or applying the live suffix. A for-of loop over canonicalDatabaseMigrations or a history rewrite from the complete live registry is forbidden.",
     "issue234RunnerContract": "Extend applyMigrations with a beforePendingMigration callback. For each missing migration, applyOne executes BEGIN IMMEDIATE, invokes the callback with the locked database plus exact current prefix and pending definition, and only then may execute migration SQL, create/insert history, or set user_version. Callback rejection rolls back with no suffix effect; the production canonical opener always supplies it.",
+    "issue234OpenerContract": "The production opener performs legacy conversion when required and then, outside that conditional, always calls applyMigrations with the complete canonical registry and beforePendingMigration wired to verifyCanonicalMigrationPrefixState. A legacy-only return, an if/else branch that runs applyMigrations only for non-legacy opens, or any direct suffix SQL/history/user_version path is forbidden.",
     "issue234PreflightContract": "historyClassification and disposable scratch preflight validate complete conversion DDL and rows with the same explicit accepted-target decoder whenever infrastructure is present. A provenance-invalid current prefix, including a recomputed full-digest substitution, is not returned as supported-canonical-prefix and cannot reach WAL configuration or suffix application.",
-    "issue234ProofContract": "Extend migration-conversion-provenance, database-preflight, migration-runner, database, doctor, backup-writer, backup-restore parity, and offline-root-replacement tests with legacy conversion always landing on target 27, converted target-27 then synthetic 28 append, before/after-commit crash and reopen, later append, unknown target, and the separate exact full-digest substitution that replaces target 27 with digest 28 and recomputes conversion_id and record_sha256. Require scratch-preflight, pre-suffix, reopen, doctor, backup, and restore rejection with zero suffix effects, separate doctor identities, and exact backup/full-restore target-27 row-byte parity. Test suffixes are local fixtures and never define report semantics.",
+    "issue234ProofContract": "Run the real production convertMigrationHistory and production opener against a legacy database while a child-local registry appends the exact synthetic 28 and 29 definitions. Prove the converter transaction commits only semantic SQL, ledger rows, user_version, and immutable provenance for 1..27; prove the opener then routes 28 and 29 through applyMigrations and its in-BEGIN beforePendingMigration gate. Extend migration-conversion-provenance, database-preflight, migration-runner, database, doctor, backup-writer, backup-restore parity, and offline-root-replacement tests with both suffix crash boundaries and reopen, later append, unknown target, and the separate exact full-digest substitution that replaces target 27 with digest 28 and recomputes conversion_id and record_sha256. Require scratch-preflight, pre-suffix, reopen, doctor, backup, empty restore, and full restore rejection with zero suffix effects, separate doctor identities, exact production source projection, and exact backup/full-restore target-27 row-byte parity. Test suffixes are local fixtures and never define report semantics.",
+    "implementationSequenceMode": "--implementation-sequence-check",
+    "implementationSequenceMutationIds": [
+      "converter-live-tip-loop",
+      "legacy-opener-skips-suffix-runner"
+    ],
     "selfMutationCases": [
       "replace historical-prefix target resolution with equality to the current full-registry digest",
       "move strict provenance verification after pending suffix SQL, history INSERT, user_version write, or commit",
-      "derive accepted conversion targets by enumerating every canonical prefix through the live registry tip"
+      "derive accepted conversion targets by enumerating every canonical prefix through the live registry tip",
+      "replace targetMigrations slice through explicit target 27 with a converter loop over the complete live registry",
+      "place the suffix runner only in the non-legacy opener branch so converted databases never traverse beforePendingMigration"
     ]
   },
   "conversionMetadata": {
@@ -1273,7 +1289,7 @@
     {
       "id": "LC-LEGACY-UPGRADE",
       "input": "exact supported legacy prefix",
-      "expected": "no-source-write preflight, verified backup, exclusive barrier, locked revalidation, then atomic conversion to exact accepted target 27; any 28-or-later migration follows only as a separately gated suffix",
+      "expected": "no-source-write preflight, verified backup, exclusive barrier, locked revalidation, then the real production converter atomically executes and ledgers exactly target 1..27 with target-27 provenance and user_version 27; after it returns, the common opener suffix runner applies any 28-or-later migration only through beforePendingMigration",
       "writes": "all-or-nothing conversion to target 27, followed by zero or more independently verified suffix transactions"
     },
     {
@@ -1472,7 +1488,7 @@
     },
     {
       "id": "DEC-ATOMIC-CONVERSION",
-      "text": "Legacy conversion is one BEGIN IMMEDIATE transaction with foreign keys disabled only around the transaction and checked before commit."
+      "text": "Legacy conversion is one BEGIN IMMEDIATE transaction over the explicit targetMigrations slice 1..27, with foreign keys disabled only around that transaction and checked before commit; the live 28+ suffix is excluded and begins only afterward in the common gated runner."
     },
     {
       "id": "DEC-BACKUP-FIRST",
@@ -1484,7 +1500,7 @@
     },
     {
       "id": "DEC-BYTE-PROVENANCE",
-      "text": "Conversion infrastructure and records use byte-frozen SQL and canonical JSON/digest domains, with one transaction-gated INSERT and aborting UPDATE/DELETE triggers. target_registry_sha256 resolves only through the explicit accepted target-27 row, never every live prefix; every legacy conversion first commits target 27, and every later suffix verifies all existing rows inside BEGIN IMMEDIATE before persistent effects."
+      "text": "Conversion infrastructure and records use byte-frozen SQL and canonical JSON/digest domains, with one transaction-gated INSERT and aborting UPDATE/DELETE triggers. target_registry_sha256 resolves only through the explicit accepted target-27 row, never every live prefix; the real converter executes and ledgers only the explicit targetMigrations 1..27 slice, then the opener routes every later suffix through applyMigrations so all existing rows verify inside BEGIN IMMEDIATE before persistent effects."
     },
     {
       "id": "DEC-FAIL-UNKNOWN",
@@ -1572,7 +1588,7 @@
     {
       "id": "PROOF-PROVENANCE",
       "kind": "real-sqlite",
-      "postcondition": "fresh, legacy conversion always landing on explicit target 27, append to 28 and later 29, crash/reopen, doctor, serialized backup, and restore projections share one strict accepted-target decoder and preserve exact DDL plus canonical row bytes/domains/relations/digests; a target-27 row changed to full digest 28 with conversion_id and record_sha256 recomputed rejects in scratch preflight, the pre-suffix transaction gate with zero effects, reopen, doctor, backup, and restore; unknown target remains a separate failure; DDL/row/trigger mutations, self-consistent forged history/schema/overlay/target records, ungated INSERT, UPDATE, and DELETE fail"
+      "postcondition": "the real production legacy converter creates the target-27 base from an actual supported legacy history and preserves its active overlay; with child-local synthetic 28/29 appended, conversion still commits exactly ledger/user_version/provenance 1..27 and the production opener then routes 28/29 through the separately verified suffix runner; crash/reopen, doctor, serialized backup, empty restore, and full restore projections share one strict accepted-target decoder and preserve exact DDL plus canonical row bytes/domains/relations/digests; a target-27 row changed to full digest 28 with conversion_id and record_sha256 recomputed rejects in scratch preflight, the pre-suffix transaction gate with zero effects, reopen, doctor, backup, and restore; unknown target remains a separate failure; DDL/row/trigger mutations, self-consistent forged history/schema/overlay/target records, ungated INSERT, UPDATE, and DELETE fail"
     },
     {
       "id": "PROOF-CONVERSION-MATRIX",
@@ -1582,7 +1598,7 @@
     {
       "id": "PROOF-FAILURE-MATRIX",
       "kind": "injection",
-      "postcondition": "each pre-commit boundary leaves its exact predecessor, each post-commit boundary leaves its exact successor, unknown or full-digest-substituted current provenance commits no suffix effect, immutable target-27 rows remain valid after append, no mixed state appears, and foreign_keys is on after reopen"
+      "postcondition": "conversion commit leaves exactly target 27 before the suffix runner starts; each suffix pre-commit boundary leaves its exact predecessor, each post-commit boundary leaves its exact successor, a converter live-tip loop and legacy opener bypass reject, unknown or full-digest-substituted current provenance commits no suffix effect, immutable target-27 rows remain valid after append, no mixed state appears, and foreign_keys is on after reopen"
     },
     {
       "id": "PROOF-REOPEN",
@@ -1876,7 +1892,7 @@
       "protectedPrefixes": ["packages/contracts/", ".agents/skills/plan-agent-mail/", ".github/"],
       "unknownPathRule": "Any added, modified, deleted, renamed, or copied tracked endpoint or untracked source/test/script path outside allowedMutationPaths fails. Any protected path or prefix change fails even if another rule would allow it. Scope is enforced against virtual Git change records before lstat, so deletion cannot disappear and rename/copy cannot hide either endpoint. Exact generated dependency/build/cache paths are excluded from source scanning but never become implementation evidence.",
       "registryImport": "Import packages/storage/src/migration-registry.ts and require frozen exports canonicalDatabaseMigrations, CANONICAL_DATABASE_SCHEMA_VERSION, and NEXT_DATABASE_MIGRATION_VERSION to project exactly to the oracle.",
-      "converterImport": "Import packages/storage/src/migration-history-conversion.ts and require callable exports classifyMigrationHistory, convertMigrationHistory, verifyCanonicalMigrationState, and installMigrationConversionInfrastructure.",
+      "converterImport": "Import packages/storage/src/migration-history-conversion.ts and require callable exports classifyMigrationHistory, convertMigrationHistory, verifyCanonicalMigrationState, verifyCanonicalMigrationPrefixState, canonicalRegistryDigestAtVersion, and installMigrationConversionInfrastructure. The dedicated implementation-sequence mode mocks only the registry export to append exact synthetic 28/29, then runs this real converter and the real runner; source and runtime checks reject a live-tip converter loop or legacy opener suffix bypass.",
       "postImplementationApplyMigrationPaths": [
         "packages/storage/src/migration-runner.ts",
         "packages/storage/src/database.ts",
@@ -1910,7 +1926,9 @@
         "registry-at-destructure",
         "registry-find-destructure",
         "unknown-source",
-        "unknown-test"
+        "unknown-test",
+        "converter-live-tip-loop",
+        "legacy-opener-skips-suffix-runner"
       ],
       "mutationExitRule": "--source-self-test spawns one fresh checker process per sourceMutationId against real accepted source bytes or explicit virtual Git change records for deletion/rename cases; each child must exit nonzero for its independent mutation or the self-test fails."
     },
@@ -1921,11 +1939,11 @@
       },
       {
         "id": "IMP-CONVERTER",
-        "text": "Implement no-source-write main/WAL scratch preflight, automatic verified backup, exclusive barrier and locked revalidation, exact generic-name reindex-overlay classification, byte-frozen provenance, atomic conversion, active reindex preservation, and stable rejection."
+        "text": "Implement no-source-write main/WAL scratch preflight, automatic verified backup, exclusive barrier and locked revalidation, exact generic-name reindex-overlay classification, byte-frozen provenance, and stable rejection. The converter resolves explicit target 27, slices targetMigrations 1..27, atomically executes and ledgers only that slice with user_version 27, preserves active reindex state, and never loops through the live suffix."
       },
       {
         "id": "IMP-OPENER",
-        "text": "Make the writable database opener the sole production migration consumer and remove caller-selected ceilings/arrays."
+        "text": "Make the writable database opener the sole production migration consumer and remove caller-selected ceilings/arrays. After optional legacy conversion returns, always route the complete live registry through applyMigrations with the in-BEGIN beforePendingMigration verifier; do not hide this suffix runner in a non-legacy else branch."
       },
       {
         "id": "IMP-DOCTOR",
@@ -1945,7 +1963,7 @@
       },
       {
         "id": "IMP-PROOFS",
-        "text": "Run fresh, all-prefix plus every generic reindex-overlay conversion/forgery, no-source-write preflight and whole-tree/sidecar probes, byte-exact provenance and mutation probes, failure injection, no-op reopen, newer/unknown, doctor, backup, empty restore, full restore, current-tree source mutations, and slot proofs."
+        "text": "Run fresh, all-prefix plus every generic reindex-overlay conversion/forgery, no-source-write preflight and whole-tree/sidecar probes, byte-exact provenance and mutation probes, real production converter/opener under child-local synthetic suffixes 28/29, live-tip-loop and legacy-opener-bypass counterexamples, both suffix crash boundaries, no-op reopen, newer/unknown, doctor, backup, empty restore, full restore, current-tree source mutations, exact source drift, and slot proofs."
       },
       {
         "id": "IMP-NO-REPORT",
