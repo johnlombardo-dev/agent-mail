@@ -59,9 +59,25 @@ export type RegisteredValueSemanticKind =
   | "attention"
   | "partial"
   | "uncertain";
-export type RegisteredFailureSemanticKind = Exclude<SemanticKind, RegisteredValueSemanticKind>;
-/** Failure envelopes may use cancelled even though domain values may also use it. */
-export type CommandFailureSemanticKind = RegisteredFailureSemanticKind | "cancelled";
+export type RegisteredFailureSemanticKind =
+  | "usage"
+  | "invalid_input"
+  | "not_found"
+  | "unavailable"
+  | "internal"
+  | "io"
+  | "temporary"
+  | "protocol"
+  | "authorization"
+  | "configuration"
+  | "conflict"
+  | "stale"
+  | "expired"
+  | "replay"
+  | "tampered"
+  | "cancelled"
+  | "partial_output";
+export type CommandFailureSemanticKind = RegisteredFailureSemanticKind;
 export type NormalExitSemanticKind = Exclude<SemanticKind, "partial_output">;
 
 export const exitCodeRegistry = Object.freeze([
@@ -91,6 +107,25 @@ export const exitCodes = Object.freeze(Object.fromEntries(exitCodeRegistry)) as 
   Record<SemanticKind, number>
 >;
 const semanticKindSet = new Set<string>(semanticKinds);
+const failureSemanticKindSet = new Set<string>([
+  "usage",
+  "invalid_input",
+  "not_found",
+  "unavailable",
+  "internal",
+  "io",
+  "temporary",
+  "protocol",
+  "authorization",
+  "configuration",
+  "conflict",
+  "stale",
+  "expired",
+  "replay",
+  "tampered",
+  "cancelled",
+  "partial_output",
+]);
 
 export function isSemanticKind(value: unknown): value is SemanticKind {
   return typeof value === "string" && semanticKindSet.has(value);
@@ -99,12 +134,10 @@ export function isValueSemanticKind(value: unknown): value is RegisteredValueSem
   return typeof value === "string" && valueSemanticKindSet.has(value);
 }
 export function isFailureSemanticKind(value: unknown): value is RegisteredFailureSemanticKind {
-  return (
-    typeof value === "string" && semanticKindSet.has(value) && !valueSemanticKindSet.has(value)
-  );
+  return typeof value === "string" && failureSemanticKindSet.has(value);
 }
 function isCommandFailureSemanticKind(value: unknown): value is CommandFailureSemanticKind {
-  return isFailureSemanticKind(value) || value === "cancelled";
+  return isFailureSemanticKind(value);
 }
 export function exitCodeForSemanticKind(kind: SemanticKind): number {
   return exitCodes[kind];

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { createOperationRegistry, httpErrorRegistry } from "@agent-mail/contracts";
+import { actionPlanInspectResponseSchema, createOperationRegistry, httpErrorRegistry } from "@agent-mail/contracts";
 import { z } from "zod";
 import acceptedOracle from "../../../docs/architecture/cli-command-outcome-oracle.v1.json" with {
   type: "json",
@@ -20,6 +20,9 @@ import {
   parseFeatureSelection,
   projectDomainFacts,
   selectDomainOutcome,
+  isFailureSemanticKind,
+  isValueSemanticKind,
+  semanticKinds,
   type CommandSink,
   type SinkWriteResultV1,
 } from "./command-outcome";
@@ -57,6 +60,9 @@ const oracle = acceptedOracle as unknown as {
   readonly operationErrorMappings: readonly Readonly<{ readonly code: string; readonly selector: string; readonly semanticKind?: string; readonly cases?: Readonly<Record<string, string>> }>[];
   readonly operationErrorApplicability: readonly Readonly<{ readonly operationKey: string; readonly code: string }>[];
   readonly cliClientErrorMatrix: readonly Readonly<{ readonly kind: string; readonly localCode: string | null; readonly semanticKind: string }>[];
+  readonly commandResultAlgebra: Readonly<{
+    readonly variants: readonly Readonly<{ readonly kind: string; readonly allowedSemanticKinds: readonly string[] }>[];
+  }>;
 };
 
 function must<T>(value: T | undefined, message: string): T {
@@ -167,6 +173,36 @@ describe("command outcome authority", () => {
     expect(exitCodes.cancelled).toBe(84);
   });
 
+  it("keeps oracle value and failure membership independent", () => {
+    const valueVariant = must(
+      oracle.commandResultAlgebra.variants.find((variant) => variant.kind === "value"),
+      "missing value algebra variant",
+    );
+    const rawVariant = must(
+      oracle.commandResultAlgebra.variants.find((variant) => variant.kind === "raw"),
+      "missing raw algebra variant",
+    );
+    const failureVariant = must(
+      oracle.commandResultAlgebra.variants.find((variant) => variant.kind === "failure"),
+      "missing failure algebra variant",
+    );
+    const valueKinds = new Set(valueVariant.allowedSemanticKinds);
+    const rawKinds = new Set(rawVariant.allowedSemanticKinds);
+    const failureKinds = new Set(failureVariant.allowedSemanticKinds);
+    for (const kind of semanticKinds) {
+      expect(isValueSemanticKind(kind)).toBe(valueKinds.has(kind));
+      expect(isFailureSemanticKind(kind)).toBe(failureKinds.has(kind));
+    }
+    expect(rawKinds.has("success")).toBe(true);
+    expect(valueKinds.has("stale")).toBe(true);
+    expect(valueKinds.has("expired")).toBe(true);
+    expect(valueKinds.has("cancelled")).toBe(true);
+    expect(failureKinds.has("stale")).toBe(true);
+    expect(failureKinds.has("expired")).toBe(true);
+    expect(failureKinds.has("cancelled")).toBe(true);
+    expect(failureKinds.has("replay")).toBe(true);
+  });
+
   it("reconstructs every accepted domain fixture and evaluates the oracle rule", () => {
     const bases = new Map(oracle.domainFixtureBases.map((base) => [base.id, base]));
     expect(oracle.domainFixtures).toHaveLength(62);
@@ -186,6 +222,93 @@ describe("command outcome authority", () => {
     expect(oracle.domainProjectionFixtures).toHaveLength(16);
     for (const fixture of oracle.domainProjectionFixtures)
       expect(projectDomainFacts(fixture.operationKey, fixture.input)).toEqual(fixture.expectedFacts);
+  });
+
+  it("executes stale, expired, and cancelled domain values with their own stdout exits", async () => {
+    const instant = "2026-08-19T00:00:00.000Z";
+    const later = "2026-08-19T00:01:00.000Z";
+    const digest = "a".repeat(64);
+    const target = {
+      accountId: "account:test",
+      mailboxId: "mailbox:inbox",
+      uidValidity: 1,
+      uid: 42,
+      precondition: { modseq: 9 },
+    };
+    const pendingPlan = {
+      state: "pending" as const,
+      planId: "plan:test",
+      action: { kind: "markSeen" as const },
+      targets: [target],
+      createdAt: instant,
+      expiresAt: "2026-08-19T00:10:00.000Z",
+    };
+    const common = {
+      planVersion: 1,
+      previewDigest: digest,
+      targetDigest: digest,
+      normalizedIntent: "mark the selected message seen",
+      creator: { principalId: "principal:agent", profile: "agent-unattended" as const },
+      terminalAudit: "absent" as const,
+    };
+    const expired = actionPlanInspectResponseSchema.parse({
+      ...common,
+      plan: { ...pendingPlan, state: "expired" as const, expiredAt: "2026-08-19T00:11:00.000Z" },
+      approvalState: "absent",
+      results: [],
+    });
+    const cancelled = actionPlanInspectResponseSchema.parse({
+      ...common,
+      plan: pendingPlan,
+      approvalState: { state: "cancelled", approvalId: "approval:test", planId: "plan:test", cancelledAt: later },
+      results: [],
+    });
+    const staleResult = {
+      kind: "stale" as const,
+      planId: "plan:test",
+      action: pendingPlan.action,
+      target,
+      attemptId: "attempt:stale",
+      idempotencyKey: "idempotency:stale",
+      startedAt: instant,
+      resultAt: later,
+      certainty: "definite" as const,
+      detail: "the frozen target changed",
+    };
+    const stale = actionPlanInspectResponseSchema.parse({
+      ...common,
+      plan: { ...pendingPlan, state: "completed" as const, completedAt: later },
+      approvalState: {
+        state: "consumed",
+        approvalId: "approval:test",
+        planId: "plan:test",
+        planVersion: 1,
+        previewDigest: digest,
+        targetDigest: digest,
+        normalizedIntent: common.normalizedIntent,
+        issuedAt: instant,
+        expiresAt: "2026-08-19T00:10:00.000Z",
+        consumedAt: later,
+        committer: { principalId: "principal:agent", profile: "agent-unattended" as const },
+        receiptId: "approval-receipt:test",
+      },
+      results: [staleResult],
+    });
+    const rows = [
+      { semanticKind: "stale" as const, data: stale },
+      { semanticKind: "expired" as const, data: expired },
+      { semanticKind: "cancelled" as const, data: cancelled },
+    ];
+    for (const row of rows) {
+      const result = createCommandValue({ operationKey: "action-plans.inspect", data: row.data, semanticKind: row.semanticKind, humanLines });
+      expect(result.kind).toBe("value");
+      const stdout = memorySink();
+      const stderr = memorySink();
+      const receipt = await executeCommand(result, contextFor(stdout, stderr));
+      expect(receipt).toMatchObject({ semanticKind: row.semanticKind, exitCode: exitCodes[row.semanticKind], stderrBytesAccepted: 0 });
+      expect(sinkByteLength(stdout)).toBeGreaterThan(0);
+      expect(sinkByteLength(stdout)).toBe(receipt.stdoutBytesAccepted);
+    }
   });
 
   it("accepts all 24 exact receipt pairs and rejects cross-paired statuses", () => {
@@ -223,7 +346,7 @@ describe("command outcome authority", () => {
     }
   });
 
-  it("constructively maps all shared and operation-registered error rows", () => {
+  it("constructively maps all shared and operation-registered error rows", async () => {
     expect(oracle.sharedErrorMatrix).toHaveLength(26);
     for (const row of oracle.sharedErrorMatrix) {
       const definition = must(httpErrorRegistry.get(row.code), `missing shared error ${row.code}`);
@@ -233,7 +356,16 @@ describe("command outcome authority", () => {
         correlationId: "cli:oracle",
         details: validDetails(definition),
       };
-      expect(parseRegisteredError(envelope, "unknown.operation").semanticKind).toBe(row.semanticKind);
+      const mapped = parseRegisteredError(envelope, "unknown.operation");
+      expect(mapped.semanticKind).toBe(row.semanticKind);
+      if (!isFailureSemanticKind(mapped.semanticKind)) throw new Error(`shared row is not a failure: ${row.code}`);
+      const result = createCommandFailure({ operationKey: "messages.search", semanticKind: mapped.semanticKind, error: mapped.error });
+      expect(parseCommandResult(result).semanticKind).toBe(mapped.semanticKind);
+      const stdout = memorySink();
+      const stderr = memorySink();
+      const receipt = await executeCommand(result, contextFor(stdout, stderr));
+      expect(receipt).toMatchObject({ semanticKind: mapped.semanticKind, exitCode: exitCodes[mapped.semanticKind], stdoutBytesAccepted: 0 });
+      expect(receipt.stderrBytesAccepted).toBe(sinkByteLength(stderr));
       expect(() => parseRegisteredError({ ...envelope, details: { hostile: true } }, "unknown.operation")).toThrow();
     }
 
@@ -250,7 +382,16 @@ describe("command outcome authority", () => {
         details: validDetails(definition, reason),
       };
       const expected = reason === undefined ? mapping.semanticKind : mapping.cases?.[reason];
-      expect(parseRegisteredError(envelope, row.operationKey).semanticKind).toBe(expected);
+      const mapped = parseRegisteredError(envelope, row.operationKey);
+      expect(mapped.semanticKind).toBe(expected);
+      if (!isFailureSemanticKind(mapped.semanticKind)) throw new Error(`operation row is not a failure: ${row.code}`);
+      const result = createCommandFailure({ operationKey: row.operationKey, semanticKind: mapped.semanticKind, error: mapped.error });
+      expect(parseCommandResult(result).semanticKind).toBe(mapped.semanticKind);
+      const stdout = memorySink();
+      const stderr = memorySink();
+      const receipt = await executeCommand(result, contextFor(stdout, stderr));
+      expect(receipt).toMatchObject({ semanticKind: mapped.semanticKind, exitCode: exitCodes[mapped.semanticKind], stdoutBytesAccepted: 0 });
+      expect(receipt.stderrBytesAccepted).toBe(sinkByteLength(stderr));
       expect(() => parseRegisteredError({ ...envelope, status: row.status, details: { hostile: true } }, row.operationKey)).toThrow();
     }
 
