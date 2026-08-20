@@ -5,7 +5,10 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, normalize, parse } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { applyMigrations } from "./migration-runner";
+import {
+  applyMigrations,
+  recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures,
+} from "./migration-runner";
 import {
   classifyMigrationHistory,
   convertMigrationHistory,
@@ -124,6 +127,7 @@ export async function openDatabase(
     installMigrationConversionInfrastructure(db);
     verifyCanonicalMigrationState(db);
     verifyIntegrity(db);
+    recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);
 
     let handleClosed = false;
     let closeSucceeded = false;

@@ -16,7 +16,16 @@ export * from "./database";
 export * from "./migration-registry";
 export * from "./migration-history-conversion";
 export * from "./doctor-integrity";
-export * from "./migration-runner";
+export {
+  type ApplyMigrationsOptions,
+  type BeforePendingMigration,
+  type Migration,
+  MigrationRunnerError,
+  type MigrationRunnerErrorCode,
+  applyMigrations,
+  migrationContentHash,
+  runMigrations,
+} from "./migration-runner";
 export * from "./row-decoders";
 export * from "./remote-placement-tombstone";
 export * from "./remote-placement-observation";
