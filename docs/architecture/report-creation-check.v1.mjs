@@ -4,13 +4,14 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "e4ad62866e691b4bcff011cf6384ed78439351ce491c8061772dd9bcb17916b0";
+const EXPECTED_ORACLE_SHA256 = "c8410a8204222685439ecca252362ac76510c13b767639ab39574ecc6ef83919";
 const EXPECTED_VIEW_SHA256 = [
-  "ca0cce6418c7ad656ac0cc1610e6682cefc64b0935467e9557051b40ed3a8d24",
-  "a2d17adcaf232ace8cc06bf54ec812db5b619db0ecc8edb668894cadf94f3504",
-  "bf3e30c5d72c6dec98ed7c3eb04894fe423868a7c19a463d06bbeab9385c52ef",
+  "c597139f52f2680cfad7dc945e29ebaadc543cd9c99a31d91eb328bc94e20355",
+  "87617987cbe4b1faaadf8d95e73e56bce774cd9d6f7f47125b2dd61910470b98",
+  "eee62e122827d59fe410bc755c753b50946d8b64270a69991169d3bb1fdeb334",
 ];
-const ACCEPTED_HEAD = "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce";
+const ACCEPTED_HEAD = "bd6ad478cf99f9ea9f3f25981c9d3044fabfef61";
+const IMPLEMENTATION_BASE = "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce";
 const directory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(directory, "../..");
 const oraclePath = join(directory, "report-creation-oracle.v1.json");
@@ -164,10 +165,10 @@ function requireExactRows(map, expected, label) {
 
 function validateFrozenInputs(oracle, { checkSources = false } = {}) {
   const expected = {
-    PLAN: ["PLAN.md", "1b50f59a6df4af0419707fb740c94c2fa08dde2c127267c7f68778f33f4c30b5"],
+    PLAN: ["PLAN.md", "6daf232f6d2895b3e76bdde9a8fb51da31b4506d8c2b2cab7544147ddf6257ce"],
     EVIDENCE: [
       "docs/planning/EVIDENCE.md",
-      "9d6666a4f850f7452f7bda80b14a28a74e434f3f99c26daf55fcb9e7d244953e",
+      "92ad4982f2d2edc94acae40f7b7fd5b149a674ecf6600823ff895f1a29c9b87e",
     ],
     METRICS: ["METRICS.md", "5c286a31365fe9b84108d38875724395ca4281b041ab9d9b24d4b998db22ec3c"],
     "REPORT-CONTRACT": [
@@ -225,6 +226,10 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
     "SEARCH-CORPUS-TEST": [
       "packages/storage/test/search-corpus-p4-c16.test.ts",
       "d9f50b9a75413d4d4fd3d724b7856390bf954abd7e3035020694f4120b42b92b",
+    ],
+    "BACKUP-RESTORE-PARITY-TEST": [
+      "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
+      "cb30d41422d62576356ba561a14d16e47c288bcebfc5f97cc68c8f33e1083dde",
     ],
     "PROMOTION-ADAPTER": [
       "packages/storage/src/promotion-adapter.ts",
@@ -398,7 +403,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       [233, 234],
       "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
       "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
-      ACCEPTED_HEAD,
+      IMPLEMENTATION_BASE,
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
       27,
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
@@ -424,7 +429,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [213, "f4a3604"],
     [214, "b9aafae"],
     [233, "2fd5b0eaf993b9f44068bd0f61552fc84479129a"],
-    [234, ACCEPTED_HEAD],
+    [234, IMPLEMENTATION_BASE],
   ]);
   for (const [issue, commit] of expectedCommits) {
     exact(artifactRows.get(issue).commit, commit, "accepted artifact #" + issue);
@@ -753,7 +758,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [
       "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
       "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
-      ACCEPTED_HEAD,
+      IMPLEMENTATION_BASE,
       27,
       27,
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
@@ -1474,7 +1479,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   const issue232 = oracle.downstream.issue232;
   exact(
     [issue232.model, issue232.minimumReasoning, issue232.status, issue232.implementationBase],
-    ["gpt-5.6-luna", "xhigh", "ready-for-implementation", ACCEPTED_HEAD],
+    ["gpt-5.6-luna", "xhigh", "ready-for-implementation", IMPLEMENTATION_BASE],
     "#232 profile",
   );
   exact(
@@ -1532,6 +1537,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       "packages/storage/test/canonical-promotion-p2-c13.test.ts",
       "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
       "packages/storage/test/search-corpus-p4-c16.test.ts",
+      "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
       "packages/storage/test/promotion-adapter-p2-c20.test.ts",
       "packages/storage/test/message-text-materializer.test.ts",
       "packages/storage/test/report-creation-migration.test.ts",
@@ -1597,7 +1603,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   exact(
     [issue232.changePolicy.base, issue232.changePolicy.selfTests, issue232.changePolicy.invocation],
     [
-      ACCEPTED_HEAD,
+      IMPLEMENTATION_BASE,
       ["frozen-input-drift", "protected-path", "unknown-path"],
       "node docs/architecture/report-creation-check.v1.mjs --changed-path=<path> [repeat for the complete #232 diff] --self-test",
     ],
@@ -1711,10 +1717,80 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     ],
     "#232 search corpus index rules",
   );
+  const backupParity = focused.backupRestoreParityAuthority;
+  exact(
+    [
+      backupParity.testPath,
+      backupParity.acceptedBaseSha256,
+      backupParity.fixturePath,
+      backupParity.normalizedTextSourceExpression,
+      backupParity.normalizedTextLiteral,
+      backupParity.normalizedTextUtf8Bytes,
+      backupParity.canonicalJsonUtf8,
+      backupParity.canonicalJsonBytes,
+      backupParity.canonicalJsonSha256,
+      backupParity.rawSourceSha256,
+      backupParity.parserId,
+    ],
+    [
+      "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
+      "cb30d41422d62576356ba561a14d16e47c288bcebfc5f97cc68c8f33e1083dde",
+      "packages/storage/test/fixtures/backup-restore-p2-c19-comparison.json",
+      "comparisonFixture.plainBody",
+      "canonical body\n",
+      15,
+      '"canonical body\\n"',
+      18,
+      "acb6a0f8d3a17cedffe9f25e3b852a3f5256d1d9fd3454726e6451cc6052ae34",
+      "991c5d77082d0849b0c569d0d9674ba0ffc6728d88c0f250481badef71032685",
+      "mailparser:3.9.15",
+    ],
+    "#232 backup restore parity authority",
+  );
+  exact(
+    [
+      backupParity.fixtureRule,
+      backupParity.parityRule,
+      backupParity.missingFieldRule,
+      backupParity.mutationRule,
+    ],
+    [
+      "Change only the accepted test's typed canonicalUnit by adding normalizedText: comparisonFixture.plainBody. That expression evaluates exactly to normalizedTextLiteral and is fixture input, not a production fallback or a synthesized legacy-read rule. Do not edit the comparison JSON, production promotion, report source resolution, materializer, backup, restore, database, runner, converter, or migration code.",
+      "Before backup, after closing and reopening the source database, and after verified empty-root restore plus reopen, require readCanonicalPromotion.normalizedText to equal normalizedTextLiteral and query the exact message_text_projections row. The canonical JSON BLOB bytes, SHA-256, normalized UTF-8 byte count, raw source SHA-256, parser id, projection version, and materialized timestamp must be byte-for-byte equal across all three states and equal the frozen values; integrity_check must be ok and foreign_key_check empty. Row-count-only, decoded-string-only, schema-only, or aggregate parity does not count.",
+      "This fixture-only input does not authorize an optional normalizedText field or a plainBody fallback at any production boundary. parsePromotionUnit must retain its omitted-field invalid-input negative; newly parsed production promotion must always persist the projection; and report source resolution must continue to reject a missing projection unless the separately frozen legacy materializer succeeds under its identity/account/placement gates.",
+      "The focused proof must fail if normalizedText is omitted, optional, replaced by an empty/fallback/different value, or if any canonical projection byte or source/reopen/restore state differs. The #231 checker must reject removal of the test, stale accepted bytes, changed source expression/literal/digests/counts/parser, weakened parity or missing-field rules, changed isolated outcomes, and any production-scope widening.",
+    ],
+    "#232 backup restore parity rules",
+  );
+  exact(
+    backupParity.isolatedComparison,
+    {
+      acceptedBase: {
+        authority:
+          "accepted #234 base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce with the accepted-base P2-C19 test bytes",
+        passes: 2,
+        fails: 0,
+      },
+      candidateBeforeRepair: {
+        authority: "exact 30-path #232 candidate with the accepted-base P2-C19 test bytes",
+        passes: 0,
+        fails: 2,
+        error: "restore parity fixture is missing a message repository read",
+      },
+      candidateAfterRepair: {
+        authority: "exact 31-path #232 candidate with only the P2-C19 fixture repair added",
+        requiredPasses: 2,
+        requiredFails: 0,
+        allowedChangedPaths: ["packages/storage/test/backup-restore-parity-p2-c19.test.ts"],
+      },
+    },
+    "#232 isolated backup restore comparison",
+  );
   for (const paths of Object.values(focused.proofPathBindings)) {
     validateChangedPaths(issue232, paths);
   }
   validateChangedPaths(issue232, [searchCorpus.testPath]);
+  validateChangedPaths(issue232, [backupParity.testPath]);
   validateChangedPaths(issue232, issue232.productionFiles);
   validateChangedPaths(issue232, issue232.testFiles);
   if (issue232.implementationObligations.length !== 10) fail("#232 obligations differ");
@@ -2175,6 +2251,46 @@ function renderCoverage(oracle, digest) {
     "Search index mutations: " +
       oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.mutationRule,
     "",
+    "Backup/restore parity test: `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.testPath +
+      "` at accepted-base SHA-256 `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority
+        .acceptedBaseSha256 +
+      "`.",
+    "",
+    "Backup normalized text: `" +
+      JSON.stringify(
+        oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority
+          .normalizedTextLiteral,
+      ) +
+      "` from `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority
+        .normalizedTextSourceExpression +
+      "`; canonical JSON SHA-256 `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority
+        .canonicalJsonSha256 +
+      "`.",
+    "",
+    "Backup fixture rule: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.fixtureRule,
+    "",
+    "Backup byte parity: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.parityRule,
+    "",
+    "Backup missing-field rule: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority
+        .missingFieldRule,
+    "",
+    "Backup isolated comparison: " +
+      JSON.stringify(
+        oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority
+          .isolatedComparison,
+      ) +
+      ".",
+    "",
+    "Backup parity mutations: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.mutationRule,
+    "",
     "Obligations:",
     "",
     ...oracle.downstream.issue232.implementationObligations.map(
@@ -2223,6 +2339,42 @@ const mutations = [
   ["authority-status", (value) => (value.status = "repaired-pending-decisions")],
   ["authority-signable", (value) => (value.oracle.signable = false)],
   ["accepted-head", (value) => (value.oracle.acceptedHead = "0".repeat(40))],
+  [
+    "accepted-head-stale-pre-ledger",
+    (value) => (value.oracle.acceptedHead = "e7c1d503548f759634f9b062647ca07381914569"),
+  ],
+  [
+    "accepted-head-stale-implementation-base",
+    (value) => (value.oracle.acceptedHead = "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce"),
+  ],
+  [
+    "plan-stale-pre-reconciliation-hash",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "PLAN").sha256 =
+        "1b50f59a6df4af0419707fb740c94c2fa08dde2c127267c7f68778f33f4c30b5"),
+  ],
+  [
+    "evidence-stale-pre-reconciliation-hash",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "EVIDENCE").sha256 =
+        "9d6666a4f850f7452f7bda80b14a28a74e434f3f99c26daf55fcb9e7d244953e"),
+  ],
+  [
+    "plan-current-hash-crosswired",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "PLAN").sha256 =
+        "92ad4982f2d2edc94acae40f7b7fd5b149a674ecf6600823ff895f1a29c9b87e"),
+  ],
+  [
+    "evidence-current-hash-crosswired",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "EVIDENCE").sha256 =
+        "6daf232f6d2895b3e76bdde9a8fb51da31b4506d8c2b2cab7544147ddf6257ce"),
+  ],
+  [
+    "issue232-implementation-base-rebound-to-ledger-head",
+    (value) => (value.downstream.issue232.implementationBase = ACCEPTED_HEAD),
+  ],
   ["policy-a-resolution", (value) => (value.resolvedAuthorities[0].choice = "B")],
   ["migration-resolution", (value) => (value.resolvedAuthorities[1].migrationVersion = 29)],
   [
@@ -2458,6 +2610,13 @@ const mutations = [
       )),
   ],
   [
+    "issue232-backup-restore-parity-test",
+    (value) =>
+      (value.downstream.issue232.testFiles = value.downstream.issue232.testFiles.filter(
+        (path) => path !== "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
+      )),
+  ],
+  [
     "focused-suite-timeout-override",
     (value) =>
       value.downstream.issue232.focusedSuiteAuthority.command.splice(2, 0, "--timeout", "20000"),
@@ -2561,6 +2720,71 @@ const mutations = [
         "reject omissions only"),
   ],
   [
+    "backup-parity-stale-base-pin",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.acceptedBaseSha256 =
+        "0".repeat(64)),
+  ],
+  [
+    "backup-parity-fallback-source",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.normalizedTextSourceExpression =
+        "unit.normalizedText ?? comparisonFixture.plainBody"),
+  ],
+  [
+    "backup-parity-wrong-normalized-text",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.normalizedTextLiteral =
+        "fallback"),
+  ],
+  [
+    "backup-parity-wrong-canonical-json",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.canonicalJsonSha256 =
+        "0".repeat(64)),
+  ],
+  [
+    "backup-parity-optional-field",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.missingFieldRule =
+        "normalizedText may be omitted"),
+  ],
+  [
+    "backup-parity-decoded-only",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.parityRule =
+        "compare decoded strings only"),
+  ],
+  [
+    "backup-parity-fixture-production-widening",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.fixtureRule =
+        "change production promotion to synthesize normalizedText"),
+  ],
+  [
+    "backup-parity-base-outcome-drift",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.isolatedComparison.acceptedBase.passes = 1),
+  ],
+  [
+    "backup-parity-candidate-outcome-drift",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.isolatedComparison.candidateBeforeRepair.fails = 1),
+  ],
+  [
+    "backup-parity-acceptance-scope-widening",
+    (value) =>
+      value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.isolatedComparison.candidateAfterRepair.allowedChangedPaths.push(
+        "packages/storage/src/database.ts",
+      ),
+  ],
+  [
+    "backup-parity-mutation-gap",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.backupRestoreParityAuthority.mutationRule =
+        "reject omission only"),
+  ],
+  [
     "staged-eml-http-cli-proof-path",
     (value) =>
       value.downstream.issue232.focusedSuiteAuthority.proofPathBindings.stagedEmlHttpCli.pop(),
@@ -2644,6 +2868,7 @@ function runSelfTest(oracle) {
       "packages/storage/test/canonical-promotion-p2-c13.test.ts",
       "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
       "packages/storage/test/search-corpus-p4-c16.test.ts",
+      "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
     ]);
   } catch {
     failures.push("issue232-focused-scope-allowed");

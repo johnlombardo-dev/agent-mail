@@ -1,14 +1,14 @@
 # Report creation design v1
 
-> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `e4ad62866e691b4bcff011cf6384ed78439351ce491c8061772dd9bcb17916b0`.
+> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `c8410a8204222685439ecca252362ac76510c13b767639ab39574ecc6ef83919`.
 > Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.
 > The JSON oracle is the projection source and this file must match the checker exactly.
 
 ## Boundary
 
-This JSON file is the single signed and normative authority for report creation, normalized-text materialization, persistence, source serving, and CLI behavior. It freezes user-selected capacity Policy A and consumes the accepted #233 canonical migration registry and safe legacy-fixture recorder authority plus the #234 implementation at the accepted head. The design, decisions, and coverage Markdown files are exact checked projections of this authority.
+This JSON file is the single signed and normative authority for report creation, normalized-text materialization, persistence, source serving, and CLI behavior. It freezes user-selected capacity Policy A, consumes the accepted #233 canonical migration registry and safe legacy-fixture recorder authority plus the #234 implementation dependency, and is rebound to the reconciled planning ledger at the accepted head. The design, decisions, and coverage Markdown files are exact checked projections of this authority.
 
-Implementation rule: Issue 232 may implement only this signed authority from the exact accepted head and within its checked mutation boundary. Any capacity-policy, migration-slot, public-schema, protected-path, or frozen-input drift requires a new explicit authority revision before implementation continues.
+Implementation rule: Issue 232 may implement only this signed authority as verified at the exact accepted ledger head and within its checked mutation boundary, while its implementation diff remains based on the separately frozen #234 implementationBase. Any capacity-policy, migration-slot, public-schema, protected-path, planning-ledger, or frozen-input drift requires a new explicit authority revision before implementation continues.
 
 ## Resolved authorities
 
