@@ -1,0 +1,38 @@
+name: Sync Agent Mail project
+
+on:
+  issues:
+    types: [opened, edited, closed, reopened, labeled, unlabeled, assigned, unassigned]
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */4 * * *"
+
+concurrency:
+  group: agent-mail-project-sync
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_PROJECT_TOKEN: ${{ secrets.AGENT_MAIL_PROJECT_TOKEN }}
+      PROJECT_OWNER: johnlombardo-dev
+      PROJECT_NUMBER: "1"
+      REPOSITORY: johnlombardo-dev/agent-mail
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Require the Project token
+        run: test -n "$GH_PROJECT_TOKEN"
+
+      - name: Test forecast and classification rules
+        run: node --test scripts/github/project-sync.test.mjs
+
+      - name: Synchronize issues, fields, and forecasts
+        run: node scripts/github/project-sync.mjs
