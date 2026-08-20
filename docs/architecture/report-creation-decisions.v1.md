@@ -1,6 +1,6 @@
 # Report creation decisions v1
 
-> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `2766e4cb3f56580f484d75a2a2ad8d23b727c707b4244d47575d06d2329a0f1e`.
+> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `90c3a74a0fbfb30da038998a4c2856808e2e79cd0e95c96e1b01669e016c5273`.
 > Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.
 > The JSON oracle is the projection source and this file must match the checker exactly.
 
@@ -117,16 +117,16 @@ Rejected: handler-local length checks, default-only limits, post-JSON admission,
 
 ## D14
 
-Choice: Consume accepted #233 at 62b3eaf02cf001dfb6847f356cc533c6d3122d50 / oracle 503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456 and #234 at 896405ac9734e60a84c8cb7690f4688da86383fd by appending report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts as canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab.
+Choice: Consume accepted #233 at 2fd5b0eaf993b9f44068bd0f61552fc84479129a / oracle 08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345 and #234 at 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce by appending report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts as canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab, then retaining exact-current-tip safe-recorder compatibility without weakening strict applyMigrations.
 
-Reason: The accepted registry explicitly reserves report slot 28 and proves the real legacy converter commits only target 1..27 before the common opener routes slot 28 through its inside-BEGIN verify-before-suffix hook. Slot 28 evolves the live full-registry digest without rewriting converted target-27 rows; reopen, doctor, backup, empty restore, and full restore share that authority at the accepted head.
+Reason: The accepted registry explicitly reserves report slot 28 and proves the real legacy converter commits only target 1..27 before the protected common opener routes slot 28 through its inside-BEGIN verify-before-suffix hook. Only the fully verified current-tip handle is then fingerprint-recorded for legacy fixture compatibility; runMigrations revalidates that fingerprint and applyMigrations remains strict. Slot 28 evolves the live full-registry digest without rewriting converted target-27 rows; reopen, doctor, backup, empty restore, and full restore share that authority at the accepted head.
 
-Rejected: renumbering any predecessor, substituting the live full digest for historical target 27, changing protected converter bytes, looping conversion over the live registry, skipping the common suffix runner after legacy conversion, applying suffix effects before prefix verification, a second registry, direct applyMigrations use, caller-selected ceilings, conversion bypass, and any migration path or slot other than the frozen one.
+Rejected: renumbering any predecessor, substituting the live full digest for historical target 27, changing protected converter/opener/runner bytes, looping conversion over the live registry, skipping the common suffix runner after legacy conversion, applying suffix effects before prefix verification, recording target 27 before current-tip verification, trusting cached compatibility state without a complete fingerprint recheck, weakening strict applyMigrations, a second registry, direct applyMigrations use, caller-selected ceilings, conversion bypass, and any migration path or slot other than the frozen one.
 
 ## D15
 
-Choice: Pin #232 change authority to base 896405ac9734e60a84c8cb7690f4688da86383fd and fail frozen-input drift, protected paths, and unknown paths.
+Choice: Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; database.ts and migration-runner.ts are protected accepted dependencies while index.ts remains an allowed report export surface.
 
-Reason: The implementation proof must apply to the reviewed production seams and cannot silently widen into public contracts, #165, or unrelated code.
+Reason: The implementation proof must apply to the reviewed production seams and cannot silently widen into the safe-recorder/opener authority, public contracts, #165, or unrelated code.
 
 Rejected: warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths.

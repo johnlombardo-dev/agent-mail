@@ -4,13 +4,13 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "2766e4cb3f56580f484d75a2a2ad8d23b727c707b4244d47575d06d2329a0f1e";
+const EXPECTED_ORACLE_SHA256 = "90c3a74a0fbfb30da038998a4c2856808e2e79cd0e95c96e1b01669e016c5273";
 const EXPECTED_VIEW_SHA256 = [
-  "2fb47a007b621b186c701a901665935cb207d6e4bb492851e27d0cac7e62604c",
-  "de078433ff7e5c7cbdb075505cf28675b9643720e4f3c6a183a86faccf054844",
-  "aa0b74e0b4c020efc8ac875bed09c0f7b4e7da0145d09eb1b528d256d8a8c0aa",
+  "e0ffafc24b35dac46dee32d41eb8f26a75b7ea2a3db416829f625c651e3a40e1",
+  "f26b2b3bdb55ff7d8e415e4a974ce3e49e509862b93e82cd85be37fc190a16f8",
+  "8f702b364523246fcfbf80d230199c03f030c48bb1afdaf0978408c860d4048a",
 ];
-const ACCEPTED_HEAD = "896405ac9734e60a84c8cb7690f4688da86383fd";
+const ACCEPTED_HEAD = "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce";
 const directory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(directory, "../..");
 const oraclePath = join(directory, "report-creation-oracle.v1.json");
@@ -232,11 +232,15 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
     ],
     DATABASE: [
       "packages/storage/src/database.ts",
-      "6a4a1620698b9709a1a036747c7caf27ee82e1319d044117a2cf3b908e81e6e4",
+      "f6af053b4a29b944ef2323906038080be3700a9c339acd10c60a5aab26c0f8df",
     ],
     "MIGRATION-RUNNER": [
       "packages/storage/src/migration-runner.ts",
-      "c51d194bd66e644159df609c1c0644f8d725bad27968c2ec9ee6eba821cf59e7",
+      "b3774cb89373ac527df8cd1a86f06c47fe89637c785a98d81c7546ec62a6ced0",
+    ],
+    "STORAGE-INDEX": [
+      "packages/storage/src/index.ts",
+      "3fd855f2502ab69f34e3f5edf23230e08d48b4c185734179f101153e561d50e8",
     ],
     "BACKUP-MANIFEST": [
       "packages/storage/src/backup-manifest.ts",
@@ -272,23 +276,23 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
     ],
     "MIGRATION-REGISTRY-ORACLE": [
       "docs/architecture/database-migration-registry-oracle.v1.json",
-      "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
     ],
     "MIGRATION-REGISTRY-CHECKER": [
       "docs/architecture/database-migration-registry-check.v1.mjs",
-      "e813cefdc9a90c321677372ab3d7fbaf147ab313363f33f4b5803d346863d5ee",
+      "bb420394846b1f34ee1dc00c77b5b94f1198f1aa37d24eace3a7513c69f7d5de",
     ],
     "MIGRATION-REGISTRY-DESIGN": [
       "docs/architecture/database-migration-registry-design.v1.md",
-      "f4505e553c82e4f0a232b547f4eb71c1abf1aadfba4a56025f6bdc55aba138e2",
+      "d88a844683490e20da12ba57a4f99496ee97878e777e00ae407d5e78f8b61609",
     ],
     "MIGRATION-REGISTRY-DECISIONS": [
       "docs/architecture/database-migration-registry-decisions.v1.md",
-      "07fb450ce919edc47be1fa7701fa48f93ee8a67657426d569bdd6716267dd09d",
+      "38feb62fae9dc733ed41dd2c1a0bfe23147e3237c64f081abcf12c0c4d3d2c0e",
     ],
     "MIGRATION-REGISTRY-COVERAGE": [
       "docs/architecture/database-migration-registry-coverage.v1.md",
-      "2e1c6445f2119fbb248e86865e080bed87122bc0d5f0e13f6983d636a4e1be84",
+      "ca2454f35a5f84ae87db783e1fccc7c2d3acb12aa61fafe5bbb5e29696cd03d6",
     ],
     "MIGRATION-REGISTRY": [
       "packages/storage/src/migration-registry.ts",
@@ -380,8 +384,8 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [
       "accepted-and-consumed",
       [233, 234],
-      "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
-      "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
+      "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
       ACCEPTED_HEAD,
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
       27,
@@ -407,7 +411,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [206, "20e4d0e"],
     [213, "f4a3604"],
     [214, "b9aafae"],
-    [233, "62b3eaf02cf001dfb6847f356cc533c6d3122d50"],
+    [233, "2fd5b0eaf993b9f44068bd0f61552fc84479129a"],
     [234, ACCEPTED_HEAD],
   ]);
   for (const [issue, commit] of expectedCommits) {
@@ -426,7 +430,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   exact(
     [artifactRows.get(233).oracleSha256, artifactRows.get(233).registryIdentitySha256],
     [
-      "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
     ],
     "#233 authority digests",
@@ -727,10 +731,16 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       prefixEvolution.legacyConversionSequence,
       prefixEvolution.implementationSequenceMode,
       prefixEvolution.implementationSequenceMutationIds,
+      prefixEvolution.legacyFixtureRecorder,
+      prefixEvolution.legacyFixtureRunner,
+      prefixEvolution.strictMigrationRunner,
+      prefixEvolution.implementationCompatibilityMode,
+      prefixEvolution.safeRecorderSequence,
+      prefixEvolution.implementationCompatibilityMutationIds,
     ],
     [
-      "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
-      "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
+      "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
       ACCEPTED_HEAD,
       27,
       27,
@@ -750,6 +760,22 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       ],
       "--implementation-sequence-check",
       ["converter-live-tip-loop", "legacy-opener-skips-suffix-runner"],
+      "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures",
+      "runMigrations",
+      "applyMigrations",
+      "--implementation-compatibility-check",
+      [
+        "the real legacy converter commits and verifies only explicit historical target 27, then returns without observing slot 28",
+        "the common production opener routes pending slot 28 through strict applyMigrations and the inside-BEGIN beforePendingMigration prefix verifier",
+        "after the complete live registry reaches exact current tip 28, the opener verifies canonical migration state and database integrity before recorder invocation",
+        "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures synchronously and independently verifies registry-derived current-tip user_version, exact ordered history, complete sqlite_schema tuples, strict immutable conversion rows, and the grammar-valid reindex overlay before changing its module-private WeakMap",
+        "runMigrations recomputes and byte-compares the complete recorded fingerprint before a zero-write legacy-fixture compatibility no-op; applyMigrations never reads compatibility state and remains strict",
+      ],
+      [
+        "legacy-fixture-fingerprint-bypass",
+        "legacy-fixture-failure-stores-expected-fingerprint",
+        "strict-runner-compatibility-bypass",
+      ],
     ],
     "prefix evolution authority",
   );
@@ -1365,9 +1391,9 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       setup:
         "fresh database, every canonical 1..27 prefix, and a real supported legacy database whose converter must create immutable historical target version 27/digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab before any live suffix, plus unknown, forged, newer, and recomputed-live-full-digest-substituted provenance",
       action:
-        "append report-creation-v1 as canonical slot 28, run the signed #233 implementation-sequence proof, and open through the sole database boundary so the real converter commits only target 1..27 before the common opener routes slot 28 through applyMigrations and the inside-BEGIN beforePendingMigration prefix hook",
+        "append report-creation-v1 as canonical slot 28, run the signed #233 implementation-sequence and implementation-compatibility proofs, and open through the sole database boundary so the real converter commits only target 1..27 before the protected common opener routes slot 28 through strict applyMigrations and the inside-BEGIN beforePendingMigration prefix hook, verifies exact current-tip canonical state and integrity, then invokes the effect-safe recorder",
       expected:
-        "fresh, exact prefixes, and real legacy conversion first reach exact target 27, after which the common gated suffix path reaches schema 28 with the report and rate-ledger schema once; all 1..27 semantic identities and target-27 provenance bytes remain exact while the live full-registry digest advances separately; both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore agree; converter-live-tip and legacy-opener-bypass counterexamples reject; unknown, forged, newer, and full-digest-substituted histories remain untouched and fail before any slot-28 SQL/history/user_version/commit effect",
+        "fresh, exact prefixes, and real legacy conversion first reach exact target 27, after which the common gated suffix path reaches schema 28 with the report and rate-ledger schema once; only that exact verified current-tip handle is fingerprint-recorded, runMigrations rederives the fingerprint for a zero-write legacy-fixture no-op, and applyMigrations remains strict and compatibility-unaware; all 1..27 semantic identities and target-27 provenance bytes remain exact while the live full-registry digest advances separately; both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore agree; converter-live-tip, legacy-opener-bypass, premature-recorder, fingerprint-bypass, and strict-runner-bypass counterexamples reject; unknown, forged, newer, full-digest-substituted, or current-tip-incomplete histories remain untouched and fail before any slot-28 or compatibility effect",
     },
     "migration 28 trace",
   );
@@ -1404,7 +1430,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   );
   exact(
     forbidden.get("FORBID-MIGRATION-AUTHORITY-DRIFT").text,
-    "Any report migration other than report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts and canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; replacing immutable historical target-27 provenance with the new live full-registry digest; converting or ledgering any live suffix inside the legacy converter; placing the suffix runner only in a non-legacy opener branch; slot-28 SQL/history/user_version/commit before the inside-BEGIN prefix verifier; changing protected converter production bytes or #233 artifacts; any predecessor renumbering, semantic edit, alternate registry, caller ceiling, or conversion/reopen/doctor/backup/empty-restore/full-restore bypass.",
+    "Any report migration other than report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts and canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; replacing immutable historical target-27 provenance with the new live full-registry digest; converting or ledgering any live suffix inside the legacy converter; placing the suffix runner only in a non-legacy opener branch; slot-28 SQL/history/user_version/commit before the inside-BEGIN prefix verifier; recording compatibility authority at target 27 before gated slot 28 and exact current-tip canonical-state/integrity verification; trusting the WeakMap without independent complete-fingerprint revalidation; allowing applyMigrations to read or bypass through compatibility state; changing protected converter, database opener, migration-runner, or #233 artifact bytes; any predecessor renumbering, semantic edit, alternate registry, caller ceiling, or conversion/reopen/doctor/backup/empty-restore/full-restore bypass.",
     "migration authority forbidden state",
   );
 
@@ -1456,11 +1482,11 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [
       [
         233,
-        "signed append-stable canonical registry authority at commit 62b3eaf02cf001dfb6847f356cc533c6d3122d50 and oracle 503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456, with explicit historical target 27, real target-slice conversion sequence, common verified suffix runner, and reserved report slot 28",
+        "signed append-stable canonical registry and safe legacy-fixture recorder authority at commit 2fd5b0eaf993b9f44068bd0f61552fc84479129a and oracle 08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345, with explicit historical target 27, real target-slice conversion sequence, common verified suffix runner, exact-current-tip fingerprint recorder, strict applyMigrations isolation, and reserved report slot 28",
       ],
       [
         234,
-        "implemented target-27 converter slice, common post-conversion applyMigrations path, prefix digest helper, explicit target decoder, inside-BEGIN beforePendingMigration verifier, and sole registry/conversion/opener/doctor/backup/restore authority at 896405ac9734e60a84c8cb7690f4688da86383fd",
+        "implemented target-27 converter slice, common post-conversion strict applyMigrations path, prefix digest helper, explicit target decoder, inside-BEGIN beforePendingMigration verifier, exact-current-tip safe recorder plus fingerprint-reverified runMigrations compatibility, and sole registry/conversion/opener/runner/doctor/backup/restore authority at 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
       ],
     ],
     "#232 migration dependencies",
@@ -1475,7 +1501,6 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       "packages/storage/src/report-creation-repository.ts",
       "packages/storage/src/migrations/0028-report-creation.ts",
       "packages/storage/src/migration-registry.ts",
-      "packages/storage/src/database.ts",
       "packages/storage/src/index.ts",
       "packages/daemon/src/single-message-ingestion.ts",
       "packages/daemon/src/http.ts",
@@ -1524,6 +1549,8 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       "packages/cli/src/command-registry.ts",
       "packages/cli/src/command-outcome.ts",
       "packages/cli/src/output-context.ts",
+      "packages/storage/src/database.ts",
+      "packages/storage/src/migration-runner.ts",
       "packages/storage/src/migration-history-conversion.ts",
       "docs/architecture/database-migration-registry-oracle.v1.json",
       "docs/architecture/database-migration-registry-check.v1.mjs",
@@ -1721,6 +1748,24 @@ function renderDesign(oracle, digest) {
     "Migration: " + oracle.persistenceAuthority.migrationRule,
     "",
     "Prefix evolution: " + oracle.persistenceAuthority.prefixEvolutionAuthority.rule,
+    "",
+    "Legacy conversion authority:",
+    "",
+    ...oracle.persistenceAuthority.prefixEvolutionAuthority.legacyConversionSequence.map(
+      (step, index) => String(index + 1) + ". " + step,
+    ),
+    "",
+    "Safe recorder authority:",
+    "",
+    ...oracle.persistenceAuthority.prefixEvolutionAuthority.safeRecorderSequence.map(
+      (step, index) => String(index + 1) + ". " + step,
+    ),
+    "",
+    "Signed implementation modes: `" +
+      oracle.persistenceAuthority.prefixEvolutionAuthority.implementationSequenceMode +
+      "` and `" +
+      oracle.persistenceAuthority.prefixEvolutionAuthority.implementationCompatibilityMode +
+      "`.",
     "",
     table(
       ["Table", "Primary key", "Purpose"],
@@ -1942,6 +1987,10 @@ function renderCoverage(oracle, digest) {
     "",
     "Registry test: `" + oracle.downstream.issue232.migrationFiles.registryTest + "`.",
     "",
+    "Conversion composition test: `" +
+      oracle.downstream.issue232.migrationFiles.conversionCompositionTest +
+      "`.",
+    "",
     "Migration rule: " + oracle.downstream.issue232.migrationFiles.rule,
     "",
     "Change policy: " + oracle.downstream.issue232.changePolicy.allowedRule,
@@ -2006,19 +2055,19 @@ const mutations = [
     "stale-233-pin",
     (value) =>
       (value.acceptedArtifacts.find((row) => row.issue === 233).commit =
-        "8eec8dd0b730f7bea0fd15e94f920c401ee13f6c"),
+        "62b3eaf02cf001dfb6847f356cc533c6d3122d50"),
   ],
   [
     "stale-233-oracle-pin",
     (value) =>
       (value.acceptedArtifacts.find((row) => row.issue === 233).oracleSha256 =
-        "044e3de8ad36505997d8a4eab96210cebfad5aeaaba37926ab9337c68deafded"),
+        "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456"),
   ],
   [
     "stale-234-pin",
     (value) =>
       (value.acceptedArtifacts.find((row) => row.issue === 234).commit =
-        "e99683401c7f5e81be16bbdea56ae72460bd6ad7"),
+        "896405ac26aff907691d17908c9c4fa79b15cc71"),
   ],
   [
     "old-converter-pin",
@@ -2030,13 +2079,43 @@ const mutations = [
     "stale-233-checker-pin",
     (value) =>
       (value.frozenInputs.find((row) => row.id === "MIGRATION-REGISTRY-CHECKER").sha256 =
-        "4fa465ecf5edd9da9768bd63430bd63a2a4175336c5790c33f170eb8880ed63a"),
+        "e813cefdbbe84b45882de43f1a43423c77c4a4214a46835e366fa7da6be944a7"),
+  ],
+  [
+    "stale-233-design-pin",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "MIGRATION-REGISTRY-DESIGN").sha256 =
+        "f4505e55eaafca0f1085fe37844336433963511c9080fa95900de488db0df128"),
+  ],
+  [
+    "stale-233-decisions-pin",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "MIGRATION-REGISTRY-DECISIONS").sha256 =
+        "07fb450c0583813e9bc0b8f11fc2a7931ae34b77852c04d6c7e5d05d410565b5"),
+  ],
+  [
+    "stale-233-coverage-pin",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "MIGRATION-REGISTRY-COVERAGE").sha256 =
+        "2e1c6445dc1bfb43579459f012f53428e52e06b8761f5e2e29a23130c2281c37"),
   ],
   [
     "stale-234-database-pin",
     (value) =>
       (value.frozenInputs.find((row) => row.id === "DATABASE").sha256 =
-        "23e711c1a1aa41d3c4bf8dd1932ea180ef19c9a3ecf5e71d42afceed18d72156"),
+        "6a4a162dd5406e8f321a1eef5d99faf768365f626e1742aa513e06cd97209c84"),
+  ],
+  [
+    "stale-234-migration-runner-pin",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "MIGRATION-RUNNER").sha256 =
+        "c51d194bd1b9280da78c94fdc4acebcb87d5012ae979e5d9d86084d4973401bd"),
+  ],
+  [
+    "stale-234-storage-index-pin",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "STORAGE-INDEX").sha256 =
+        "54bf151e4818cc85c469f4e37f4665837b607d2a7c3223b7de0b5572f1924d1c"),
   ],
   [
     "legacy-converter-live-tip-sequence",
@@ -2060,6 +2139,35 @@ const mutations = [
     "implementation-sequence-mutation",
     (value) =>
       value.persistenceAuthority.prefixEvolutionAuthority.implementationSequenceMutationIds.pop(),
+  ],
+  [
+    "safe-recorder-before-suffix",
+    (value) => {
+      const sequence = value.persistenceAuthority.prefixEvolutionAuthority.safeRecorderSequence;
+      [sequence[1], sequence[2]] = [sequence[2], sequence[1]];
+    },
+  ],
+  [
+    "safe-recorder-fingerprint-bypass",
+    (value) =>
+      (value.persistenceAuthority.prefixEvolutionAuthority.legacyFixtureRecorder =
+        "trustRecordedCanonicalApplicationDatabase"),
+  ],
+  [
+    "strict-runner-compatibility-bypass",
+    (value) =>
+      (value.persistenceAuthority.prefixEvolutionAuthority.strictMigrationRunner = "runMigrations"),
+  ],
+  [
+    "implementation-compatibility-mode",
+    (value) =>
+      (value.persistenceAuthority.prefixEvolutionAuthority.implementationCompatibilityMode =
+        "--implementation-check"),
+  ],
+  [
+    "implementation-compatibility-mutation",
+    (value) =>
+      value.persistenceAuthority.prefixEvolutionAuthority.implementationCompatibilityMutationIds.pop(),
   ],
   ["frozen-input-drift", (value) => (value.frozenInputs[0].sha256 = "0".repeat(64))],
   ["public-route", (value) => (value.publicBoundary.route = "/v2/reports")],
@@ -2171,6 +2279,12 @@ const boundaryMutations = [
   [
     "issue232-converter-production-protected",
     "packages/storage/src/migration-history-conversion.ts",
+    "path",
+  ],
+  ["issue232-database-production-protected", "packages/storage/src/database.ts", "path"],
+  [
+    "issue232-migration-runner-production-protected",
+    "packages/storage/src/migration-runner.ts",
     "path",
   ],
   ["issue232-unknown-path", "packages/daemon/src/unknown-report-path.ts", "path"],

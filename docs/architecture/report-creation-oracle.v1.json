@@ -8,9 +8,9 @@
     "signable": true,
     "signatureState": "signed",
     "issue": 231,
-    "acceptedHead": "896405ac9734e60a84c8cb7690f4688da86383fd",
+    "acceptedHead": "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
     "sourceDate": "2026-08-19",
-    "description": "This JSON file is the single signed and normative authority for report creation, normalized-text materialization, persistence, source serving, and CLI behavior. It freezes user-selected capacity Policy A and consumes the accepted #233 canonical migration registry plus the #234 implementation at the accepted head. The design, decisions, and coverage Markdown files are exact checked projections of this authority.",
+    "description": "This JSON file is the single signed and normative authority for report creation, normalized-text materialization, persistence, source serving, and CLI behavior. It freezes user-selected capacity Policy A and consumes the accepted #233 canonical migration registry and safe legacy-fixture recorder authority plus the #234 implementation at the accepted head. The design, decisions, and coverage Markdown files are exact checked projections of this authority.",
     "scope": "One reports.create request through trusted HTTP admission, production MIME normalization for new and legacy canonical mail, deterministic construction, one SQLite report-publication transaction, authenticated report and source serving, and the reports create CLI observation. No network mail fetch, remote mutation, raw mail proxy, report deletion, general runtime assembly, or public-schema change is authorized.",
     "compatibilityRule": "Version 1 preserves the accepted reports.create request and response, report renderer, serving routes, HTTP error registry, CLI client, and command-outcome authority. A changed identity input, projection, citation, renderer, retention rule, public field, status, or CLI semantic requires a new oracle version and an explicit migration decision.",
     "implementationRule": "Issue 232 may implement only this signed authority from the exact accepted head and within its checked mutation boundary. Any capacity-policy, migration-slot, public-schema, protected-path, or frozen-input drift requires a new explicit authority revision before implementation continues."
@@ -27,16 +27,16 @@
       "id": "AUTH-MIGRATION-SLOT-28",
       "status": "accepted-and-consumed",
       "dependencies": [233, 234],
-      "architectureCommit": "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
-      "architectureOracleSha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
-      "implementationCommit": "896405ac9734e60a84c8cb7690f4688da86383fd",
+      "architectureCommit": "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
+      "architectureOracleSha256": "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
+      "implementationCommit": "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
       "predecessorRegistryIdentitySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
       "historicalConversionTargetVersion": 27,
       "historicalConversionTargetSha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
       "predecessorSchemaVersion": 27,
       "migrationVersion": 28,
       "migrationPath": "packages/storage/src/migrations/0028-report-creation.ts",
-      "rule": "Append report-creation-v1 at the accepted registry's exact reserved report slot 28 after the immutable 1..27 predecessor. Preserve the explicit historical conversion target as version 27 with digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; the real converter must execute and ledger only the frozen 1..27 target slice and return at user_version 27. The common production opener must then route slot 28 through applyMigrations and the inside-BEGIN beforePendingMigration verifier before any slot-28 SQL, history, user_version, or commit effect. The live full-registry digest evolves at slot 28 and never replaces or rewrites the target-27 row. Do not renumber, replace, or semantically alter a predecessor, bypass the common suffix runner, or advance any schema authority outside the sole canonical registry."
+      "rule": "Append report-creation-v1 at the accepted registry's exact reserved report slot 28 after the immutable 1..27 predecessor. Preserve the explicit historical conversion target as version 27 with digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; the real converter must execute and ledger only the frozen 1..27 target slice and return at user_version 27. The common production opener must then route slot 28 through strict applyMigrations and the inside-BEGIN beforePendingMigration verifier before any slot-28 SQL, history, user_version, or commit effect. Only after suffix completion, canonical-state and integrity verification may the opener call the synchronous safe recorder, which independently verifies the registry-derived exact current-tip authority before caching its complete fingerprint for runMigrations fixture compatibility. The live full-registry digest evolves at slot 28 and never replaces or rewrites the target-27 row. Do not renumber, replace, or semantically alter a predecessor, bypass the common suffix runner, weaken applyMigrations, record a prefix before suffix completion, or advance schema authority outside the sole canonical registry."
     }
   ],
   "acceptedArtifacts": [
@@ -73,15 +73,15 @@
     },
     {
       "issue": 233,
-      "commit": "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
-      "oracleSha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "commit": "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
+      "oracleSha256": "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
       "registryIdentitySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
-      "use": "signed canonical 1..27 migration registry, explicit append-stable historical target 27, real legacy converter target-slice sequence, common verified suffix runner, immutable predecessor identity, next legal migration/report slot 28, and downstream implementation contract"
+      "use": "signed canonical 1..27 migration registry, explicit append-stable historical target 27, real legacy converter target-slice sequence, common verified suffix runner, effect-safe exact-current-tip legacy-fixture recorder, strict applyMigrations isolation, immutable predecessor identity, next legal migration/report slot 28, and downstream implementation contract"
     },
     {
       "issue": 234,
-      "commit": "896405ac9734e60a84c8cb7690f4688da86383fd",
-      "use": "accepted sole canonical migration registry, explicit target-27 converter slice, common post-conversion suffix runner, prefix digest helper, verified inside-transaction suffix hook, strict conversion provenance, and registry-bound database, doctor, backup, and restore admission"
+      "commit": "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
+      "use": "accepted sole canonical migration registry, explicit target-27 converter slice, common post-conversion suffix runner, prefix digest helper, verified inside-transaction suffix hook, exact-current-tip safe recorder and fingerprint-checked runMigrations compatibility, strict applyMigrations isolation, conversion provenance, and registry-bound database, doctor, backup, and restore admission"
     }
   ],
   "frozenInputs": [
@@ -196,14 +196,20 @@
     {
       "id": "DATABASE",
       "path": "packages/storage/src/database.ts",
-      "sha256": "6a4a1620698b9709a1a036747c7caf27ee82e1319d044117a2cf3b908e81e6e4",
-      "kind": "implementation-baseline"
+      "sha256": "f6af053b4a29b944ef2323906038080be3700a9c339acd10c60a5aab26c0f8df",
+      "kind": "public-frozen"
     },
     {
       "id": "MIGRATION-RUNNER",
       "path": "packages/storage/src/migration-runner.ts",
-      "sha256": "c51d194bd66e644159df609c1c0644f8d725bad27968c2ec9ee6eba821cf59e7",
+      "sha256": "b3774cb89373ac527df8cd1a86f06c47fe89637c785a98d81c7546ec62a6ced0",
       "kind": "public-frozen"
+    },
+    {
+      "id": "STORAGE-INDEX",
+      "path": "packages/storage/src/index.ts",
+      "sha256": "3fd855f2502ab69f34e3f5edf23230e08d48b4c185734179f101153e561d50e8",
+      "kind": "implementation-baseline"
     },
     {
       "id": "BACKUP-MANIFEST",
@@ -256,31 +262,31 @@
     {
       "id": "MIGRATION-REGISTRY-ORACLE",
       "path": "docs/architecture/database-migration-registry-oracle.v1.json",
-      "sha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
+      "sha256": "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
       "kind": "public-frozen"
     },
     {
       "id": "MIGRATION-REGISTRY-CHECKER",
       "path": "docs/architecture/database-migration-registry-check.v1.mjs",
-      "sha256": "e813cefdc9a90c321677372ab3d7fbaf147ab313363f33f4b5803d346863d5ee",
+      "sha256": "bb420394846b1f34ee1dc00c77b5b94f1198f1aa37d24eace3a7513c69f7d5de",
       "kind": "public-frozen"
     },
     {
       "id": "MIGRATION-REGISTRY-DESIGN",
       "path": "docs/architecture/database-migration-registry-design.v1.md",
-      "sha256": "f4505e553c82e4f0a232b547f4eb71c1abf1aadfba4a56025f6bdc55aba138e2",
+      "sha256": "d88a844683490e20da12ba57a4f99496ee97878e777e00ae407d5e78f8b61609",
       "kind": "public-frozen"
     },
     {
       "id": "MIGRATION-REGISTRY-DECISIONS",
       "path": "docs/architecture/database-migration-registry-decisions.v1.md",
-      "sha256": "07fb450ce919edc47be1fa7701fa48f93ee8a67657426d569bdd6716267dd09d",
+      "sha256": "38feb62fae9dc733ed41dd2c1a0bfe23147e3237c64f081abcf12c0c4d3d2c0e",
       "kind": "public-frozen"
     },
     {
       "id": "MIGRATION-REGISTRY-COVERAGE",
       "path": "docs/architecture/database-migration-registry-coverage.v1.md",
-      "sha256": "2e1c6445f2119fbb248e86865e080bed87122bc0d5f0e13f6983d636a4e1be84",
+      "sha256": "ca2454f35a5f84ae87db783e1fccc7c2d3acb12aa61fafe5bbb5e29696cd03d6",
       "kind": "public-frozen"
     },
     {
@@ -558,9 +564,9 @@
     "predecessorRegistryIdentitySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
     "migrationDependencies": [233, 234],
     "prefixEvolutionAuthority": {
-      "architectureCommit": "62b3eaf02cf001dfb6847f356cc533c6d3122d50",
-      "architectureOracleSha256": "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456",
-      "implementationCommit": "896405ac9734e60a84c8cb7690f4688da86383fd",
+      "architectureCommit": "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
+      "architectureOracleSha256": "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
+      "implementationCommit": "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
       "predecessorVersion": 27,
       "historicalTargetVersion": 27,
       "historicalTargetRegistrySha256": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
@@ -582,9 +588,25 @@
         "converter-live-tip-loop",
         "legacy-opener-skips-suffix-runner"
       ],
-      "rule": "Append slot 28 only through the accepted canonical registry. The accepted real legacy converter resolves explicit target 27, executes and ledgers only canonicalDatabaseMigrations.slice(0, 27), sets user_version 27, verifies that exact base, and returns without observing the live suffix. The common production opener then always invokes applyMigrations over the complete live registry; inside the slot-28 BEGIN IMMEDIATE transaction, beforePendingMigration verifies exact prefix 27 before any report SQL, schema_migrations INSERT, user_version write, or commit. Preserve every 1..27 semantic byte and immutable target-27 provenance byte; the new live full-registry digest must differ from and never replace target_registry_sha256. The converter source remains byte-protected; update only the focused conversion composition test to assert the exact historical prefix-27 digest, exact live registry-28 digest, real legacy-to-27-to-gated-28 sequence, append stability, and full-digest-substitution rejection."
+      "legacyFixtureRecorder": "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures",
+      "legacyFixtureRunner": "runMigrations",
+      "strictMigrationRunner": "applyMigrations",
+      "implementationCompatibilityMode": "--implementation-compatibility-check",
+      "safeRecorderSequence": [
+        "the real legacy converter commits and verifies only explicit historical target 27, then returns without observing slot 28",
+        "the common production opener routes pending slot 28 through strict applyMigrations and the inside-BEGIN beforePendingMigration prefix verifier",
+        "after the complete live registry reaches exact current tip 28, the opener verifies canonical migration state and database integrity before recorder invocation",
+        "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures synchronously and independently verifies registry-derived current-tip user_version, exact ordered history, complete sqlite_schema tuples, strict immutable conversion rows, and the grammar-valid reindex overlay before changing its module-private WeakMap",
+        "runMigrations recomputes and byte-compares the complete recorded fingerprint before a zero-write legacy-fixture compatibility no-op; applyMigrations never reads compatibility state and remains strict"
+      ],
+      "implementationCompatibilityMutationIds": [
+        "legacy-fixture-fingerprint-bypass",
+        "legacy-fixture-failure-stores-expected-fingerprint",
+        "strict-runner-compatibility-bypass"
+      ],
+      "rule": "Append slot 28 only through the accepted canonical registry. The accepted real legacy converter resolves explicit target 27, executes and ledgers only canonicalDatabaseMigrations.slice(0, 27), sets user_version 27, verifies that exact base, and returns without observing the live suffix. The common production opener then always invokes strict applyMigrations over the complete live registry; inside the slot-28 BEGIN IMMEDIATE transaction, beforePendingMigration verifies exact prefix 27 before any report SQL, schema_migrations INSERT, user_version write, or commit. After reaching exact current tip 28, the opener verifies canonical state and integrity before the effect-safe recorder independently verifies and fingerprints the complete current-tip authority; only then may runMigrations provide a fingerprint-reverified zero-write legacy-fixture compatibility no-op. Preserve every 1..27 semantic byte and immutable target-27 provenance byte; the new live full-registry digest must differ from and never replace target_registry_sha256. The converter, database opener, and migration runner remain byte-protected; update only the registry, storage index, and focused registry/conversion-composition tests required for slot 28."
     },
-    "migrationRule": "Create report-creation-v1 only at packages/storage/src/migrations/0028-report-creation.ts and append that exact semantic migration as canonical registry slot 28 after the accepted immutable 1..27 prefix whose identity is 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab. Preserve accepted historical conversion target 27: the protected converter must execute and ledger only the 1..27 target slice and return at user_version 27, after which the common opener runs slot 28 only through applyMigrations and the inside-BEGIN verifyCanonicalMigrationPrefixState hook before any suffix effect. Update the registry-derived live full digest, schema and next-slot constants, registry test, and focused conversion composition test; do not change the protected converter or #233 artifacts, renumber or edit a predecessor, substitute the live full digest into historical provenance, loop the converter over the live registry, move the suffix runner behind a non-legacy branch, or bypass opener, doctor, backup, or restore authority.",
+    "migrationRule": "Create report-creation-v1 only at packages/storage/src/migrations/0028-report-creation.ts and append that exact semantic migration as canonical registry slot 28 after the accepted immutable 1..27 prefix whose identity is 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab. Preserve accepted historical conversion target 27: the protected converter must execute and ledger only the 1..27 target slice and return at user_version 27, after which the protected common opener runs slot 28 only through strict applyMigrations and the inside-BEGIN verifyCanonicalMigrationPrefixState hook before any suffix effect. Only after exact current-tip canonical-state and integrity verification may that opener call the protected effect-safe recorder; runMigrations must rederive and byte-compare the complete fingerprint before a zero-write fixture no-op, while applyMigrations remains compatibility-unaware and strict. Update only the registry-derived live full digest, schema and next-slot constants, storage index report exports, registry test, and focused conversion composition test; do not change the protected converter, database opener, migration runner, or #233 artifacts, renumber or edit a predecessor, substitute the live full digest into historical provenance, loop the converter over the live registry, record target 27 before suffix completion, weaken strict applyMigrations, or bypass opener, doctor, backup, or restore authority.",
     "databaseOnly": true,
     "tablePolicy": "All four report tables are SQLite STRICT tables. Every listed column is NOT NULL, every named primary, unique, foreign-key, and CHECK constraint is enforced with foreign_keys=ON, every parent action is ON UPDATE RESTRICT ON DELETE RESTRICT, no table has an omitted nullable column, and no report table uses a cascade. Identity-sensitive strings use canonical JSON BLOB bytes, never raw TEXT.",
     "tables": [
@@ -1159,8 +1181,8 @@
     {
       "id": "TRACE-MIGRATION-28",
       "setup": "fresh database, every canonical 1..27 prefix, and a real supported legacy database whose converter must create immutable historical target version 27/digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab before any live suffix, plus unknown, forged, newer, and recomputed-live-full-digest-substituted provenance",
-      "action": "append report-creation-v1 as canonical slot 28, run the signed #233 implementation-sequence proof, and open through the sole database boundary so the real converter commits only target 1..27 before the common opener routes slot 28 through applyMigrations and the inside-BEGIN beforePendingMigration prefix hook",
-      "expected": "fresh, exact prefixes, and real legacy conversion first reach exact target 27, after which the common gated suffix path reaches schema 28 with the report and rate-ledger schema once; all 1..27 semantic identities and target-27 provenance bytes remain exact while the live full-registry digest advances separately; both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore agree; converter-live-tip and legacy-opener-bypass counterexamples reject; unknown, forged, newer, and full-digest-substituted histories remain untouched and fail before any slot-28 SQL/history/user_version/commit effect"
+      "action": "append report-creation-v1 as canonical slot 28, run the signed #233 implementation-sequence and implementation-compatibility proofs, and open through the sole database boundary so the real converter commits only target 1..27 before the protected common opener routes slot 28 through strict applyMigrations and the inside-BEGIN beforePendingMigration prefix hook, verifies exact current-tip canonical state and integrity, then invokes the effect-safe recorder",
+      "expected": "fresh, exact prefixes, and real legacy conversion first reach exact target 27, after which the common gated suffix path reaches schema 28 with the report and rate-ledger schema once; only that exact verified current-tip handle is fingerprint-recorded, runMigrations rederives the fingerprint for a zero-write legacy-fixture no-op, and applyMigrations remains strict and compatibility-unaware; all 1..27 semantic identities and target-27 provenance bytes remain exact while the live full-registry digest advances separately; both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore agree; converter-live-tip, legacy-opener-bypass, premature-recorder, fingerprint-bypass, and strict-runner-bypass counterexamples reject; unknown, forged, newer, full-digest-substituted, or current-tip-incomplete histories remain untouched and fail before any slot-28 or compatibility effect"
     },
     {
       "id": "TRACE-REOPEN",
@@ -1262,7 +1284,7 @@
     },
     {
       "id": "FORBID-MIGRATION-AUTHORITY-DRIFT",
-      "text": "Any report migration other than report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts and canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; replacing immutable historical target-27 provenance with the new live full-registry digest; converting or ledgering any live suffix inside the legacy converter; placing the suffix runner only in a non-legacy opener branch; slot-28 SQL/history/user_version/commit before the inside-BEGIN prefix verifier; changing protected converter production bytes or #233 artifacts; any predecessor renumbering, semantic edit, alternate registry, caller ceiling, or conversion/reopen/doctor/backup/empty-restore/full-restore bypass."
+      "text": "Any report migration other than report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts and canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; replacing immutable historical target-27 provenance with the new live full-registry digest; converting or ledgering any live suffix inside the legacy converter; placing the suffix runner only in a non-legacy opener branch; slot-28 SQL/history/user_version/commit before the inside-BEGIN prefix verifier; recording compatibility authority at target 27 before gated slot 28 and exact current-tip canonical-state/integrity verification; trusting the WeakMap without independent complete-fingerprint revalidation; allowing applyMigrations to read or bypass through compatibility state; changing protected converter, database opener, migration-runner, or #233 artifact bytes; any predecessor renumbering, semantic edit, alternate registry, caller ceiling, or conversion/reopen/doctor/backup/empty-restore/full-restore bypass."
     },
     {
       "id": "FORBID-REPLAY-REVALIDATION",
@@ -1340,7 +1362,7 @@
     {
       "id": "S12",
       "status": "required",
-      "reason": "Issue 232 is unblocked only from accepted head 896405ac9734e60a84c8cb7690f4688da86383fd within the exact checked files, the signed real legacy-to-target-27-to-gated-suffix sequence, append-stable migration slot 28, and Policy A obligations; issue 165 retains final parity-promotion ownership."
+      "reason": "Issue 232 is unblocked only from accepted head 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce within the exact checked files, the signed real legacy-to-target-27-to-gated-suffix-to-safe-recorder sequence, append-stable migration slot 28, and Policy A obligations; issue 165 retains final parity-promotion ownership."
     }
   ],
   "decisions": [
@@ -1424,14 +1446,14 @@
     },
     {
       "id": "D14",
-      "choice": "Consume accepted #233 at 62b3eaf02cf001dfb6847f356cc533c6d3122d50 / oracle 503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456 and #234 at 896405ac9734e60a84c8cb7690f4688da86383fd by appending report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts as canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab.",
-      "reason": "The accepted registry explicitly reserves report slot 28 and proves the real legacy converter commits only target 1..27 before the common opener routes slot 28 through its inside-BEGIN verify-before-suffix hook. Slot 28 evolves the live full-registry digest without rewriting converted target-27 rows; reopen, doctor, backup, empty restore, and full restore share that authority at the accepted head.",
-      "rejected": "renumbering any predecessor, substituting the live full digest for historical target 27, changing protected converter bytes, looping conversion over the live registry, skipping the common suffix runner after legacy conversion, applying suffix effects before prefix verification, a second registry, direct applyMigrations use, caller-selected ceilings, conversion bypass, and any migration path or slot other than the frozen one"
+      "choice": "Consume accepted #233 at 2fd5b0eaf993b9f44068bd0f61552fc84479129a / oracle 08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345 and #234 at 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce by appending report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts as canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab, then retaining exact-current-tip safe-recorder compatibility without weakening strict applyMigrations.",
+      "reason": "The accepted registry explicitly reserves report slot 28 and proves the real legacy converter commits only target 1..27 before the protected common opener routes slot 28 through its inside-BEGIN verify-before-suffix hook. Only the fully verified current-tip handle is then fingerprint-recorded for legacy fixture compatibility; runMigrations revalidates that fingerprint and applyMigrations remains strict. Slot 28 evolves the live full-registry digest without rewriting converted target-27 rows; reopen, doctor, backup, empty restore, and full restore share that authority at the accepted head.",
+      "rejected": "renumbering any predecessor, substituting the live full digest for historical target 27, changing protected converter/opener/runner bytes, looping conversion over the live registry, skipping the common suffix runner after legacy conversion, applying suffix effects before prefix verification, recording target 27 before current-tip verification, trusting cached compatibility state without a complete fingerprint recheck, weakening strict applyMigrations, a second registry, direct applyMigrations use, caller-selected ceilings, conversion bypass, and any migration path or slot other than the frozen one"
     },
     {
       "id": "D15",
-      "choice": "Pin #232 change authority to base 896405ac9734e60a84c8cb7690f4688da86383fd and fail frozen-input drift, protected paths, and unknown paths.",
-      "reason": "The implementation proof must apply to the reviewed production seams and cannot silently widen into public contracts, #165, or unrelated code.",
+      "choice": "Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; database.ts and migration-runner.ts are protected accepted dependencies while index.ts remains an allowed report export surface.",
+      "reason": "The implementation proof must apply to the reviewed production seams and cannot silently widen into the safe-recorder/opener authority, public contracts, #165, or unrelated code.",
       "rejected": "warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths"
     }
   ],
@@ -1440,7 +1462,7 @@
       "model": "gpt-5.6-luna",
       "minimumReasoning": "xhigh",
       "status": "ready-for-implementation",
-      "implementationBase": "896405ac9734e60a84c8cb7690f4688da86383fd",
+      "implementationBase": "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
       "hardDependencies": [
         {
           "issue": 231,
@@ -1449,12 +1471,12 @@
         },
         {
           "issue": 233,
-          "required": "signed append-stable canonical registry authority at commit 62b3eaf02cf001dfb6847f356cc533c6d3122d50 and oracle 503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456, with explicit historical target 27, real target-slice conversion sequence, common verified suffix runner, and reserved report slot 28",
+          "required": "signed append-stable canonical registry and safe legacy-fixture recorder authority at commit 2fd5b0eaf993b9f44068bd0f61552fc84479129a and oracle 08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345, with explicit historical target 27, real target-slice conversion sequence, common verified suffix runner, exact-current-tip fingerprint recorder, strict applyMigrations isolation, and reserved report slot 28",
           "current": "accepted"
         },
         {
           "issue": 234,
-          "required": "implemented target-27 converter slice, common post-conversion applyMigrations path, prefix digest helper, explicit target decoder, inside-BEGIN beforePendingMigration verifier, and sole registry/conversion/opener/doctor/backup/restore authority at 896405ac9734e60a84c8cb7690f4688da86383fd",
+          "required": "implemented target-27 converter slice, common post-conversion strict applyMigrations path, prefix digest helper, explicit target decoder, inside-BEGIN beforePendingMigration verifier, exact-current-tip safe recorder plus fingerprint-reverified runMigrations compatibility, and sole registry/conversion/opener/runner/doctor/backup/restore authority at 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
           "current": "implemented"
         }
       ],
@@ -1466,7 +1488,6 @@
         "packages/storage/src/report-creation-repository.ts",
         "packages/storage/src/migrations/0028-report-creation.ts",
         "packages/storage/src/migration-registry.ts",
-        "packages/storage/src/database.ts",
         "packages/storage/src/index.ts",
         "packages/daemon/src/single-message-ingestion.ts",
         "packages/daemon/src/http.ts",
@@ -1507,6 +1528,8 @@
         "packages/cli/src/command-registry.ts",
         "packages/cli/src/command-outcome.ts",
         "packages/cli/src/output-context.ts",
+        "packages/storage/src/database.ts",
+        "packages/storage/src/migration-runner.ts",
         "packages/storage/src/migration-history-conversion.ts",
         "docs/architecture/database-migration-registry-oracle.v1.json",
         "docs/architecture/database-migration-registry-check.v1.mjs",
@@ -1522,17 +1545,17 @@
         "registry": "packages/storage/src/migration-registry.ts",
         "registryTest": "packages/storage/test/migration-registry.test.ts",
         "conversionCompositionTest": "packages/storage/test/migration-history-conversion.test.ts",
-        "rule": "Create only the exact report migration/test paths, append only canonical slot 28 to the accepted registry, and update the focused registry plus conversion-composition expectations. The conversion test must preserve the signed real converter sequence that lands exactly on target 27, then prove the common opener applies the new slot 28 through beforePendingMigration; it must separately assert exact historical prefix-27 digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab, the new exact live registry-28 digest, append stability, both suffix crash boundaries, reopen, doctor, backup, empty/full restore, and full-digest-substitution rejection. The #233 artifacts and packages/storage/src/migration-history-conversion.ts remain byte-frozen."
+        "rule": "Create only the exact report migration/test paths, append only canonical slot 28 to the accepted registry, update the storage index only for report exports, and update the focused registry plus conversion-composition expectations. The conversion test must preserve the signed real converter sequence that lands exactly on target 27, then prove the protected common opener applies the new slot 28 through strict applyMigrations and beforePendingMigration, verifies exact current-tip canonical state and integrity, and only then calls the effect-safe recorder; runMigrations must rederive and byte-compare the fingerprint while applyMigrations remains compatibility-unaware. Separately assert exact historical prefix-27 digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab, the new exact live registry-28 digest, append stability, both suffix crash boundaries, reopen, doctor, backup, empty/full restore, full-digest-substitution rejection, premature-recorder rejection, and strict-runner-bypass rejection. The #233 artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, and packages/storage/src/migration-history-conversion.ts remain byte-frozen."
       },
       "changePolicy": {
-        "base": "896405ac9734e60a84c8cb7690f4688da86383fd",
+        "base": "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce",
         "allowedRule": "Every changed path must equal one productionFiles or testFiles entry in this signed oracle. Protected paths fail even if also injected into an allowlist; every other path is unknown and fails.",
         "driftRule": "Every frozen input must match its accepted-base digest. A missing live frozen input always fails. After implementation, every changed live frozen input must be declared in the same checker invocation and must be an allowed #232 path; undeclared drift and declared protected or unknown paths fail. Declared allowed implementation drift is expected, never silent authority drift.",
         "invocation": "node docs/architecture/report-creation-check.v1.mjs --changed-path=<path> [repeat for the complete #232 diff] --self-test",
         "selfTests": ["frozen-input-drift", "protected-path", "unknown-path"]
       },
       "implementationObligations": [
-        "Implement report-creation-v1 only at packages/storage/src/migrations/0028-report-creation.ts and append it as canonical slot 28 after exact accepted prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab. Preserve the signed production sequence: the protected real converter resolves target 27, executes and ledgers only canonicalDatabaseMigrations.slice(0, 27), commits user_version and immutable provenance at 27, and returns; the common opener then routes slot 28 through applyMigrations and beforePendingMigration. Preserve every 1..27 semantic byte; advance the live full-registry digest, schema/next-slot constants, registry test, and packages/storage/test/migration-history-conversion.test.ts. Prove prefix 27 is verified before slot-28 SQL/history/user_version/commit and that converter-live-tip, legacy-opener-bypass, and recomputed live-full-digest substitutions reject. Do not change #233 artifacts or packages/storage/src/migration-history-conversion.ts.",
+        "Implement report-creation-v1 only at packages/storage/src/migrations/0028-report-creation.ts and append it as canonical slot 28 after exact accepted prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab. Preserve the signed production sequence: the protected real converter resolves target 27, executes and ledgers only canonicalDatabaseMigrations.slice(0, 27), commits user_version and immutable provenance at 27, and returns; the protected common opener then routes slot 28 through strict applyMigrations and beforePendingMigration, verifies exact current-tip canonical state and integrity, and invokes the effect-safe recorder. Preserve every 1..27 semantic byte; advance only the live full-registry digest, schema/next-slot constants, storage index report exports, registry test, and packages/storage/test/migration-history-conversion.test.ts. Prove prefix 27 is verified before slot-28 SQL/history/user_version/commit, recorder invocation happens only after verified tip 28, runMigrations rederives the complete fingerprint, applyMigrations remains strict, and converter-live-tip, legacy-opener-bypass, premature-recorder, fingerprint-bypass, strict-runner-bypass, and recomputed live-full-digest substitutions reject. Do not change #233 artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, or packages/storage/src/migration-history-conversion.ts.",
         "Extend the production MIME parser, single-message ingestion, promotion adapter, canonical promotion, and strict read-back to persist one bounded message_text_projections value for every new parsed message; implement the verified raw-EML staging materializer for legacy rows with explicit states and one awaited idempotent cleanup barrier.",
         "Implement canonical identity and canonical JSON BLOB string serialization, bounded excerpt/model/rendering, one report publication transaction, exact replay, read-back, typed failures, and BEFORE UPDATE/DELETE/duplicate-INSERT guards that defeat INSERT OR REPLACE and REPLACE INTO for all four immutable report tables.",
         "Change the shared HTTP boundary only for a non-raiseable reports.create min(global,1048576) cap after authentication/reports:write but before body materialization; prove raised-global-limit declared and chunked overflow rejection before handler.",
@@ -1540,8 +1563,8 @@
         "Extend only the internal report service context needed to carry the trusted body digest, principal scopes, and injected capacity clock. Require mail:read.message after the admitted replay-miss rate commit but before every source/materializer read; exact replay requires reports:write only. Missing source scope retains exactly one rate-ledger attempt and performs zero source reads, materializer invocations, message-text-projection, report, artifact, citation, capacity-total, or publication writes; never assert zero total writes. Map exact frozen service messages to existing registered global code/status/details without public-schema change.",
         "Make report/source serving query owner and configured account before materialization, consume the durable model/snapshot records, and verify all digests and renderer/CSP versions before output.",
         "Implement the focused reports create command adapter with shared request/response parsing, shared client, branded human segments, and #214 result construction.",
-        "Prove every constructive trace, including the signed #233 --implementation-sequence-check over a real supported legacy database: real converter to exact target 27, then common-opener gated slot 28, both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore; retain exact target-27 provenance while the live digest evolves, and reject converter-live-tip, legacy-opener-bypass, and full-digest substitutions before suffix effects. Also prove staged EML through real ingestion/promotion to HTTP report, legacy materialization, both-scope first create, reports:write-only replay, all-write missing-scope instrumentation, canonical-string round trips, operation-specific body admission, rate/count/logical-byte exact boundaries and recovery, every failure boundary, REPLACE-safe immutability before/after reopen/restore, hostile corpus, and CLI branches. Direct-SQL-only mail source fixtures do not count.",
-        "Run this checker before implementation and after implementation with the complete changed-path set in one invocation. Leave protected/unknown files, #165 drafts, planning, GitHub, metrics, #233 authority artifacts, and packages/storage/src/migration-history-conversion.ts unchanged; only its declared focused test may change for slot-28 composition. Missing or undeclared frozen drift and every scope expansion fail."
+        "Prove every constructive trace, including the signed #233 --implementation-sequence-check and --implementation-compatibility-check over a real supported legacy database: real converter to exact target 27, then protected common-opener gated slot 28, exact-current-tip canonical-state/integrity verification, effect-safe recorder invocation, and fingerprint-reverified zero-write runMigrations compatibility while applyMigrations remains strict; cover both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore; retain exact target-27 provenance while the live digest evolves, and reject converter-live-tip, legacy-opener-bypass, premature-recorder, incomplete-current-tip, fingerprint-bypass, strict-runner-bypass, and full-digest substitutions before effects. Also prove staged EML through real ingestion/promotion to HTTP report, legacy materialization, both-scope first create, reports:write-only replay, all-write missing-scope instrumentation, canonical-string round trips, operation-specific body admission, rate/count/logical-byte exact boundaries and recovery, every failure boundary, REPLACE-safe immutability before/after reopen/restore, hostile corpus, and CLI branches. Direct-SQL-only mail source fixtures do not count.",
+        "Run this checker before implementation and after implementation with the complete changed-path set in one invocation. Leave protected/unknown files, #165 drafts, planning, GitHub, metrics, #233 authority artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, and packages/storage/src/migration-history-conversion.ts unchanged; only the declared registry, storage index, and focused registry/conversion-composition tests may change for slot-28 integration. Missing or undeclared frozen drift and every scope expansion fail."
       ],
       "retirement": "No production report-creation path exists to retire. Replace only fixture repositories in focused composed proofs; retain accepted renderer and serving behavior."
     },
