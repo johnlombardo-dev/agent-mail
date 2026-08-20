@@ -4,11 +4,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "1fe9d98a9d14d1c21d42f16b045aeec00e04eec9e0690970692af76879f9f421";
+const EXPECTED_ORACLE_SHA256 = "e4ad62866e691b4bcff011cf6384ed78439351ce491c8061772dd9bcb17916b0";
 const EXPECTED_VIEW_SHA256 = [
-  "c5dcccfaf18e61b95303f7601d41ccf2420c515a471aac9c64cb39f262226a96",
-  "0c42fdb32b1e036c567c5b335036514ea0c22c686e449bc4bdcc244d1d7bb210",
-  "e07a03fe01f71d725d541f98c4716702a3e7b626b310a6328f5906f948d91032",
+  "ca0cce6418c7ad656ac0cc1610e6682cefc64b0935467e9557051b40ed3a8d24",
+  "a2d17adcaf232ace8cc06bf54ec812db5b619db0ecc8edb668894cadf94f3504",
+  "bf3e30c5d72c6dec98ed7c3eb04894fe423868a7c19a463d06bbeab9385c52ef",
 ];
 const ACCEPTED_HEAD = "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce";
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -221,6 +221,10 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
     "REMOTE-PLACEMENT-OBSERVATION-TEST": [
       "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
       "ee9af0c34cb929ffd0f8a930b28f92e97a11663ea68d6408c18537d5f5183385",
+    ],
+    "SEARCH-CORPUS-TEST": [
+      "packages/storage/test/search-corpus-p4-c16.test.ts",
+      "d9f50b9a75413d4d4fd3d724b7856390bf954abd7e3035020694f4120b42b92b",
     ],
     "PROMOTION-ADAPTER": [
       "packages/storage/src/promotion-adapter.ts",
@@ -1527,6 +1531,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       "packages/imap/test/mime-parser-p2-c10.test.ts",
       "packages/storage/test/canonical-promotion-p2-c13.test.ts",
       "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+      "packages/storage/test/search-corpus-p4-c16.test.ts",
       "packages/storage/test/promotion-adapter-p2-c20.test.ts",
       "packages/storage/test/message-text-materializer.test.ts",
       "packages/storage/test/report-creation-migration.test.ts",
@@ -1669,9 +1674,47 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     ],
     "#232 concurrency/REPLACE/recovery proof paths",
   );
+  const searchCorpus = focused.searchCorpusIndexAuthority;
+  exact(
+    [
+      searchCorpus.testPath,
+      searchCorpus.acceptedBaseSha256,
+      searchCorpus.registryPath,
+      searchCorpus.canonicalSchemaVersion,
+      searchCorpus.indexQuery,
+      searchCorpus.canonicalIndexCount,
+      searchCorpus.canonicalIndexTupleSha256,
+      searchCorpus.slot28IndexNames,
+    ],
+    [
+      "packages/storage/test/search-corpus-p4-c16.test.ts",
+      "d9f50b9a75413d4d4fd3d724b7856390bf954abd7e3035020694f4120b42b92b",
+      "packages/storage/src/migration-registry.ts",
+      28,
+      "SELECT name, tbl_name, sql FROM sqlite_schema WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex_%' ORDER BY name, tbl_name, sql",
+      33,
+      "8a1da254844604df5d8f9c8b1629de2683227c90b1758f3c137166b870affb24",
+      [
+        "report_snapshots_owner_account_bytes",
+        "report_sources_snapshot_lookup",
+        "reports_owner_account_created",
+      ],
+    ],
+    "#232 search corpus index authority",
+  );
+  exact(
+    [searchCorpus.derivationRule, searchCorpus.comparisonRule, searchCorpus.mutationRule],
+    [
+      "Create a separate empty owner-only file database through the protected production openDatabase path and current canonicalDatabaseMigrations registry, require user_version and exact ordered schema_migrations history to equal the registry-derived current tip 28, require integrity_check ok and zero foreign_key_check rows, then query the complete ordered non-auto sqlite_schema index tuples with indexQuery. Canonical JSON of those exact name/table/SQL tuples must contain 33 rows and hash to canonicalIndexTupleSha256. Never derive expected tuples from either corpus database under test or from a hand-maintained per-table count map.",
+      "Compare each generated corpus database's complete ordered index tuples byte-for-byte with the independent canonical index oracle; derive schemaIndexCounts and schemaIndexTotal from those oracle tuples and compare the inventory to those derived values before retaining validateCorpusInventory's integrity, foreign-key, required-object, placement, normalized-content, FTS, label, query-selectivity, and query-identity checks.",
+      "The focused test must reject one omitted canonical index, one extra index, and one same-name index recreated with different SQL while retaining the other tuples. The #231 checker must independently reject removal of the search test, stale accepted bytes, schema version 27, stale literal count 4, wrong tuple digest, omission of any slot-28 index name, and any production-scope widening.",
+    ],
+    "#232 search corpus index rules",
+  );
   for (const paths of Object.values(focused.proofPathBindings)) {
     validateChangedPaths(issue232, paths);
   }
+  validateChangedPaths(issue232, [searchCorpus.testPath]);
   validateChangedPaths(issue232, issue232.productionFiles);
   validateChangedPaths(issue232, issue232.testFiles);
   if (issue232.implementationObligations.length !== 10) fail("#232 obligations differ");
@@ -2105,6 +2148,33 @@ function renderCoverage(oracle, digest) {
       ),
     ),
     "",
+    "Search corpus test: `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.testPath +
+      "` at accepted-base SHA-256 `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority
+        .acceptedBaseSha256 +
+      "`.",
+    "",
+    "Canonical search index oracle: schema " +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority
+        .canonicalSchemaVersion +
+      ", " +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority
+        .canonicalIndexCount +
+      " indexes, tuple SHA-256 `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority
+        .canonicalIndexTupleSha256 +
+      "`.",
+    "",
+    "Search index derivation: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.derivationRule,
+    "",
+    "Search index comparison: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.comparisonRule,
+    "",
+    "Search index mutations: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.mutationRule,
+    "",
     "Obligations:",
     "",
     ...oracle.downstream.issue232.implementationObligations.map(
@@ -2381,6 +2451,13 @@ const mutations = [
       )),
   ],
   [
+    "issue232-search-corpus-test",
+    (value) =>
+      (value.downstream.issue232.testFiles = value.downstream.issue232.testFiles.filter(
+        (path) => path !== "packages/storage/test/search-corpus-p4-c16.test.ts",
+      )),
+  ],
+  [
     "focused-suite-timeout-override",
     (value) =>
       value.downstream.issue232.focusedSuiteAuthority.command.splice(2, 0, "--timeout", "20000"),
@@ -2433,6 +2510,57 @@ const mutations = [
         "0".repeat(64)),
   ],
   [
+    "search-corpus-stale-base-pin",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.acceptedBaseSha256 =
+        "0".repeat(64)),
+  ],
+  [
+    "search-corpus-stale-schema-version",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.canonicalSchemaVersion = 27),
+  ],
+  [
+    "search-corpus-stale-four-index-count",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.canonicalIndexCount = 4),
+  ],
+  [
+    "search-corpus-wrong-index-digest",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.canonicalIndexTupleSha256 =
+        "0".repeat(64)),
+  ],
+  [
+    "search-corpus-slot28-index-omission",
+    (value) =>
+      value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.slot28IndexNames.pop(),
+  ],
+  [
+    "search-corpus-count-only-query",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.indexQuery =
+        "SELECT COUNT(*) FROM sqlite_schema WHERE type = 'index'"),
+  ],
+  [
+    "search-corpus-self-derived-oracle",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.derivationRule =
+        "derive expected indexes from the corpus database under test"),
+  ],
+  [
+    "search-corpus-count-only-comparison",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.comparisonRule =
+        "compare only schemaIndexTotal"),
+  ],
+  [
+    "search-corpus-mutation-gap",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.mutationRule =
+        "reject omissions only"),
+  ],
+  [
     "staged-eml-http-cli-proof-path",
     (value) =>
       value.downstream.issue232.focusedSuiteAuthority.proofPathBindings.stagedEmlHttpCli.pop(),
@@ -2470,6 +2598,7 @@ const boundaryMutations = [
     "path",
   ],
   ["issue232-unknown-path", "packages/daemon/src/unknown-report-path.ts", "path"],
+  ["issue232-search-generator-unknown", "scripts/capacity/generate-search-corpus.ts", "path"],
   ["issue232-undeclared-drift", "packages/daemon/src/http.ts", "drift"],
   ["issue232-missing-frozen-input", "packages/daemon/src/http.ts", "missing"],
 ];
@@ -2514,6 +2643,7 @@ function runSelfTest(oracle) {
     validateChangedPaths(oracle.downstream.issue232, [
       "packages/storage/test/canonical-promotion-p2-c13.test.ts",
       "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+      "packages/storage/test/search-corpus-p4-c16.test.ts",
     ]);
   } catch {
     failures.push("issue232-focused-scope-allowed");

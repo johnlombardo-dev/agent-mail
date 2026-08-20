@@ -182,6 +182,12 @@
       "kind": "implementation-baseline"
     },
     {
+      "id": "SEARCH-CORPUS-TEST",
+      "path": "packages/storage/test/search-corpus-p4-c16.test.ts",
+      "sha256": "d9f50b9a75413d4d4fd3d724b7856390bf954abd7e3035020694f4120b42b92b",
+      "kind": "implementation-baseline"
+    },
+    {
       "id": "PROMOTION-ADAPTER",
       "path": "packages/storage/src/promotion-adapter.ts",
       "sha256": "f1e588e4316390c495a3b1a6af402982c9a8f30869c224fc7fd03155ed2cd6f2",
@@ -375,7 +381,7 @@
     },
     {
       "id": "REQ-DOWNSTREAM",
-      "text": "Issue 232 has an exact mutation and proof boundary, including the accepted remote-placement production caller, strict normalizedText admission, and a default-5000-millisecond focused suite with test-owned WAL cleanup and no timeout override; issue 165 retains ownership of the production-adapter and composed-CLI parity cells after consuming #232 evidence."
+      "text": "Issue 232 has an exact mutation and proof boundary, including the accepted remote-placement production caller, strict normalizedText admission, a default-5000-millisecond focused suite with test-owned WAL cleanup and no timeout override, and the sole added search-corpus test with a registry-derived exact current-schema index oracle; issue 165 retains ownership of the production-adapter and composed-CLI parity cells after consuming #232 evidence."
     }
   ],
   "publicBoundary": {
@@ -1374,7 +1380,7 @@
     {
       "id": "S12",
       "status": "required",
-      "reason": "Issue 232 is unblocked only from accepted head 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce within the exact checked files, including the sole added remote-placement caller test and exact default-timeout P2-C13 stabilization, the signed real legacy-to-target-27-to-gated-suffix-to-safe-recorder sequence, append-stable migration slot 28, and Policy A obligations; issue 165 retains final parity-promotion ownership."
+      "reason": "Issue 232 is unblocked only from accepted head 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce within the exact checked files, including the remote-placement caller test, exact default-timeout P2-C13 stabilization, and the sole added search-corpus test with its registry-derived current-schema index oracle, the signed real legacy-to-target-27-to-gated-suffix-to-safe-recorder sequence, append-stable migration slot 28, and Policy A obligations; issue 165 retains final parity-promotion ownership."
     }
   ],
   "decisions": [
@@ -1464,9 +1470,9 @@
     },
     {
       "id": "D15",
-      "choice": "Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; add only packages/storage/test/remote-placement-observation-p3-c12.test.ts for its required exact normalizedText caller repair, and stabilize canonical P2-C13 under the unchanged default 5000-millisecond timeout by two-database reuse plus close-before-root-removal fixture ownership. database.ts and migration-runner.ts remain protected accepted dependencies while index.ts remains an allowed report export surface.",
-      "reason": "The production promotion boundary correctly rejects the accepted caller's missing required field, while repeated full canonical WAL opens per fault ordinal make the proof exceed Bun's default timeout and let timeout cleanup race sidecar ownership. One caller-field edit and test-owned handle reuse/cleanup close both proof gaps without changing production behavior, timeout policy, the safe-recorder/opener authority, public contracts, #165, or unrelated code.",
-      "rejected": "making normalizedText optional, fabricating a fallback, raising or disabling the test timeout, editing protected database/WAL/runner behavior, memory-only or fake rollback proof, reducing fault boundaries, warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths"
+      "choice": "Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; retain the accepted remote-placement normalizedText repair and default-5000-millisecond P2-C13 stabilization, then add exactly packages/storage/test/search-corpus-p4-c16.test.ts for a registry-derived current-canonical-schema index oracle at slot 28. database.ts and migration-runner.ts remain protected accepted dependencies while index.ts remains an allowed report export surface.",
+      "reason": "The production promotion boundary and P2-C13 proof repairs remain correct. The search corpus now opens the complete canonical slot-28 schema, so its pre-slot-28 literal four-index map is stale even though the artifact is structurally valid. An independent canonical-registry schema projection with an exact ordered index-tuple digest and count closes that proof gap without changing production behavior, timeout policy, the safe-recorder/opener authority, public contracts, #165, or unrelated code.",
+      "rejected": "updating the literal map to another hand-maintained map, accepting any count-only schema, deriving expected indexes from the corpus database under test, ignoring extra or omitted indexes, making normalizedText optional, raising the test timeout, editing protected database/WAL/runner/migration behavior, warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths"
     }
   ],
   "downstream": {
@@ -1514,6 +1520,7 @@
         "packages/imap/test/mime-parser-p2-c10.test.ts",
         "packages/storage/test/canonical-promotion-p2-c13.test.ts",
         "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+        "packages/storage/test/search-corpus-p4-c16.test.ts",
         "packages/storage/test/promotion-adapter-p2-c20.test.ts",
         "packages/storage/test/message-text-materializer.test.ts",
         "packages/storage/test/report-creation-migration.test.ts",
@@ -1574,6 +1581,7 @@
           "packages/imap/test/mime-parser-p2-c10.test.ts",
           "packages/storage/test/canonical-promotion-p2-c13.test.ts",
           "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+          "packages/storage/test/search-corpus-p4-c16.test.ts",
           "packages/storage/test/promotion-adapter-p2-c20.test.ts",
           "packages/storage/test/message-text-materializer.test.ts",
           "packages/storage/test/report-creation-migration.test.ts",
@@ -1620,6 +1628,23 @@
             "packages/storage/test/report-creation-backup-restore.test.ts",
             "packages/daemon/test/report-create-composed.test.ts"
           ]
+        },
+        "searchCorpusIndexAuthority": {
+          "testPath": "packages/storage/test/search-corpus-p4-c16.test.ts",
+          "acceptedBaseSha256": "d9f50b9a75413d4d4fd3d724b7856390bf954abd7e3035020694f4120b42b92b",
+          "registryPath": "packages/storage/src/migration-registry.ts",
+          "canonicalSchemaVersion": 28,
+          "indexQuery": "SELECT name, tbl_name, sql FROM sqlite_schema WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex_%' ORDER BY name, tbl_name, sql",
+          "canonicalIndexCount": 33,
+          "canonicalIndexTupleSha256": "8a1da254844604df5d8f9c8b1629de2683227c90b1758f3c137166b870affb24",
+          "slot28IndexNames": [
+            "report_snapshots_owner_account_bytes",
+            "report_sources_snapshot_lookup",
+            "reports_owner_account_created"
+          ],
+          "derivationRule": "Create a separate empty owner-only file database through the protected production openDatabase path and current canonicalDatabaseMigrations registry, require user_version and exact ordered schema_migrations history to equal the registry-derived current tip 28, require integrity_check ok and zero foreign_key_check rows, then query the complete ordered non-auto sqlite_schema index tuples with indexQuery. Canonical JSON of those exact name/table/SQL tuples must contain 33 rows and hash to canonicalIndexTupleSha256. Never derive expected tuples from either corpus database under test or from a hand-maintained per-table count map.",
+          "comparisonRule": "Compare each generated corpus database's complete ordered index tuples byte-for-byte with the independent canonical index oracle; derive schemaIndexCounts and schemaIndexTotal from those oracle tuples and compare the inventory to those derived values before retaining validateCorpusInventory's integrity, foreign-key, required-object, placement, normalized-content, FTS, label, query-selectivity, and query-identity checks.",
+          "mutationRule": "The focused test must reject one omitted canonical index, one extra index, and one same-name index recreated with different SQL while retaining the other tuples. The #231 checker must independently reject removal of the search test, stale accepted bytes, schema version 27, stale literal count 4, wrong tuple digest, omission of any slot-28 index name, and any production-scope widening."
         }
       },
       "implementationObligations": [
@@ -1631,8 +1656,8 @@
         "Extend only the internal report service context needed to carry the trusted body digest, principal scopes, and injected capacity clock. Require mail:read.message after the admitted replay-miss rate commit but before every source/materializer read; exact replay requires reports:write only. Missing source scope retains exactly one rate-ledger attempt and performs zero source reads, materializer invocations, message-text-projection, report, artifact, citation, capacity-total, or publication writes; never assert zero total writes. Map exact frozen service messages to existing registered global code/status/details without public-schema change.",
         "Make report/source serving query owner and configured account before materialization, consume the durable model/snapshot records, and verify all digests and renderer/CSP versions before output.",
         "Implement the focused reports create command adapter with shared request/response parsing, shared client, branded human segments, and #214 result construction.",
-        "Prove every constructive trace, including the signed #233 --implementation-sequence-check and --implementation-compatibility-check over a real supported legacy database: real converter to exact target 27, then protected common-opener gated slot 28, exact-current-tip canonical-state/integrity verification, effect-safe recorder invocation, and fingerprint-reverified zero-write runMigrations compatibility while applyMigrations remains strict; cover both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore; retain exact target-27 provenance while the live digest evolves, and reject converter-live-tip, legacy-opener-bypass, premature-recorder, incomplete-current-tip, fingerprint-bypass, strict-runner-bypass, and full-digest substitutions before effects. Also prove staged EML through real ingestion/promotion to HTTP report and the focused CLI path, legacy materialization, both-scope first create, reports:write-only replay, all-write missing-scope instrumentation, canonical-string round trips, operation-specific body admission, exact Policy A rate/count/logical-byte boundaries, serialized concurrency, REPLACE-safe immutability, data-bearing reopen/backup/empty/full restore, every failure boundary, hostile corpus, and CLI branches through the exact focusedSuiteAuthority proof-path bindings. Direct-SQL-only mail source fixtures, mock-only CLI transport, schema-only recovery, and aggregate row-count recovery do not count.",
-        "Run this checker before implementation and after implementation with the complete changed-path set in one invocation, then run focusedSuiteAuthority.command exactly with Bun's unchanged default 5000-millisecond per-test timeout. Stabilize canonical P2-C13 only by its frozen two-database boundary-loop reuse and close-before-root-removal rules; do not add a timeout override. Leave protected/unknown files, #165 drafts, planning, GitHub, metrics, #233 authority artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, and packages/storage/src/migration-history-conversion.ts unchanged; only the declared registry, storage index, accepted remote-placement caller test, canonical P2-C13 proof stabilization, and focused registry/conversion-composition tests may change within their existing obligations. Missing or undeclared frozen drift and every scope expansion fail."
+        "Prove every constructive trace, including the signed #233 --implementation-sequence-check and --implementation-compatibility-check over a real supported legacy database: real converter to exact target 27, then protected common-opener gated slot 28, exact-current-tip canonical-state/integrity verification, effect-safe recorder invocation, and fingerprint-reverified zero-write runMigrations compatibility while applyMigrations remains strict; cover both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore; retain exact target-27 provenance while the live digest evolves, and reject converter-live-tip, legacy-opener-bypass, premature-recorder, incomplete-current-tip, fingerprint-bypass, strict-runner-bypass, and full-digest substitutions before effects. Also prove staged EML through real ingestion/promotion to HTTP report and the focused CLI path, legacy materialization, both-scope first create, reports:write-only replay, all-write missing-scope instrumentation, canonical-string round trips, operation-specific body admission, exact Policy A rate/count/logical-byte boundaries, serialized concurrency, REPLACE-safe immutability, data-bearing reopen/backup/empty/full restore, every failure boundary, hostile corpus, CLI branches, and the exact registry-derived current-schema search index oracle through the focusedSuiteAuthority bindings. Direct-SQL-only mail source fixtures, mock-only CLI transport, schema-only recovery, aggregate row-count recovery, count-only index validation, and expected indexes derived from the corpus under test do not count.",
+        "Run this checker before implementation and after implementation with the complete changed-path set in one invocation, then run focusedSuiteAuthority.command exactly with Bun's unchanged default 5000-millisecond per-test timeout. Preserve the accepted remote-placement and canonical P2-C13 repairs. Update search-corpus P4-C16 only to replace its stale four-index literal with focusedSuiteAuthority.searchCorpusIndexAuthority and its omission/extra/SQL-drift counterexamples; do not edit the corpus generator or add a timeout override. Leave protected/unknown files, #165 drafts, planning, GitHub, metrics, #233 authority artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, packages/storage/src/migration-history-conversion.ts, packages/storage/src/migrations/0028-report-creation.ts, and scripts/capacity/generate-search-corpus.ts unchanged; only the declared registry, storage index, accepted remote-placement caller test, canonical P2-C13 proof stabilization, search-corpus test, and focused registry/conversion-composition tests may change within their existing obligations. Missing or undeclared frozen drift and every scope expansion fail."
       ],
       "retirement": "No production report-creation path exists to retire. Replace only fixture repositories in focused composed proofs; retain accepted renderer and serving behavior."
     },

@@ -1,6 +1,6 @@
 # Report creation design v1
 
-> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `1fe9d98a9d14d1c21d42f16b045aeec00e04eec9e0690970692af76879f9f421`.
+> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `e4ad62866e691b4bcff011cf6384ed78439351ce491c8061772dd9bcb17916b0`.
 > Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.
 > The JSON oracle is the projection source and this file must match the checker exactly.
 

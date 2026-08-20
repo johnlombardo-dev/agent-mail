@@ -1,6 +1,6 @@
 # Report creation decisions v1
 
-> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `1fe9d98a9d14d1c21d42f16b045aeec00e04eec9e0690970692af76879f9f421`.
+> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `e4ad62866e691b4bcff011cf6384ed78439351ce491c8061772dd9bcb17916b0`.
 > Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.
 > The JSON oracle is the projection source and this file must match the checker exactly.
 
@@ -125,8 +125,8 @@ Rejected: renumbering any predecessor, substituting the live full digest for his
 
 ## D15
 
-Choice: Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; add only packages/storage/test/remote-placement-observation-p3-c12.test.ts for its required exact normalizedText caller repair, and stabilize canonical P2-C13 under the unchanged default 5000-millisecond timeout by two-database reuse plus close-before-root-removal fixture ownership. database.ts and migration-runner.ts remain protected accepted dependencies while index.ts remains an allowed report export surface.
+Choice: Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; retain the accepted remote-placement normalizedText repair and default-5000-millisecond P2-C13 stabilization, then add exactly packages/storage/test/search-corpus-p4-c16.test.ts for a registry-derived current-canonical-schema index oracle at slot 28. database.ts and migration-runner.ts remain protected accepted dependencies while index.ts remains an allowed report export surface.
 
-Reason: The production promotion boundary correctly rejects the accepted caller's missing required field, while repeated full canonical WAL opens per fault ordinal make the proof exceed Bun's default timeout and let timeout cleanup race sidecar ownership. One caller-field edit and test-owned handle reuse/cleanup close both proof gaps without changing production behavior, timeout policy, the safe-recorder/opener authority, public contracts, #165, or unrelated code.
+Reason: The production promotion boundary and P2-C13 proof repairs remain correct. The search corpus now opens the complete canonical slot-28 schema, so its pre-slot-28 literal four-index map is stale even though the artifact is structurally valid. An independent canonical-registry schema projection with an exact ordered index-tuple digest and count closes that proof gap without changing production behavior, timeout policy, the safe-recorder/opener authority, public contracts, #165, or unrelated code.
 
-Rejected: making normalizedText optional, fabricating a fallback, raising or disabling the test timeout, editing protected database/WAL/runner behavior, memory-only or fake rollback proof, reducing fault boundaries, warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths.
+Rejected: updating the literal map to another hand-maintained map, accepting any count-only schema, deriving expected indexes from the corpus database under test, ignoring extra or omitted indexes, making normalizedText optional, raising the test timeout, editing protected database/WAL/runner/migration behavior, warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths.
