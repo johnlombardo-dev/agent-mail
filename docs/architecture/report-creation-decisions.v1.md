@@ -1,6 +1,6 @@
 # Report creation decisions v1
 
-> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `90c3a74a0fbfb30da038998a4c2856808e2e79cd0e95c96e1b01669e016c5273`.
+> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `1fe9d98a9d14d1c21d42f16b045aeec00e04eec9e0690970692af76879f9f421`.
 > Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.
 > The JSON oracle is the projection source and this file must match the checker exactly.
 
@@ -125,8 +125,8 @@ Rejected: renumbering any predecessor, substituting the live full digest for his
 
 ## D15
 
-Choice: Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; database.ts and migration-runner.ts are protected accepted dependencies while index.ts remains an allowed report export surface.
+Choice: Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; add only packages/storage/test/remote-placement-observation-p3-c12.test.ts for its required exact normalizedText caller repair, and stabilize canonical P2-C13 under the unchanged default 5000-millisecond timeout by two-database reuse plus close-before-root-removal fixture ownership. database.ts and migration-runner.ts remain protected accepted dependencies while index.ts remains an allowed report export surface.
 
-Reason: The implementation proof must apply to the reviewed production seams and cannot silently widen into the safe-recorder/opener authority, public contracts, #165, or unrelated code.
+Reason: The production promotion boundary correctly rejects the accepted caller's missing required field, while repeated full canonical WAL opens per fault ordinal make the proof exceed Bun's default timeout and let timeout cleanup race sidecar ownership. One caller-field edit and test-owned handle reuse/cleanup close both proof gaps without changing production behavior, timeout policy, the safe-recorder/opener authority, public contracts, #165, or unrelated code.
 
-Rejected: warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths.
+Rejected: making normalizedText optional, fabricating a fallback, raising or disabling the test timeout, editing protected database/WAL/runner behavior, memory-only or fake rollback proof, reducing fault boundaries, warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths.

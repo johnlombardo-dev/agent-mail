@@ -4,11 +4,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "90c3a74a0fbfb30da038998a4c2856808e2e79cd0e95c96e1b01669e016c5273";
+const EXPECTED_ORACLE_SHA256 = "1fe9d98a9d14d1c21d42f16b045aeec00e04eec9e0690970692af76879f9f421";
 const EXPECTED_VIEW_SHA256 = [
-  "e0ffafc24b35dac46dee32d41eb8f26a75b7ea2a3db416829f625c651e3a40e1",
-  "f26b2b3bdb55ff7d8e415e4a974ce3e49e509862b93e82cd85be37fc190a16f8",
-  "8f702b364523246fcfbf80d230199c03f030c48bb1afdaf0978408c860d4048a",
+  "c5dcccfaf18e61b95303f7601d41ccf2420c515a471aac9c64cb39f262226a96",
+  "0c42fdb32b1e036c567c5b335036514ea0c22c686e449bc4bdcc244d1d7bb210",
+  "e07a03fe01f71d725d541f98c4716702a3e7b626b310a6328f5906f948d91032",
 ];
 const ACCEPTED_HEAD = "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce";
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -213,6 +213,14 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
     "CANONICAL-PROMOTION": [
       "packages/storage/src/canonical-promotion.ts",
       "2f3d081efbd15f3ad12935e723bd2d1194b45fba03d1798cd4d4bcf912f50173",
+    ],
+    "CANONICAL-PROMOTION-TEST": [
+      "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+      "b594e06c2efdbc1e950ebb6413f4e5bbad6301225f6cf457ea5686f4b273210a",
+    ],
+    "REMOTE-PLACEMENT-OBSERVATION-TEST": [
+      "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+      "ee9af0c34cb929ffd0f8a930b28f92e97a11663ea68d6408c18537d5f5183385",
     ],
     "PROMOTION-ADAPTER": [
       "packages/storage/src/promotion-adapter.ts",
@@ -1518,6 +1526,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [
       "packages/imap/test/mime-parser-p2-c10.test.ts",
       "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+      "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
       "packages/storage/test/promotion-adapter-p2-c20.test.ts",
       "packages/storage/test/message-text-materializer.test.ts",
       "packages/storage/test/report-creation-migration.test.ts",
@@ -1591,6 +1600,78 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   );
   nonempty(issue232.changePolicy.allowedRule, "#232 allowed path rule");
   nonempty(issue232.changePolicy.driftRule, "#232 drift rule");
+  const focused = issue232.focusedSuiteAuthority;
+  exact(
+    [
+      focused.command,
+      focused.defaultPerTestTimeoutMilliseconds,
+      focused.timeoutOverrideAllowed,
+      focused.canonicalPromotionTestPath,
+      focused.canonicalPromotionAcceptedBaseSha256,
+      focused.remotePlacementTestPath,
+      focused.remotePlacementAcceptedBaseSha256,
+      focused.normalizedTextLiteral,
+    ],
+    [
+      ["bun", "test", ...issue232.testFiles],
+      5000,
+      false,
+      "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+      "b594e06c2efdbc1e950ebb6413f4e5bbad6301225f6cf457ea5686f4b273210a",
+      "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+      "ee9af0c34cb929ffd0f8a930b28f92e97a11663ea68d6408c18537d5f5183385",
+      "Promoted normalized text",
+    ],
+    "#232 focused suite authority",
+  );
+  exact(
+    [
+      focused.normalizedTextRule,
+      focused.canonicalBoundaryRule,
+      focused.cleanupRule,
+      focused.protectedDependencyRule,
+    ],
+    [
+      "Update the accepted remote-placement production-promotion caller to supply exactly the required normalizedText string Promoted normalized text. Keep normalizedText required in parsePromotionUnit and retain the existing omitted-field negative in packages/storage/test/promotion-adapter-p2-c20.test.ts; undefined, omission, or an optional fallback remains invalid-input.",
+      "Keep the successful discovery pass on one real file-backed production-opened SQLite database, close it, then open exactly one fresh empty real file-backed production-opened SQLite database for the complete injected write-boundary loop. Reuse that empty handle only after every injected failure proves the complete zero-row rollback state, then close it once. Do not reopen or remigrate once per failure ordinal, reduce the boundary set, replace real SQLite with a fake or memory-only database, or increase/disable the default timeout.",
+      "The test fixture must track every live opened database handle. afterEach first awaits idempotent close for every still-live handle, including assertion, timeout, and partial-open paths, and only then recursively removes its owner-only temporary roots. Root removal may never race database close or WAL/SHM companion hardening.",
+      "This is test/proof stabilization only. packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, packages/storage/src/migration-history-conversion.ts, the target-27 converter, gated slot-28 suffix sequence, safe recorder, and production WAL semantics remain byte-frozen and semantically unchanged.",
+    ],
+    "#232 focused suite rules",
+  );
+  exactSet(
+    focused.proofPathBindings.stagedEmlHttpCli,
+    [
+      "packages/imap/test/mime-parser-p2-c10.test.ts",
+      "packages/daemon/test/single-message-ingestion-p3-c08.test.ts",
+      "packages/daemon/test/report-create-composed.test.ts",
+      "packages/cli/src/report-create-command.test.ts",
+    ],
+    "#232 staged EML/HTTP/CLI proof paths",
+  );
+  exactSet(
+    focused.proofPathBindings.policyABoundaries,
+    [
+      "packages/storage/test/report-creation-repository.test.ts",
+      "packages/daemon/test/report-creation-service.test.ts",
+      "packages/daemon/test/report-create-http.test.ts",
+      "packages/daemon/test/report-create-composed.test.ts",
+    ],
+    "#232 Policy A proof paths",
+  );
+  exactSet(
+    focused.proofPathBindings.concurrencyReplaceRecovery,
+    [
+      "packages/storage/test/report-creation-migration.test.ts",
+      "packages/storage/test/report-creation-repository.test.ts",
+      "packages/storage/test/report-creation-backup-restore.test.ts",
+      "packages/daemon/test/report-create-composed.test.ts",
+    ],
+    "#232 concurrency/REPLACE/recovery proof paths",
+  );
+  for (const paths of Object.values(focused.proofPathBindings)) {
+    validateChangedPaths(issue232, paths);
+  }
   validateChangedPaths(issue232, issue232.productionFiles);
   validateChangedPaths(issue232, issue232.testFiles);
   if (issue232.implementationObligations.length !== 10) fail("#232 obligations differ");
@@ -1727,6 +1808,8 @@ function renderDesign(oracle, digest) {
     "",
     "- Parser: " + oracle.normalizedTextAuthority.parserRule,
     "- Future ingestion: " + oracle.normalizedTextAuthority.futureIngestionRule,
+    "- Accepted caller repair: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.normalizedTextRule,
     "- Legacy materializer: " + oracle.normalizedTextAuthority.legacyMaterializerRule,
     "- State set: " + oracle.normalizedTextAuthority.materializerStates.join(", "),
     "- Transition and cleanup: " + oracle.normalizedTextAuthority.materializerTransitionRule,
@@ -1997,6 +2080,31 @@ function renderCoverage(oracle, digest) {
     "",
     "Drift policy: " + oracle.downstream.issue232.changePolicy.driftRule,
     "",
+    "Default focused command: `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.command.join(" ") +
+      "`.",
+    "",
+    "Default per-test timeout: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.defaultPerTestTimeoutMilliseconds +
+      " ms; timeout override allowed: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.timeoutOverrideAllowed +
+      ".",
+    "",
+    "Canonical P2-C13 stabilization: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.canonicalBoundaryRule,
+    "",
+    "Fixture cleanup: " + oracle.downstream.issue232.focusedSuiteAuthority.cleanupRule,
+    "",
+    "Protected dependencies: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.protectedDependencyRule,
+    "",
+    table(
+      ["Proof family", "Authorized focused paths"],
+      Object.entries(oracle.downstream.issue232.focusedSuiteAuthority.proofPathBindings).map(
+        ([family, paths]) => [family, paths.join(", ")],
+      ),
+    ),
+    "",
     "Obligations:",
     "",
     ...oracle.downstream.issue232.implementationObligations.map(
@@ -2265,6 +2373,80 @@ const mutations = [
         (path) => path !== "packages/storage/test/migration-history-conversion.test.ts",
       )),
   ],
+  [
+    "issue232-remote-placement-test",
+    (value) =>
+      (value.downstream.issue232.testFiles = value.downstream.issue232.testFiles.filter(
+        (path) => path !== "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+      )),
+  ],
+  [
+    "focused-suite-timeout-override",
+    (value) =>
+      value.downstream.issue232.focusedSuiteAuthority.command.splice(2, 0, "--timeout", "20000"),
+  ],
+  [
+    "focused-suite-timeout-authorized",
+    (value) => (value.downstream.issue232.focusedSuiteAuthority.timeoutOverrideAllowed = true),
+  ],
+  [
+    "focused-suite-timeout-raised",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.defaultPerTestTimeoutMilliseconds = 20000),
+  ],
+  [
+    "remote-normalized-text-literal",
+    (value) => (value.downstream.issue232.focusedSuiteAuthority.normalizedTextLiteral = "fallback"),
+  ],
+  [
+    "remote-normalized-text-optional",
+    (value) => (value.downstream.issue232.focusedSuiteAuthority.normalizedTextRule = "optional"),
+  ],
+  [
+    "canonical-boundary-reopens-per-ordinal",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.canonicalBoundaryRule =
+        "open one database per failure ordinal"),
+  ],
+  [
+    "canonical-cleanup-removes-before-close",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.cleanupRule =
+        "remove roots before closing live handles"),
+  ],
+  [
+    "canonical-production-scope-widening",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.protectedDependencyRule =
+        "change database.ts to disable WAL"),
+  ],
+  [
+    "canonical-stale-base-pin",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.canonicalPromotionAcceptedBaseSha256 =
+        "0".repeat(64)),
+  ],
+  [
+    "remote-stale-base-pin",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.remotePlacementAcceptedBaseSha256 =
+        "0".repeat(64)),
+  ],
+  [
+    "staged-eml-http-cli-proof-path",
+    (value) =>
+      value.downstream.issue232.focusedSuiteAuthority.proofPathBindings.stagedEmlHttpCli.pop(),
+  ],
+  [
+    "policy-a-proof-path",
+    (value) =>
+      value.downstream.issue232.focusedSuiteAuthority.proofPathBindings.policyABoundaries.pop(),
+  ],
+  [
+    "concurrency-replace-recovery-proof-path",
+    (value) =>
+      value.downstream.issue232.focusedSuiteAuthority.proofPathBindings.concurrencyReplaceRecovery.pop(),
+  ],
   ["issue165-cell", (value) => value.downstream.issue165.cells.pop()],
   ["issue165-dimensions", (value) => value.downstream.issue165.outcomeDimensions.pop()],
 ];
@@ -2327,6 +2509,14 @@ function runSelfTest(oracle) {
     );
   } catch {
     failures.push("issue232-declared-allowed-drift");
+  }
+  try {
+    validateChangedPaths(oracle.downstream.issue232, [
+      "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+      "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+    ]);
+  } catch {
+    failures.push("issue232-focused-scope-allowed");
   }
   if (failures.length > 0) fail("mutation self-test survived: " + failures.join(", "));
   return mutations.length + boundaryMutations.length;

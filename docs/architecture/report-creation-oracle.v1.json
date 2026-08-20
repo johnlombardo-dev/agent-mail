@@ -170,6 +170,18 @@
       "kind": "implementation-baseline"
     },
     {
+      "id": "CANONICAL-PROMOTION-TEST",
+      "path": "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+      "sha256": "b594e06c2efdbc1e950ebb6413f4e5bbad6301225f6cf457ea5686f4b273210a",
+      "kind": "implementation-baseline"
+    },
+    {
+      "id": "REMOTE-PLACEMENT-OBSERVATION-TEST",
+      "path": "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+      "sha256": "ee9af0c34cb929ffd0f8a930b28f92e97a11663ea68d6408c18537d5f5183385",
+      "kind": "implementation-baseline"
+    },
+    {
       "id": "PROMOTION-ADAPTER",
       "path": "packages/storage/src/promotion-adapter.ts",
       "sha256": "f1e588e4316390c495a3b1a6af402982c9a8f30869c224fc7fd03155ed2cd6f2",
@@ -363,7 +375,7 @@
     },
     {
       "id": "REQ-DOWNSTREAM",
-      "text": "Issue 232 has an exact mutation and proof boundary, and issue 165 retains ownership of the production-adapter and composed-CLI parity cells after consuming #232 evidence."
+      "text": "Issue 232 has an exact mutation and proof boundary, including the accepted remote-placement production caller, strict normalizedText admission, and a default-5000-millisecond focused suite with test-owned WAL cleanup and no timeout override; issue 165 retains ownership of the production-adapter and composed-CLI parity cells after consuming #232 evidence."
     }
   ],
   "publicBoundary": {
@@ -1362,7 +1374,7 @@
     {
       "id": "S12",
       "status": "required",
-      "reason": "Issue 232 is unblocked only from accepted head 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce within the exact checked files, the signed real legacy-to-target-27-to-gated-suffix-to-safe-recorder sequence, append-stable migration slot 28, and Policy A obligations; issue 165 retains final parity-promotion ownership."
+      "reason": "Issue 232 is unblocked only from accepted head 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce within the exact checked files, including the sole added remote-placement caller test and exact default-timeout P2-C13 stabilization, the signed real legacy-to-target-27-to-gated-suffix-to-safe-recorder sequence, append-stable migration slot 28, and Policy A obligations; issue 165 retains final parity-promotion ownership."
     }
   ],
   "decisions": [
@@ -1452,9 +1464,9 @@
     },
     {
       "id": "D15",
-      "choice": "Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; database.ts and migration-runner.ts are protected accepted dependencies while index.ts remains an allowed report export surface.",
-      "reason": "The implementation proof must apply to the reviewed production seams and cannot silently widen into the safe-recorder/opener authority, public contracts, #165, or unrelated code.",
-      "rejected": "warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths"
+      "choice": "Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; add only packages/storage/test/remote-placement-observation-p3-c12.test.ts for its required exact normalizedText caller repair, and stabilize canonical P2-C13 under the unchanged default 5000-millisecond timeout by two-database reuse plus close-before-root-removal fixture ownership. database.ts and migration-runner.ts remain protected accepted dependencies while index.ts remains an allowed report export surface.",
+      "reason": "The production promotion boundary correctly rejects the accepted caller's missing required field, while repeated full canonical WAL opens per fault ordinal make the proof exceed Bun's default timeout and let timeout cleanup race sidecar ownership. One caller-field edit and test-owned handle reuse/cleanup close both proof gaps without changing production behavior, timeout policy, the safe-recorder/opener authority, public contracts, #165, or unrelated code.",
+      "rejected": "making normalizedText optional, fabricating a fallback, raising or disabling the test timeout, editing protected database/WAL/runner behavior, memory-only or fake rollback proof, reducing fault boundaries, warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths"
     }
   ],
   "downstream": {
@@ -1501,6 +1513,7 @@
       "testFiles": [
         "packages/imap/test/mime-parser-p2-c10.test.ts",
         "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+        "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
         "packages/storage/test/promotion-adapter-p2-c20.test.ts",
         "packages/storage/test/message-text-materializer.test.ts",
         "packages/storage/test/report-creation-migration.test.ts",
@@ -1554,17 +1567,72 @@
         "invocation": "node docs/architecture/report-creation-check.v1.mjs --changed-path=<path> [repeat for the complete #232 diff] --self-test",
         "selfTests": ["frozen-input-drift", "protected-path", "unknown-path"]
       },
+      "focusedSuiteAuthority": {
+        "command": [
+          "bun",
+          "test",
+          "packages/imap/test/mime-parser-p2-c10.test.ts",
+          "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+          "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+          "packages/storage/test/promotion-adapter-p2-c20.test.ts",
+          "packages/storage/test/message-text-materializer.test.ts",
+          "packages/storage/test/report-creation-migration.test.ts",
+          "packages/storage/test/report-creation-repository.test.ts",
+          "packages/storage/test/report-creation-backup-restore.test.ts",
+          "packages/storage/test/migration-registry.test.ts",
+          "packages/storage/test/migration-history-conversion.test.ts",
+          "packages/daemon/test/single-message-ingestion-p3-c08.test.ts",
+          "packages/daemon/test/http-admission-sec-r03.test.ts",
+          "packages/daemon/test/report-creation-service.test.ts",
+          "packages/daemon/test/report-create-http.test.ts",
+          "packages/daemon/test/report-admin-handlers-p6-c08.test.ts",
+          "packages/daemon/test/report-serving-p6-c17.test.ts",
+          "packages/daemon/test/report-create-composed.test.ts",
+          "packages/cli/src/report-create-command.test.ts"
+        ],
+        "defaultPerTestTimeoutMilliseconds": 5000,
+        "timeoutOverrideAllowed": false,
+        "canonicalPromotionTestPath": "packages/storage/test/canonical-promotion-p2-c13.test.ts",
+        "canonicalPromotionAcceptedBaseSha256": "b594e06c2efdbc1e950ebb6413f4e5bbad6301225f6cf457ea5686f4b273210a",
+        "remotePlacementTestPath": "packages/storage/test/remote-placement-observation-p3-c12.test.ts",
+        "remotePlacementAcceptedBaseSha256": "ee9af0c34cb929ffd0f8a930b28f92e97a11663ea68d6408c18537d5f5183385",
+        "normalizedTextLiteral": "Promoted normalized text",
+        "normalizedTextRule": "Update the accepted remote-placement production-promotion caller to supply exactly the required normalizedText string Promoted normalized text. Keep normalizedText required in parsePromotionUnit and retain the existing omitted-field negative in packages/storage/test/promotion-adapter-p2-c20.test.ts; undefined, omission, or an optional fallback remains invalid-input.",
+        "canonicalBoundaryRule": "Keep the successful discovery pass on one real file-backed production-opened SQLite database, close it, then open exactly one fresh empty real file-backed production-opened SQLite database for the complete injected write-boundary loop. Reuse that empty handle only after every injected failure proves the complete zero-row rollback state, then close it once. Do not reopen or remigrate once per failure ordinal, reduce the boundary set, replace real SQLite with a fake or memory-only database, or increase/disable the default timeout.",
+        "cleanupRule": "The test fixture must track every live opened database handle. afterEach first awaits idempotent close for every still-live handle, including assertion, timeout, and partial-open paths, and only then recursively removes its owner-only temporary roots. Root removal may never race database close or WAL/SHM companion hardening.",
+        "protectedDependencyRule": "This is test/proof stabilization only. packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, packages/storage/src/migration-history-conversion.ts, the target-27 converter, gated slot-28 suffix sequence, safe recorder, and production WAL semantics remain byte-frozen and semantically unchanged.",
+        "proofPathBindings": {
+          "stagedEmlHttpCli": [
+            "packages/imap/test/mime-parser-p2-c10.test.ts",
+            "packages/daemon/test/single-message-ingestion-p3-c08.test.ts",
+            "packages/daemon/test/report-create-composed.test.ts",
+            "packages/cli/src/report-create-command.test.ts"
+          ],
+          "policyABoundaries": [
+            "packages/storage/test/report-creation-repository.test.ts",
+            "packages/daemon/test/report-creation-service.test.ts",
+            "packages/daemon/test/report-create-http.test.ts",
+            "packages/daemon/test/report-create-composed.test.ts"
+          ],
+          "concurrencyReplaceRecovery": [
+            "packages/storage/test/report-creation-migration.test.ts",
+            "packages/storage/test/report-creation-repository.test.ts",
+            "packages/storage/test/report-creation-backup-restore.test.ts",
+            "packages/daemon/test/report-create-composed.test.ts"
+          ]
+        }
+      },
       "implementationObligations": [
         "Implement report-creation-v1 only at packages/storage/src/migrations/0028-report-creation.ts and append it as canonical slot 28 after exact accepted prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab. Preserve the signed production sequence: the protected real converter resolves target 27, executes and ledgers only canonicalDatabaseMigrations.slice(0, 27), commits user_version and immutable provenance at 27, and returns; the protected common opener then routes slot 28 through strict applyMigrations and beforePendingMigration, verifies exact current-tip canonical state and integrity, and invokes the effect-safe recorder. Preserve every 1..27 semantic byte; advance only the live full-registry digest, schema/next-slot constants, storage index report exports, registry test, and packages/storage/test/migration-history-conversion.test.ts. Prove prefix 27 is verified before slot-28 SQL/history/user_version/commit, recorder invocation happens only after verified tip 28, runMigrations rederives the complete fingerprint, applyMigrations remains strict, and converter-live-tip, legacy-opener-bypass, premature-recorder, fingerprint-bypass, strict-runner-bypass, and recomputed live-full-digest substitutions reject. Do not change #233 artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, or packages/storage/src/migration-history-conversion.ts.",
-        "Extend the production MIME parser, single-message ingestion, promotion adapter, canonical promotion, and strict read-back to persist one bounded message_text_projections value for every new parsed message; implement the verified raw-EML staging materializer for legacy rows with explicit states and one awaited idempotent cleanup barrier.",
+        "Extend the production MIME parser, single-message ingestion, promotion adapter, canonical promotion, and strict read-back to persist one bounded message_text_projections value for every new parsed message; implement the verified raw-EML staging materializer for legacy rows with explicit states and one awaited idempotent cleanup barrier. Update packages/storage/test/remote-placement-observation-p3-c12.test.ts to pass exact normalizedText Promoted normalized text through its real production promotion adapter while preserving normalizedText as a required boundary field and retaining the omitted-field rejection in packages/storage/test/promotion-adapter-p2-c20.test.ts.",
         "Implement canonical identity and canonical JSON BLOB string serialization, bounded excerpt/model/rendering, one report publication transaction, exact replay, read-back, typed failures, and BEFORE UPDATE/DELETE/duplicate-INSERT guards that defeat INSERT OR REPLACE and REPLACE INTO for all four immutable report tables.",
         "Change the shared HTTP boundary only for a non-raiseable reports.create min(global,1048576) cap after authentication/reports:write but before body materialization; prove raised-global-limit declared and chunked overflow rejection before handler.",
         "Implement Policy A exactly: identity-serialized replay first; private durable per-principal rolling-rate admission at 10 non-replay attempts per 60000 milliseconds; every admitted exact-replay miss commits and retains exactly one rate-ledger attempt before mail:read.message; account-wide recomputed COUNT(reports) <= 10000 and exact immutable-row logical charge <= 2147483648; inclusive boundaries; no report deletion/eviction; restored accounting; fixed private constants; and existing request_too_large/413 with the two frozen report messages and no public/config schema widening.",
         "Extend only the internal report service context needed to carry the trusted body digest, principal scopes, and injected capacity clock. Require mail:read.message after the admitted replay-miss rate commit but before every source/materializer read; exact replay requires reports:write only. Missing source scope retains exactly one rate-ledger attempt and performs zero source reads, materializer invocations, message-text-projection, report, artifact, citation, capacity-total, or publication writes; never assert zero total writes. Map exact frozen service messages to existing registered global code/status/details without public-schema change.",
         "Make report/source serving query owner and configured account before materialization, consume the durable model/snapshot records, and verify all digests and renderer/CSP versions before output.",
         "Implement the focused reports create command adapter with shared request/response parsing, shared client, branded human segments, and #214 result construction.",
-        "Prove every constructive trace, including the signed #233 --implementation-sequence-check and --implementation-compatibility-check over a real supported legacy database: real converter to exact target 27, then protected common-opener gated slot 28, exact-current-tip canonical-state/integrity verification, effect-safe recorder invocation, and fingerprint-reverified zero-write runMigrations compatibility while applyMigrations remains strict; cover both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore; retain exact target-27 provenance while the live digest evolves, and reject converter-live-tip, legacy-opener-bypass, premature-recorder, incomplete-current-tip, fingerprint-bypass, strict-runner-bypass, and full-digest substitutions before effects. Also prove staged EML through real ingestion/promotion to HTTP report, legacy materialization, both-scope first create, reports:write-only replay, all-write missing-scope instrumentation, canonical-string round trips, operation-specific body admission, rate/count/logical-byte exact boundaries and recovery, every failure boundary, REPLACE-safe immutability before/after reopen/restore, hostile corpus, and CLI branches. Direct-SQL-only mail source fixtures do not count.",
-        "Run this checker before implementation and after implementation with the complete changed-path set in one invocation. Leave protected/unknown files, #165 drafts, planning, GitHub, metrics, #233 authority artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, and packages/storage/src/migration-history-conversion.ts unchanged; only the declared registry, storage index, and focused registry/conversion-composition tests may change for slot-28 integration. Missing or undeclared frozen drift and every scope expansion fail."
+        "Prove every constructive trace, including the signed #233 --implementation-sequence-check and --implementation-compatibility-check over a real supported legacy database: real converter to exact target 27, then protected common-opener gated slot 28, exact-current-tip canonical-state/integrity verification, effect-safe recorder invocation, and fingerprint-reverified zero-write runMigrations compatibility while applyMigrations remains strict; cover both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore; retain exact target-27 provenance while the live digest evolves, and reject converter-live-tip, legacy-opener-bypass, premature-recorder, incomplete-current-tip, fingerprint-bypass, strict-runner-bypass, and full-digest substitutions before effects. Also prove staged EML through real ingestion/promotion to HTTP report and the focused CLI path, legacy materialization, both-scope first create, reports:write-only replay, all-write missing-scope instrumentation, canonical-string round trips, operation-specific body admission, exact Policy A rate/count/logical-byte boundaries, serialized concurrency, REPLACE-safe immutability, data-bearing reopen/backup/empty/full restore, every failure boundary, hostile corpus, and CLI branches through the exact focusedSuiteAuthority proof-path bindings. Direct-SQL-only mail source fixtures, mock-only CLI transport, schema-only recovery, and aggregate row-count recovery do not count.",
+        "Run this checker before implementation and after implementation with the complete changed-path set in one invocation, then run focusedSuiteAuthority.command exactly with Bun's unchanged default 5000-millisecond per-test timeout. Stabilize canonical P2-C13 only by its frozen two-database boundary-loop reuse and close-before-root-removal rules; do not add a timeout override. Leave protected/unknown files, #165 drafts, planning, GitHub, metrics, #233 authority artifacts, packages/storage/src/database.ts, packages/storage/src/migration-runner.ts, and packages/storage/src/migration-history-conversion.ts unchanged; only the declared registry, storage index, accepted remote-placement caller test, canonical P2-C13 proof stabilization, and focused registry/conversion-composition tests may change within their existing obligations. Missing or undeclared frozen drift and every scope expansion fail."
       ],
       "retirement": "No production report-creation path exists to retire. Replace only fixture repositories in focused composed proofs; retain accepted renderer and serving behavior."
     },

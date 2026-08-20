@@ -1,6 +1,6 @@
 # Report creation design v1
 
-> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `90c3a74a0fbfb30da038998a4c2856808e2e79cd0e95c96e1b01669e016c5273`.
+> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `1fe9d98a9d14d1c21d42f16b045aeec00e04eec9e0690970692af76879f9f421`.
 > Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.
 > The JSON oracle is the projection source and this file must match the checker exactly.
 
@@ -71,6 +71,7 @@ Extend ParsedStagedMime, SingleMessageIngestion, PromotionUnit, parsePromotionUn
 
 - Parser: Use the production parseStagedEml path with maxDecodedTextBytes 8388608, maxHtmlLengthToParse 8388608, skipHtmlToText false, skipTextToHtml true, and the existing bounded source/header/part/nesting rules. Preserve the emitted ECMAScript string exactly; do not trim or normalize it.
 - Future ingestion: The canonical promotion transaction inserts and strict-read-backs the message_text_projections row with the message, raw-blob reference, placements, structured MIME rows, routing decisions, and journal. Failure rolls the complete promotion back.
+- Accepted caller repair: Update the accepted remote-placement production-promotion caller to supply exactly the required normalizedText string Promoted normalized text. Keep normalizedText required in parsePromotionUnit and retain the existing omitted-field negative in packages/storage/test/promotion-adapter-p2-c20.test.ts; undefined, omission, or an optional fallback remains invalid-input.
 - Legacy materializer: For a configured-account eligible legacy canonical message with no projection, read its immutable raw-eml reference, open the canonical blob without following symlinks, verify regular-file identity, exact size, and SHA-256, copy and fsync the exact bytes into an owner-only staging file, invoke parseStagedEml with the same production configuration, atomically insert and strict-read-back the projection, and await idempotent stage cleanup. It is cursor-bounded, restartable, and never fetches mail or writes a report.
 - State set: checking-existing, verifying-raw, staging-exact-bytes, parsing-production-mime, publishing-projection, cleaning-stage, available, failed-clean
 - Transition and cleanup: One invocation owns cancellation and exactly one awaited idempotent cleanup barrier. Active states name current work. Success reaches available only after projection read-back and stage cleanup; every failure reaches failed-clean only after cleanup, and restart begins by removing only verified owned stale stages before checking the durable projection.
