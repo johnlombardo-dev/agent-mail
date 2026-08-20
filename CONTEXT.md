@@ -10,26 +10,26 @@ Email, filenames, links, rendered text, and all external boundary values are unt
 
 ## Trust boundaries
 
-| Boundary | Rule |
-|---|---|
-| IMAP provider | Treat capabilities, status, MIME, flags, UIDs, and errors as optional or hostile protocol data. Normalize at the adapter; never log credentials or raw bodies routinely. |
-| Local filesystem | Private roots, blobs, journals, backups, secrets, and configuration are validated and permission-checked. Digest, size, atomic promotion, and restore verification establish content integrity; path existence does not. |
-| HTTP clients and proxies | Authenticate API operations with bearer credentials. Validate `unknown` requests and responses through versioned contracts; proxy identity is trusted only when its provenance is verified. |
-| CLI stdout and downstream consumers | Output is an untrusted, potentially slow sink. Use stable schemas, bounded streaming, backpressure, and no accidental secret or raw-mail disclosure. |
-| Rendered mail and reports | Stored message content is untrusted markup. Sanitize it, apply a strict CSP, and keep source views text-only; no client JavaScript. |
+| Boundary                            | Rule                                                                                                                                                                                                                     |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| IMAP provider                       | Treat capabilities, status, MIME, flags, UIDs, and errors as optional or hostile protocol data. Normalize at the adapter; never log credentials or raw bodies routinely.                                                 |
+| Local filesystem                    | Private roots, blobs, journals, backups, secrets, and configuration are validated and permission-checked. Digest, size, atomic promotion, and restore verification establish content integrity; path existence does not. |
+| HTTP clients and proxies            | Authenticate API operations with bearer credentials. Validate `unknown` requests and responses through versioned contracts; proxy identity is trusted only when its provenance is verified.                              |
+| CLI stdout and downstream consumers | Output is an untrusted, potentially slow sink. Use stable schemas, bounded streaming, backpressure, and no accidental secret or raw-mail disclosure.                                                                     |
+| Rendered mail and reports           | Stored message content is untrusted markup. Sanitize it, apply a strict CSP, and keep source views text-only; no client JavaScript.                                                                                      |
 
 ## Package ownership
 
 These are the six implementation package owners named by PLAN.md. The separate `.agents/skills/agent-mail` operator skill is not counted as an implementation package owner.
 
-| Owner | Owns |
-|---|---|
-| `@agent-mail/core` | Transport-free domain types, invariants, state-specific action algebra, and use-case ports. |
-| `@agent-mail/contracts` | Versioned Zod/OpenAPI requests, responses, errors, cursors, stream metadata, and CLI mapping. |
-| `@agent-mail/storage` | SQLite migrations and capability catalogs for messages, sync, routing, actions, reports, export, backup, and blobs. |
-| `@agent-mail/imap` | ImapFlow capability discovery, mailbox/status normalization, streaming fetch, IDLE, and remote-action reconciliation. |
-| `agent-maild` | XState workflow, dependency wiring, loopback REST/report servers, configuration, credentials, and operations commands. |
-| `agent-mail` | Thin schema-driven CLI with bounded streaming and stable machine-readable output. |
+| Owner                   | Owns                                                                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `@agent-mail/core`      | Transport-free domain types, invariants, state-specific action algebra, and use-case ports.                            |
+| `@agent-mail/contracts` | Versioned Zod/OpenAPI requests, responses, errors, cursors, stream metadata, and CLI mapping.                          |
+| `@agent-mail/storage`   | SQLite migrations and capability catalogs for messages, sync, routing, actions, reports, export, backup, and blobs.    |
+| `@agent-mail/imap`      | ImapFlow capability discovery, mailbox/status normalization, streaming fetch, IDLE, and remote-action reconciliation.  |
+| `agent-maild`           | XState workflow, dependency wiring, loopback REST/report servers, configuration, credentials, and operations commands. |
+| `agent-mail`            | Thin schema-driven CLI with bounded streaming and stable machine-readable output.                                      |
 
 ## Decision vocabulary
 
