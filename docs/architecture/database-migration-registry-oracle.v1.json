@@ -1088,7 +1088,84 @@
     "repeatedOpen": "An exact current-version database performs no schema, history, conversion-ledger, reindex-actor, or domain write. It revalidates names, checksums, migration infrastructure, every immutable historical conversion target, and the reindex overlay before return.",
     "newerVersion": "user_version greater than 27 or any unknown later ledger row fails before mutation. Downgrade and automatic repair are forbidden.",
     "partialFailure": "The transaction commit is the only registry cutover. Preflight rejection leaves the complete source tree and sidecar presence/bytes/modes unchanged. Backup or locked-revalidation failure leaves the source database unchanged and retains any verified backup. Invalid current provenance aborts inside BEGIN IMMEDIATE before the first pending suffix SQL, history INSERT, or user_version write. Before commit, ordinary suffix failure leaves the previous canonical prefix and legacy conversion failure leaves the original legacy history, reindex overlay, and data. After commit, the complete new canonical prefix is authoritative and its immutable historical conversion-target rows remain valid. No mixed ledger/schema/provenance state is accepted; foreign keys and the persistent always-deny insertion trigger are restored on every non-crash exit.",
-    "metadata": "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows. Every accepted legacy conversion first commits exact canonical target 27 and preserves and digests the exact old history, base schema, overlay snapshot, immutable target-27 identity, verified backup identity, canonical timestamp, conversion id, and complete record. Version 28 and later are applied only as separately verified suffix migrations. The live full-registry identity is separate and may grow by append without rewriting historical rows."
+    "metadata": "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows. Every accepted legacy conversion first commits exact canonical target 27 and preserves and digests the exact old history, base schema, overlay snapshot, immutable target-27 identity, verified backup identity, canonical timestamp, conversion id, and complete record. Version 28 and later are applied only as separately verified suffix migrations. The live full-registry identity is separate and may grow by append without rewriting historical rows.",
+    "legacyFixtureCompatibility": {
+      "entryPoint": "runMigrations is a compatibility adapter for standalone test fixtures; applyMigrations remains the only strict migration executor and its sequence/history/version semantics are unchanged.",
+      "registrationApi": "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(connection) is a synchronous effect-safe recorder. It accepts only the Database object and no caller-supplied version, registry, ceiling, verifier, or trust flag. Before the first WeakMap mutation it independently recomputes and verifies the complete exact current-tip authority derived from canonicalDatabaseMigrations. Calling it early, through a re-export, dynamic import, eval, reflection, or any package location is harmless: invalid authority rejects without writes, while already-valid authority can be recorded observationally safely.",
+      "stateAuthority": "migration-runner.ts owns a module-private WeakMap keyed by the exact Bun Database object, but the map is only a cache after complete verification and never a source of trust. Registration verifies registry-derived user_version, exact ordered schema_migrations name/checksum rows, every ordered sqlite_schema [type,name,tbl_name,sql] tuple for the complete current-tip schema with only a grammar-valid reindex overlay, and every strict immutable conversion row before recording the SHA-256 fingerprint. Object count, names, or selected SQL fragments are never sufficient. A closed/reopened handle must be verified and recorded again.",
+      "fingerprintEncoding": "sha256(utf8(JSON.stringify([user_version, ordered schema_migrations [version,name,content_hash], ordered sqlite_schema [type,name,tbl_name,sql], ordered schema_migration_conversions canonical column tuples when present, canonical reindex overlay snapshot])))",
+      "fingerprintRule": "The fingerprint includes all durable schema, canonical history, immutable conversion provenance, and active reindex authority but excludes domain rows. The recorder must first prove every component equals the exact registry-derived current-tip authority and only then mutate the WeakMap. runMigrations invokes the same complete verifier, recomputes the fingerprint, and byte-compares it before every compatibility no-op. Any partial/unknown/forged/newer history or added/changed/removed schema tuple, conversion row, user_version, or reindex-overlay fact rejects synchronously before map mutation or fixture SQL with serialized database bytes unchanged.",
+      "adapterOrder": [
+        "resolve the exact Database object and ignore no caller-supplied migration fact",
+        "if the object has a recorded verified canonical application fingerprint, recompute the complete authority fingerprint",
+        "return without writes only when the fingerprint is byte-identical",
+        "if a recorded object drifted, reject with a stable migration mismatch before fixture SQL",
+        "if the object is unrecorded, delegate unchanged to applyMigrations for a standalone fixture sequence"
+      ],
+      "appendRule": "Registration derives the only admissible application tip from canonicalDatabaseMigrations.length and exact rows, never a literal 27/28/29, a minimum version, the fixture array length, or any caller ceiling. A release at canonical tip 27, the live report candidate at tip 28, and a child-local future tip 29 therefore share one rule; under a later release an older exact prefix is pending, not current, and cannot be recorded until applyMigrations commits and the opener verifies every suffix.",
+      "strictnessRule": "applyMigrations never reads the compatibility WeakMap and never skips reconciliation. Unknown, forged, partial, newer, or mismatched history remains rejected by strict execution; a legitimate pending suffix always runs through the common beforePendingMigration gate before registration. The adapter cannot turn a raw prefix into a canonical application database.",
+      "packageBoundary": "Effect safety, not source exclusivity, is the authority. The recorder is safe to reach from any code path because it verifies the complete exact current-tip invariant before changing the WeakMap. As non-authoritative API hygiene, packages/storage/src/index.ts directly re-exports exactly packageNamedExportAllowlist from extensionless ./migration-runner and omits the recorder; export-star, extension, or missing-name forms fail the defense-in-depth surface check. No import/export scanner, identifier-count rule, dynamic-code ban, caller location, or call-order claim is a security boundary.",
+      "packageNamedExportAllowlist": [
+        "ApplyMigrationsOptions",
+        "BeforePendingMigration",
+        "Migration",
+        "MigrationRunnerError",
+        "MigrationRunnerErrorCode",
+        "applyMigrations",
+        "migrationContentHash",
+        "runMigrations"
+      ],
+      "moduleBoundaryRule": "Parse the storage index only to maintain the exact direct eight-name migration-runner re-export as non-authoritative API hygiene. The checker must not infer safety from recorder identifier counts, import/re-export reachability, call order, target-string folding, or bans on dynamic import, require, eval, reflection, Function constructors, aliases, object containers, or other language capabilities. Runtime recorder verification is the sole compatibility authority and must remain safe under direct, early, and dynamic-equivalent calls.",
+      "implementationMode": "--implementation-compatibility-check",
+      "implementationMutationIds": [
+        "legacy-fixture-literal-tip",
+        "legacy-fixture-caller-ceiling",
+        "legacy-fixture-fingerprint-bypass",
+        "legacy-fixture-constant-fingerprint",
+        "legacy-fixture-count-only-schema",
+        "legacy-fixture-failure-stores-expected-fingerprint",
+        "legacy-fixture-verify-after-set",
+        "strict-runner-compatibility-bypass",
+        "migration-runner-export-star-double",
+        "migration-runner-export-star-single",
+        "migration-runner-export-star-extension",
+        "migration-runner-named-export-missing"
+      ],
+      "releaseProbeVersions": [27, 28, 29],
+      "negativeCases": [
+        "literal-tip-27-guard",
+        "caller-migration-length-ceiling",
+        "record-partial-history",
+        "record-unknown-history",
+        "record-forged-history-checksum",
+        "record-newer-history",
+        "record-schema-drift",
+        "record-history-name-drift",
+        "record-conversion-provenance-drift",
+        "record-reindex-overlay-drift",
+        "record-direct-access",
+        "record-early-access",
+        "record-dynamic-equivalent-access",
+        "record-before-weakmap-mutation",
+        "run-reverify-user-version-drift",
+        "run-reverify-schema-drift",
+        "run-reverify-history-drift",
+        "run-reverify-provenance-drift",
+        "run-reverify-reindex-overlay-drift",
+        "weak-constant-fingerprint",
+        "same-cardinality-schema-tuple-substitution",
+        "count-only-schema-verifier",
+        "verifier-failure-stores-expected-canonical-fingerprint",
+        "strict-runner-compatibility-bypass",
+        "double-quoted-export-star",
+        "single-quoted-export-star",
+        "extension-export-star",
+        "named-export-missing",
+        "named-export-allowlist-mismatch"
+      ],
+      "broadSuiteCommand": "bun test",
+      "issue234ProofContract": "Add focused migration-runner/database tests plus real production compatibility children for exact tips 27, 28, and 29. At each tip, direct, early, and dynamic-equivalent access must synchronously record a valid database without changing serialized bytes, then runMigrations must rederive the complete fingerprint and ignore a one-slot fixture with zero writes. For each tip create partial, unknown, forged-checksum, newer-version, schema-drift, history-name-drift, real target-27 conversion-provenance-drift, and reindex-overlay-drift authorities. Invoke all three recorder access forms on every invalid database; all 24 calls per tip must reject before WeakMap mutation or fixture SQL with serialized bytes unchanged, and the unrecorded compatibility runner must also reject. At every tip replace action_plans_state_idx with the same type/name/table and cardinality but changed SQL, invoke all three recorder forms, require rejection with byte-identical state, restore the exact tuple, then pass a standalone fixture registry to runMigrations. Strict unrecorded apply must reject with serialized bytes unchanged and no fixture table; success would expose a leaked marker. The self-contained failure-marker mutation catches this exact verifier failure after confirming current version/history, stores the expected canonical fingerprint, and rethrows; after tuple restoration the fixture-registry discriminator must expose its false no-op. After valid recording, independently tamper user_version, exact history, complete sqlite_schema, one real conversion row, and the reindex overlay; runMigrations must reject before fixture SQL with byte-identical state. Prove exact pending predecessors cannot record, suffixes use the common gate, applyMigrations remains strict, and fresh standalone fixtures apply and reopen. The self-contained mutation runtime must first accept valid authority: its exact verifier rejects the same-cardinality tuple substitution while a count-only verifier accepts it; its strong and weak fingerprint variants both accept one valid reindex state, a second valid but fingerprint-distinct overlay state remains accepted by the strong verifier, and only the weak constant fingerprint produces the forbidden false no-op. Exceptions before any precondition never count as mutation kills. Retain verify-after-set coverage. The exact eight-name index export remains defense-in-depth only; no source reachability or dynamic-code scanner is accepted as security evidence. Finally run the complete Bun suite."
+    }
   },
   "appendStableProvenance": {
     "legacyConversionTargetVersion": 27,
@@ -1305,6 +1382,12 @@
       "writes": "none"
     },
     {
+      "id": "LC-LEGACY-FIXTURE-COMPATIBILITY",
+      "input": "a standalone legacy fixture sequence receives either a fresh/unrecorded fixture database or the exact Database object recorded by the canonical opener only after complete live-tip verification",
+      "expected": "fresh and standalone fixture histories use unchanged strict applyMigrations semantics; a recorded exact canonical application handle performs a fingerprint-checked no-op at release tip 27, live tip 28, and future tip 29; partial, unknown, forged, newer, or pending authority rejects before recording; post-record user_version, exact history, full sqlite_schema, conversion provenance, or reindex overlay tampering rejects before fixture SQL; the package index exports exactly the frozen named migration-runner surface and the recorder identifier has only its definition, exact database import, and exact post-verification database call",
+      "writes": "fixture SQL only on a strict fresh/standalone fixture path; zero writes and byte-identical serialized database state across every verified compatibility no-op or rejection"
+    },
+    {
       "id": "LC-ORDINARY-FAILURE",
       "input": "injected failure on both sides of each pending commit",
       "expected": "pre-commit exact predecessor; post-commit exact new prefix",
@@ -1429,6 +1512,10 @@
       "text": "Route every writable production opener through the one registry and reject bypass."
     },
     {
+      "id": "REQ-FIXTURE-COMPATIBILITY",
+      "text": "Keep legacy standalone fixture sequences compatible across appended canonical tips only after the recorder itself synchronously verifies the complete exact current-tip authority before any map mutation, without weakening strict migration execution, accepting caller ceilings or partial/unknown/forged/newer authority, or missing pre-record or post-record schema/history/provenance/reindex drift. Recorder reachability and call location are not trust inputs."
+    },
+    {
       "id": "REQ-LIFECYCLE",
       "text": "Define fresh, create, upgrade, repeated-open, partial-failure, unknown, and newer-version behavior."
     },
@@ -1509,6 +1596,10 @@
     {
       "id": "DEC-ONE-OPENER",
       "text": "The database opener owns registry application and callers cannot select a version or subset."
+    },
+    {
+      "id": "DEC-VERIFIED-FIXTURE-ADAPTER",
+      "text": "runMigrations may ignore a legacy fixture sequence only for the exact Database object whose recorder call independently verified registry-derived current-tip user_version, exact ordered history, complete base sqlite_schema, strict immutable conversion rows, and a grammar-valid reindex overlay before changing the module-private WeakMap. The recorder is safe when reached early, directly, through re-export, dynamic import, eval, reflection, or any package location because invalid authority rejects synchronously without writes and valid authority records only its verified fingerprint. runMigrations invokes the same verifier and byte-compares the fingerprint before zero-write return; applyMigrations remains strict and unaware of compatibility state. The exact eight-name package export is non-authoritative API hygiene only."
     },
     {
       "id": "DEC-OPERATIONS",
@@ -1606,6 +1697,11 @@
       "postcondition": "second open changes no registry, conversion, or domain row"
     },
     {
+      "id": "PROOF-LEGACY-FIXTURE-COMPATIBILITY",
+      "kind": "real-runner-and-broad-suite",
+      "postcondition": "real production children at exact tips 27, 28, and 29 prove direct, early, and dynamic-equivalent recorder calls are zero-write on valid authority and all reject on each partial, unknown, forged-checksum, newer-version, schema-drift, history-name-drift, real conversion-provenance-drift, and reindex-overlay-drift authority before map mutation or fixture SQL with byte-identical state. At each tip the same three paths reject an action_plans_state_idx substitution whose type/name/table and total object count are unchanged but SQL differs; after exact restoration, a standalone fixture registry must take strict unrecorded apply and reject without bytes or a fixture table, so any leaked canonical marker produces a detectable false no-op. A self-contained mutation stores the expected canonical fingerprint only on that verifier failure and rethrows, then must fail this discriminator. After valid recording, independent user_version, exact-history, full-sqlite_schema, real-conversion-provenance, and reindex-overlay tampering rejects before fixture SQL. A self-contained known-working verifier establishes every valid precondition before count-only schema and constant-fingerprint mutations fail; the constant case demonstrates a false no-op across two verifier-valid, fingerprint-distinct reindex states, and precondition exceptions never count as kills. Verify-after-set remains rejected. The exact eight-name package export is checked only as defense-in-depth; no source reachability or capability ban counts as security proof. Strict-runner and pending-suffix mutations reject before effects; fresh and repeated standalone fixtures remain strict; the complete Bun suite passes"
+    },
+    {
       "id": "PROOF-DOCTOR",
       "kind": "mutation",
       "postcondition": "each independent and combined history defect remains visible, live-registry and historical-target identities are reported separately, and the tree is unchanged"
@@ -1645,15 +1741,28 @@
       "PROOF-PREFLIGHT",
       "PROOF-PROVENANCE"
     ],
-    "REQ-OPEN": ["DEC-ONE-OPENER", "PROOF-REOPEN", "PROOF-RETIREMENT"],
+    "REQ-OPEN": [
+      "DEC-ONE-OPENER",
+      "PROOF-REOPEN",
+      "PROOF-LEGACY-FIXTURE-COMPATIBILITY",
+      "PROOF-RETIREMENT"
+    ],
+    "REQ-FIXTURE-COMPATIBILITY": [
+      "DEC-ONE-OPENER",
+      "DEC-VERIFIED-FIXTURE-ADAPTER",
+      "PROOF-LEGACY-FIXTURE-COMPATIBILITY",
+      "PROOF-FAILURE-MATRIX"
+    ],
     "REQ-LIFECYCLE": [
       "DEC-FAIL-UNKNOWN",
+      "DEC-VERIFIED-FIXTURE-ADAPTER",
       "PROOF-FRESH-COMPOSITION",
       "PROOF-CONVERSION-MATRIX",
       "PROOF-FAILURE-MATRIX",
       "PROOF-REOPEN",
       "PROOF-PREFLIGHT",
-      "PROOF-PROVENANCE"
+      "PROOF-PROVENANCE",
+      "PROOF-LEGACY-FIXTURE-COMPATIBILITY"
     ],
     "REQ-PREFLIGHT": [
       "DEC-READONLY-PREFLIGHT",
@@ -1928,7 +2037,19 @@
         "unknown-source",
         "unknown-test",
         "converter-live-tip-loop",
-        "legacy-opener-skips-suffix-runner"
+        "legacy-opener-skips-suffix-runner",
+        "legacy-fixture-literal-tip",
+        "legacy-fixture-caller-ceiling",
+        "legacy-fixture-fingerprint-bypass",
+        "legacy-fixture-constant-fingerprint",
+        "legacy-fixture-count-only-schema",
+        "legacy-fixture-failure-stores-expected-fingerprint",
+        "legacy-fixture-verify-after-set",
+        "strict-runner-compatibility-bypass",
+        "migration-runner-export-star-double",
+        "migration-runner-export-star-single",
+        "migration-runner-export-star-extension",
+        "migration-runner-named-export-missing"
       ],
       "mutationExitRule": "--source-self-test spawns one fresh checker process per sourceMutationId against real accepted source bytes or explicit virtual Git change records for deletion/rename cases; each child must exit nonzero for its independent mutation or the self-test fails."
     },
@@ -1943,7 +2064,11 @@
       },
       {
         "id": "IMP-OPENER",
-        "text": "Make the writable database opener the sole production migration consumer and remove caller-selected ceilings/arrays. After optional legacy conversion returns, always route the complete live registry through applyMigrations with the in-BEGIN beforePendingMigration verifier; do not hide this suffix runner in a non-legacy else branch."
+        "text": "Make the writable database opener the sole production migration consumer and remove caller-selected ceilings/arrays. After optional legacy conversion returns, always route the complete live registry through applyMigrations with the in-BEGIN beforePendingMigration verifier; do not hide this suffix runner in a non-legacy else branch. Only after infrastructure installation, canonical-state verification, and integrity verification record the exact Database object for legacy fixture compatibility."
+      },
+      {
+        "id": "IMP-FIXTURE-COMPATIBILITY",
+        "text": "Replace the literal-version shortcut with a synchronous recorder that derives the exact admissible tip only from the live canonical registry and, before any WeakMap mutation, validates user_version, exact ordered history, every ordered sqlite_schema [type,name,tbl_name,sql] tuple rather than object count, strict immutable conversion rows, and the grammar-valid reindex overlay, then records their complete SHA-256 fingerprint. runMigrations must invoke the same verifier and byte-compare the recorded fingerprint before zero-write no-op. Keep applyMigrations unchanged and strict. Make direct, early, re-exported, dynamic-imported, eval, reflection, alias, and other access paths harmless by effect safety rather than source bans. Replace package export-star with the exact eight-name allowlist solely as API hygiene."
       },
       {
         "id": "IMP-DOCTOR",
@@ -1963,7 +2088,7 @@
       },
       {
         "id": "IMP-PROOFS",
-        "text": "Run fresh, all-prefix plus every generic reindex-overlay conversion/forgery, no-source-write preflight and whole-tree/sidecar probes, byte-exact provenance and mutation probes, real production converter/opener under child-local synthetic suffixes 28/29, live-tip-loop and legacy-opener-bypass counterexamples, both suffix crash boundaries, no-op reopen, newer/unknown, doctor, backup, empty restore, full restore, current-tree source mutations, exact source drift, and slot proofs."
+        "text": "Run fresh, all-prefix plus every generic reindex-overlay conversion/forgery, no-source-write preflight and whole-tree/sidecar probes, byte-exact provenance and mutation probes, real production converter/opener under child-local synthetic suffixes 28/29, live-tip-loop and legacy-opener-bypass counterexamples, and release-tip 27/live-tip 28/future-tip 29 compatibility children. At every tip prove three valid recorder access forms are zero-write; prove direct, early, and dynamic-equivalent calls reject all eight invalid authority states and the same-cardinality action_plans_state_idx SQL substitution before map mutation or fixture SQL; restore the tuple and require a standalone fixture registry to follow strict unrecorded rejection with unchanged bytes and no table. Kill the mutation that stores the expected canonical fingerprint on verifier failure and rethrows because it produces a false fixture no-op after restoration. Prove five post-record tamper classes reject. Use a self-contained known-working verifier to kill count-only schema and weak constant-fingerprint implementations only after valid preconditions, including a constant-fingerprint false no-op between two verifier-valid but fingerprint-distinct reindex states; kill verify-after-set; retain strict standalone fixtures, exact package export hygiene, the complete Bun suite, both suffix crash boundaries, reopen, doctor, backup, restore, current-tree source mutations, exact source drift, and slot proofs."
       },
       {
         "id": "IMP-NO-REPORT",

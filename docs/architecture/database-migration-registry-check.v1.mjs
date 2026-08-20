@@ -17,11 +17,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456";
+const EXPECTED_ORACLE_SHA256 = "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345";
 const EXPECTED_VIEW_SHA256 = [
-  "f4505e553c82e4f0a232b547f4eb71c1abf1aadfba4a56025f6bdc55aba138e2",
-  "07fb450ce919edc47be1fa7701fa48f93ee8a67657426d569bdd6716267dd09d",
-  "2e1c6445f2119fbb248e86865e080bed87122bc0d5f0e13f6983d636a4e1be84",
+  "d88a844683490e20da12ba57a4f99496ee97878e777e00ae407d5e78f8b61609",
+  "38feb62fae9dc733ed41dd2c1a0bfe23147e3237c64f081abcf12c0c4d3d2c0e",
+  "ca2454f35a5f84ae87db783e1fccc7c2d3acb12aa61fafe5bbb5e29696cd03d6",
 ];
 const ACCEPTED_HEAD = "547f70dd67959541324688b7b737749bc43791ab";
 const directory = dirname(fileURLToPath(import.meta.url));
@@ -797,7 +797,75 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   ) {
     fail("runtime open order must have twelve steps");
   }
-
+  const fixtureCompatibility = oracle.runtimeAuthority.legacyFixtureCompatibility;
+  for (const key of [
+    "entryPoint",
+    "registrationApi",
+    "stateAuthority",
+    "fingerprintEncoding",
+    "fingerprintRule",
+    "appendRule",
+    "strictnessRule",
+    "packageBoundary",
+    "moduleBoundaryRule",
+    "broadSuiteCommand",
+    "issue234ProofContract",
+  ]) {
+    nonempty(fixtureCompatibility[key], "legacy fixture compatibility " + key);
+  }
+  exact(
+    fixtureCompatibility.adapterOrder,
+    [
+      "resolve the exact Database object and ignore no caller-supplied migration fact",
+      "if the object has a recorded verified canonical application fingerprint, recompute the complete authority fingerprint",
+      "return without writes only when the fingerprint is byte-identical",
+      "if a recorded object drifted, reject with a stable migration mismatch before fixture SQL",
+      "if the object is unrecorded, delegate unchanged to applyMigrations for a standalone fixture sequence",
+    ],
+    "legacy fixture adapter order",
+  );
+  exact(fixtureCompatibility.releaseProbeVersions, [27, 28, 29], "fixture release probes");
+  exact(
+    fixtureCompatibility.packageNamedExportAllowlist,
+    [
+      "ApplyMigrationsOptions",
+      "BeforePendingMigration",
+      "Migration",
+      "MigrationRunnerError",
+      "MigrationRunnerErrorCode",
+      "applyMigrations",
+      "migrationContentHash",
+      "runMigrations",
+    ],
+    "fixture package named export allowlist",
+  );
+  exact(
+    fixtureCompatibility.implementationMode,
+    "--implementation-compatibility-check",
+    "fixture compatibility implementation mode",
+  );
+  exact(
+    fixtureCompatibility.implementationMutationIds,
+    [
+      "legacy-fixture-literal-tip",
+      "legacy-fixture-caller-ceiling",
+      "legacy-fixture-fingerprint-bypass",
+      "legacy-fixture-constant-fingerprint",
+      "legacy-fixture-count-only-schema",
+      "legacy-fixture-failure-stores-expected-fingerprint",
+      "legacy-fixture-verify-after-set",
+      "strict-runner-compatibility-bypass",
+      "migration-runner-export-star-double",
+      "migration-runner-export-star-single",
+      "migration-runner-export-star-extension",
+      "migration-runner-named-export-missing",
+    ],
+    "fixture compatibility implementation mutations",
+  );
+  exact(fixtureCompatibility.negativeCases.length, 29, "fixture compatibility negative cases");
+  for (const value of fixtureCompatibility.negativeCases) {
+    nonempty(value, "fixture compatibility negative case");
+  }
   const lifecycle = uniqueRows(oracle.lifecycleCases, "id", "lifecycle cases");
   exactSet(
     lifecycle.keys(),
@@ -808,6 +876,7 @@ function validateOracle(oracle, { checkGit = true } = {}) {
       "LC-LEGACY-UPGRADE",
       "LC-PREFLIGHT-REJECT",
       "LC-REOPEN",
+      "LC-LEGACY-FIXTURE-COMPATIBILITY",
       "LC-ORDINARY-FAILURE",
       "LC-CONVERSION-FAILURE",
       "LC-NEWER",
@@ -829,9 +898,9 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   const requirements = uniqueRows(oracle.requirements, "id", "requirements");
   const decisions = uniqueRows(oracle.decisions, "id", "decisions");
   const proofs = uniqueRows(oracle.proofs, "id", "proofs");
-  exact(requirements.size, 14, "requirement count");
-  exact(decisions.size, 14, "decision count");
-  exact(proofs.size, 13, "proof count");
+  exact(requirements.size, 15, "requirement count");
+  exact(decisions.size, 15, "decision count");
+  exact(proofs.size, 14, "proof count");
   exactSet(Object.keys(oracle.coverage), requirements.keys(), "coverage requirement IDs");
   for (const [requirement, references] of Object.entries(oracle.coverage)) {
     if (!Array.isArray(references) || references.length < 2) fail("thin coverage: " + requirement);
@@ -873,7 +942,7 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     "issue 234 production scope",
   );
   const obligations = uniqueRows(oracle.issue234.obligations, "id", "issue 234 obligations");
-  exact(obligations.size, 9, "issue 234 obligation count");
+  exact(obligations.size, 10, "issue 234 obligation count");
   exact(
     oracle.issue234.compositionCorpus,
     {
@@ -1031,6 +1100,18 @@ function validateOracle(oracle, { checkGit = true } = {}) {
       "unknown-test",
       "converter-live-tip-loop",
       "legacy-opener-skips-suffix-runner",
+      "legacy-fixture-literal-tip",
+      "legacy-fixture-caller-ceiling",
+      "legacy-fixture-fingerprint-bypass",
+      "legacy-fixture-constant-fingerprint",
+      "legacy-fixture-count-only-schema",
+      "legacy-fixture-failure-stores-expected-fingerprint",
+      "legacy-fixture-verify-after-set",
+      "strict-runner-compatibility-bypass",
+      "migration-runner-export-star-double",
+      "migration-runner-export-star-single",
+      "migration-runner-export-star-extension",
+      "migration-runner-named-export-missing",
     ],
     "source mutation IDs",
   );
@@ -1177,7 +1258,12 @@ async function sourceProjection(oracle) {
     oracle.canonicalRegistry.identityDigest,
     "runtime semantic source identity",
   );
-  return { definitions, applyMigrations: runner.applyMigrations, semanticIdentityDigest };
+  return {
+    definitions,
+    applyMigrations: runner.applyMigrations,
+    migrationContentHash: runner.migrationContentHash,
+    semanticIdentityDigest,
+  };
 }
 
 function corpusProjection(oracle, evidencePaths) {
@@ -1323,6 +1409,330 @@ async function freshSqliteProjection(oracle, runtime) {
   } finally {
     database.close();
   }
+}
+
+function compatibilityAuthorityFingerprint(database) {
+  const hasConversions = hasSchemaObject(database, "schema_migration_conversions");
+  const hasLease = hasSchemaObject(database, "search_reindex_lease");
+  const hasProgress = hasSchemaObject(database, "search_reindex_progress");
+  return sha256(
+    Buffer.from(
+      JSON.stringify([
+        database.query("PRAGMA user_version").get()?.user_version,
+        database
+          .query("SELECT version, name, content_hash FROM schema_migrations ORDER BY version")
+          .all(),
+        database
+          .query(
+            "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+          )
+          .all(),
+        hasConversions
+          ? database
+              .query("SELECT * FROM schema_migration_conversions ORDER BY conversion_id")
+              .all()
+          : [],
+        hasLease
+          ? database.query("SELECT * FROM search_reindex_lease ORDER BY lease_id").all()
+          : [],
+        hasProgress
+          ? database
+              .query(
+                "SELECT * FROM search_reindex_progress ORDER BY replacement_name, source_rowid",
+              )
+              .all()
+          : [],
+      ]),
+      "utf8",
+    ),
+  );
+}
+
+function baseSchemaOutsideReindexFamily(database) {
+  return database
+    .query(
+      "SELECT type, name, tbl_name, sql FROM sqlite_schema " +
+        "WHERE name NOT LIKE 'sqlite_%' " +
+        "AND name NOT IN ('schema_migration_conversions', " +
+        "'schema_migration_conversions_source_identity', " +
+        "'schema_migration_conversions_insert_gate', " +
+        "'schema_migration_conversions_no_update', " +
+        "'schema_migration_conversions_no_delete') " +
+        "AND name NOT LIKE 'message_fts_replacement_%' " +
+        "AND tbl_name NOT LIKE 'message_fts_replacement_%' " +
+        "ORDER BY type, name, tbl_name, sql",
+    )
+    .all();
+}
+
+function verifyReferenceCompatibilityAuthority(database, registry, oracle, runtime) {
+  const version = database.query("PRAGMA user_version").get()?.user_version;
+  const history = database
+    .query("SELECT version, name, content_hash FROM schema_migrations ORDER BY version")
+    .all();
+  const expected = registry.map((migration, index) => ({
+    version: index + 1,
+    name: migration.name,
+    content_hash: runtime.migrationContentHash(migration),
+  }));
+  exact(version, registry.length, "fixture compatibility exact live tip");
+  exact(history, expected, "fixture compatibility exact live history");
+  const { Database } = requireBunSqlite();
+  const reference = new Database(":memory:", { strict: true });
+  try {
+    runtime.applyMigrations(reference, registry);
+    const expectedControlObjects = reference
+      .query(
+        "SELECT type, name, tbl_name, sql FROM sqlite_schema " +
+          "WHERE name IN ('search_reindex_lease', 'search_reindex_progress') " +
+          "ORDER BY type, name, tbl_name, sql",
+      )
+      .all();
+    classifyReindexProjection(database, expectedControlObjects);
+    exact(
+      baseSchemaOutsideReindexFamily(database),
+      baseSchemaOutsideReindexFamily(reference),
+      "fixture compatibility exact current-tip schema",
+    );
+  } finally {
+    reference.close();
+  }
+  const conversionObjects = conversionDdlRows(database);
+  if (conversionObjects.length > 0) {
+    const conversionRows = database
+      .query("SELECT count(*) AS count FROM schema_migration_conversions")
+      .get()?.count;
+    const liveRegistryRows = registry.map((migration) => ({
+      ...migration,
+      contentHash: runtime.migrationContentHash(migration),
+    }));
+    verifyConversionProjection(database, oracle, conversionRows, runtime, liveRegistryRows);
+  }
+  return compatibilityAuthorityFingerprint(database);
+}
+
+function recordReferenceCompatibility(database, registry, fingerprints, oracle, runtime) {
+  const fingerprint = verifyReferenceCompatibilityAuthority(database, registry, oracle, runtime);
+  fingerprints.set(database, fingerprint);
+}
+
+function runReferenceCompatibility(database, fixtures, fingerprints, registry, oracle, runtime) {
+  const recorded = fingerprints.get(database);
+  if (recorded === undefined) {
+    runtime.applyMigrations(database, fixtures);
+    return;
+  }
+  const verifiedFingerprint = verifyReferenceCompatibilityAuthority(
+    database,
+    registry,
+    oracle,
+    runtime,
+  );
+  if (verifiedFingerprint !== recorded) {
+    throw new Error("recorded canonical application migration authority changed");
+  }
+}
+
+async function legacyFixtureCompatibilityProjection(oracle, runtime) {
+  const { Database } = await import("bun:sqlite");
+  bunSqliteModule = { Database };
+  const fingerprints = new WeakMap();
+  const suffixes = oracle.appendStableProvenance.proofSuffixes.map((suffix) => ({
+    version: suffix.version,
+    name: suffix.name,
+    sql: suffix.sql,
+    requiresForeignKeysOff: suffix.requiresForeignKeysOff,
+  }));
+  const registries = [
+    runtime.definitions,
+    [...runtime.definitions, suffixes[0]],
+    [...runtime.definitions, ...suffixes],
+  ];
+  const fixture = [
+    {
+      version: 1,
+      name: "standalone-legacy-fixture",
+      sql: "CREATE TABLE standalone_legacy_fixture (id INTEGER PRIMARY KEY) STRICT",
+    },
+  ];
+  const acceptedTips = [];
+  let noOpWrites = 0;
+  let sameCardinalitySchemaTupleRejections = 0;
+  for (const registry of registries) {
+    const database = new Database(":memory:", { strict: true });
+    try {
+      runtime.applyMigrations(database, registry);
+      recordReferenceCompatibility(database, registry, fingerprints, oracle, runtime);
+      const before = database.serialize();
+      runReferenceCompatibility(database, fixture, fingerprints, registry, oracle, runtime);
+      exact(
+        Buffer.compare(before, database.serialize()),
+        0,
+        "fixture compatibility verified no-op at tip " + registry.length,
+      );
+      noOpWrites += 0;
+      acceptedTips.push(registry.length);
+      let strictRejected = false;
+      try {
+        runtime.applyMigrations(database, fixture);
+      } catch {
+        strictRejected = true;
+      }
+      exact(strictRejected, true, "strict runner ignores no compatibility authority");
+    } finally {
+      database.close();
+    }
+    for (const access of ["direct", "early", "dynamic-equivalent"]) {
+      const substituted = new Database(":memory:", { strict: true });
+      try {
+        runtime.applyMigrations(substituted, registry);
+        const original = substituteSameCardinalitySchemaTuple(substituted);
+        const beforeRecord = substituted.serialize();
+        let rejected = false;
+        try {
+          recordReferenceCompatibility(substituted, registry, fingerprints, oracle, runtime);
+        } catch {
+          rejected = true;
+        }
+        exact(rejected, true, "reference same-cardinality schema rejection " + access);
+        exact(
+          Buffer.compare(beforeRecord, substituted.serialize()),
+          0,
+          "reference same-cardinality rejection bytes " + access,
+        );
+        restoreSameCardinalitySchemaTuple(substituted, original);
+        assertCompatibilityCallRejectsWithoutFixture(
+          "reference same-cardinality rejection leaves no marker " + access,
+          substituted,
+          fixture,
+          () =>
+            runReferenceCompatibility(
+              substituted,
+              fixture,
+              fingerprints,
+              registry,
+              oracle,
+              runtime,
+            ),
+        );
+        sameCardinalitySchemaTupleRejections += 1;
+      } finally {
+        substituted.close();
+      }
+    }
+  }
+
+  const rejected = [];
+  const release29 = registries[2];
+  for (const kind of ["pending", "partial", "unknown", "forged", "newer"]) {
+    const database = new Database(":memory:", { strict: true });
+    try {
+      const prefix = kind === "partial" ? release29.slice(0, 3) : release29.slice(0, -1);
+      runtime.applyMigrations(database, prefix);
+      if (kind === "unknown") {
+        database
+          .query("UPDATE schema_migrations SET name = 'unknown-history' WHERE version = 2")
+          .run();
+      } else if (kind === "forged") {
+        database
+          .query("UPDATE schema_migrations SET content_hash = ? WHERE version = 2")
+          .run("0".repeat(64));
+      } else if (kind === "newer") {
+        database.exec("PRAGMA user_version = 30");
+      }
+      let didReject = false;
+      try {
+        recordReferenceCompatibility(database, release29, fingerprints, oracle, runtime);
+      } catch {
+        didReject = true;
+      }
+      exact(didReject, true, "fixture compatibility " + kind + " rejection");
+      rejected.push(kind);
+    } finally {
+      database.close();
+    }
+  }
+
+  for (const kind of ["schema", "provenance", "reindex"]) {
+    const database = new Database(":memory:", { strict: true });
+    try {
+      runtime.applyMigrations(database, runtime.definitions);
+      if (kind === "schema") {
+        database.exec("CREATE TABLE forged_schema_drift (id INTEGER PRIMARY KEY) STRICT");
+      } else if (kind === "provenance") {
+        database.exec(
+          "CREATE TABLE schema_migration_conversions (conversion_id TEXT PRIMARY KEY, record_sha256 TEXT NOT NULL) STRICT; INSERT INTO schema_migration_conversions VALUES ('conversion:one', '" +
+            "a".repeat(64) +
+            "')",
+        );
+      } else {
+        database.exec(
+          "CREATE TABLE message_fts_replacement_0000000000000000 (id INTEGER PRIMARY KEY) STRICT",
+        );
+      }
+      let didReject = false;
+      try {
+        recordReferenceCompatibility(database, runtime.definitions, fingerprints, oracle, runtime);
+      } catch {
+        didReject = true;
+      }
+      exact(didReject, true, "fixture compatibility " + kind + " authority rejection");
+      rejected.push(kind);
+    } finally {
+      database.close();
+    }
+  }
+
+  for (const kind of ["schema", "history"]) {
+    const database = new Database(":memory:", { strict: true });
+    try {
+      runtime.applyMigrations(database, runtime.definitions);
+      recordReferenceCompatibility(database, runtime.definitions, fingerprints, oracle, runtime);
+      if (kind === "schema") {
+        database.exec("CREATE TABLE forged_schema_drift (id INTEGER PRIMARY KEY) STRICT");
+      } else {
+        database.query("UPDATE schema_migrations SET name = 'forged' WHERE version = 1").run();
+      }
+      let didReject = false;
+      try {
+        runReferenceCompatibility(
+          database,
+          fixture,
+          fingerprints,
+          runtime.definitions,
+          oracle,
+          runtime,
+        );
+      } catch {
+        didReject = true;
+      }
+      exact(didReject, true, "fixture compatibility recorded " + kind + " drift rejection");
+      rejected.push("recorded-" + kind + "-drift");
+    } finally {
+      database.close();
+    }
+  }
+
+  const standalone = new Database(":memory:", { strict: true });
+  try {
+    runReferenceCompatibility(standalone, fixture, fingerprints, [], oracle, runtime);
+    runReferenceCompatibility(standalone, fixture, fingerprints, [], oracle, runtime);
+    exact(
+      standalone.query("PRAGMA user_version").get()?.user_version,
+      1,
+      "fresh and repeated standalone fixture",
+    );
+  } finally {
+    standalone.close();
+  }
+  return {
+    acceptedTips,
+    verifiedNoOpWrites: noOpWrites,
+    rejected,
+    sameCardinalitySchemaTupleRejections,
+    freshStandaloneVersion: 1,
+    strictRunnerUnchanged: true,
+  };
 }
 
 async function legacySchemaProjection(oracle, runtime) {
@@ -4041,6 +4451,685 @@ function semanticImportFixture(oracle, migrationIndex, options = {}) {
   };
 }
 
+function parseNamedModuleBindings(clause) {
+  const braces = /\{([\s\S]*?)\}/u.exec(clause)?.[1];
+  if (braces === undefined) return [];
+  return braces
+    .split(",")
+    .map((item) => item.trim().replace(/^type\s+/u, ""))
+    .filter(Boolean)
+    .map((item) => {
+      const match = /^([A-Za-z_$][\w$]*)(?:\s+as\s+([A-Za-z_$][\w$]*))?$/u.exec(item);
+      return match === null ? null : { imported: match[1], local: match[2] ?? match[1] };
+    })
+    .filter((item) => item !== null);
+}
+
+function maskTypeScriptComments(text) {
+  let result = "";
+  let state = "code";
+  for (let index = 0; index < text.length; index += 1) {
+    const current = text[index];
+    const next = text[index + 1];
+    if (state === "line-comment") {
+      if (current === "\n" || current === "\r") {
+        state = "code";
+        result += current;
+      } else {
+        result += " ";
+      }
+      continue;
+    }
+    if (state === "block-comment") {
+      if (current === "*" && next === "/") {
+        result += "  ";
+        index += 1;
+        state = "code";
+      } else {
+        result += current === "\n" || current === "\r" ? current : " ";
+      }
+      continue;
+    }
+    if (state !== "code") {
+      result += current;
+      if (current === "\\") {
+        if (next !== undefined) {
+          result += next;
+          index += 1;
+        }
+      } else if (
+        (state === "single-quote" && current === "'") ||
+        (state === "double-quote" && current === '"') ||
+        (state === "template" && current === "`")
+      ) {
+        state = "code";
+      }
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      result += "  ";
+      index += 1;
+      state = "line-comment";
+    } else if (current === "/" && next === "*") {
+      result += "  ";
+      index += 1;
+      state = "block-comment";
+    } else {
+      result += current;
+      if (current === "'") state = "single-quote";
+      else if (current === '"') state = "double-quote";
+      else if (current === "`") state = "template";
+    }
+  }
+  return result;
+}
+
+function maskNonExecutableTypeScriptText(text) {
+  const result = [];
+  const frames = [{ kind: "code" }];
+  let literal = null;
+  for (let index = 0; index < text.length; index += 1) {
+    const current = text[index];
+    const next = text[index + 1];
+    const frame = frames.at(-1);
+    const masked = current === "\n" || current === "\r" ? current : " ";
+    if (literal === "line-comment") {
+      result.push(masked);
+      if (current === "\n" || current === "\r") literal = null;
+      continue;
+    }
+    if (literal === "block-comment") {
+      result.push(masked);
+      if (current === "*" && next === "/") {
+        result.push(" ");
+        index += 1;
+        literal = null;
+      }
+      continue;
+    }
+    if (literal === "single-quote" || literal === "double-quote") {
+      result.push(masked);
+      if (current === "\\" && next !== undefined) {
+        result.push(next === "\n" || next === "\r" ? next : " ");
+        index += 1;
+      } else if (
+        (literal === "single-quote" && current === "'") ||
+        (literal === "double-quote" && current === '"')
+      ) {
+        literal = null;
+      }
+      continue;
+    }
+    if (frame.kind === "template") {
+      result.push(masked);
+      if (current === "\\" && next !== undefined) {
+        result.push(next === "\n" || next === "\r" ? next : " ");
+        index += 1;
+      } else if (current === "`") {
+        frames.pop();
+      } else if (current === "$" && next === "{") {
+        result.push(" ");
+        index += 1;
+        frames.push({ kind: "template-expression", depth: 1 });
+      }
+      continue;
+    }
+    if (current === "/" && next === "/") {
+      result.push(" ", " ");
+      index += 1;
+      literal = "line-comment";
+      continue;
+    }
+    if (current === "/" && next === "*") {
+      result.push(" ", " ");
+      index += 1;
+      literal = "block-comment";
+      continue;
+    }
+    if (current === "'") {
+      result.push(" ");
+      literal = "single-quote";
+      continue;
+    }
+    if (current === '"') {
+      result.push(" ");
+      literal = "double-quote";
+      continue;
+    }
+    if (current === "`") {
+      result.push(" ");
+      frames.push({ kind: "template" });
+      continue;
+    }
+    if (frame.kind === "template-expression") {
+      if (current === "{") frame.depth += 1;
+      if (current === "}") {
+        frame.depth -= 1;
+        if (frame.depth === 0) {
+          result.push(" ");
+          frames.pop();
+          continue;
+        }
+      }
+    }
+    result.push(current);
+  }
+  return result.join("");
+}
+
+function parseTypeScriptModuleEdges(text) {
+  const source = maskTypeScriptComments(text);
+  const edges = [];
+  const pattern =
+    /(?:^|[;\r\n])[\t ]*(import|export)\s+(?:type\s+)?(\*\s*(?:as\s+[A-Za-z_$][\w$]*)?|\{[^}]*\}|[A-Za-z_$][\w$]*(?:\s*,\s*(?:\*\s+as\s+[A-Za-z_$][\w$]*|\{[^}]*\}))?)\s+from\s+(["'])([^"'\r\n]+)\3\s*;?/gmu;
+  for (const match of source.matchAll(pattern)) {
+    const direction = match[1];
+    const clause = match[2].trim().replace(/^type\s+/u, "");
+    const namespace = /^\*\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(clause)?.[1] ?? null;
+    edges.push({
+      direction,
+      clause,
+      specifier: match[4],
+      typeOnly: /\b(?:import|export)\s+type\s/u.test(match[0]),
+      exportAll: direction === "export" && clause === "*",
+      namespace,
+      named: parseNamedModuleBindings(clause),
+    });
+  }
+  return edges;
+}
+
+function scannedTypeScriptModuleSpecifiers(text) {
+  try {
+    return new Bun.Transpiler({ loader: "ts" }).scan(text).imports;
+  } catch {
+    return null;
+  }
+}
+
+function functionValuedBindings(executable) {
+  const bindings = new Set();
+  for (const pattern of [
+    /\b(?:async\s+)?function\s*\*?\s+([A-Za-z_$][\w$]*)/gu,
+    /\bclass\s+([A-Za-z_$][\w$]*)/gu,
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?function\b/gu,
+    /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^;=\r\n]*\)|[A-Za-z_$][\w$]*)\s*=>/gu,
+  ]) {
+    for (const match of executable.matchAll(pattern)) bindings.add(match[1]);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const match of executable.matchAll(
+      /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\(?\s*([A-Za-z_$][\w$]*)\s*\)?\s*;/gu,
+    )) {
+      if (bindings.has(match[2]) && !bindings.has(match[1])) {
+        bindings.add(match[1]);
+        changed = true;
+      }
+    }
+  }
+  return bindings;
+}
+
+function dynamicCodeCapabilityIsAbsent(text, checkFunctionBindings = true) {
+  const executable = maskNonExecutableTypeScriptText(text);
+  if (/\bimport\s*\(/u.test(executable)) return false;
+  if (
+    /\b(?:require|createRequire|getBuiltinModule|eval|Function|AsyncFunction|GeneratorFunction|AsyncGeneratorFunction|getOwnPropertyDescriptor|getOwnPropertyDescriptors|setPrototypeOf|__proto__)\b/u.test(
+      executable,
+    )
+  ) {
+    return false;
+  }
+  if (
+    /\bReflect\s*\[/u.test(executable) ||
+    /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*Reflect\b(?!\s*[.[])/u.test(executable)
+  ) {
+    return false;
+  }
+  if (/\bReflect\s*\.\s*get\s*\(\s*(?:globalThis|global|window|self)\b/u.test(executable)) {
+    return false;
+  }
+  if (/\b(?:globalThis|global|window|self)\b/u.test(executable)) {
+    return false;
+  }
+  if (/\bprocess\s*(?:\.\s*getBuiltinModule\b|\[)/u.test(executable)) {
+    return false;
+  }
+  if (/\b(?:module|exports)\s*(?:\.|\[|\()/u.test(executable)) {
+    return false;
+  }
+  if (/\bimport\s*\.\s*meta\s*(?:\[|\.\s*require\b)/u.test(executable)) {
+    return false;
+  }
+  if (
+    /\bBun\s*(?:\[|\.\s*resolve(?:Sync)?\b)/u.test(executable) ||
+    /\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*Bun\b(?!\s*[.[])/u.test(executable)
+  ) {
+    return false;
+  }
+  if (/\.\s*constructor\b/u.test(executable)) {
+    return false;
+  }
+  for (const match of executable.matchAll(/\bconstructor\b/gu)) {
+    const suffix = executable.slice(match.index + match[0].length).trimStart();
+    if (!suffix.startsWith("(")) {
+      return false;
+    }
+  }
+  if (checkFunctionBindings) {
+    for (const binding of functionValuedBindings(executable)) {
+      if (new RegExp("\\b" + escapeRegExp(binding) + "\\s*\\[", "u").test(executable)) {
+        return false;
+      }
+    }
+    if (
+      /\(\s*(?:async\s*\([^)]*\)\s*=>\s*\{[^{}]*\}|function\s*\*?\s*\([^)]*\)\s*\{[^{}]*\})\s*\)\s*\[/u.test(
+        executable,
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function transpiledTypeScriptModuleSyntax(text) {
+  try {
+    return new Bun.Transpiler({ loader: "ts" }).transformSync(text);
+  } catch {
+    return null;
+  }
+}
+
+function resolveTypeScriptModulePath(sources, fromPath, specifier) {
+  if (!specifier.startsWith(".")) return false;
+  const resolved = relative(
+    repositoryRoot,
+    resolve(repositoryRoot, dirname(fromPath), specifier),
+  ).replaceAll("\\", "/");
+  for (const candidate of [resolved, resolved + ".ts", resolved + "/index.ts"]) {
+    if (sources.has(candidate)) return candidate;
+  }
+  return null;
+}
+
+function resolvesToMigrationRunner(sources, fromPath, specifier) {
+  return (
+    resolveTypeScriptModulePath(sources, fromPath, specifier) ===
+    "packages/storage/src/migration-runner.ts"
+  );
+}
+
+function recorderCallFollowsCompleteVerification(text, recorder) {
+  const executable = maskNonExecutableTypeScriptText(text);
+  const applyCall = executable.indexOf("applyMigrations(db");
+  const installCall = executable.indexOf("installMigrationConversionInfrastructure(db");
+  const verifyCall = executable.indexOf("verifyCanonicalMigrationState(db");
+  const integrityCall = executable.indexOf("verifyIntegrity(db");
+  const recordCall = executable.indexOf(recorder + "(db");
+  return (
+    applyCall >= 0 &&
+    installCall > applyCall &&
+    verifyCall > installCall &&
+    integrityCall > verifyCall &&
+    recordCall > integrityCall
+  );
+}
+
+function privilegedRecorderUseIsExact(path, text, recorder) {
+  const executable = maskNonExecutableTypeScriptText(text);
+  const occurrences = [
+    ...executable.matchAll(new RegExp("\\b" + escapeRegExp(recorder) + "\\b", "gu")),
+  ].length;
+  if (path === "packages/storage/src/migration-runner.ts") {
+    const definitions = [
+      ...executable.matchAll(
+        new RegExp("\\bexport\\s+function\\s+" + escapeRegExp(recorder) + "\\s*\\(", "gu"),
+      ),
+    ].length;
+    return occurrences === 1 && definitions === 1;
+  }
+  if (path === "packages/storage/src/database.ts") {
+    const directCalls = [
+      ...executable.matchAll(
+        new RegExp("\\b" + escapeRegExp(recorder) + "\\s*\\(\\s*db\\s*\\)", "gu"),
+      ),
+    ].length;
+    return (
+      occurrences === 2 &&
+      directCalls === 1 &&
+      recorderCallFollowsCompleteVerification(text, recorder)
+    );
+  }
+  return occurrences === 0;
+}
+
+function migrationRunnerModuleBoundaryAudit(sources, allowlist) {
+  const recorder = "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures";
+  const indexPath = "packages/storage/src/index.ts";
+  const exported = [];
+  let invalidShape = false;
+  const indexSource = sources.get(indexPath);
+  if (indexSource === undefined || transpiledTypeScriptModuleSyntax(indexSource) === null) {
+    invalidShape = true;
+  } else {
+    const runnerExports = parseTypeScriptModuleEdges(indexSource).filter(
+      (edge) =>
+        edge.direction === "export" &&
+        resolvesToMigrationRunner(sources, indexPath, edge.specifier),
+    );
+    if (runnerExports.length !== 1) invalidShape = true;
+    for (const edge of runnerExports) {
+      if (
+        edge.specifier !== "./migration-runner" ||
+        edge.exportAll ||
+        edge.namespace !== null ||
+        edge.named.length === 0
+      ) {
+        invalidShape = true;
+      }
+      for (const binding of edge.named) {
+        exported.push(binding.local);
+        if (binding.imported !== binding.local || binding.imported === recorder) {
+          invalidShape = true;
+        }
+      }
+    }
+  }
+  if (new Set(exported).size !== exported.length) invalidShape = true;
+  if (stable([...new Set(exported)].sort()) !== stable([...allowlist].sort())) invalidShape = true;
+  return {
+    boundaryViolations: invalidShape ? ["legacy-fixture-package-boundary-bypass"] : [],
+    unauthorizedPaths: [],
+  };
+}
+
+function unauthorizedCompatibilityRecorderPaths(sources, oracle) {
+  return migrationRunnerModuleBoundaryAudit(
+    sources,
+    oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+  ).unauthorizedPaths;
+}
+
+function compatibilityMutationBaseline(oracle) {
+  const namedExports =
+    oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist
+      .map((name) =>
+        [
+          "ApplyMigrationsOptions",
+          "BeforePendingMigration",
+          "Migration",
+          "MigrationRunnerErrorCode",
+        ].includes(name)
+          ? "type " + name
+          : name,
+      )
+      .join(", ");
+  return {
+    runner: [
+      "import { createHash } from 'node:crypto';",
+      "const canonicalDatabaseMigrations = [{ version: 1, name: 'canonical', contentHash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }];",
+      "const verifiedCanonicalDatabases = new WeakMap();",
+      "const expectedSchema = [",
+      "  { type: 'index', name: 'action_plans_state_idx', tbl_name: 'schema_migrations', sql: 'CREATE INDEX action_plans_state_idx ON schema_migrations(name)' },",
+      "  { type: 'table', name: 'schema_migrations', tbl_name: 'schema_migrations', sql: 'CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, content_hash TEXT NOT NULL) STRICT' },",
+      "  { type: 'table', name: 'search_reindex_lease', tbl_name: 'search_reindex_lease', sql: 'CREATE TABLE search_reindex_lease (lease_id INTEGER PRIMARY KEY, operation_name TEXT NOT NULL, replacement_name TEXT NOT NULL, phase TEXT NOT NULL, last_rowid INTEGER NOT NULL, processed_rows INTEGER NOT NULL) STRICT' },",
+      "  { type: 'table', name: 'search_reindex_progress', tbl_name: 'search_reindex_progress', sql: 'CREATE TABLE search_reindex_progress (replacement_name TEXT NOT NULL, source_rowid INTEGER NOT NULL, source_digest TEXT NOT NULL, PRIMARY KEY (replacement_name, source_rowid)) STRICT' },",
+      "];",
+      "function schemaRows(database) { return database.query(\"SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name, tbl_name, sql\").all(); }",
+      "function verifyExactCurrentTipHistory(database, currentTip, registry) { const version = database.query('PRAGMA user_version').get()?.user_version; const history = database.query('SELECT version, name, content_hash FROM schema_migrations ORDER BY version').all(); const expected = registry.map((migration) => ({ version: migration.version, name: migration.name, content_hash: migration.contentHash })); if (version !== currentTip || JSON.stringify(history) !== JSON.stringify(expected)) throw new MigrationRunnerError(); }",
+      "function verifyExactCurrentTipSchema(database) { const actual = schemaRows(database); if (JSON.stringify(actual) !== JSON.stringify(expectedSchema)) throw new MigrationRunnerError(); }",
+      "function verifyImmutableConversionRows(database) { const conversionObjects = schemaRows(database).filter((row) => row.name.startsWith('schema_migration_conversions')); if (conversionObjects.length !== 0) throw new MigrationRunnerError(); }",
+      "function verifyReindexOverlay(database) { const lease = database.query('SELECT lease_id, operation_name, replacement_name, phase, last_rowid, processed_rows FROM search_reindex_lease ORDER BY lease_id').all(); const progress = database.query('SELECT replacement_name, source_rowid, source_digest FROM search_reindex_progress ORDER BY replacement_name, source_rowid').all(); if (progress.length !== 0 || lease.length > 1) throw new MigrationRunnerError(); if (lease.length === 0) return; const row = lease[0]; const derived = 'message_fts_replacement_' + createHash('sha256').update(row.operation_name).digest('hex').slice(0, 16); if (row.lease_id !== 1 || !/^[A-Za-z][A-Za-z0-9._:-]{0,127}$/.test(row.operation_name) || row.replacement_name !== derived || row.phase !== 'building' || row.last_rowid !== 0 || row.processed_rows !== 0) throw new MigrationRunnerError(); }",
+      "function compatibilityAuthorityFingerprint(database) { const userVersion = database.query('PRAGMA user_version').get(); const sqliteSchema = schemaRows(database); const history = database.query('SELECT version,name,content_hash FROM schema_migrations ORDER BY version').all(); const conversions = []; const lease = database.query('SELECT * FROM search_reindex_lease ORDER BY lease_id').all(); const progress = database.query('SELECT * FROM search_reindex_progress ORDER BY replacement_name,source_rowid').all(); return createHash('sha256').update(JSON.stringify([userVersion, history, sqliteSchema, conversions, lease, progress])).digest('hex'); }",
+      "function verifyCompleteCurrentTipAuthority(database) { const currentTip = canonicalDatabaseMigrations.length; verifyExactCurrentTipHistory(database, currentTip, canonicalDatabaseMigrations); verifyExactCurrentTipSchema(database, canonicalDatabaseMigrations); verifyImmutableConversionRows(database); verifyReindexOverlay(database); return compatibilityAuthorityFingerprint(database); }",
+      "export function recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database) { const verifiedFingerprint = verifyCompleteCurrentTipAuthority(database); verifiedCanonicalDatabases.set(database, verifiedFingerprint); }",
+      "export function runMigrations(database, migrations) { const authorityFingerprint = verifiedCanonicalDatabases.get(database); if (authorityFingerprint !== undefined) { const currentFingerprint = verifyCompleteCurrentTipAuthority(database); if (authorityFingerprint !== currentFingerprint) throw new MigrationRunnerError(); return; } applyMigrations(database, migrations); }",
+      "function getDatabase(connection) { return connection; }",
+      "export function applyMigrations(database, migrations) { const supplied = migrations.map((migration) => [migration.version, migration.name]); const expected = canonicalDatabaseMigrations.map((migration) => [migration.version, migration.name]); if (JSON.stringify(supplied) !== JSON.stringify(expected)) throw new MigrationRunnerError(); verifyCompleteCurrentTipAuthority(database); }",
+      "function hardenFileBackedDatabase(database) { return database; }",
+      "export class MigrationRunnerError extends Error {} export function migrationContentHash() { return ''; }",
+    ].join("\n"),
+    opener:
+      'import { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures } from "./migration-runner";\n' +
+      "applyMigrations(db); installMigrationConversionInfrastructure(db); verifyCanonicalMigrationState(db); verifyIntegrity(db); recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);",
+    index: `export { ${namedExports} } from "./migration-runner";`,
+    modules: new Map(),
+  };
+}
+
+function assertMigrationRunnerModuleBoundaryProjection(oracle) {
+  const baseline = compatibilityMutationBaseline(oracle);
+  const sources = new Map(baseline.modules);
+  sources.set("packages/storage/src/migration-runner.ts", baseline.runner);
+  sources.set(
+    "packages/storage/src/database.ts",
+    baseline.opener +
+      "\n/* recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures is package-private. */\n" +
+      'const recorderStringControl = "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures";\n' +
+      "const recorderTemplateControl = `recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures`;\n" +
+      'const recorderComputedControl = { ["recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures"]: true };\n',
+  );
+  sources.set("packages/storage/src/index.ts", baseline.index);
+  exact(
+    migrationRunnerModuleBoundaryAudit(
+      sources,
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+    ),
+    { boundaryViolations: [], unauthorizedPaths: [] },
+    "migration runner valid package closure",
+  );
+  sources.set(
+    "packages/storage/src/commented-boundary-fixture.ts",
+    "/*\nexport * from './migration-runner.ts';\n*/\n" +
+      "// import * as migrationRunner from './migration-runner';\n" +
+      "// require('./migration-runner');\n" +
+      "/* import.meta.require('./migration-runner'); */\n" +
+      'const stringControl = "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures";\n' +
+      'const evalStringControl = "eval(\\\"dynamic payload\\\")";\n' +
+      'const functionStringControl = "Function(\\\"dynamic payload\\\")";\n' +
+      "const templateControl = `recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures`;\n" +
+      "const dynamicImportTemplateControl = `import('./migration-runner')`;\n" +
+      "const computedLoaderTemplateControl = `globalThis['ev' + 'al']`;\n" +
+      "const nestedTemplateControl = `safe ${stringControl}`;\n" +
+      "export const ordinaryValue = 1;\n",
+  );
+  exact(
+    migrationRunnerModuleBoundaryAudit(
+      sources,
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+    ),
+    { boundaryViolations: [], unauthorizedPaths: [] },
+    "migration runner comments strings and template text are non-executable controls",
+  );
+  const executableTemplateSources = new Map(sources);
+  executableTemplateSources.set(
+    "packages/storage/src/template-expression-leak.ts",
+    "const leakedRecorder = `${recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures}`;\n",
+  );
+  exact(
+    migrationRunnerModuleBoundaryAudit(
+      executableTemplateSources,
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+    ).boundaryViolations,
+    ["legacy-fixture-package-boundary-bypass"],
+    "migration runner executable template expression rejects",
+  );
+  const constructorCapabilitySources = new Map(sources);
+  constructorCapabilitySources.set(
+    "packages/storage/src/constructor-capability-leak.ts",
+    'const DynamicFunction = (() => undefined).constructor;\nDynamicFunction("return 1")();\n',
+  );
+  exact(
+    migrationRunnerModuleBoundaryAudit(
+      constructorCapabilitySources,
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+    ).boundaryViolations,
+    ["legacy-fixture-package-boundary-bypass"],
+    "migration runner constructor capability rejects",
+  );
+  const reviewerCapabilityCases = new Map(REVIEWER_CAPABILITY_MUTATION_SOURCES);
+  const adjacentCapabilityCases = new Map([
+    ["process-get-builtin-module", 'process.getBuiltinModule("module");\n'],
+    [
+      "async-generator-variable-constructor",
+      'const constructorName = "constructor"; const AsyncGeneratorFunction = (async function* () {})[constructorName];\n',
+    ],
+    ["indirect-eval", '(0, eval)("void 0");\n'],
+    [
+      "variable-reflect-get-key",
+      'const getterName = "get"; Reflect[getterName](globalThis, "Function");\n',
+    ],
+    [
+      "descriptor-map",
+      "Object.getOwnPropertyDescriptors(Object.getPrototypeOf(async () => {}));\n",
+    ],
+  ]);
+  for (const [id, source] of [...reviewerCapabilityCases, ...adjacentCapabilityCases]) {
+    if (transpiledTypeScriptModuleSyntax(source) === null) {
+      fail("pinned Bun rejected capability mutation syntax: " + id);
+    }
+    const capabilitySources = new Map(sources);
+    capabilitySources.set("packages/storage/src/capability-" + id + ".ts", source);
+    exact(
+      migrationRunnerModuleBoundaryAudit(
+        capabilitySources,
+        oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+      ).boundaryViolations,
+      ["legacy-fixture-package-boundary-bypass"],
+      "migration runner capability rejects " + id,
+    );
+  }
+}
+
+function migrationRunnerPackageBoundaryProjection(oracle) {
+  const baseline = compatibilityMutationBaseline(oracle);
+  const sources = new Map(
+    [...acceptedTypeScriptSourceMap()].filter(([path]) => path.startsWith("packages/storage/src/")),
+  );
+  sources.set("packages/storage/src/migration-runner.ts", baseline.runner);
+  sources.set("packages/storage/src/database.ts", baseline.opener);
+  sources.set("packages/storage/src/index.ts", baseline.index);
+  exact(
+    migrationRunnerModuleBoundaryAudit(
+      sources,
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+    ),
+    { boundaryViolations: [], unauthorizedPaths: [] },
+    "accepted storage graph with canonical package boundary",
+  );
+  return {
+    storageModules: sources.size,
+    namedExports: oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+    publicSurfacePolicy: "defense-in-depth",
+    recorderEffectAuthority: "synchronous-complete-current-tip-verification",
+  };
+}
+
+function weakConstantFingerprintMutationSource(oracle) {
+  return compatibilityMutationBaseline(oracle).runner.replace(
+    "return createHash('sha256').update(JSON.stringify([userVersion, history, sqliteSchema, conversions, lease, progress])).digest('hex');",
+    "void userVersion; void history; void sqliteSchema; void conversions; void lease; void progress; return createHash('sha256').update('constant-authority').digest('hex');",
+  );
+}
+
+function countOnlySchemaMutationSource(oracle) {
+  return compatibilityMutationBaseline(oracle).runner.replace(
+    /function verifyExactCurrentTipSchema\(database\) \{[\s\S]*?\nfunction verifyImmutableConversionRows/u,
+    "function verifyExactCurrentTipSchema(database) { const actual = schemaRows(database); if (actual.length !== expectedSchema.length) throw new MigrationRunnerError(); }\nfunction verifyImmutableConversionRows",
+  );
+}
+
+function failureStoresExpectedFingerprintMutationSource(oracle) {
+  return compatibilityMutationBaseline(oracle).runner.replace(
+    "export function recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database) { const verifiedFingerprint = verifyCompleteCurrentTipAuthority(database); verifiedCanonicalDatabases.set(database, verifiedFingerprint); }",
+    "function expectedCanonicalAuthorityFingerprint(database) { const userVersion = database.query('PRAGMA user_version').get(); const history = database.query('SELECT version,name,content_hash FROM schema_migrations ORDER BY version').all(); const conversions = []; const lease = database.query('SELECT * FROM search_reindex_lease ORDER BY lease_id').all(); const progress = database.query('SELECT * FROM search_reindex_progress ORDER BY replacement_name,source_rowid').all(); return createHash('sha256').update(JSON.stringify([userVersion, history, expectedSchema, conversions, lease, progress])).digest('hex'); }\n" +
+      "export function recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database) { try { const verifiedFingerprint = verifyCompleteCurrentTipAuthority(database); verifiedCanonicalDatabases.set(database, verifiedFingerprint); } catch (error) { verifyExactCurrentTipHistory(database, canonicalDatabaseMigrations.length, canonicalDatabaseMigrations); verifiedCanonicalDatabases.set(database, expectedCanonicalAuthorityFingerprint(database)); throw error; } }",
+  );
+}
+
+function verifyAfterSetMutationSource(oracle) {
+  return compatibilityMutationBaseline(oracle).runner.replace(
+    "const verifiedFingerprint = verifyCompleteCurrentTipAuthority(database); verifiedCanonicalDatabases.set(database, verifiedFingerprint);",
+    "verifiedCanonicalDatabases.set(database, 'premature-authority'); verifyCompleteCurrentTipAuthority(database);",
+  );
+}
+
+const REVIEWER_CAPABILITY_MUTATION_SOURCES = new Map([
+  [
+    "variable-import-and-recorder-name",
+    'const modulePath = "./migration-runner";\n' +
+      'const recorderName = "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures";\n' +
+      "const runner = await import(modulePath);\nrunner[recorderName](database);\n",
+  ],
+  [
+    "concatenated-variable-import-and-name",
+    'const modulePrefix = "./migration-"; const moduleSuffix = "runner";\n' +
+      'const recorderPrefix = "recordVerifiedCanonicalApplicationDatabase"; const recorderSuffix = "ForLegacyFixtures";\n' +
+      "const runner = await import(modulePrefix + moduleSuffix);\n" +
+      "runner[recorderPrefix + recorderSuffix](database);\n",
+  ],
+  [
+    "node-module-create-require-named",
+    'const { createRequire } = await import("node:module");\n' +
+      "const load = createRequire(import.meta.url);\n" +
+      'const runner = load("./migration-runner");\n' +
+      "runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);\n",
+  ],
+  [
+    "node-module-create-require-namespace",
+    'const moduleApi = await import("node:module");\n' +
+      "const load = moduleApi.createRequire(import.meta.url);\n" +
+      'const runner = load("./migration-runner");\n' +
+      "runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);\n",
+  ],
+  [
+    "computed-import-meta-require",
+    'const loaderName = "require";\n' +
+      'const runner = import.meta[loaderName]("./migration-runner");\n' +
+      "runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);\n",
+  ],
+  [
+    "computed-global-eval",
+    'const evaluatorName = "eval"; const evaluate = globalThis[evaluatorName];\n' +
+      'evaluate("import(\\"./migration-runner\\").then((runner) => runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database))");\n',
+  ],
+  [
+    "reflect-function-constructor",
+    'const DynamicFunction = Reflect.get(globalThis, "Function");\n' +
+      'DynamicFunction("return import(\\"./migration-runner\\").then((runner) => runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database))")();\n',
+  ],
+  [
+    "async-function-variable-constructor",
+    'const constructorName = "constructor";\n' +
+      "const AsyncFunction = (async () => {})[constructorName];\n" +
+      'AsyncFunction("return import(\\"./migration-runner\\").then((runner) => runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database))")();\n',
+  ],
+  [
+    "generator-function-variable-constructor",
+    'const constructorName = "constructor";\n' +
+      "const GeneratorFunction = (function* () {})[constructorName];\n" +
+      'GeneratorFunction("return import(\\"./migration-runner\\").then((runner) => runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database))")();\n',
+  ],
+  [
+    "bun-resolve-sync-variable-import",
+    'const resolved = Bun.resolveSync("./migration-runner", import.meta.dir);\n' +
+      "const runner = await import(resolved);\n" +
+      "runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);\n",
+  ],
+  [
+    "descriptor-global-eval",
+    'Object.getOwnPropertyDescriptor(globalThis, "eval").value("import(\\"./migration-runner\\").then((runner) => runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database))");\n',
+  ],
+  [
+    "descriptor-async-constructor",
+    "const asyncPrototype = Object.getPrototypeOf(async () => {});\n" +
+      'Object.getOwnPropertyDescriptor(asyncPrototype, "constructor").value("return import(\\"./migration-runner\\").then((runner) => runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database))")();\n',
+  ],
+]);
+
 function runSourceMutationChild(oracle, id) {
   const accepted = acceptedTypeScriptSourceMap();
   const baseline = sourceMutationFacts(oracle, accepted);
@@ -4048,6 +5137,7 @@ function runSourceMutationChild(oracle, id) {
   const firstSource = oracle.canonicalRegistry.migrations[0].source;
   let scopeMutation = null;
   let sequenceMutation = null;
+  let compatibilityMutation = null;
   if (id === "remove-semantic-source") {
     candidate.delete(firstSource);
   } else if (id === "duplicate-semantic-source") {
@@ -4142,12 +5232,357 @@ function runSourceMutationChild(oracle, id) {
         "if (legacy) { convertMigrationHistory(db); } else {\n" +
         "applyMigrations(db, canonicalDatabaseMigrations, { beforePendingMigration });\n}\n",
     };
+  } else if (id === "legacy-fixture-literal-tip") {
+    compatibilityMutation = {
+      runner:
+        "const verifiedCanonicalDatabases = new WeakMap();\n" +
+        "export function runMigrations(database, migrations) { if (readUserVersion(database) === 27) return; applyMigrations(database, migrations); }\n",
+      opener:
+        "applyMigrations(db); installMigrationConversionInfrastructure(db); verifyCanonicalMigrationState(db); verifyIntegrity(db); recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);",
+      index: 'export { runMigrations } from "./migration-runner";',
+    };
+  } else if (id === "legacy-fixture-caller-ceiling") {
+    compatibilityMutation = {
+      runner:
+        "const verifiedCanonicalDatabases = new WeakMap();\n" +
+        "export function runMigrations(database, migrations) { if (readUserVersion(database) > migrations.length) return; applyMigrations(database, migrations); }\n",
+      opener:
+        "applyMigrations(db); installMigrationConversionInfrastructure(db); verifyCanonicalMigrationState(db); verifyIntegrity(db); recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);",
+      index: 'export { runMigrations } from "./migration-runner";',
+    };
+  } else if (id === "legacy-fixture-premature-record") {
+    compatibilityMutation = {
+      runner:
+        "import { canonicalDatabaseMigrations } from './migration-registry'; const verifiedCanonicalDatabases = new WeakMap(); const fingerprint = 'sqlite_schema schema_migration_conversions search_reindex_operations'; export function recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures() {} export function runMigrations(database, migrations) { const authorityFingerprint = verifiedCanonicalDatabases.get(database); if (authorityFingerprint !== fingerprint) throw new MigrationRunnerError(); return; }",
+      opener:
+        "applyMigrations(db); recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db); installMigrationConversionInfrastructure(db); verifyCanonicalMigrationState(db); verifyIntegrity(db);",
+      index: 'export { runMigrations } from "./migration-runner";',
+    };
+  } else if (id === "legacy-fixture-fingerprint-bypass") {
+    compatibilityMutation = {
+      runner:
+        "import { canonicalDatabaseMigrations } from './migration-registry'; const verifiedCanonicalDatabases = new WeakMap(); const fingerprint = 'sqlite_schema schema_migration_conversions search_reindex_operations'; export function recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures() {} export function runMigrations(database, migrations) { if (verifiedCanonicalDatabases.get(database)) return; applyMigrations(database, migrations); }",
+      opener:
+        "applyMigrations(db); installMigrationConversionInfrastructure(db); verifyCanonicalMigrationState(db); verifyIntegrity(db); recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);",
+      index: 'export { runMigrations } from "./migration-runner";',
+    };
+  } else if (id === "legacy-fixture-constant-fingerprint") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.runner = weakConstantFingerprintMutationSource(oracle);
+  } else if (id === "legacy-fixture-count-only-schema") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.runner = countOnlySchemaMutationSource(oracle);
+  } else if (id === "legacy-fixture-failure-stores-expected-fingerprint") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.runner = failureStoresExpectedFingerprintMutationSource(oracle);
+  } else if (id === "legacy-fixture-verify-after-set") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.runner = verifyAfterSetMutationSource(oracle);
+  } else if (id === "migration-runner-export-star-double") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = 'export * from "./migration-runner";';
+  } else if (id === "migration-runner-export-star-single") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = "export * from './migration-runner';";
+  } else if (id === "migration-runner-export-star-extension") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = 'export * from "./migration-runner.ts";';
+  } else if (id === "migration-runner-named-export-missing") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = 'export { runMigrations } from "./migration-runner";';
+  } else if (id === "migration-runner-recorder-named-reexport") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index =
+      'export { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures } from "./migration-runner";';
+  } else if (id === "migration-runner-recorder-aliased-reexport") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index =
+      'export { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures as trustedDatabase } from "./migration-runner.ts";';
+  } else if (id === "migration-runner-namespace-reexport") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = 'export * as migrationRunner from "./migration-runner";';
+  } else if (id === "migration-runner-recorder-named-import") {
+    candidate.set(
+      "packages/storage/src/doctor-integrity.ts",
+      'import { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures } from "./migration-runner";\nrecordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);\n',
+    );
+  } else if (id === "migration-runner-recorder-aliased-import") {
+    candidate.set(
+      "packages/storage/src/doctor-integrity.ts",
+      "import { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures as trust } from './migration-runner.ts';\ntrust(database);\n",
+    );
+  } else if (id === "migration-runner-recorder-namespace-import") {
+    candidate.set(
+      "packages/storage/src/doctor-integrity.ts",
+      'import * as migrationRunner from "./migration-runner";\nmigrationRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);\n',
+    );
+  } else if (id === "migration-runner-doctor-recorder-local-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./doctor-integrity";';
+    compatibilityMutation.modules.set(
+      "packages/storage/src/doctor-integrity.ts",
+      'import { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures } from "./migration-runner";\n' +
+        "export { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures };\n",
+    );
+  } else if (id === "migration-runner-intermediary-recorder-alias-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += "\nexport * from './compatibility-intermediary.ts';";
+    compatibilityMutation.modules.set(
+      "packages/storage/src/compatibility-intermediary.ts",
+      "import {\n  recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures as localTrust,\n} from './migration-runner.ts';\n" +
+        "export { localTrust as publicTrust };\n",
+    );
+  } else if (id === "migration-runner-intermediary-recorder-namespace-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./compatibility-intermediary";';
+    compatibilityMutation.modules.set(
+      "packages/storage/src/compatibility-intermediary.ts",
+      'import * as migrationRunner from "./migration-runner";\nexport { migrationRunner };\n',
+    );
+  } else if (id === "migration-runner-database-recorder-local-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.opener +=
+      "\nexport { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures };\n";
+  } else if (id === "migration-runner-database-recorder-alias-import") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.opener = compatibilityMutation.opener
+      .replace(
+        "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures }",
+        "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures as localTrust }",
+      )
+      .replace("recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db)", "localTrust(db)");
+  } else if (id === "migration-runner-database-recorder-namespace-import") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.opener = compatibilityMutation.opener
+      .replace(
+        'import { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures } from "./migration-runner";',
+        'import * as migrationRunner from "./migration-runner.ts";',
+      )
+      .replace(
+        "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db)",
+        "migrationRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db)",
+      );
+  } else if (id === "migration-runner-intermediary-export-star-chain") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = 'export * from "./compatibility-intermediary";';
+    compatibilityMutation.modules.set(
+      "packages/storage/src/compatibility-intermediary.ts",
+      "export * from './migration-runner.ts';\n",
+    );
+  } else if (id === "migration-runner-intermediary-namespace-chain") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = 'export { migrationRunner } from "./compatibility-intermediary";';
+    compatibilityMutation.modules.set(
+      "packages/storage/src/compatibility-intermediary.ts",
+      'export * as migrationRunner from "./migration-runner";\n',
+    );
+  } else if (id === "migration-runner-intermediary-named-alias-chain") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index = 'export * from "./compatibility-intermediary";';
+    compatibilityMutation.modules.set(
+      "packages/storage/src/compatibility-intermediary.ts",
+      'export { runMigrations as fixtureMigrations } from "./migration-runner";\n',
+    );
+  } else if (id === "migration-runner-comment-multiline-recorder-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./compatibility-intermediary";';
+    compatibilityMutation.modules.set(
+      "packages/storage/src/compatibility-intermediary.ts",
+      "/* export * from './migration-runner'; */\n" +
+        'import {\n  // the private binding remains private only without the export below\n  recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures,\n} from "./migration-runner"\n' +
+        "export {\n  recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures as leakedRecorder,\n}\n",
+    );
+  } else if (id === "migration-runner-database-asi-direct-alias-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./database";';
+    compatibilityMutation.opener +=
+      "\nconst recorderAlias = recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures\n" +
+      "export { recorderAlias }\n";
+  } else if (id === "migration-runner-database-asi-multiline-alias-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./database";';
+    compatibilityMutation.opener +=
+      "\nconst firstRecorderAlias =\n  (recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures)\n" +
+      "const secondRecorderAlias =\n  firstRecorderAlias\n" +
+      "export {\n  secondRecorderAlias as publicRecorderAlias,\n}\n";
+  } else if (id === "migration-runner-database-asi-comment-alias-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./database";';
+    compatibilityMutation.opener +=
+      "\nconst commentedRecorderAlias =\n  /* ASI-safe private alias */\n  recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures // no semicolon\n" +
+      "export { commentedRecorderAlias }\n";
+  } else if (id === "migration-runner-database-asi-property-alias-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./database";';
+    compatibilityMutation.opener +=
+      "\nconst recorderAuthority = {\n  recorder: recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures,\n}\n" +
+      "const propertyRecorderAlias =\n  recorderAuthority.recorder\n" +
+      "export { propertyRecorderAlias }\n";
+  } else if (id === "migration-runner-recorder-object-shorthand-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./database";';
+    compatibilityMutation.opener +=
+      "\nexport const recorderCapabilityContainer = {\n" +
+      "  recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures,\n" +
+      "};\n";
+  } else if (id === "migration-runner-recorder-object-explicit-computed-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./database";';
+    compatibilityMutation.opener +=
+      '\nexport const recorderCapabilityContainer = {\n  ["recorder"]: recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures,\n};\n';
+  } else if (id === "migration-runner-recorder-object-property-read-export") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.index += '\nexport * from "./database";';
+    compatibilityMutation.opener +=
+      "\nconst recorderCapabilityContainer = { recorder: recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures };\n" +
+      "export const leakedRecorderCapability = recorderCapabilityContainer.recorder;\n";
+  } else if (id === "migration-runner-recorder-call-duplicated") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.opener +=
+      "\nrecordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);\n";
+  } else if (id === "migration-runner-recorder-call-before-verification") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    const recorderCall = "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);";
+    compatibilityMutation.opener = compatibilityMutation.opener
+      .replace(" verifyIntegrity(db); " + recorderCall, " verifyIntegrity(db);")
+      .replace("applyMigrations(db);", "applyMigrations(db); " + recorderCall);
+  } else if (id === "migration-runner-dynamic-import-bracket") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.modules.set(
+      "packages/storage/src/dynamic-loader.ts",
+      'const migrationRunner = await import("./migration-" + "runner");\n' +
+        'migrationRunner["recordVerifiedCanonicalApplicationDatabase" + "ForLegacyFixtures"](database);\n',
+    );
+  } else if (id === "migration-runner-dynamic-import-computed-destructure") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.modules.set(
+      "packages/storage/src/dynamic-loader.ts",
+      'const { ["recordVerifiedCanonicalApplicationDatabase" + "ForLegacyFixtures"]: recorder } = await import(`./migration-${"runner"}`);\n' +
+        "recorder(database);\n",
+    );
+  } else if (id === "migration-runner-require-loader") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.modules.set(
+      "packages/storage/src/dynamic-loader.ts",
+      'const migrationRunner = require("./migration-" + "runner");\n' +
+        'migrationRunner["recordVerifiedCanonicalApplicationDatabase" + "ForLegacyFixtures"](database);\n',
+    );
+  } else if (id === "migration-runner-import-meta-require-loader") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.modules.set(
+      "packages/storage/src/dynamic-loader.ts",
+      'const migrationRunner = import.meta.require("./migration-" + "runner");\n' +
+        'migrationRunner["recordVerifiedCanonicalApplicationDatabase" + "ForLegacyFixtures"](database);\n',
+    );
+  } else if (id === "migration-runner-eval-loader") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.modules.set(
+      "packages/storage/src/dynamic-loader.ts",
+      'const execute = globalThis["ev" + "al"];\n' +
+        'execute("import(\\\"./migration-\\\" + \\\"runner\\\").then((module) => module[\\\"recordVerifiedCanonicalApplicationDatabase\\\" + \\\"ForLegacyFixtures\\\"](database))");\n',
+    );
+  } else if (id === "migration-runner-function-loader") {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.modules.set(
+      "packages/storage/src/dynamic-loader.ts",
+      'const load = globalThis["Fun" + "ction"]("return import(\\\"./migration-\\\" + \\\"runner\\\")");\n' +
+        'load().then((module) => module["recordVerifiedCanonicalApplicationDatabase" + "ForLegacyFixtures"](database));\n',
+    );
+  } else if (REVIEWER_CAPABILITY_MUTATION_SOURCES.has(id)) {
+    compatibilityMutation = compatibilityMutationBaseline(oracle);
+    compatibilityMutation.modules.set(
+      "packages/storage/src/dynamic-loader.ts",
+      REVIEWER_CAPABILITY_MUTATION_SOURCES.get(id),
+    );
+  } else if (id === "legacy-fixture-unauthorized-recorder") {
+    const path = "packages/storage/src/doctor-integrity.ts";
+    candidate.set(
+      path,
+      candidate.get(path) +
+        '\nimport { recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures } from "./migration-runner";\n' +
+        "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);\n",
+    );
+  } else if (id === "strict-runner-compatibility-bypass") {
+    compatibilityMutation = {
+      runner:
+        "import { canonicalDatabaseMigrations } from './migration-registry'; const verifiedCanonicalDatabases = new WeakMap(); const fingerprint = 'sqlite_schema schema_migration_conversions search_reindex_operations'; export function recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures() {} export function applyMigrations(database, migrations) { if (verifiedCanonicalDatabases.get(database)) return; } export function runMigrations(database, migrations) { const authorityFingerprint = verifiedCanonicalDatabases.get(database); if (authorityFingerprint !== fingerprint) throw new MigrationRunnerError(); return; }",
+      opener:
+        "applyMigrations(db); installMigrationConversionInfrastructure(db); verifyCanonicalMigrationState(db); verifyIntegrity(db); recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(db);",
+      index: 'export { runMigrations } from "./migration-runner";',
+    };
   } else {
     fail("unknown source mutation: " + id);
   }
   const observed = sourceMutationFacts(oracle, candidate);
   let detected = false;
-  if (sequenceMutation !== null) {
+  if (compatibilityMutation !== null) {
+    const violations = implementationCompatibilityViolationsFromSources(
+      compatibilityMutation.runner,
+      compatibilityMutation.opener,
+      compatibilityMutation.index,
+      oracle,
+      compatibilityMutation.modules ?? new Map(),
+    );
+    if (id === "legacy-fixture-constant-fingerprint") {
+      const formerMarkers = [
+        "new WeakMap",
+        "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures",
+        "canonicalDatabaseMigrations",
+        "sqlite_schema",
+        "schema_migration_conversions",
+        "search_reindex_lease",
+        "search_reindex_progress",
+        ".get(database)",
+        "authorityFingerprint !==",
+        "throw new MigrationRunnerError",
+      ];
+      const outcome = spawnSync(
+        process.execPath,
+        [fileURLToPath(import.meta.url), "--weak-constant-fingerprint-child"],
+        { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      );
+      detected =
+        formerMarkers.every((marker) => compatibilityMutation.runner.includes(marker)) &&
+        outcome.status === 37 &&
+        outcome.stderr.includes("weak constant fingerprint rejected by runtime matrix");
+    } else if (id === "legacy-fixture-verify-after-set") {
+      const outcome = spawnSync(
+        process.execPath,
+        [fileURLToPath(import.meta.url), "--verify-after-set-child"],
+        { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      );
+      detected =
+        violations.includes("legacy-fixture-fingerprint-bypass") &&
+        outcome.status === 38 &&
+        outcome.stderr.includes("verify-after-set rejected by runtime matrix");
+    } else if (id === "legacy-fixture-count-only-schema") {
+      const outcome = spawnSync(
+        process.execPath,
+        [fileURLToPath(import.meta.url), "--count-only-schema-child"],
+        { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      );
+      detected =
+        outcome.status === 39 &&
+        outcome.stderr.includes("count-only schema verifier rejected by runtime matrix");
+    } else if (id === "legacy-fixture-failure-stores-expected-fingerprint") {
+      const outcome = spawnSync(
+        process.execPath,
+        [fileURLToPath(import.meta.url), "--failure-marker-child"],
+        { cwd: repositoryRoot, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
+      );
+      detected =
+        outcome.status === 40 &&
+        outcome.stderr.includes("failure marker rejected by fixture discriminator");
+    } else if (id === "migration-runner-recorder-call-before-verification") {
+      detected =
+        violations.includes("legacy-fixture-package-boundary-bypass") &&
+        violations.includes("legacy-fixture-premature-record");
+    } else if (id.startsWith("migration-runner-") || REVIEWER_CAPABILITY_MUTATION_SOURCES.has(id)) {
+      detected = violations.includes("legacy-fixture-package-boundary-bypass");
+    } else {
+      detected = violations.includes(id);
+    }
+  } else if (sequenceMutation !== null) {
     detected = implementationSequenceViolationsFromSources(
       sequenceMutation.converter,
       sequenceMutation.opener,
@@ -4189,6 +5624,11 @@ function runSourceMutationChild(oracle, id) {
     detected = stable(observed.directSql) !== stable(baseline.directSql);
   } else if (id === "new-apply-migrations-bypass") {
     detected = stable(observed.applyCalls) !== stable(baseline.applyCalls);
+  } else if (
+    id === "legacy-fixture-unauthorized-recorder" ||
+    id.startsWith("migration-runner-recorder-")
+  ) {
+    detected = unauthorizedCompatibilityRecorderPaths(candidate, oracle).length > 0;
   }
   if (!detected) process.exit(0);
   process.stderr.write("source mutation rejected: " + id + "\n");
@@ -4292,6 +5732,93 @@ function implementationSequenceViolationsFromSources(converterSource, openerSour
   return violations;
 }
 
+function implementationCompatibilityViolationsFromSources(
+  runnerSource,
+  openerSource,
+  indexSource,
+  oracle,
+  moduleSources = new Map(),
+) {
+  const violations = [];
+  const recorder = "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures";
+  const runStart = runnerSource.indexOf("export function runMigrations");
+  const runEnd = runnerSource.indexOf("\nfunction getDatabase", runStart);
+  const recorderStart = runnerSource.indexOf("export function " + recorder);
+  const recorderEnd = runnerSource.indexOf("\nexport function runMigrations", recorderStart);
+  const applyStart = runnerSource.indexOf("export function applyMigrations");
+  const applyEnd = runnerSource.indexOf("\nfunction hardenFileBackedDatabase", applyStart);
+  const runBody = runStart >= 0 && runEnd > runStart ? runnerSource.slice(runStart, runEnd) : "";
+  const recorderBody =
+    recorderStart >= 0 && recorderEnd > recorderStart
+      ? runnerSource.slice(recorderStart, recorderEnd)
+      : "";
+  const applyBody =
+    applyStart >= 0 && applyEnd > applyStart ? runnerSource.slice(applyStart, applyEnd) : "";
+  if (
+    /readUserVersion\([^)]*\)\s*===\s*\d+/u.test(runBody) ||
+    /user[_A-Za-z]*version[^\n]*===\s*27/iu.test(runBody) ||
+    /export function runMigrations[\s\S]{0,500}readUserVersion\([^)]*\)\s*===\s*\d+/u.test(
+      runnerSource,
+    )
+  ) {
+    violations.push("legacy-fixture-literal-tip");
+  }
+  if (
+    /migrations\.length/u.test(runBody) ||
+    /supportedSchemaVersion|schemaCeiling|callerCeiling/u.test(runBody) ||
+    /export function runMigrations[\s\S]{0,500}migrations\.length/u.test(runnerSource)
+  ) {
+    violations.push("legacy-fixture-caller-ceiling");
+  }
+  void openerSource;
+  const recorderVerify = recorderBody.indexOf("verifyCompleteCurrentTipAuthority");
+  const recorderSet = recorderBody.indexOf(".set(database");
+  const runVerify = runBody.indexOf("verifyCompleteCurrentTipAuthority");
+  const runReturn = runBody.indexOf("return");
+  if (
+    !runnerSource.includes("new WeakMap") ||
+    !runnerSource.includes(recorder) ||
+    !runnerSource.includes("canonicalDatabaseMigrations") ||
+    !runnerSource.includes("sqlite_schema") ||
+    !runnerSource.includes("schema_migration_conversions") ||
+    !runnerSource.includes("search_reindex_lease") ||
+    !runnerSource.includes("search_reindex_progress") ||
+    !runnerSource.includes("verifyExactCurrentTipHistory") ||
+    !runnerSource.includes("verifyExactCurrentTipSchema") ||
+    !runnerSource.includes("verifyImmutableConversionRows") ||
+    !runnerSource.includes("verifyReindexOverlay") ||
+    recorderVerify < 0 ||
+    recorderSet <= recorderVerify ||
+    !/\.get\(database\)/u.test(runBody) ||
+    runVerify < 0 ||
+    (runReturn >= 0 && runReturn < runVerify) ||
+    !/(?:timingSafeEqual|===|!==)[^\n]*(?:fingerprint|authority)/iu.test(runBody) ||
+    !/throw new MigrationRunnerError/u.test(runBody)
+  ) {
+    violations.push("legacy-fixture-fingerprint-bypass");
+  }
+  if (
+    applyBody.includes(recorder) ||
+    /(?:verifiedCanonical|fixtureCompatibility|compatibilityFingerprint)/u.test(applyBody) ||
+    /export function applyMigrations[\s\S]{0,600}(?:verifiedCanonical|fixtureCompatibility|compatibilityFingerprint)/u.test(
+      runnerSource,
+    )
+  ) {
+    violations.push("strict-runner-compatibility-bypass");
+  }
+  const packageSources = new Map(moduleSources);
+  packageSources.set("packages/storage/src/migration-runner.ts", runnerSource);
+  packageSources.set("packages/storage/src/database.ts", openerSource);
+  packageSources.set("packages/storage/src/index.ts", indexSource);
+  violations.push(
+    ...migrationRunnerModuleBoundaryAudit(
+      packageSources,
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+    ).boundaryViolations,
+  );
+  return [...new Set(violations)];
+}
+
 function implementationSequenceSourceViolations(oracle) {
   return implementationSequenceViolationsFromSources(
     readFileSync(join(repositoryRoot, oracle.canonicalRegistry.conversionPath), "utf8"),
@@ -4322,7 +5849,14 @@ async function implementationSequenceCheck(oracle) {
       requiresForeignKeysOff: suffix.requiresForeignKeysOff,
     }),
   );
-  const liveRegistry = Object.freeze([...registry.canonicalDatabaseMigrations, ...suffixes]);
+  const liveRegistry = Object.freeze([
+    ...registry.canonicalDatabaseMigrations,
+    ...suffixes.filter(
+      (suffix) =>
+        suffix.version > registry.canonicalDatabaseMigrations.length && suffix.version <= 29,
+    ),
+  ]);
+  exact(liveRegistry.length, 29, "implementation sequence live plus proof registry length");
   const digestAtVersion = (targetVersion) => {
     if (
       !Number.isSafeInteger(targetVersion) ||
@@ -4370,7 +5904,6 @@ async function implementationSequenceCheck(oracle) {
     if (
       convertedVersion !== 27 ||
       convertedRows.length !== 27 ||
-      hasSchemaObject(database, "append_stability_probe_28") ||
       hasSchemaObject(database, "append_stability_probe_29")
     ) {
       runtimeViolations.push("converter-live-tip-loop");
@@ -4395,7 +5928,6 @@ async function implementationSequenceCheck(oracle) {
         29,
         "real suffix final version",
       );
-      exact(hasSchemaObject(database, "append_stability_probe_28"), true, "real suffix 28 SQL");
       exact(hasSchemaObject(database, "append_stability_probe_29"), true, "real suffix 29 SQL");
       exact(
         JSON.stringify(
@@ -4427,6 +5959,734 @@ async function implementationSequenceCheck(oracle) {
   };
 }
 
+function assertCompatibilityCallRejectsWithoutFixture(label, database, fixture, call) {
+  const before = database.serialize();
+  let rejected = false;
+  try {
+    call();
+  } catch {
+    rejected = true;
+  }
+  exact(rejected, true, label + " rejection");
+  exact(Buffer.compare(before, database.serialize()), 0, label + " byte preservation");
+  exact(
+    hasSchemaObject(database, "standalone_legacy_fixture"),
+    false,
+    label + " fixture SQL absence",
+  );
+}
+
+function assertInvalidCompatibilityAuthority(
+  label,
+  database,
+  recorderEntrypoints,
+  runMigrations,
+  fixture,
+) {
+  for (const entrypoint of recorderEntrypoints) {
+    assertCompatibilityCallRejectsWithoutFixture(
+      label + " " + entrypoint.id + " recorder",
+      database,
+      fixture,
+      () => entrypoint.call(database),
+    );
+  }
+  assertCompatibilityCallRejectsWithoutFixture(label + " runner", database, fixture, () =>
+    runMigrations(database, fixture),
+  );
+}
+
+function assertRecordedCompatibilityTamperRejected(
+  label,
+  database,
+  recorder,
+  runMigrations,
+  fixture,
+  tamper,
+) {
+  recorder(database);
+  tamper(database);
+  assertCompatibilityCallRejectsWithoutFixture(label, database, fixture, () =>
+    runMigrations(database, fixture),
+  );
+}
+
+function substituteSameCardinalitySchemaTuple(database) {
+  const beforeCount = database
+    .query("SELECT count(*) AS count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'")
+    .get()?.count;
+  const original = database
+    .query(
+      "SELECT type, name, tbl_name, sql FROM sqlite_schema " +
+        "WHERE type = 'index' AND name = 'action_plans_state_idx'",
+    )
+    .get();
+  if (
+    original?.type !== "index" ||
+    original.name !== "action_plans_state_idx" ||
+    original.tbl_name !== "action_plans" ||
+    typeof original.sql !== "string"
+  ) {
+    fail("same-cardinality schema tuple fixture is missing");
+  }
+  const changedSql = original.sql.replace(
+    "(state, expires_at, plan_id)",
+    "(state, plan_id, expires_at)",
+  );
+  if (changedSql === original.sql) fail("same-cardinality index SQL fixture changed shape");
+  database.exec("DROP INDEX action_plans_state_idx;" + changedSql);
+  const changed = database
+    .query(
+      "SELECT type, name, tbl_name, sql FROM sqlite_schema " +
+        "WHERE type = 'index' AND name = 'action_plans_state_idx'",
+    )
+    .get();
+  exact(changed?.type, original.type, "same-cardinality schema tuple type");
+  exact(changed?.name, original.name, "same-cardinality schema tuple name");
+  exact(changed?.tbl_name, original.tbl_name, "same-cardinality schema tuple table");
+  if (changed?.sql === original.sql) fail("same-cardinality schema tuple SQL did not change");
+  exact(
+    database
+      .query("SELECT count(*) AS count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'")
+      .get()?.count,
+    beforeCount,
+    "same-cardinality schema object count",
+  );
+  return original;
+}
+
+function restoreSameCardinalitySchemaTuple(database, original) {
+  database.exec("DROP INDEX action_plans_state_idx;" + original.sql);
+}
+
+function createCompatibilityBaselineDatabase(Database) {
+  const database = new Database(":memory:", { strict: true });
+  database.exec(
+    "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, content_hash TEXT NOT NULL) STRICT;" +
+      "CREATE INDEX action_plans_state_idx ON schema_migrations(name);" +
+      "CREATE TABLE search_reindex_lease (lease_id INTEGER PRIMARY KEY, operation_name TEXT NOT NULL, replacement_name TEXT NOT NULL, phase TEXT NOT NULL, last_rowid INTEGER NOT NULL, processed_rows INTEGER NOT NULL) STRICT;" +
+      "CREATE TABLE search_reindex_progress (replacement_name TEXT NOT NULL, source_rowid INTEGER NOT NULL, source_digest TEXT NOT NULL, PRIMARY KEY (replacement_name, source_rowid)) STRICT;" +
+      "INSERT INTO schema_migrations (version, name, content_hash) VALUES (1, 'canonical', '" +
+      "a".repeat(64) +
+      "');" +
+      "PRAGMA user_version = 1",
+  );
+  return database;
+}
+
+function transitionCompatibilityBaselineToValidReindexOverlay(database) {
+  const operationName = "Proof.reindex:constant-fingerprint";
+  const replacementName =
+    "message_fts_replacement_" + sha256(Buffer.from(operationName)).slice(0, 16);
+  database
+    .query(
+      "INSERT INTO search_reindex_lease " +
+        "(lease_id, operation_name, replacement_name, phase, last_rowid, processed_rows) " +
+        "VALUES (1, ?, ?, 'building', 0, 0)",
+    )
+    .run(operationName, replacementName);
+}
+
+function compatibilityBaselineSnapshotSha256(database) {
+  return sha256(
+    Buffer.from(
+      JSON.stringify([
+        database.query("PRAGMA user_version").get(),
+        database
+          .query("SELECT version, name, content_hash FROM schema_migrations ORDER BY version")
+          .all(),
+        database
+          .query(
+            "SELECT type, name, tbl_name, sql FROM sqlite_schema " +
+              "WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name, tbl_name, sql",
+          )
+          .all(),
+        database.query("SELECT * FROM search_reindex_lease ORDER BY lease_id").all(),
+        database
+          .query("SELECT * FROM search_reindex_progress ORDER BY replacement_name, source_rowid")
+          .all(),
+      ]),
+    ),
+  );
+}
+
+async function weakConstantFingerprintCompatibilityChild(oracle) {
+  const { Database } = await import("bun:sqlite");
+  const fixture = [
+    {
+      version: 1,
+      name: "standalone-legacy-fixture",
+      sql: "CREATE TABLE standalone_legacy_fixture (id INTEGER PRIMARY KEY) STRICT",
+    },
+  ];
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "migration-registry-weak-fingerprint-"));
+  const strongRunnerPath = join(temporaryDirectory, "migration-runner-strong.mjs");
+  const weakRunnerPath = join(temporaryDirectory, "migration-runner.mjs");
+  writeFileSync(strongRunnerPath, compatibilityMutationBaseline(oracle).runner);
+  writeFileSync(weakRunnerPath, weakConstantFingerprintMutationSource(oracle));
+  const strongRunner = await import(
+    pathToFileURL(strongRunnerPath).href + "?runtime=" + Date.now()
+  );
+  const weakRunner = await import(pathToFileURL(weakRunnerPath).href + "?runtime=" + Date.now());
+  const strongPrecondition = createCompatibilityBaselineDatabase(Database);
+  const database = createCompatibilityBaselineDatabase(Database);
+  try {
+    strongRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(strongPrecondition);
+    weakRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);
+    const beforeOverlay = compatibilityBaselineSnapshotSha256(database);
+    transitionCompatibilityBaselineToValidReindexOverlay(database);
+    const afterOverlay = compatibilityBaselineSnapshotSha256(database);
+    if (beforeOverlay === afterOverlay) fail("weak fingerprint overlay transition is not distinct");
+    strongRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);
+    const beforeFalseNoOp = database.serialize();
+    weakRunner.runMigrations(database, fixture);
+    exact(
+      Buffer.compare(beforeFalseNoOp, database.serialize()),
+      0,
+      "weak constant fingerprint false no-op bytes",
+    );
+    exact(
+      hasSchemaObject(database, "standalone_legacy_fixture"),
+      false,
+      "weak constant fingerprint false no-op fixture absence",
+    );
+  } finally {
+    strongPrecondition.close();
+    database.close();
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+async function countOnlySchemaCompatibilityChild(oracle) {
+  const { Database } = await import("bun:sqlite");
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "migration-registry-count-schema-"));
+  const strongRunnerPath = join(temporaryDirectory, "migration-runner-strong.mjs");
+  const countRunnerPath = join(temporaryDirectory, "migration-runner-count.mjs");
+  writeFileSync(strongRunnerPath, compatibilityMutationBaseline(oracle).runner);
+  writeFileSync(countRunnerPath, countOnlySchemaMutationSource(oracle));
+  const strongRunner = await import(
+    pathToFileURL(strongRunnerPath).href + "?runtime=" + Date.now()
+  );
+  const countRunner = await import(pathToFileURL(countRunnerPath).href + "?runtime=" + Date.now());
+  const database = createCompatibilityBaselineDatabase(Database);
+  try {
+    strongRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);
+    database.exec(
+      "DROP INDEX action_plans_state_idx;" +
+        "CREATE INDEX action_plans_state_idx ON schema_migrations(name) WHERE version > 0",
+    );
+    let strongRejected = false;
+    try {
+      strongRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);
+    } catch {
+      strongRejected = true;
+    }
+    exact(strongRejected, true, "exact schema verifier rejects same-cardinality substitution");
+    countRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);
+  } finally {
+    database.close();
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+async function failureStoresExpectedFingerprintCompatibilityChild(oracle) {
+  const { Database } = await import("bun:sqlite");
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "migration-registry-failure-marker-"));
+  const strongRunnerPath = join(temporaryDirectory, "migration-runner-strong.mjs");
+  const mutationRunnerPath = join(temporaryDirectory, "migration-runner-failure-marker.mjs");
+  writeFileSync(strongRunnerPath, compatibilityMutationBaseline(oracle).runner);
+  writeFileSync(mutationRunnerPath, failureStoresExpectedFingerprintMutationSource(oracle));
+  const strongRunner = await import(
+    pathToFileURL(strongRunnerPath).href + "?runtime=" + Date.now()
+  );
+  const mutationRunner = await import(
+    pathToFileURL(mutationRunnerPath).href + "?runtime=" + Date.now()
+  );
+  const database = createCompatibilityBaselineDatabase(Database);
+  const strictControl = createCompatibilityBaselineDatabase(Database);
+  const fixture = [{ version: 1, name: "standalone-legacy-fixture" }];
+  try {
+    strongRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);
+    let strictRejected = false;
+    try {
+      strongRunner.runMigrations(strictControl, fixture);
+    } catch {
+      strictRejected = true;
+    }
+    exact(strictRejected, true, "failure-marker strict fixture control");
+    database.exec(
+      "DROP INDEX action_plans_state_idx;" +
+        "CREATE INDEX action_plans_state_idx ON schema_migrations(name) WHERE version > 0",
+    );
+    let recorderRejected = false;
+    try {
+      mutationRunner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(database);
+    } catch {
+      recorderRejected = true;
+    }
+    exact(recorderRejected, true, "failure-marker recorder rethrows verifier failure");
+    database.exec(
+      "DROP INDEX action_plans_state_idx;" +
+        "CREATE INDEX action_plans_state_idx ON schema_migrations(name)",
+    );
+    const beforeFalseNoOp = database.serialize();
+    mutationRunner.runMigrations(database, fixture);
+    exact(
+      Buffer.compare(beforeFalseNoOp, database.serialize()),
+      0,
+      "failure-marker fixture false no-op bytes",
+    );
+    exact(
+      hasSchemaObject(database, "standalone_legacy_fixture"),
+      false,
+      "failure-marker fixture false no-op table absence",
+    );
+  } finally {
+    strictControl.close();
+    database.close();
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+async function verifyAfterSetCompatibilityChild(oracle) {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "migration-registry-verify-after-set-"));
+  const runnerPath = join(temporaryDirectory, "migration-runner.mjs");
+  writeFileSync(runnerPath, verifyAfterSetMutationSource(oracle));
+  try {
+    const runner = await import(pathToFileURL(runnerPath).href + "?runtime=" + Date.now());
+    const invalidDatabase = {
+      query() {
+        throw new Error("invalid authority");
+      },
+    };
+    let recordRejected = false;
+    try {
+      runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(invalidDatabase);
+    } catch {
+      recordRejected = true;
+    }
+    exact(recordRejected, true, "verify-after-set recorder rejection");
+    let leakedMapMutation = false;
+    try {
+      runner.runMigrations(invalidDatabase, [{ version: 1 }]);
+    } catch {
+      leakedMapMutation = true;
+    }
+    exact(leakedMapMutation, true, "verify-after-set leaked WeakMap mutation");
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+async function implementationCompatibilityChild(oracle, releaseVersion) {
+  const { mock } = await import("bun:test");
+  const { Database } = await import("bun:sqlite");
+  const registryUrl = pathToFileURL(
+    join(repositoryRoot, oracle.canonicalRegistry.registryPath),
+  ).href;
+  const registry = await import(registryUrl);
+  const base = registry.canonicalDatabaseMigrations.slice(0, 27);
+  exact(base.length, 27, "implementation compatibility canonical base");
+  const proofByVersion = new Map(
+    oracle.appendStableProvenance.proofSuffixes.map((suffix) => [
+      suffix.version,
+      Object.freeze({
+        version: suffix.version,
+        name: suffix.name,
+        sql: suffix.sql,
+        requiresForeignKeysOff: suffix.requiresForeignKeysOff,
+      }),
+    ]),
+  );
+  const releaseRegistry = [...base];
+  for (let version = 28; version <= releaseVersion; version += 1) {
+    const live = registry.canonicalDatabaseMigrations[version - 1];
+    const definition = live?.version === version ? live : proofByVersion.get(version);
+    if (definition === undefined) fail("missing compatibility release suffix " + version);
+    releaseRegistry.push(definition);
+  }
+  mock.module(registryUrl, () => ({
+    ...registry,
+    canonicalDatabaseMigrations: Object.freeze(releaseRegistry),
+    CANONICAL_DATABASE_SCHEMA_VERSION: releaseRegistry.length,
+    NEXT_DATABASE_MIGRATION_VERSION: releaseRegistry.length + 1,
+    NEXT_REPORT_MIGRATION_VERSION: releaseRegistry.length + 1,
+  }));
+  const runnerModuleUrl =
+    pathToFileURL(join(repositoryRoot, "packages/storage/src/migration-runner.ts")).href +
+    "?fixture-release=" +
+    releaseVersion;
+  const runner = await import(runnerModuleUrl);
+  const recorder = runner.recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures;
+  if (typeof recorder !== "function") {
+    fail("legacy fixture compatibility recorder is missing");
+  }
+  const dynamicallyReachedRecorder = Reflect.get(
+    await import(runnerModuleUrl),
+    "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures",
+  );
+  if (typeof dynamicallyReachedRecorder !== "function") {
+    fail("legacy fixture compatibility dynamic-equivalent recorder is missing");
+  }
+  const recorderEntrypoints = [
+    { id: "direct", call: (database) => recorder(database) },
+    { id: "early", call: (database) => recorder(database) },
+    { id: "dynamic-equivalent", call: (database) => dynamicallyReachedRecorder(database) },
+  ];
+  const fixture = [
+    {
+      version: 1,
+      name: "standalone-legacy-fixture",
+      sql: "CREATE TABLE standalone_legacy_fixture (id INTEGER PRIMARY KEY) STRICT",
+    },
+  ];
+  const converter = await import(
+    pathToFileURL(join(repositoryRoot, oracle.canonicalRegistry.conversionPath)).href +
+      "?fixture-release=" +
+      releaseVersion
+  );
+  const makeCanonicalDatabase = () => {
+    const target = new Database(":memory:", { strict: true });
+    runner.applyMigrations(target, releaseRegistry);
+    converter.installMigrationConversionInfrastructure(target);
+    converter.verifyCanonicalMigrationState(target);
+    return target;
+  };
+  const makeConvertedDatabase = () => {
+    const target = new Database(":memory:", { strict: true });
+    target.exec("PRAGMA foreign_keys = ON");
+    runner.applyMigrations(target, [{ ...base[1], version: 1 }]);
+    exact(
+      converter.classifyMigrationHistory(target).classification,
+      "supported-legacy",
+      "compatibility converted legacy classification",
+    );
+    converter.convertMigrationHistory(target, {
+      backupProof: {
+        backupId: "backup:compatibility-" + releaseVersion,
+        manifestSha256: sha256(Buffer.from("compatibility backup " + releaseVersion, "utf8")),
+        createdAt: "2026-08-20T00:00:00.000Z",
+      },
+    });
+    runner.applyMigrations(target, releaseRegistry, {
+      beforePendingMigration: ({ database: locked, currentPrefixVersion }) =>
+        converter.verifyCanonicalMigrationPrefixState(locked, currentPrefixVersion),
+    });
+    converter.verifyCanonicalMigrationState(target);
+    return target;
+  };
+  const database = makeCanonicalDatabase();
+  try {
+    runner.applyMigrations(database, releaseRegistry);
+    for (const entrypoint of recorderEntrypoints) {
+      const beforeRecord = database.serialize();
+      entrypoint.call(database);
+      exact(
+        Buffer.compare(beforeRecord, database.serialize()),
+        0,
+        "implementation safe recorder " + entrypoint.id + " release " + releaseVersion,
+      );
+      const beforeRun = database.serialize();
+      runner.runMigrations(database, fixture);
+      exact(
+        Buffer.compare(beforeRun, database.serialize()),
+        0,
+        "implementation verified fixture no-op " + entrypoint.id + " release " + releaseVersion,
+      );
+    }
+    let strictRejected = false;
+    try {
+      runner.applyMigrations(database, fixture);
+    } catch {
+      strictRejected = true;
+    }
+    exact(strictRejected, true, "implementation strict runner release " + releaseVersion);
+  } finally {
+    database.close();
+  }
+
+  for (const entrypoint of recorderEntrypoints) {
+    const substituted = makeCanonicalDatabase();
+    try {
+      const original = substituteSameCardinalitySchemaTuple(substituted);
+      assertCompatibilityCallRejectsWithoutFixture(
+        "implementation same-cardinality sqlite_schema tuple " +
+          entrypoint.id +
+          " release " +
+          releaseVersion,
+        substituted,
+        fixture,
+        () => entrypoint.call(substituted),
+      );
+      restoreSameCardinalitySchemaTuple(substituted, original);
+      assertCompatibilityCallRejectsWithoutFixture(
+        "same-cardinality rejection leaves no WeakMap marker " + entrypoint.id,
+        substituted,
+        fixture,
+        () => runner.runMigrations(substituted, fixture),
+      );
+    } finally {
+      substituted.close();
+    }
+  }
+
+  const pending = new Database(":memory:", { strict: true });
+  try {
+    runner.applyMigrations(pending, releaseRegistry.slice(0, -1));
+    converter.installMigrationConversionInfrastructure(pending);
+    assertInvalidCompatibilityAuthority(
+      "implementation partial history release " + releaseVersion,
+      pending,
+      recorderEntrypoints,
+      runner.runMigrations,
+      fixture,
+    );
+  } finally {
+    pending.close();
+  }
+
+  const invalidAuthorityCases = [
+    [
+      "unknown history",
+      makeCanonicalDatabase,
+      (target) => {
+        target
+          .query("INSERT INTO schema_migrations (version, name, content_hash) VALUES (?, ?, ?)")
+          .run(releaseVersion + 1, "unknown-compatibility-migration", "a".repeat(64));
+        target.exec("PRAGMA user_version = " + (releaseVersion + 1));
+      },
+    ],
+    [
+      "forged history checksum",
+      makeCanonicalDatabase,
+      (target) =>
+        target
+          .query("UPDATE schema_migrations SET content_hash = ? WHERE version = 1")
+          .run("b".repeat(64)),
+    ],
+    [
+      "newer version",
+      makeCanonicalDatabase,
+      (target) => target.exec("PRAGMA user_version = " + (releaseVersion + 1)),
+    ],
+    [
+      "schema drift",
+      makeCanonicalDatabase,
+      (target) =>
+        target.exec("CREATE TABLE compatibility_schema_drift (id INTEGER PRIMARY KEY) STRICT"),
+    ],
+    [
+      "history name drift",
+      makeCanonicalDatabase,
+      (target) =>
+        target
+          .query("UPDATE schema_migrations SET name = ? WHERE version = 1")
+          .run("forged-pre-record-history"),
+    ],
+    [
+      "conversion provenance drift",
+      makeConvertedDatabase,
+      (target) =>
+        target.exec(
+          "DROP TRIGGER schema_migration_conversions_no_update;" +
+            "UPDATE schema_migration_conversions SET backup_id = 'backup:pre-record-tampered';" +
+            oracle.conversionMetadata.ddl.updateTriggerSql,
+        ),
+    ],
+    [
+      "reindex overlay drift",
+      makeCanonicalDatabase,
+      (target) =>
+        target.exec(
+          "INSERT INTO search_reindex_lease " +
+            "(lease_id, operation_name, replacement_name, phase, last_rowid, processed_rows) " +
+            "VALUES (1, 'forged-reindex', 'forged_replacement', 'building', 0, 0)",
+        ),
+    ],
+  ];
+  for (const [label, make, mutate] of invalidAuthorityCases) {
+    const invalid = make();
+    try {
+      mutate(invalid);
+      assertInvalidCompatibilityAuthority(
+        "implementation " + label + " release " + releaseVersion,
+        invalid,
+        recorderEntrypoints,
+        runner.runMigrations,
+        fixture,
+      );
+    } finally {
+      invalid.close();
+    }
+  }
+
+  for (const entrypoint of recorderEntrypoints) {
+    const unrecorded = new Database(":memory:", { strict: true });
+    try {
+      assertCompatibilityCallRejectsWithoutFixture(
+        "implementation failed recorder map preservation " +
+          entrypoint.id +
+          " release " +
+          releaseVersion,
+        unrecorded,
+        fixture,
+        () => entrypoint.call(unrecorded),
+      );
+      runner.runMigrations(unrecorded, fixture);
+      exact(
+        unrecorded.query("PRAGMA user_version").get()?.user_version,
+        1,
+        "failed recorder leaves standalone unrecorded " + entrypoint.id,
+      );
+    } finally {
+      unrecorded.close();
+    }
+  }
+
+  const recordedTamperCases = [
+    {
+      label: "user_version tamper",
+      make: makeCanonicalDatabase,
+      mutate: (target) => target.exec("PRAGMA user_version = " + (releaseVersion + 1)),
+    },
+    {
+      label: "exact history tamper",
+      make: makeCanonicalDatabase,
+      mutate: (target) =>
+        target
+          .query("UPDATE schema_migrations SET name = ? WHERE version = 1")
+          .run("forged-recorded-history"),
+    },
+    {
+      label: "full sqlite_schema tamper",
+      make: makeCanonicalDatabase,
+      mutate: (target) =>
+        target.exec("CREATE TABLE compatibility_schema_tamper (id INTEGER PRIMARY KEY) STRICT"),
+    },
+    {
+      label: "conversion provenance tamper",
+      make: makeConvertedDatabase,
+      mutate: (target) =>
+        target.exec(
+          "DROP TRIGGER schema_migration_conversions_no_update;" +
+            "UPDATE schema_migration_conversions SET backup_id = 'backup:tampered';" +
+            oracle.conversionMetadata.ddl.updateTriggerSql,
+        ),
+    },
+    {
+      label: "reindex overlay tamper",
+      make: makeCanonicalDatabase,
+      mutate: (target) =>
+        target.exec(
+          "INSERT INTO search_reindex_lease " +
+            "(lease_id, operation_name, replacement_name, phase, last_rowid, processed_rows) " +
+            "VALUES (1, 'forged-reindex', 'forged_replacement', 'building', 0, 0)",
+        ),
+    },
+  ];
+  for (const testCase of recordedTamperCases) {
+    const tampered = testCase.make();
+    try {
+      assertRecordedCompatibilityTamperRejected(
+        "implementation " + testCase.label + " release " + releaseVersion,
+        tampered,
+        recorder,
+        runner.runMigrations,
+        fixture,
+        testCase.mutate,
+      );
+    } finally {
+      tampered.close();
+    }
+  }
+
+  const standalone = new Database(":memory:", { strict: true });
+  try {
+    runner.runMigrations(standalone, fixture);
+    runner.runMigrations(standalone, fixture);
+    exact(
+      standalone.query("PRAGMA user_version").get()?.user_version,
+      1,
+      "implementation standalone strict reopen",
+    );
+  } finally {
+    standalone.close();
+  }
+  return {
+    releaseVersion,
+    verifiedNoOp: true,
+    validRecorderAccessPaths: recorderEntrypoints.length,
+    invalidAuthoritiesRejected: 1 + invalidAuthorityCases.length,
+    invalidRecorderCallsRejected: (1 + invalidAuthorityCases.length) * recorderEntrypoints.length,
+    failedRecordMapMutationProbes: recorderEntrypoints.length,
+    sameCardinalitySchemaTupleRejections: recorderEntrypoints.length,
+    recordedTamperCasesRejected: recordedTamperCases.length,
+    standaloneVersion: 1,
+  };
+}
+
+function implementationCompatibilitySourceViolations(oracle) {
+  const sources = new Map(
+    nulPaths(git(["ls-files", "-co", "--exclude-standard", "-z"]))
+      .filter((path) => path.endsWith(".ts") && !isGeneratedImplementationPath(path))
+      .filter((path) => existsSync(join(repositoryRoot, path)))
+      .map((path) => [path, readFileSync(join(repositoryRoot, path), "utf8")]),
+  );
+  const violations = implementationCompatibilityViolationsFromSources(
+    readFileSync(join(repositoryRoot, "packages/storage/src/migration-runner.ts"), "utf8"),
+    readFileSync(join(repositoryRoot, "packages/storage/src/database.ts"), "utf8"),
+    readFileSync(join(repositoryRoot, "packages/storage/src/index.ts"), "utf8"),
+    oracle,
+    sources,
+  );
+  if (unauthorizedCompatibilityRecorderPaths(sources, oracle).length > 0) {
+    violations.push("legacy-fixture-unauthorized-recorder");
+  }
+  return [...new Set(violations)];
+}
+
+function implementationCompatibilityCheck(oracle) {
+  const sourceViolations = implementationCompatibilitySourceViolations(oracle);
+  if (sourceViolations.length > 0) {
+    fail("implementation compatibility violations: " + sourceViolations.join(", "));
+  }
+  const releases = [];
+  for (const version of oracle.runtimeAuthority.legacyFixtureCompatibility.releaseProbeVersions) {
+    const outcome = spawnSync(
+      process.execPath,
+      [fileURLToPath(import.meta.url), "--compatibility-child=" + version],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    if (outcome.status !== 0) {
+      fail(
+        "implementation compatibility child " +
+          version +
+          " failed: " +
+          (outcome.stderr || outcome.stdout).trim(),
+      );
+    }
+    releases.push(JSON.parse(outcome.stdout.trim()));
+  }
+  return {
+    releases,
+    validRecorderAccessPathsPerRelease: 3,
+    invalidAuthorityCasesPerRelease: 8,
+    invalidRecorderCallsPerRelease: 24,
+    failedRecordMapMutationProbesPerRelease: 3,
+    sameCardinalitySchemaTupleRejectionsPerRelease: 3,
+    recordedTamperCasesPerRelease: 5,
+    packageNamedExports:
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist.length,
+    mutationsRejected:
+      oracle.runtimeAuthority.legacyFixtureCompatibility.implementationMutationIds.length,
+    broadSuiteCommand: oracle.runtimeAuthority.legacyFixtureCompatibility.broadSuiteCommand,
+  };
+}
+
 async function implementationCheck(oracle, runtime) {
   const authority = oracle.issue234.currentTreeAuthority;
   const trackedChangeRecords = trackedImplementationChangeRecords();
@@ -4451,6 +6711,20 @@ async function implementationCheck(oracle, runtime) {
   );
   const sourceMap = new Map(
     typeScriptPaths.map((path) => [path, readFileSync(join(repositoryRoot, path), "utf8")]),
+  );
+  const moduleBoundaryAudit = migrationRunnerModuleBoundaryAudit(
+    sourceMap,
+    oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist,
+  );
+  exact(
+    moduleBoundaryAudit.unauthorizedPaths,
+    [],
+    "implementation compatibility recorder ownership",
+  );
+  exact(
+    moduleBoundaryAudit.boundaryViolations,
+    [],
+    "implementation compatibility package export closure",
   );
   const sourceFacts = sourceMutationFacts(oracle, sourceMap);
   const applyPaths = [];
@@ -4818,6 +7092,52 @@ function renderDesign(oracle, digest) {
         .join(", ") +
       ".",
     "",
+    "### Legacy fixture compatibility after registry append",
+    "",
+    oracle.runtimeAuthority.legacyFixtureCompatibility.entryPoint,
+    "",
+    "Recorder ownership: " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.registrationApi +
+      " " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageBoundary,
+    "",
+    "Package named-export allowlist: " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist
+        .map((name) => "`" + name + "`")
+        .join(", ") +
+      ". " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.moduleBoundaryRule,
+    "",
+    "Recorded state: " + oracle.runtimeAuthority.legacyFixtureCompatibility.stateAuthority,
+    "",
+    "Authority fingerprint: `" +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.fingerprintEncoding +
+      "`. " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.fingerprintRule,
+    "",
+    "Compatibility adapter order:",
+    "",
+    ...oracle.runtimeAuthority.legacyFixtureCompatibility.adapterOrder.map(
+      (step, index) => String(index + 1) + ". " + step,
+    ),
+    "",
+    "Append rule: " + oracle.runtimeAuthority.legacyFixtureCompatibility.appendRule,
+    "",
+    "Strictness rule: " + oracle.runtimeAuthority.legacyFixtureCompatibility.strictnessRule,
+    "",
+    "Implementation gate: `" +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.implementationMode +
+      "`; release probes " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.releaseProbeVersions.join(", ") +
+      "; exact source mutations " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.implementationMutationIds
+        .map((id) => "`" + id + "`")
+        .join(", ") +
+      ".",
+    "",
+    "Issue #234 compatibility proof: " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.issue234ProofContract,
+    "",
     "Conversion identity: " + oracle.conversionMetadata.conversionId + ".",
     "",
     "Insertion gate: " + oracle.conversionMetadata.insertionGate,
@@ -5039,6 +7359,11 @@ function renderDecisions(oracle, digest) {
     "",
     "Conversion provenance: " + oracle.runtimeAuthority.metadata,
     "",
+    "Legacy fixture adapter: " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.appendRule +
+      " " +
+      oracle.runtimeAuthority.legacyFixtureCompatibility.strictnessRule,
+    "",
     "## Rejected alternatives",
     "",
     table(
@@ -5086,7 +7411,7 @@ function renderCoverage(oracle, digest) {
       oracle.proofs.map((row) => [row.id, row.kind, row.postcondition]),
     ),
     "",
-    "The design checker closes all 27 accepted production DDL source files against the registry; classifies the exact 18-file accepted package-src test/fixture naming inventory and proves the unchanged selected-export local-DDL fixture is non-production without adding an allowlist exception; freezes all 62 TypeScript execution roots and 94 calls; executes the immutable source projection, fresh/repeated-open real-SQLite projection, schema-only convergence for all 44 convertible histories and 76 unique prefixes, all seven convertible reindex overlays plus 12 forgeries, 16 no-source-write preflight cases including every added/changed table/index/trigger/view adjacency with whole-tree and sidecar equality, and one shared strict provenance decoder through a real production legacy conversion to target 27 plus synthetic suffix/reopen/doctor/backup/empty/full-restore projections and five forged records. The dedicated implementation-sequence gate imports the real production converter/opener under child-local synthetic suffixes 28/29 and rejects live-tip conversion or legacy suffix-runner bypass. Domain-data parity, injected production crash hooks, operational doctor, and filesystem backup/restore remain #234 implementation gates; this document does not claim them as implemented.",
+    "The design checker closes all 27 accepted production DDL source files against the registry; classifies the exact 18-file accepted package-src test/fixture naming inventory and proves the unchanged selected-export local-DDL fixture is non-production without adding an allowlist exception; freezes all 62 TypeScript execution roots and 94 calls; executes the immutable source projection, fresh/repeated-open real-SQLite projection, append-stable legacy-fixture compatibility at release tips 27/28/29, schema-only convergence for all 44 convertible histories and 76 unique prefixes, all seven convertible reindex overlays plus 12 forgeries, 16 no-source-write preflight cases including every added/changed table/index/trigger/view adjacency with whole-tree and sidecar equality, and one shared strict provenance decoder through a real production legacy conversion to target 27 plus synthetic suffix/reopen/doctor/backup/empty/full-restore projections and five forged records. Dedicated implementation-sequence and implementation-compatibility gates import the real production converter/opener/runner. At exact release tips 27, 28, and 29, the compatibility child requires direct, early, and dynamic-equivalent recorder calls to verify the complete current-tip authority before WeakMap mutation and change zero serialized bytes; then runMigrations must rederive and byte-compare the fingerprint before its zero-write no-op. Each tip rejects eight invalid authorities through all three access forms, proves failed recording leaves three standalone fixtures unrecorded, and rejects five independent post-record tamper classes before fixture SQL with byte-identical state. Each access form also rejects a same-cardinality action_plans_state_idx replacement whose type/name/table remain fixed but SQL differs. After restoration it passes a standalone fixture registry: strict unrecorded apply must reject without changing bytes or creating the fixture table, while any leaked canonical marker would produce a detectable false no-op. A self-contained mutation stores that expected fingerprint on the verifier failure and rethrows, then is killed by this discriminator. The mutation runtime also first proves its exact verifier accepts valid authority before killing a count-only schema verifier. It proves strong and weak fingerprint implementations accept an initial valid reindex state, transitions to a second verifier-valid but fingerprint-distinct overlay state, revalidates that state with the strong verifier, and kills the weak constant only after observing its false no-op; precondition exceptions cannot count as kills. Verify-after-set remains covered. The exact eight-name storage index re-export is checked only as non-authoritative API hygiene; source reachability, recorder identifier counts, caller location, call order outside the recorder boundary, and dynamic-code capability bans are not security evidence. Domain-data parity, injected production crash hooks, operational doctor, filesystem backup/restore, and the complete Bun suite remain #234 implementation gates; this document does not claim them as implemented.",
     "",
     "## Retirement closure",
     "",
@@ -5130,14 +7455,15 @@ function renderCoverage(oracle, digest) {
     "bun docs/architecture/database-migration-registry-check.v1.mjs --source-self-test",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --source-drift --json",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --implementation-sequence-check",
+    "bun docs/architecture/database-migration-registry-check.v1.mjs --implementation-compatibility-check",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --digest",
     "bun run format:check -- docs/architecture/database-migration-registry-*.v1.*",
     "python3 .agents/skills/plan-agent-mail/scripts/check_plan.py",
     "```",
     "",
-    "Issue #234 must first make `--implementation-sequence-check` green with the real production converter and opener under child-local synthetic suffixes 28/29, then run `bun docs/architecture/database-migration-registry-check.v1.mjs --implementation-check` for the complete scoped implementation. The sequence gate intentionally rejects the current live-tip converter loop and legacy-opener bypass until #234 repairs them.",
+    "Issue #234 must make `--implementation-sequence-check` green with the real production converter and opener under live/synthetic suffixes 28/29, make `--implementation-compatibility-check` green for exact release tips 27/28/29, and run `bun test` before the complete scoped `--implementation-check`. The compatibility gate intentionally rejects the current literal-27 runner shortcut until #234 replaces it with the verified-handle fingerprint boundary.",
     "",
-    "Checker mutations cover canonical identity/order, the all-TypeScript corpus and capacity roots, sequence-derived preflight effects/schema/order, strict provenance DDL/row/gate/trigger/domain/forgery checks, generic reindex grammar/full-object-tuple/counter forgeries, lifecycle and coverage closure, live-tip converter-loop and legacy-opener-bypass counterexamples, the exact 111-path/27-semantic-source allowlist including removal and unrelated-addition negatives, current-tree deletion/rename allow/protect/import-alias/slot-20-sql-constant/registry-index/direct-bracket-at-find-destructuring/bypass policy, report-scope exclusion, blockers, and frozen-input drift. The source self-test separately launches 20 fresh checker processes over real accepted source bytes, virtual Git source/test/deletion/rename records, and isolated converter/opener sequence mutations.",
+    "Checker mutations cover canonical identity/order, the all-TypeScript corpus and capacity roots, sequence-derived preflight effects/schema/order, strict provenance DDL/row/gate/trigger/domain/forgery checks, generic reindex grammar/full-object-tuple/counter forgeries, lifecycle and coverage closure, live-tip converter-loop, legacy-opener-bypass, literal fixture tip, caller ceiling, complete-fingerprint, same-cardinality/count-only schema, verifier-failure marker leakage, weak-constant, verify-after-set, exact package export-surface, and strict-runner-bypass counterexamples, the exact 111-path/27-semantic-source allowlist including removal and unrelated-addition negatives, current-tree deletion/rename allow/protect/import-alias/slot-20-sql-constant/registry-index/direct-bracket-at-find-destructuring/bypass policy, report-scope exclusion, blockers, and frozen-input drift. The source self-test launches one fresh checker process for each frozen source mutation over real accepted source bytes or explicit virtual Git source/test/deletion/rename records. Runtime children independently prove that recorder reachability is harmless because invalid authority cannot mutate compatibility state, rather than treating source exclusivity or dynamic-code syntax as trust.",
     "",
   ];
   return lines.join("\n");
@@ -5232,6 +7558,38 @@ const mutations = [
     (value) =>
       (value.appendStableProvenance.legacyConversionSequence[4] =
         "run applyMigrations only in the non-legacy opener branch"),
+  ],
+  [
+    "legacy-fixture-literal-tip",
+    (value) => (value.runtimeAuthority.legacyFixtureCompatibility.appendRule = ""),
+  ],
+  [
+    "legacy-fixture-caller-ceiling",
+    (value) => (value.runtimeAuthority.legacyFixtureCompatibility.strictnessRule = ""),
+  ],
+  [
+    "legacy-fixture-premature-record",
+    (value) => value.runtimeAuthority.legacyFixtureCompatibility.adapterOrder.reverse(),
+  ],
+  [
+    "legacy-fixture-fingerprint-bypass",
+    (value) => (value.runtimeAuthority.legacyFixtureCompatibility.fingerprintRule = ""),
+  ],
+  [
+    "legacy-fixture-unauthorized-recorder",
+    (value) => (value.runtimeAuthority.legacyFixtureCompatibility.packageBoundary = ""),
+  ],
+  [
+    "legacy-fixture-package-export-allowlist",
+    (value) => value.runtimeAuthority.legacyFixtureCompatibility.packageNamedExportAllowlist.pop(),
+  ],
+  [
+    "legacy-fixture-module-boundary",
+    (value) => (value.runtimeAuthority.legacyFixtureCompatibility.moduleBoundaryRule = ""),
+  ],
+  [
+    "strict-runner-compatibility-bypass",
+    (value) => (value.runtimeAuthority.legacyFixtureCompatibility.entryPoint = ""),
   ],
   ["conversion-insert-gate", (value) => (value.conversionMetadata.insertionGate = "")],
   [
@@ -5337,12 +7695,57 @@ if (sourceMutationArgument !== undefined) {
   runSourceMutationChild(oracle, sourceMutationArgument.slice("--source-mutation=".length));
 }
 
+if (process.argv.includes("--weak-constant-fingerprint-child")) {
+  validateOracle(oracle, { checkGit: true });
+  await weakConstantFingerprintCompatibilityChild(oracle);
+  process.stderr.write("weak constant fingerprint rejected by runtime matrix\n");
+  process.exit(37);
+}
+
+if (process.argv.includes("--verify-after-set-child")) {
+  validateOracle(oracle, { checkGit: true });
+  await verifyAfterSetCompatibilityChild(oracle);
+  process.stderr.write("verify-after-set rejected by runtime matrix\n");
+  process.exit(38);
+}
+
+if (process.argv.includes("--count-only-schema-child")) {
+  validateOracle(oracle, { checkGit: true });
+  await countOnlySchemaCompatibilityChild(oracle);
+  process.stderr.write("count-only schema verifier rejected by runtime matrix\n");
+  process.exit(39);
+}
+
+if (process.argv.includes("--failure-marker-child")) {
+  validateOracle(oracle, { checkGit: true });
+  await failureStoresExpectedFingerprintCompatibilityChild(oracle);
+  process.stderr.write("failure marker rejected by fixture discriminator\n");
+  process.exit(40);
+}
+
+const compatibilityChildArgument = process.argv.find((value) =>
+  value.startsWith("--compatibility-child="),
+);
+if (compatibilityChildArgument !== undefined) {
+  validateOracle(oracle, { checkGit: true });
+  const releaseVersion = Number.parseInt(
+    compatibilityChildArgument.slice("--compatibility-child=".length),
+    10,
+  );
+  if (![27, 28, 29].includes(releaseVersion)) fail("invalid compatibility child release");
+  const childResult = await implementationCompatibilityChild(oracle, releaseVersion);
+  process.stdout.write(JSON.stringify(childResult) + "\n");
+  process.exit(0);
+}
+
 const validation = validateOracle(oracle, { checkGit: true });
 const corpus = corpusProjection(oracle, validation.evidencePaths);
 const schemaSources = schemaSourceProjection(oracle);
 const productionSourceClassification = productionSourceClassificationProjection(oracle);
+const migrationRunnerPackageBoundary = migrationRunnerPackageBoundaryProjection(oracle);
 const runtime = await sourceProjection(oracle);
 const sqlite = await freshSqliteProjection(oracle, runtime);
+const legacyFixtureCompatibility = await legacyFixtureCompatibilityProjection(oracle, runtime);
 const legacySchema = await legacySchemaProjection(oracle, runtime);
 const reindexOverlays = await reindexOverlayProjection(oracle, runtime);
 const preflight = await preflightProjection(oracle, runtime);
@@ -5351,6 +7754,11 @@ const implementationSequence = process.argv.includes(
   oracle.appendStableProvenance.implementationSequenceMode,
 )
   ? await implementationSequenceCheck(oracle)
+  : null;
+const implementationCompatibility = process.argv.includes(
+  oracle.runtimeAuthority.legacyFixtureCompatibility.implementationMode,
+)
+  ? implementationCompatibilityCheck(oracle)
   : null;
 const implementationScope = process.argv.includes(oracle.issue234.currentTreeAuthority.scopeMode)
   ? implementationScopeProjection(oracle, runtime)
@@ -5410,17 +7818,20 @@ const result = {
   corpus,
   schemaSources,
   productionSourceClassification,
+  migrationRunnerPackageBoundary,
   semanticSources: {
     paths: oracle.issue234.currentTreeAuthority.semanticAllowedPaths.length,
     identityDigest: runtime.semanticIdentityDigest,
     drift: [],
   },
   sqlite,
+  legacyFixtureCompatibility,
   legacySchema,
   reindexOverlays,
   preflight,
   provenance,
   implementationSequence,
+  implementationCompatibility,
   implementationScope,
   implementation,
   mutations: mutationCount,
