@@ -179,6 +179,7 @@ export async function ingestSingleMessage(
 
   const unit = {
     messageId,
+    normalizedText: parsed.normalizedText,
     rawSource: { blobId: createBlobId(`blob:${rawSource.digest}`), size: rawSource.size },
     placements: [
       {

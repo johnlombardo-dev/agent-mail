@@ -80,6 +80,7 @@ async function openPromotedCatalog() {
     .run(accountId, mailboxId, uidValidity);
   createSqlitePromotionAdapter(opened.db).promote({
     messageId,
+    normalizedText: "Promoted normalized text",
     rawSource: { blobId: createBlobId(`blob:${"b".repeat(64)}`), size: 1 },
     placements: [{ ...identity, internalDate: "2026-08-18T00:00:00.000Z" }],
     headers: [],

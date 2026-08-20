@@ -76,6 +76,7 @@ type Fixture = Readonly<{
   readonly tombstonedUid: number;
   readonly identityOnlyUid: number;
   readonly opened: OpenDatabase;
+  readonly beforeBackupProjection: unknown;
 }>;
 
 type CanonicalPromotion = NonNullable<ReturnType<typeof readCanonicalPromotion>>;
@@ -91,6 +92,46 @@ type DomainSnapshot = Readonly<{
   };
   readonly journalOrder: readonly string[];
 }>;
+
+const expectedProjection = {
+  message_id: comparisonFixture.messageId,
+  projection_version: 1,
+  normalized_text_json: Buffer.from('"canonical body\\n"', "utf8"),
+  normalized_text_sha256: "acb6a0f8d3a17cedffe9f25e3b852a3f5256d1d9fd3454726e6451cc6052ae34",
+  normalized_text_utf8_bytes: 15,
+  raw_eml_sha256: "991c5d77082d0849b0c569d0d9674ba0ffc6728d88c0f250481badef71032685",
+  parser_id: "mailparser:3.9.15",
+  materialized_at: comparisonFixture.promotionJournalAt,
+};
+
+function readProjection(database: Database): unknown {
+  return database
+    .query(
+      "SELECT message_id, projection_version, normalized_text_json, normalized_text_sha256, " +
+        "normalized_text_utf8_bytes, raw_eml_sha256, parser_id, materialized_at " +
+        "FROM message_text_projections WHERE message_id = ? AND projection_version = 1;",
+    )
+    .get(messageId);
+}
+
+function assertProjectionState(database: Database): unknown {
+  expect(database.query("PRAGMA integrity_check;").get()).toEqual({
+    integrity_check: "ok",
+  });
+  expect(database.query("PRAGMA foreign_key_check;").all()).toEqual([]);
+  const projectionTable = database
+    .query(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'message_text_projections';",
+    )
+    .get();
+  if (projectionTable === null) return undefined;
+  const canonical = readCanonicalPromotion(database, messageId);
+  if (canonical === undefined) throw new Error("projection parity fixture is missing canonical content");
+  expect(canonical.normalizedText).toBe(comparisonFixture.plainBody);
+  const projection = readProjection(database);
+  expect(projection).toEqual(expectedProjection);
+  return projection;
+}
 
 const messageId = createMessageId(comparisonFixture.messageId);
 const identityOnlyMessageId = createMessageId(comparisonFixture.identityOnlyMessageId);
@@ -108,6 +149,7 @@ function assertFixtureNumber(value: number, name: string): number {
 
 const canonicalUnit: PromotionUnit = {
   messageId,
+  normalizedText: comparisonFixture.plainBody,
   rawSource: {
     blobId: createBlobId(createHash("sha256").update(comparisonFixture.plainBody).digest("hex")),
     size: Buffer.byteLength(comparisonFixture.plainBody),
@@ -260,6 +302,7 @@ async function createFixture(): Promise<Fixture> {
     mode: 0o600,
   });
 
+  const beforeBackupProjection = assertProjectionState(opened.db);
   const backupPath = join(backupDirectory, "backup-one");
   await writeBackup({
     privateRoot: root,
@@ -288,6 +331,7 @@ async function createFixture(): Promise<Fixture> {
     tombstonedUid,
     identityOnlyUid,
     opened,
+    beforeBackupProjection,
   };
 }
 
@@ -366,6 +410,10 @@ describe("storage restore repository parity P2-C19", () => {
     const sourceSnapshot = readDomainSnapshot(source.db, fixture);
     const restoredSnapshot = readDomainSnapshot(destinationDatabase.db, fixture);
     expect(sourceSnapshot).toEqual(restoredSnapshot);
+    const sourceProjection = assertProjectionState(source.db);
+    const restoredProjection = assertProjectionState(destinationDatabase.db);
+    expect(sourceProjection).toEqual(fixture.beforeBackupProjection);
+    expect(restoredProjection).toEqual(fixture.beforeBackupProjection);
     expect(sourceSnapshot.livePlacement.tombstone).toBeNull();
     expect(String(sourceSnapshot.tombstonedPlacement.tombstone.reason)).toBe(
       comparisonFixture.tombstoneReason,

@@ -102,6 +102,8 @@ export type MimeAttachmentMetadata = Readonly<{
 
 export type ParsedStagedMime = Readonly<{
   kind: "parsed";
+  /** The single bounded production-normalized message text used by reports. */
+  normalizedText: string;
   headers: readonly OrderedMimeHeader[];
   addresses: readonly NormalizedMimeAddress[];
   bodyParts: readonly MimeBodyMetadata[];
@@ -484,11 +486,7 @@ class InlineTextLimit extends Transform {
     // A closing nested boundary returns to its parent's multipart body. Its
     // epilogue is not a new header block; only a non-closing delimiter starts
     // the next child part's headers.
-    this.#state = final
-      ? this.#boundaries.length === 0
-        ? "done"
-        : "body"
-      : "headers";
+    this.#state = final ? (this.#boundaries.length === 0 ? "done" : "body") : "headers";
   }
 }
 
@@ -542,7 +540,8 @@ export async function parseStagedEml(options: ParseStagedEmlOptions): Promise<Pa
     checksumAlgo: "sha256",
     keepCidLinks: true,
     skipImageLinks: true,
-    skipHtmlToText: true,
+    maxHtmlLengthToParse: limits.maxDecodedTextBytes,
+    skipHtmlToText: false,
     skipTextToHtml: true,
   });
   const headerLines: unknown[] = [];
@@ -550,6 +549,7 @@ export async function parseStagedEml(options: ParseStagedEmlOptions): Promise<Pa
   const attachmentTasks: Promise<void>[] = [];
   const attachments: MimeAttachmentMetadata[] = [];
   const bodyParts: MimeBodyMetadata[] = [];
+  const normalizedTextParts: string[] = [];
   let partCount = 0;
   let textBytes = 0;
   let callbackError: MimeParseError | undefined;
@@ -629,6 +629,7 @@ export async function parseStagedEml(options: ParseStagedEmlOptions): Promise<Pa
       return;
     }
     const value = typeof part.text === "string" ? part.text : "";
+    normalizedTextParts.push(value);
     textBytes += Buffer.byteLength(value, "utf8");
     if (textBytes > limits.maxDecodedTextBytes) {
       callbackError = new MimeParseError(
@@ -681,6 +682,7 @@ export async function parseStagedEml(options: ParseStagedEmlOptions): Promise<Pa
   if (callbackError !== undefined) throw callbackError;
   return {
     kind: "parsed",
+    normalizedText: normalizedTextParts.join("\n"),
     headers: normalizedHeaders(headerLines, parsedHeaders, limits.maxMetadataBytes),
     addresses: addresses(parsedHeaders, limits.maxMetadataBytes),
     bodyParts,

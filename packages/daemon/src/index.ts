@@ -1,5 +1,8 @@
 export * from "./config";
 export * from "./http";
+export * from "./report-admin-handlers";
+export * from "./report-creation-service";
+export * from "./report-serving";
 export * from "./retrieval-handlers";
 export * from "./action-plan-handlers";
 // Keep the authority package surface narrow. In particular, the atomic

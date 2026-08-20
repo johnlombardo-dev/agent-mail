@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 import {
   createUtcInstant,
   parseAccountId,
@@ -32,6 +33,8 @@ import {
 /** Rows supplied by the already parsed and normalized MIME pipeline. */
 export type PromotionUnit = Readonly<{
   readonly messageId: MessageId;
+  /** Exact bounded normalized text selected by the production MIME parser. */
+  readonly normalizedText: string;
   readonly rawSource: PromotionBlobReference;
   readonly placements: readonly PromotionPlacement[];
   readonly headers: readonly PromotionHeader[];
@@ -118,6 +121,7 @@ export type PromotionWriteBoundary =
   | "body-part"
   | "attachment"
   | "blob-reference"
+  | "message-text-projection"
   | "routing-decision"
   | "routing-origin"
   | "local-label"
@@ -184,6 +188,36 @@ export function promoteCanonicalMessage(
 
     const write = createWriter(database, options.beforeWrite);
     write("message", "INSERT INTO messages (message_id) VALUES (?);", [unit.messageId]);
+    // The adapter is the required trust boundary for newly parsed input and
+    // always supplies normalizedText. A few older low-level typed fixtures
+    // predate the projection table; keep those fixtures text-ineligible
+    // rather than fabricating a normalized value. Report source resolution
+    // correctly rejects the resulting missing projection.
+    if (hasMessageTextProjectionTable(database) && typeof unit.normalizedText === "string") {
+      const normalizedTextJson = canonicalJsonStringBytes(unit.normalizedText);
+      const normalizedTextDigest = createHash("sha256").update(normalizedTextJson).digest("hex");
+      // This remains inside the promotion transaction. It intentionally does
+      // not introduce another fault-injection ordinal: the established
+      // promotion boundary contract covers the canonical row groups, while
+      // SQLite rollback covers this projection write atomically with them.
+      database
+        .query(
+          "INSERT INTO message_text_projections " +
+            "(message_id, projection_version, normalized_text_json, normalized_text_sha256, " +
+            "normalized_text_utf8_bytes, raw_eml_sha256, parser_id, materialized_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?);",
+        )
+        .run(
+          unit.messageId,
+          1,
+          normalizedTextJson,
+          normalizedTextDigest,
+          Buffer.byteLength(unit.normalizedText, "utf8"),
+          unit.rawSource.blobId.replace(/^blob:/u, ""),
+          "mailparser:3.9.15",
+          unit.journal.occurredAt,
+        );
+    }
     write(
       "blob-reference",
       "INSERT INTO message_blob_references " +
@@ -647,6 +681,17 @@ function readPromotion(database: Database, messageId: MessageId): PromotionUnit 
     .all(messageId)
     .map((row: unknown) => decodeJournalRow(row));
   if (journalRows.length !== 1) return undefined;
+  const projection = hasMessageTextProjectionTable(database)
+    ? (() => {
+        const projectionRow: unknown = database
+          .query(
+            "SELECT normalized_text_json, normalized_text_sha256, normalized_text_utf8_bytes, raw_eml_sha256, parser_id " +
+              "FROM message_text_projections WHERE message_id = ? AND projection_version = 1;",
+          )
+          .get(messageId);
+        return projectionRow === null ? undefined : decodeProjectionRow(projectionRow);
+      })()
+    : { normalizedText: "", rawDigest: "" };
   const references = database
     .query(
       "SELECT kind, ordinal, blob_id, size FROM message_blob_references " +
@@ -661,6 +706,12 @@ function readPromotion(database: Database, messageId: MessageId): PromotionUnit 
   ) {
     return undefined;
   }
+  if (
+    hasMessageTextProjectionTable(database) &&
+    (projection === undefined ||
+      projection.rawDigest !== rawSource.blob.blobId.replace(/^blob:/u, ""))
+  )
+    return undefined;
   const bodyReferences = new Map(
     references
       .filter((reference) => reference.kind === "body-part")
@@ -693,6 +744,7 @@ function readPromotion(database: Database, messageId: MessageId): PromotionUnit 
   });
   return {
     messageId: parseMessageId(decodedId),
+    normalizedText: projection?.normalizedText ?? "",
     rawSource: rawSource.blob,
     placements,
     headers,
@@ -1028,6 +1080,7 @@ function numberValue(value: unknown): number {
 function serializeUnit(unit: PromotionUnit): string {
   return JSON.stringify({
     messageId: unit.messageId,
+    normalizedText: unit.normalizedText,
     rawSource: unit.rawSource,
     placements: unit.placements,
     headers: unit.headers,
@@ -1040,4 +1093,50 @@ function serializeUnit(unit: PromotionUnit): string {
     })),
     journal: unit.journal,
   });
+}
+
+function canonicalJsonStringBytes(value: string): Uint8Array {
+  return Buffer.from(JSON.stringify(value), "utf8");
+}
+
+function hasMessageTextProjectionTable(database: Database): boolean {
+  return (
+    database
+      .query(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'message_text_projections';",
+      )
+      .get() !== null
+  );
+}
+
+type ProjectionRow = Readonly<{ readonly normalizedText: string; readonly rawDigest: string }>;
+
+function decodeProjectionRow(row: unknown): ProjectionRow {
+  if (typeof row !== "object" || row === null || Array.isArray(row))
+    throw new TypeError("message text projection row is invalid");
+  const value: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(row)) value[key] = item;
+  const encoded = value.normalized_text_json;
+  if (!(encoded instanceof Uint8Array))
+    throw new TypeError("normalized text is not canonical BLOB");
+  const bytes = new Uint8Array(encoded);
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "string" || JSON.stringify(parsed) !== text)
+      throw new TypeError("normalized text JSON is not canonical");
+    const digest = createHash("sha256").update(bytes).digest("hex");
+    if (value.normalized_text_sha256 !== digest || value.parser_id !== "mailparser:3.9.15")
+      throw new TypeError("normalized text projection digest is invalid");
+    if (
+      value.normalized_text_utf8_bytes !== Buffer.byteLength(parsed, "utf8") ||
+      typeof value.raw_eml_sha256 !== "string" ||
+      !/^[0-9a-f]{64}$/u.test(value.raw_eml_sha256)
+    )
+      throw new TypeError("normalized text projection lengths are invalid");
+    return { normalizedText: parsed, rawDigest: value.raw_eml_sha256 };
+  } catch (error: unknown) {
+    throw new TypeError("message text projection row is invalid", { cause: error });
+  }
 }

@@ -1307,11 +1307,16 @@ export async function admitHttpRequest(
   }
 
   try {
+    const configuredMax = options.maxRequestBodyBytes ?? DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES;
+    const maxRequestBodyBytes =
+      options.operation.key === "reports.create"
+        ? Math.min(configuredMax, 1_048_576)
+        : configuredMax;
     const parsed = await readUnknownRequestInput(
       options.request,
       options.params ?? {},
       options.query ?? {},
-      options.maxRequestBodyBytes ?? DEFAULT_HTTP_REQUEST_BODY_LIMIT_BYTES,
+      maxRequestBodyBytes,
       options.lifecycleProbe,
     );
     return {

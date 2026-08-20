@@ -31,6 +31,8 @@ export * from "./remote-placement-tombstone";
 export * from "./remote-placement-observation";
 export * from "./offline-root-replacement";
 export * from "./promotion-adapter";
+export * from "./report-creation-repository";
+export * from "./message-text-materializer";
 export * from "./routing-decision-origin";
 export * from "./routing-decision-origin-migration";
 export * from "./search-projection";

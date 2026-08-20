@@ -20,6 +20,11 @@ import {
   type OperationHandlerMap,
 } from "./http";
 import { z } from "zod";
+import { createHash } from "node:crypto";
+import {
+  canonicalJsonBytes,
+  canonicalJsonStringBytes,
+} from "../../storage/src/report-creation-repository";
 
 const REPORT_READ_SCOPE = "reports:read";
 const SOURCE_READ_SCOPE = "mail:read.message";
@@ -75,9 +80,11 @@ export type SourceTextRecord = z.infer<typeof sourceTextRecordSchema>;
 export type ReportServingRepository = Readonly<{
   readonly resolveReport: (
     reportId: string,
+    principalJson?: Uint8Array,
   ) => ReportArtifactRecord | undefined | Promise<ReportArtifactRecord | undefined>;
   readonly resolveSource: (
     messageId: string,
+    principalJson?: Uint8Array,
   ) => SourceTextRecord | undefined | Promise<SourceTextRecord | undefined>;
 }>;
 
@@ -172,13 +179,76 @@ function authorized(
   );
 }
 
+function integrityDigest(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function verifyReportRecord(
+  record: ReportArtifactRecord & Readonly<Record<string, unknown>>,
+): ReportArtifactRecord {
+  const parsed = reportArtifactRecordSchema.parse({
+    reportId: record.reportId,
+    owner: record.owner,
+    scope: record.scope,
+    model: record.model,
+  });
+  const modelJson = canonicalJsonBytes(parsed.model);
+  const modelDigest = record.modelSha256;
+  const markdownDigest = record.markdownSha256;
+  const htmlDigest = record.htmlSha256;
+  const cspDigest = record.cspSha256;
+  if (
+    (record.modelVersion !== undefined && record.modelVersion !== 1) ||
+    (record.projectionVersion !== undefined && record.projectionVersion !== 1) ||
+    (record.rendererVersion !== undefined && record.rendererVersion !== 1) ||
+    (record.modelBytes !== undefined && record.modelBytes !== modelJson.byteLength) ||
+    (typeof modelDigest === "string" && modelDigest !== integrityDigest(modelJson))
+  )
+    throw new Error("report integrity failed");
+  const rendered = renderReport(parsed.model);
+  const markdownBytes = Buffer.from(rendered.markdown, "utf8");
+  const htmlBytes = Buffer.from(rendered.html, "utf8");
+  const cspBytes = Buffer.from(rendered.contentSecurityPolicy, "utf8");
+  if (
+    (record.markdownBytes !== undefined && record.markdownBytes !== markdownBytes.byteLength) ||
+    (record.htmlBytes !== undefined && record.htmlBytes !== htmlBytes.byteLength) ||
+    (typeof markdownDigest === "string" && markdownDigest !== integrityDigest(markdownBytes)) ||
+    (typeof htmlDigest === "string" && htmlDigest !== integrityDigest(htmlBytes)) ||
+    (typeof cspDigest === "string" && cspDigest !== integrityDigest(cspBytes))
+  )
+    throw new Error("report integrity failed");
+  return parsed;
+}
+
+function verifySourceRecord(
+  record: SourceTextRecord & Readonly<Record<string, unknown>>,
+): SourceTextRecord {
+  const parsed = sourceTextRecordSchema.parse({
+    messageId: record.messageId,
+    owner: record.owner,
+    scope: record.scope,
+    text: record.text,
+  });
+  const sourceJson = canonicalJsonStringBytes(parsed.text);
+  if (
+    (record.projectionVersion !== undefined && record.projectionVersion !== 1) ||
+    (record.sourceTextBytes !== undefined &&
+      record.sourceTextBytes !== Buffer.byteLength(parsed.text, "utf8")) ||
+    (typeof record.sourceTextSha256 === "string" &&
+      record.sourceTextSha256 !== integrityDigest(sourceJson))
+  )
+    throw new Error("source integrity failed");
+  return parsed;
+}
+
 function createServingHandlers(repository: ReportServingRepository): OperationHandlerMap {
   const report: OperationHandlerMap["reports.serve"] = async (
     input: unknown,
     context: OperationHandlerContext,
   ) => {
     const request = reportRequestSchema.parse(input);
-    const record = await repository.resolveReport(request.reportId);
+    const principalJson = canonicalJsonStringBytes(context.principal.subject);
+    const record = await repository.resolveReport(request.reportId, principalJson);
     if (
       record === undefined ||
       record.reportId !== request.reportId ||
@@ -186,7 +256,7 @@ function createServingHandlers(repository: ReportServingRepository): OperationHa
     ) {
       return notFoundBody("report", request.reportId, context.correlationId);
     }
-    const parsed = reportArtifactRecordSchema.parse(record);
+    const parsed = verifyReportRecord(record);
     const rendered = renderReport(parsed.model);
     return { kind: "report", reportId: parsed.reportId, body: rendered.html };
   };
@@ -196,7 +266,8 @@ function createServingHandlers(repository: ReportServingRepository): OperationHa
     context: OperationHandlerContext,
   ) => {
     const request = sourceRequestSchema.parse(input);
-    const record = await repository.resolveSource(request.messageId);
+    const principalJson = canonicalJsonStringBytes(context.principal.subject);
+    const record = await repository.resolveSource(request.messageId, principalJson);
     if (
       record === undefined ||
       record.messageId !== request.messageId ||
@@ -204,7 +275,7 @@ function createServingHandlers(repository: ReportServingRepository): OperationHa
     ) {
       return notFoundBody("source", request.messageId, context.correlationId);
     }
-    const parsed = sourceTextRecordSchema.parse(record);
+    const parsed = verifySourceRecord(record);
     return { kind: "source", messageId: parsed.messageId, body: parsed.text };
   };
 

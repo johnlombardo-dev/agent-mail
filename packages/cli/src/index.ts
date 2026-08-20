@@ -8,5 +8,6 @@ export * from "./search-command";
 export * from "./message-show";
 export * from "./thread-show-command";
 export * from "./raw-content-command";
+export * from "./report-create-command";
 
 export const packageMarker = true;

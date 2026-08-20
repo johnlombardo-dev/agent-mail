@@ -37,6 +37,10 @@ export type ReportAdminServiceContext = Readonly<{
   readonly operationKey: string;
   readonly scope: string | null;
   readonly principal: HttpPrincipal;
+  /** Immutable scope projection from the shared authenticated boundary. */
+  readonly scopes: readonly string[];
+  /** Trusted bounded HTTP body digest, when the transport admitted a body. */
+  readonly requestBodySha256?: string;
 }>;
 
 /** A service may report a durable failure without making the adapter invent a response. */
@@ -111,6 +115,10 @@ function serviceContext(context: OperationHandlerContext): ReportAdminServiceCon
     operationKey: context.operation.key,
     scope: context.operation.scope,
     principal: context.principal,
+    scopes: context.principal.scopes,
+    ...(context.requestBodySha256 === undefined
+      ? {}
+      : { requestBodySha256: context.requestBodySha256 }),
   });
 }
 

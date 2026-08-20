@@ -60,6 +60,7 @@ const migrations = [
 
 const unit: PromotionUnit = {
   messageId,
+  normalizedText: "Promoted normalized text",
   rawSource: { blobId: rawBlob, size: 512 },
   placements: [
     {
@@ -181,35 +182,41 @@ describe("canonical promotion transaction P2-C13", () => {
   test("rolls back every real-SQLite write boundary, including routing", async () => {
     const boundaries: number[] = [];
     const first = await openPromotionDatabase();
-    promoteCanonicalMessage(first.db, unit, {
-      beforeWrite: (_boundary, ordinal) => boundaries.push(ordinal),
-    });
-    await first.close();
-
-    for (const failureOrdinal of boundaries) {
-      const opened = await openPromotionDatabase();
-      const failure = new Error(`injected write ${failureOrdinal}`);
-      const result = capture(() => promoteCanonicalMessage(opened.db, unit, {
-        beforeWrite: (_boundary, ordinal) => {
-          if (ordinal === failureOrdinal) throw failure;
-        },
-      }));
-      expect(result).toBeInstanceOf(CanonicalPromotionError);
-      expect(result).toMatchObject({ code: "write-failed", cause: failure });
-      expect(countRows(opened.db)).toEqual({
-        messages: 0,
-        remote_placements: 0,
-        message_headers: 0,
-        message_addresses: 0,
-        message_body_parts: 0,
-        message_attachments: 0,
-        routing_decisions: 0,
-        local_labels: 0,
-        local_label_assignments: 0,
-        message_blob_references: 0,
-        operational_journal: 0,
+    try {
+      promoteCanonicalMessage(first.db, unit, {
+        beforeWrite: (_boundary, ordinal) => boundaries.push(ordinal),
       });
-      await opened.close();
+    } finally {
+      await first.close();
+    }
+
+    const rollback = await openPromotionDatabase();
+    try {
+      for (const failureOrdinal of boundaries) {
+        const failure = new Error(`injected write ${failureOrdinal}`);
+        const result = capture(() => promoteCanonicalMessage(rollback.db, unit, {
+          beforeWrite: (_boundary, ordinal) => {
+            if (ordinal === failureOrdinal) throw failure;
+          },
+        }));
+        expect(result).toBeInstanceOf(CanonicalPromotionError);
+        expect(result).toMatchObject({ code: "write-failed", cause: failure });
+        expect(countRows(rollback.db)).toEqual({
+          messages: 0,
+          remote_placements: 0,
+          message_headers: 0,
+          message_addresses: 0,
+          message_body_parts: 0,
+          message_attachments: 0,
+          routing_decisions: 0,
+          local_labels: 0,
+          local_label_assignments: 0,
+          message_blob_references: 0,
+          operational_journal: 0,
+        });
+      }
+    } finally {
+      await rollback.close();
     }
     expect(boundaries.length).toBeGreaterThan(8);
   });
@@ -217,6 +224,9 @@ describe("canonical promotion transaction P2-C13", () => {
   test("reopens and reconstructs exact rows, then distinguishes duplicate and conflict", async () => {
     const opened = await openPromotionDatabase();
     expect(promoteCanonicalMessage(opened.db, unit)).toEqual({ messageId, status: "committed" });
+    expect(opened.db.query("SELECT normalized_text_json FROM message_text_projections WHERE message_id = ?;").get(messageId)).toEqual({
+      normalized_text_json: Buffer.from(JSON.stringify(unit.normalizedText), "utf8"),
+    });
     await opened.close();
 
     const reopened = await openDatabase(join(roots[0], "archive.sqlite"));

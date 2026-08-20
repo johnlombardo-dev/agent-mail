@@ -75,6 +75,7 @@ function fixture(messageId: MessageId, duplicatePlacement = false, uid = 11) {
   };
   return {
     messageId,
+    normalizedText: "Promoted normalized text",
     rawSource: { blobId: rawBlob, size: 512 },
     placements: duplicatePlacement ? [placement, placement] : [placement],
     headers: [
@@ -353,6 +354,10 @@ describe("promotion storage adapter contract P2-C20", () => {
     const parsed = parsePromotionUnit(value);
     expect(Object.isFrozen(parsed)).toBe(true);
     expect(Object.isFrozen(parsed.placements)).toBe(true);
+    expect(() => {
+      const { normalizedText: _normalizedText, ...omitted } = value;
+      parsePromotionUnit(omitted);
+    }).toThrow(TypeError);
     expect(() => parsePromotionUnit({ ...value, unexpected: true })).toThrow(TypeError);
     expect(() =>
       parsePromotionUnit({

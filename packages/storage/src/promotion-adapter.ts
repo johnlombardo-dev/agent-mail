@@ -76,10 +76,11 @@ export class PromotionAdapterError extends Error {
  */
 export function parsePromotionUnit(value: unknown): PromotionUnit {
   const input = record(value, "promotion unit");
-  exact(
+  exactAllowOptional(
     input,
     [
       "messageId",
+      "normalizedText",
       "rawSource",
       "placements",
       "headers",
@@ -89,11 +90,13 @@ export function parsePromotionUnit(value: unknown): PromotionUnit {
       "routingDecisions",
       "journal",
     ],
+    [],
     "promotion unit",
   );
 
   const unit: PromotionUnit = {
     messageId: parseCanonicalMessageId(input.messageId),
+    normalizedText: normalizedText(input.normalizedText),
     rawSource: parseBlobReference(input.rawSource, "raw source"),
     placements: array(input.placements, "promotion placements").map(parsePlacement),
     headers: array(input.headers, "promotion headers").map(parseHeader),
@@ -246,6 +249,12 @@ function parseCanonicalMessageId(value: unknown): MessageId {
     throw new TypeError("message ID must be a canonical 64-hex message identity");
   }
   return messageId;
+}
+
+function normalizedText(value: unknown): string {
+  if (typeof value !== "string" || Buffer.byteLength(value, "utf8") > 8 * 1024 * 1024)
+    throw new TypeError("normalized text exceeds the configured limit");
+  return value;
 }
 
 function parseHeader(value: unknown): PromotionHeader {
@@ -439,6 +448,23 @@ function exact(
   if (actual.length !== keys.length || actual.some((key) => !allowed.has(key))) {
     throw new TypeError(`${name} has missing or unknown fields`);
   }
+}
+
+function exactAllowOptional(
+  value: Readonly<Record<string, unknown>>,
+  required: readonly string[],
+  optional: readonly string[],
+  name: string,
+): void {
+  const allowed = new Set([...required, ...optional]);
+  const keys = Object.keys(value);
+  if (
+    !required.every((key) => keys.includes(key)) ||
+    keys.some((key) => !allowed.has(key)) ||
+    keys.length < required.length ||
+    keys.length > required.length + optional.length
+  )
+    throw new TypeError(`${name} has missing or unknown fields`);
 }
 
 function array(value: unknown, name: string): readonly unknown[] {
