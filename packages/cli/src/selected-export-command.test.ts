@@ -46,6 +46,7 @@ import {
   SELECTED_EXPORT_ARGV,
   SELECTED_EXPORT_OPERATION_KEY,
 } from "./selected-export-command";
+import { acquirePortLease, releasePortLease, type PortLease } from "../../../port-lease";
 import {
   fixtureMessageId,
   fixtureStream,
@@ -55,6 +56,15 @@ import {
 } from "./selected-export.fixtures";
 
 const selectedPositions = Object.freeze([3, 104_729, 249_999]);
+const loopbackTestRoles = ["apiIntegration", "browserPreview"] as const;
+
+async function acquireLoopbackPortLease(): Promise<PortLease> {
+  for (const role of loopbackTestRoles) {
+    const lease = await acquirePortLease({ project: "selected-export-composition-252", role });
+    if (lease !== null) return lease;
+  }
+  throw new Error("no Hermes loopback port lease was available");
+}
 
 type SinkStats = Readonly<{
   readonly sink: CommandSink;
@@ -383,22 +393,72 @@ async function startHonoServer(
     sockets.add(socket);
     socket.on("close", () => sockets.delete(socket));
   });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  if (address === null || typeof address === "string") throw new Error("fixture server did not bind");
-  return {
-    client: createCliClient({
-      baseUrl: `http://127.0.0.1:${address.port}`,
-      authorization: "Bearer selected-export-fixture",
-      timeouts: { controlMs: 60_000, streamIdleMs },
-    }),
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        for (const socket of sockets) socket.destroy();
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
-    aborted: () => aborted,
+  const portLease = await acquireLoopbackPortLease();
+  let closePromise: Promise<void> | undefined;
+  let leaseReleased = false;
+  const releaseLease = async (): Promise<void> => {
+    if (leaseReleased) return;
+    leaseReleased = true;
+    await releasePortLease({ lease: portLease });
   };
+  const close = (): Promise<void> => {
+    if (closePromise !== undefined) return closePromise;
+    closePromise = (async () => {
+      let closeError: unknown;
+      try {
+        for (const socket of sockets) socket.destroy();
+        if (server.listening) {
+          await new Promise<void>((resolve, reject) =>
+            server.close((error) => (error === undefined ? resolve() : reject(error))),
+          );
+        }
+      } catch (error: unknown) {
+        closeError = error;
+      }
+      try {
+        await releaseLease();
+      } catch (error: unknown) {
+        closeError ??= error;
+      }
+      if (closeError !== undefined) throw closeError;
+    })();
+    return closePromise;
+  };
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onListening = (): void => {
+        server.removeListener("error", onError);
+        resolve();
+      };
+      const onError = (error: Error): void => {
+        server.removeListener("listening", onListening);
+        reject(error);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      try {
+        server.listen(portLease.port, "127.0.0.1");
+      } catch (error: unknown) {
+        onError(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("fixture server did not bind leased port");
+    }
+    return {
+      client: createCliClient({
+        baseUrl: `http://127.0.0.1:${address.port}`,
+        authorization: "Bearer selected-export-fixture",
+        timeouts: { controlMs: 60_000, streamIdleMs },
+      }),
+      close,
+      aborted: () => aborted,
+    };
+  } catch (error: unknown) {
+    await close().catch(() => undefined);
+    throw error;
+  }
 }
 
 async function waitForExactCleanup(
@@ -791,6 +851,14 @@ function metadataMessageId(frame: ExportFrame): string {
 }
 
 describe("selected-export real API/storage composition", () => {
+  it("releases the Hermes lease exactly once when fixture close is repeated", async () => {
+    const server = await startHonoServer({ fetch: async () => new Response("ok") });
+    await Promise.all([server.close(), server.close()]);
+    const lease = await acquireLoopbackPortLease();
+    expect(lease).not.toBeNull();
+    if (lease !== null) await releasePortLease({ lease });
+  });
+
   it(
     "streams a 250k SQLite selection through the real Hono route and CLI with exact AMEX frames and bounded RSS",
     async () => {
