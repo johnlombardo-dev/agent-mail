@@ -2671,9 +2671,22 @@
         }
       }
     },
-    "appendOnly": true
+    "appendOnly": true,
+    "protocols": ["legacy-v1", "agent-mail.release-evidence/v2"],
+    "v2RecordTypes": ["qualification", "disposition"]
   },
   "resultRecords": [],
+  "executionManifest": {
+    "path": "docs/architecture/release-evidence-execution-manifest.v2.json",
+    "format": "agent-mail.release-evidence-execution-manifest/v2",
+    "ownerIssueId": 176,
+    "replayRequired": true,
+    "sha256": "f40079de29611d92f9add226cd93898839300307d8069f4b4870a94bf59b3b48"
+  },
+  "legacyV1Projection": {
+    "status": "inactive",
+    "reason": "Pre-v2 records remain immutable historical context and cannot promote any evidence gate; only active v2 qualifications derive current promotion."
+  },
   "authorityBinding": {
     "findingRows": "docs/planning/EVIDENCE.md",
     "shieldRows": "PLAN.md",

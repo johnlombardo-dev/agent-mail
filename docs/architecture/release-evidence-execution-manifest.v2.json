@@ -1,0 +1,542 @@
+{
+  "format": "agent-mail.release-evidence-execution-manifest/v2",
+  "schemaVersion": 2,
+  "ownerIssueId": 176,
+  "authority": {
+    "planSha256": "15fbc0806a52c8a0ae9e46f855360a775e9a78f46fad7e1919a6135b78b3cc72",
+    "evidenceSha256": "a141f641cf9254ca04f91c3084419094dc6d8169c3f8f0e0ad26c79f53437fc9",
+    "designIssue": 255,
+    "designComment": 5376054403,
+    "signedReadyComment": 5376105401
+  },
+  "replay": {
+    "required": true,
+    "primaryRole": "primary",
+    "replayRole": "independent-replay",
+    "compare": ["candidate", "argv", "cwd", "sources", "fixture", "assertions"],
+    "timing": "independent"
+  },
+  "attackInventory": [
+    "forged-runner-process",
+    "forged-timing",
+    "forged-environment",
+    "forged-stream-digest",
+    "forged-exit",
+    "forged-signal",
+    "forged-timeout",
+    "nonexistent-source",
+    "nonexistent-assertion-path",
+    "checker-only-assertion",
+    "evaluator-only-scale",
+    "descriptor-as-fixture-content",
+    "short-fixture",
+    "hand-authored-metric",
+    "unmeasured-zero",
+    "parent-only-rss",
+    "leaked-descendant",
+    "leaked-handle",
+    "leaked-listener",
+    "leaked-lease",
+    "leaked-cursor",
+    "leaked-stream",
+    "leaked-temp-root",
+    "stream-omission",
+    "stream-mutation",
+    "dirty-candidate",
+    "wrong-candidate",
+    "threshold-drift",
+    "correctness-overridden-by-performance",
+    "impossible-timing",
+    "reused-replay",
+    "divergent-replay",
+    "mixed-evidence-source-commit",
+    "history-deletion",
+    "history-reorder",
+    "history-rewrite",
+    "unauthorized-revocation",
+    "partial-revocation",
+    "duplicate-revocation",
+    "revoked-projection",
+    "legacy-v1-promotion",
+    "zero-populated-migration",
+    "synthetic-positive-receipt",
+    "protected-harness-instrumentation"
+  ],
+  "runner": {
+    "path": "scripts/qualification/capture-release-evidence.mjs",
+    "replayPath": "scripts/qualification/replay-release-evidence.mjs",
+    "receiptFormat": "agent-mail.executable-receipt/v2",
+    "canonicalJson": "recursive-object-key-sort-array-order-preserved",
+    "sources": [
+      {
+        "role": "checker",
+        "path": "docs/architecture/release-evidence-index-check.v1.mjs",
+        "gitBlob": "458a00f4c4010e0ae01ec6926a5d2f61db8a1e19",
+        "sha256": "90befff49a8da67f124d4dd288e5b54c28416f1912cad4b5b92f69f0bf424a3d"
+      },
+      {
+        "role": "capture-runner",
+        "path": "scripts/qualification/capture-release-evidence.mjs",
+        "gitBlob": "aec9caa63be822b5e52549575f49a6e74020b806",
+        "sha256": "44a8f99d3fbdd8f1a164afd31d7518b2a65fd38d213b6376b603193f9a4b4c72"
+      },
+      {
+        "role": "replay-runner",
+        "path": "scripts/qualification/replay-release-evidence.mjs",
+        "gitBlob": "5c901a8b4c6e843b2b13a21010d09b2088aef21b",
+        "sha256": "14338670ed6f6e3d98ac568cc274cf5862a8f5beee6eb35d8937d8187d7dd064"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "id": "mime-250mib",
+      "gate": "capacity",
+      "obligationIds": ["F17", "S04"],
+      "cwd": ".",
+      "argv": ["bun", "test", "packages/imap/test/mime-capacity-p2-c11.test.ts"],
+      "sources": [
+        {
+          "role": "test",
+          "path": "packages/imap/test/mime-capacity-p2-c11.test.ts",
+          "gitBlob": "01929f4458e596cee8b73049fc8e1b9758a5cbd5",
+          "sha256": "98a30bd92a9312f092198541d55afcb1393b085683d29125e70c8d136642cccb"
+        },
+        {
+          "role": "package-manifest",
+          "path": "package.json",
+          "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
+          "sha256": "1d6fa95589b7b5920d375a09083147ce20a76767ca46eb4b361a8692a13fa80f"
+        },
+        {
+          "role": "lockfile",
+          "path": "bun.lock",
+          "gitBlob": "45e8eca1f86c136f86a75cdca57b29b8bbde7d62",
+          "sha256": "e46c6294e4ae5f47819bce3c96a9d037b6494ec4a7b7b6013bf9e12ea2aca5a4"
+        }
+      ],
+      "fixture": {
+        "kind": "generated-stream",
+        "id": "issue-176-mime-250mib",
+        "recipe": "materialize-or-stream-exactly-262144000-bytes",
+        "minimumBytes": 262144000
+      },
+      "assertions": [
+        {
+          "id": "mime-streaming-gate",
+          "kind": "source-token",
+          "sourcePath": "packages/imap/test/mime-capacity-p2-c11.test.ts",
+          "token": "streaming.gate",
+          "occurrences": 1
+        },
+        {
+          "id": "mime-buffering-counterexample",
+          "kind": "source-token",
+          "sourcePath": "packages/imap/test/mime-capacity-p2-c11.test.ts",
+          "token": "buffering.gate",
+          "occurrences": 1
+        }
+      ],
+      "observations": [
+        "materializedBytes",
+        "streamedBytes",
+        "peakRss",
+        "cleanup",
+        "counterexample"
+      ],
+      "thresholds": {
+        "bytes": { "operator": "===", "limit": 262144000, "unit": "bytes" },
+        "peakGrowth": { "operator": "<=", "limit": 134217728, "unit": "bytes" }
+      },
+      "probes": ["processTreeRss", "fileDescriptors", "listeners", "tempRoot", "streamCompletion"],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "fts-generate-250k",
+      "gate": "capacity",
+      "obligationIds": ["F22"],
+      "cwd": ".",
+      "argv": [
+        "bun",
+        "scripts/capacity/generate-search-corpus.ts",
+        "250000",
+        "<temp-corpus>",
+        "1162026"
+      ],
+      "sources": [
+        {
+          "role": "generator",
+          "path": "scripts/capacity/generate-search-corpus.ts",
+          "gitBlob": "7be405a63a1d2b79e1c634f25bc9196f3b42e3ff",
+          "sha256": "23b39f7b42a25c3fe8c6741a3198c5cd96f03e8be80bb6f70c98c95bcb716557"
+        },
+        {
+          "role": "package-manifest",
+          "path": "package.json",
+          "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
+          "sha256": "1d6fa95589b7b5920d375a09083147ce20a76767ca46eb4b361a8692a13fa80f"
+        },
+        {
+          "role": "lockfile",
+          "path": "bun.lock",
+          "gitBlob": "45e8eca1f86c136f86a75cdca57b29b8bbde7d62",
+          "sha256": "e46c6294e4ae5f47819bce3c96a9d037b6494ec4a7b7b6013bf9e12ea2aca5a4"
+        }
+      ],
+      "fixture": {
+        "kind": "generated-file",
+        "id": "issue-176-fts-250k",
+        "seed": 1162026,
+        "rowCount": 250000,
+        "recipe": "deterministic-search-corpus"
+      },
+      "assertions": [
+        {
+          "id": "fts-corpus-inventory",
+          "kind": "source-token",
+          "sourcePath": "scripts/capacity/generate-search-corpus.ts",
+          "token": "CorpusInventory",
+          "occurrences": 1
+        }
+      ],
+      "observations": [
+        "rowCount",
+        "logicalChecksum",
+        "physicalDigest",
+        "foreignKeys",
+        "integrity",
+        "cleanup"
+      ],
+      "thresholds": { "rowCount": { "operator": "===", "limit": 250000, "unit": "rows" } },
+      "probes": [
+        "processTreeRss",
+        "fileDescriptors",
+        "tempRoot",
+        "sqliteIntegrity",
+        "sqliteForeignKeys"
+      ],
+      "timeoutMs": 600000
+    },
+    {
+      "id": "fts-measure-250k",
+      "gate": "capacity",
+      "obligationIds": ["F22", "F30"],
+      "cwd": ".",
+      "argv": [
+        "bun",
+        "scripts/capacity/benchmark-search.ts",
+        "<temp-corpus>",
+        "<measurement-output>",
+        "1500",
+        "<benchmark-copy>"
+      ],
+      "sources": [
+        {
+          "role": "benchmark",
+          "path": "scripts/capacity/benchmark-search.ts",
+          "gitBlob": "b8de483c16fa4a246044c4da3a6f1494ba6a830f",
+          "sha256": "1e60cd86c5359c0a00606839cb364dba0fa5c48acbcd5516b41c59e6c9b32a0c"
+        },
+        {
+          "role": "package-manifest",
+          "path": "package.json",
+          "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
+          "sha256": "1d6fa95589b7b5920d375a09083147ce20a76767ca46eb4b361a8692a13fa80f"
+        },
+        {
+          "role": "lockfile",
+          "path": "bun.lock",
+          "gitBlob": "45e8eca1f86c136f86a75cdca57b29b8bbde7d62",
+          "sha256": "e46c6294e4ae5f47819bce3c96a9d037b6494ec4a7b7b6013bf9e12ea2aca5a4"
+        }
+      ],
+      "fixture": {
+        "kind": "generated-file",
+        "id": "issue-176-fts-250k",
+        "rowCount": 250000,
+        "recipe": "generated-corpus-from-prior-step"
+      },
+      "assertions": [
+        {
+          "id": "fts-exact-top20",
+          "kind": "source-token",
+          "sourcePath": "scripts/capacity/benchmark-search.ts",
+          "token": "top20",
+          "occurrences": 1
+        }
+      ],
+      "observations": ["orderedTop20", "p95", "queryPlan", "attribution", "cleanup"],
+      "thresholds": {
+        "rowCount": { "operator": "===", "limit": 250000, "unit": "rows" },
+        "p95": { "operator": "<", "limit": 250, "unit": "milliseconds" }
+      },
+      "probes": ["processTreeRss", "fileDescriptors", "tempRoot", "queryPlan", "sqliteClose"],
+      "timeoutMs": 600000
+    },
+    {
+      "id": "selected-export-slow-sink",
+      "gate": "capacity",
+      "obligationIds": ["F23", "S05"],
+      "cwd": ".",
+      "argv": [
+        "bun",
+        "test",
+        "packages/daemon/test/selected-export-stream-p6-c19.test.ts",
+        "packages/cli/src/selected-export-command.test.ts"
+      ],
+      "sources": [
+        {
+          "role": "daemon-test",
+          "path": "packages/daemon/test/selected-export-stream-p6-c19.test.ts",
+          "gitBlob": "cbde6957b01576105ce0a4f68e62f28c87a23598",
+          "sha256": "b13ab48beed594d2da0155ab8d78ade98853e3ed6da351ce533c7445cfd9454f"
+        },
+        {
+          "role": "cli-test",
+          "path": "packages/cli/src/selected-export-command.test.ts",
+          "gitBlob": "93cfd18863d36c8b94cc319eaa3c6ba1705aaaba",
+          "sha256": "52943363e252e80c60724c551ab0e73a8f5318269b54e121bcad2c430f198dbd"
+        },
+        {
+          "role": "fixture",
+          "path": "packages/cli/src/selected-export.fixtures.ts",
+          "gitBlob": "c9eb6ee15ab2933fcb38fce541db882f4de0e6ce",
+          "sha256": "95437d62c9316c96ced83f618b5452a3a0936a9b36dd35322e02f74fe35ea9bb"
+        }
+      ],
+      "fixture": {
+        "kind": "committed-bytes",
+        "id": "issue-176-selected-export-slow-sink",
+        "count": 1
+      },
+      "assertions": [
+        {
+          "id": "selected-export-streaming",
+          "kind": "source-token",
+          "sourcePath": "packages/daemon/test/selected-export-stream-p6-c19.test.ts",
+          "token": "slow sink",
+          "occurrences": 1
+        }
+      ],
+      "observations": ["exportCount", "backpressure", "stall", "cancellation", "cleanup"],
+      "thresholds": { "exportCount": { "operator": ">=", "limit": 1, "unit": "exports" } },
+      "probes": [
+        "processTreeRss",
+        "fileDescriptors",
+        "listeners",
+        "HermesLease",
+        "tempRoot",
+        "streamCompletion"
+      ],
+      "timeoutMs": 600000
+    },
+    {
+      "id": "http-stream-admission",
+      "gate": "capacity",
+      "obligationIds": ["SEC-R03"],
+      "cwd": ".",
+      "argv": ["bun", "test", "packages/daemon/test/http-admission-sec-r03.test.ts"],
+      "sources": [
+        {
+          "role": "test",
+          "path": "packages/daemon/test/http-admission-sec-r03.test.ts",
+          "gitBlob": "b69a9a9b261483988127119052fbdfed30169c3e",
+          "sha256": "928877aaf8f05a5a74294ab8156e78d2bc43094698eae817ed6b1e48184d883f"
+        },
+        {
+          "role": "package-manifest",
+          "path": "package.json",
+          "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
+          "sha256": "1d6fa95589b7b5920d375a09083147ce20a76767ca46eb4b361a8692a13fa80f"
+        },
+        {
+          "role": "lockfile",
+          "path": "bun.lock",
+          "gitBlob": "45e8eca1f86c136f86a75cdca57b29b8bbde7d62",
+          "sha256": "e46c6294e4ae5f47819bce3c96a9d037b6494ec4a7b7b6013bf9e12ea2aca5a4"
+        }
+      ],
+      "fixture": {
+        "kind": "generated-stream",
+        "id": "issue-176-http-stream-admission",
+        "requestCount": 1
+      },
+      "assertions": [
+        {
+          "id": "http-admission-sec-r03",
+          "kind": "source-token",
+          "sourcePath": "packages/daemon/test/http-admission-sec-r03.test.ts",
+          "token": "SEC-R03",
+          "occurrences": 1
+        }
+      ],
+      "observations": ["requestCount", "admission", "streamCompletion", "cleanup"],
+      "thresholds": { "requestCount": { "operator": ">=", "limit": 1, "unit": "requests" } },
+      "probes": [
+        "processTreeRss",
+        "fileDescriptors",
+        "listeners",
+        "HermesLease",
+        "tempRoot",
+        "streamCompletion"
+      ],
+      "timeoutMs": 600000
+    },
+    {
+      "id": "queue-backpressure",
+      "gate": "capacity",
+      "obligationIds": ["F17", "S04"],
+      "cwd": ".",
+      "argv": ["bun", "test", "packages/imap/test/raw-download-queue-p3-c07.test.ts"],
+      "sources": [
+        {
+          "role": "test",
+          "path": "packages/imap/test/raw-download-queue-p3-c07.test.ts",
+          "gitBlob": "71033e60636f9c0c32007a6dfe6813e5a4a06b4a",
+          "sha256": "53146a3be9ddb66fa9374ad04ed59fca533601c0daa8f07e51925292c68f583f"
+        },
+        {
+          "role": "package-manifest",
+          "path": "package.json",
+          "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
+          "sha256": "1d6fa95589b7b5920d375a09083147ce20a76767ca46eb4b361a8692a13fa80f"
+        },
+        {
+          "role": "lockfile",
+          "path": "bun.lock",
+          "gitBlob": "45e8eca1f86c136f86a75cdca57b29b8bbde7d62",
+          "sha256": "e46c6294e4ae5f47819bce3c96a9d037b6494ec4a7b7b6013bf9e12ea2aca5a4"
+        }
+      ],
+      "fixture": {
+        "kind": "generated-stream",
+        "id": "issue-176-queue-backpressure",
+        "itemCount": 1
+      },
+      "assertions": [
+        {
+          "id": "queue-backpressure-bound",
+          "kind": "source-token",
+          "sourcePath": "packages/imap/test/raw-download-queue-p3-c07.test.ts",
+          "token": "backpressure",
+          "occurrences": 1
+        }
+      ],
+      "observations": ["itemCount", "queueSlots", "backpressure", "cleanup"],
+      "thresholds": { "itemCount": { "operator": ">=", "limit": 1, "unit": "items" } },
+      "probes": ["processTreeRss", "fileDescriptors", "tempRoot", "queueCompletion"],
+      "timeoutMs": 600000
+    },
+    {
+      "id": "cancellation",
+      "gate": "capacity",
+      "obligationIds": ["F18", "S05"],
+      "cwd": ".",
+      "argv": ["bun", "test", "packages/imap/test/idle-session-p3-c18.test.ts"],
+      "sources": [
+        {
+          "role": "test",
+          "path": "packages/imap/test/idle-session-p3-c18.test.ts",
+          "gitBlob": "4bcf398d76e960739b70893a65bf979f56fe1c7f",
+          "sha256": "c2e6b3fa9c09f5f996d42482b222229ed6f313ec06981f496e5b12cece5aee14"
+        },
+        {
+          "role": "package-manifest",
+          "path": "package.json",
+          "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
+          "sha256": "1d6fa95589b7b5920d375a09083147ce20a76767ca46eb4b361a8692a13fa80f"
+        },
+        {
+          "role": "lockfile",
+          "path": "bun.lock",
+          "gitBlob": "45e8eca1f86c136f86a75cdca57b29b8bbde7d62",
+          "sha256": "e46c6294e4ae5f47819bce3c96a9d037b6494ec4a7b7b6013bf9e12ea2aca5a4"
+        }
+      ],
+      "fixture": { "kind": "generated-stream", "id": "issue-176-cancellation", "sessionCount": 1 },
+      "assertions": [
+        {
+          "id": "idle-cancellation-cleanup",
+          "kind": "source-token",
+          "sourcePath": "packages/imap/test/idle-session-p3-c18.test.ts",
+          "token": "cancel",
+          "occurrences": 1
+        }
+      ],
+      "observations": ["sessionCount", "cancellation", "cleanup", "zeroListeners"],
+      "thresholds": { "sessionCount": { "operator": ">=", "limit": 1, "unit": "sessions" } },
+      "probes": ["processTreeRss", "fileDescriptors", "listeners", "tempRoot", "streamCompletion"],
+      "timeoutMs": 600000
+    },
+    {
+      "id": "lifecycle-leak",
+      "gate": "capacity",
+      "obligationIds": ["F18", "F23", "S05"],
+      "cwd": ".",
+      "argv": [
+        "bun",
+        "test",
+        "packages/daemon/test/polling-timer-actor-p3-c20.test.ts",
+        "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts"
+      ],
+      "sources": [
+        {
+          "role": "polling-test",
+          "path": "packages/daemon/test/polling-timer-actor-p3-c20.test.ts",
+          "gitBlob": "f011d7f4c6a0a925a7eadef1d6de66b79985932e",
+          "sha256": "1e635cd24da437caa19f66318c90e6b3cc023a0dc168f686d7f7201d42ec708d"
+        },
+        {
+          "role": "conformance-test",
+          "path": "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts",
+          "gitBlob": "955d81f75158ed4c889b58c7630aee2d697520da",
+          "sha256": "9df90efa3908e93f813f9d36c93b1182c229b59674a6ba9674312423554ad0db"
+        },
+        {
+          "role": "package-manifest",
+          "path": "package.json",
+          "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
+          "sha256": "1d6fa95589b7b5920d375a09083147ce20a76767ca46eb4b361a8692a13fa80f"
+        },
+        {
+          "role": "lockfile",
+          "path": "bun.lock",
+          "gitBlob": "45e8eca1f86c136f86a75cdca57b29b8bbde7d62",
+          "sha256": "e46c6294e4ae5f47819bce3c96a9d037b6494ec4a7b7b6013bf9e12ea2aca5a4"
+        }
+      ],
+      "fixture": {
+        "kind": "generated-stream",
+        "id": "issue-176-lifecycle-leak",
+        "iterationCount": 1
+      },
+      "assertions": [
+        {
+          "id": "polling-timer-cleanup",
+          "kind": "source-token",
+          "sourcePath": "packages/daemon/test/polling-timer-actor-p3-c20.test.ts",
+          "token": "timer",
+          "occurrences": 1
+        },
+        {
+          "id": "sync-runtime-cleanup",
+          "kind": "source-token",
+          "sourcePath": "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts",
+          "token": "cleanup",
+          "occurrences": 1
+        }
+      ],
+      "observations": ["iterationCount", "timers", "subscriptions", "children", "cleanup"],
+      "thresholds": { "iterationCount": { "operator": ">=", "limit": 1, "unit": "iterations" } },
+      "probes": [
+        "processTreeRss",
+        "fileDescriptors",
+        "listeners",
+        "HermesLease",
+        "tempRoot",
+        "childActors"
+      ],
+      "timeoutMs": 600000
+    }
+  ]
+}

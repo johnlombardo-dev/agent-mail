@@ -49,6 +49,7 @@ describe("release qualification evidence index", () => {
       staleClearRejected: true,
       corruptLiveRejected: true,
       doubleApplicationStable: true,
+      v2Execution: { attacks: 12, accepted: true, capture: true, replay: true },
       accepted: true,
     });
   });

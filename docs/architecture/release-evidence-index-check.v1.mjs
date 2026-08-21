@@ -3,10 +3,15 @@ import { execFileSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { validateManifest as validateExecutionManifest } from "../../scripts/qualification/capture-release-evidence.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(here, "../..");
 const indexPath = join(here, "release-evidence-index.v1.json");
+const executionManifestPath = join(
+  repositoryRoot,
+  "docs/architecture/release-evidence-execution-manifest.v2.json",
+);
 const findingIdPattern = /^(?:F(?:0[1-9]|[12][0-9]|30)(?:-[PR])?|SEC-R0[1-7]|CRED-0[1-8])$/u;
 const shieldIdPattern = /^S(?:0[1-9]|1[0-2])$/u;
 const requiredEvidenceClasses = [
@@ -367,6 +372,8 @@ const resultRecordSchema = {
   capacitySubgates: requiredCapacitySubgates,
   capacityManifest,
   appendOnly: true,
+  protocols: ["legacy-v1", "agent-mail.release-evidence/v2"],
+  v2RecordTypes: ["qualification", "disposition"],
 };
 let repositoryFilesCache;
 let currentCommitCache;
@@ -1475,6 +1482,214 @@ function validateBundleRecord(
   return ownerRule;
 }
 
+function v2EvidenceRef(record, ref, root, label) {
+  assert(
+    ref && typeof ref.path === "string" && /^[0-9a-f]{64}$/u.test(ref.sha256),
+    `${label} reference is invalid`,
+  );
+  canonicalOwnerEvidencePath(ref.path, record.ownerIssueId, label);
+  const bytes = regularEvidenceBlob(
+    record.evidenceCommit,
+    ref.path,
+    root,
+    label,
+    record.ownerIssueId,
+  );
+  assert(digest(bytes) === ref.sha256, `${label} digest drifted`);
+  return bytes;
+}
+
+function v2CandidateRef(record, ref, root, label) {
+  assert(
+    ref && typeof ref.path === "string" && /^[0-9a-f]{64}$/u.test(ref.sha256),
+    `${label} reference is invalid`,
+  );
+  const bytes = regularCandidateBlob(record.candidateCommit, ref.path, root, label);
+  assert(digest(bytes) === ref.sha256, `${label} digest drifted`);
+  return bytes;
+}
+
+function validateV2Record(record, baseline, sequence, previousDigest, root, options = {}) {
+  const label = `v2 result sequence ${record.sequence}`;
+  assert(record.protocol === "agent-mail.release-evidence/v2", `${label} protocol is invalid`);
+  assert(
+    record.recordType === "qualification" || record.recordType === "disposition",
+    `${label} record type is invalid`,
+  );
+  assert(
+    Number.isInteger(record.sequence) && record.sequence === sequence,
+    `${label} sequence is not monotonic`,
+  );
+  assert(
+    (sequence === 1 && record.previousRecordDigest === null) ||
+      (sequence > 1 && record.previousRecordDigest === previousDigest),
+    `${label} hash chain is broken`,
+  );
+  assert(
+    Number.isInteger(record.ownerIssueId) && resultOwnerAuthority[String(record.ownerIssueId)],
+    `${label} owner is unauthorized`,
+  );
+  const ownerRule = resultOwnerAuthority[String(record.ownerIssueId)];
+  if (record.recordType === "disposition") {
+    assert(
+      record.ownerIssueId === 184 &&
+        record.mode === "disposition" &&
+        record.gateId === "disposition",
+      `${label} disposition is not #184-only`,
+    );
+    assert(
+      Array.isArray(record.obligationIds) && record.obligationIds.length === 0,
+      `${label} disposition claims obligations`,
+    );
+    assert(
+      Number.isInteger(record.targetSequence) &&
+        /^[0-9a-f]{64}$/u.test(record.targetRecordDigest ?? ""),
+      `${label} disposition target is incomplete`,
+    );
+    assert(
+      typeof record.reasonCode === "string" && record.reasonCode.length > 0,
+      `${label} disposition reason is missing`,
+    );
+    assert(
+      record.result === "invalidated" && record.observedOutcome?.status === "invalidated",
+      `${label} disposition outcome is invalid`,
+    );
+    assert(record.reviewArtifact, `${label} disposition review artifact is missing`);
+    v2EvidenceRef(record, record.reviewArtifact, root, `${label} review artifact`);
+    return ownerRule;
+  }
+  assert(
+    record.mode === "promotion" && requiredGateIds.includes(record.gateId),
+    `${label} qualification mode/gate is invalid`,
+  );
+  assert(ownerRule.gateIds.includes(record.gateId), `${label} owner cannot write gate`);
+  assert(
+    Array.isArray(record.obligationIds) && record.obligationIds.length > 0,
+    `${label} qualification coverage is empty`,
+  );
+  for (const obligationId of record.obligationIds) {
+    assert(
+      ownerRule.obligationIds.includes(obligationId),
+      `${label} owner cannot write ${obligationId}`,
+    );
+    const baselineRow = baseline.get(obligationId);
+    assert(
+      baselineRow && baselineRow.result.kind !== "superseded",
+      `${label} obligation history is invalid`,
+    );
+  }
+  assert(
+    record.result === "pass" || record.result === "fail" || record.result === "blocked",
+    `${label} result is invalid`,
+  );
+  assert(record.observedOutcome?.status === record.result, `${label} observed outcome is detached`);
+  assert(
+    /^[0-9a-f]{40}$/u.test(record.candidateCommit) && /^[0-9a-f]{40}$/u.test(record.candidateTree),
+    `${label} candidate identity is invalid`,
+  );
+  assert(/^[0-9a-f]{40}$/u.test(record.evidenceCommit), `${label} evidence identity is invalid`);
+  assert(
+    gitExists(record.candidateCommit, "", root) && gitExists(record.evidenceCommit, "", root),
+    `${label} commit is missing`,
+  );
+  const candidateTree = execFileSync("git", ["rev-parse", `${record.candidateCommit}^{tree}`], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+  assert(candidateTree === record.candidateTree, `${label} candidate tree drifted`);
+  try {
+    execFileSync(
+      "git",
+      ["merge-base", "--is-ancestor", record.candidateCommit, record.evidenceCommit],
+      { cwd: root, stdio: "ignore" },
+    );
+  } catch {
+    fail(`${label} candidate is not ancestor of evidence commit`);
+  }
+  const evidenceParents = execFileSync(
+    "git",
+    ["rev-list", "--parents", "-n", "1", record.evidenceCommit],
+    { cwd: root, encoding: "utf8" },
+  )
+    .trim()
+    .split(/\s+/u);
+  assert(evidenceParents.length === 2, `${label} evidence commit is not a first-parent append`);
+  assert(
+    record.manifest?.path === "docs/architecture/release-evidence-execution-manifest.v2.json",
+    `${label} manifest path is not canonical`,
+  );
+  const manifestBytes = regularCandidateBlob(
+    record.candidateCommit,
+    record.manifest.path,
+    root,
+    `${label} manifest`,
+  );
+  assert(digest(manifestBytes) === record.manifest.sha256, `${label} manifest digest drifted`);
+  const manifest = JSON.parse(manifestBytes.toString("utf8"));
+  validateExecutionManifest(manifest, root, record.candidateCommit);
+  assert(
+    Array.isArray(record.primaryReceipt) && record.primaryReceipt.length > 0,
+    `${label} primary receipt is missing`,
+  );
+  assert(
+    Array.isArray(record.replayReceipt) && record.replayReceipt.length > 0,
+    `${label} replay receipt is missing`,
+  );
+  const receipts = [];
+  for (const [role, refs] of [
+    ["primary", record.primaryReceipt],
+    ["independent-replay", record.replayReceipt],
+  ]) {
+    for (const ref of refs) {
+      const bytes = v2EvidenceRef(record, ref, root, `${label} ${role} receipt`);
+      const receipt = JSON.parse(bytes.toString("utf8"));
+      const step = manifest.steps.find((candidate) => candidate.id === receipt.manifestStepId);
+      assert(step, `${label} receipt step is not in manifest`);
+      assert(receipt.role === role, `${label} receipt role is detached`);
+      validateExecutableReceipt(receipt, manifest, step, { repositoryRoot: root });
+      receipts.push(receipt);
+    }
+  }
+  assert(
+    receipts.some((receipt) => receipt.role === "primary") &&
+      receipts.some((receipt) => receipt.role === "independent-replay"),
+    `${label} replay coverage is incomplete`,
+  );
+  const primary = receipts.find((receipt) => receipt.role === "primary");
+  const replay = receipts.find((receipt) => receipt.role === "independent-replay");
+  for (const key of ["commit", "tree", "manifestPath", "manifestSha256"])
+    assert(primary.candidate[key] === replay.candidate[key], `${label} replay ${key} diverged`);
+  assert(
+    primary.runId !== replay.runId && primary.result === "pass" && replay.result === "pass",
+    `${label} independent replay did not pass`,
+  );
+  assert(record.bundle, `${label} bundle is missing`);
+  const bundleBytes = v2EvidenceRef(record, record.bundle, root, `${label} bundle`);
+  const bundle = JSON.parse(bundleBytes.toString("utf8"));
+  assert(
+    bundle.protocol === "agent-mail.release-evidence-bundle/v2" &&
+      bundle.record?.sequence === record.sequence,
+    `${label} bundle projection is detached`,
+  );
+  assert(
+    JSON.stringify(bundle.record) ===
+      JSON.stringify({
+        protocol: record.protocol,
+        recordType: record.recordType,
+        sequence: record.sequence,
+        previousRecordDigest: record.previousRecordDigest,
+        ownerIssueId: record.ownerIssueId,
+        mode: record.mode,
+        gateId: record.gateId,
+        obligationIds: record.obligationIds,
+        candidateCommit: record.candidateCommit,
+        candidateTree: record.candidateTree,
+      }),
+    `${label} bundle record projection is incomplete`,
+  );
+  return ownerRule;
+}
+
 function validateResultRecords(indexData, baselineRows, options = {}) {
   assert(Array.isArray(indexData.resultRecords), "resultRecords must be append-only array");
   const baseline = new Map(baselineRows.map((row) => [row.id, row]));
@@ -1519,14 +1734,50 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
     .map((line) => line.slice(3).trim());
   for (let recordIndex = 0; recordIndex < indexData.resultRecords.length; recordIndex += 1) {
     const record = indexData.resultRecords[recordIndex];
-    const ownerRule = validateBundleRecord(
-      record,
-      baseline,
-      recordIndex + 1,
-      previousDigest,
-      validationRoot,
-      options,
-    );
+    const ownerRule =
+      record.protocol === "agent-mail.release-evidence/v2"
+        ? validateV2Record(
+            record,
+            baseline,
+            recordIndex + 1,
+            previousDigest,
+            validationRoot,
+            options,
+          )
+        : validateBundleRecord(
+            record,
+            baseline,
+            recordIndex + 1,
+            previousDigest,
+            validationRoot,
+            options,
+          );
+    if (
+      record.protocol === "agent-mail.release-evidence/v2" &&
+      record.recordType === "disposition"
+    ) {
+      const target = indexData.resultRecords[record.targetSequence - 1];
+      assert(
+        target?.protocol === "agent-mail.release-evidence/v2" &&
+          target.recordType === "qualification",
+        `v2 disposition ${record.sequence} target is not a qualification`,
+      );
+      assert(
+        record.targetRecordDigest === recordDigest(target),
+        `v2 disposition ${record.sequence} target digest is detached`,
+      );
+      assert(
+        !indexData.resultRecords
+          .slice(0, recordIndex)
+          .some(
+            (candidate) =>
+              candidate.protocol === "agent-mail.release-evidence/v2" &&
+              candidate.recordType === "disposition" &&
+              candidate.targetSequence === record.targetSequence,
+          ),
+        `v2 disposition ${record.sequence} targets a record twice`,
+      );
+    }
     if (options.mode !== "prospective" && !options.bundleCommit) {
       assert(
         record.evidenceCommit === evidenceHead ||
@@ -1548,7 +1799,11 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
     if (recordIndex >= priorRecords.length) {
       const allowedDirtyPaths = new Set([
         indexPath.slice(repositoryRoot.length + 1),
-        record.bundle.path,
+        ...(record.bundle?.path ? [record.bundle.path] : []),
+        ...(record.manifest?.path ? [record.manifest.path] : []),
+        ...(record.primaryReceipt ?? []).map((ref) => ref.path),
+        ...(record.replayReceipt ?? []).map((ref) => ref.path),
+        ...(record.reviewArtifact?.path ? [record.reviewArtifact.path] : []),
         ...((record.evidence?.subgates ?? {}) &&
           Object.values(record.evidence.subgates).flatMap((subgate) =>
             (subgate.rawSamples ?? []).map((sample) => sample.path),
@@ -1584,7 +1839,10 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
       .filter(Boolean);
     const allowed = new Set([
       "docs/architecture/release-evidence-index.v1.json",
-      record.bundle.path,
+      ...(record.bundle?.path ? [record.bundle.path] : []),
+      ...(record.primaryReceipt ?? []).map((ref) => ref.path),
+      ...(record.replayReceipt ?? []).map((ref) => ref.path),
+      ...(record.reviewArtifact?.path ? [record.reviewArtifact.path] : []),
     ]);
     if (record.evidence?.subgates) {
       for (const subgate of Object.values(record.evidence.subgates)) {
@@ -1620,8 +1878,23 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
 function applyResultRecords(baseRows, baseGates, records) {
   const rows = structuredClone(baseRows);
   const gates = structuredClone(baseGates);
+  const revoked = new Set(
+    records
+      .filter(
+        (record) =>
+          record.protocol === "agent-mail.release-evidence/v2" &&
+          record.recordType === "disposition",
+      )
+      .map((record) => record.targetSequence),
+  );
   for (const record of records) {
-    if (record.result !== "pass") continue;
+    if (
+      record.result !== "pass" ||
+      revoked.has(record.sequence) ||
+      record.protocol === "legacy-v1" ||
+      record.recordType === "disposition"
+    )
+      continue;
     for (const obligationId of record.obligationIds) {
       const row = rows.find((candidate) => candidate.id === obligationId);
       row.evidence[record.gateId] = "locally verified";
@@ -1635,6 +1908,8 @@ function applyResultRecords(baseRows, baseGates, records) {
         records
           .filter(
             (record) =>
+              record.protocol !== "legacy-v1" &&
+              !revoked.has(record.sequence) &&
               record.ownerIssueId === issueId &&
               record.gateId === gate.id &&
               record.mode === "promotion" &&
@@ -1650,6 +1925,8 @@ function applyResultRecords(baseRows, baseGates, records) {
           ? covered.size === 0 &&
             records.some(
               (record) =>
+                record.protocol !== "legacy-v1" &&
+                !revoked.has(record.sequence) &&
                 record.ownerIssueId === issueId &&
                 record.gateId === gate.id &&
                 record.result === "pass",
@@ -1660,7 +1937,11 @@ function applyResultRecords(baseRows, baseGates, records) {
       const recordIds = records
         .filter(
           (record) =>
-            record.gateId === gate.id && record.mode === "promotion" && record.result === "pass",
+            record.protocol !== "legacy-v1" &&
+            !revoked.has(record.sequence) &&
+            record.gateId === gate.id &&
+            record.mode === "promotion" &&
+            record.result === "pass",
         )
         .map((record) => record.sequence);
       gate.status = "locally verified";
@@ -1778,6 +2059,350 @@ function checkFrozenInputs(index) {
   for (const id of canonicalFrozenPaths.keys()) assert(seen.has(id), `missing frozen input ${id}`);
 }
 
+function checkExecutionManifest(index) {
+  assert(
+    index.executionManifest?.path ===
+      "docs/architecture/release-evidence-execution-manifest.v2.json",
+    "execution manifest path is not canonical",
+  );
+  assert(
+    index.executionManifest?.format === "agent-mail.release-evidence-execution-manifest/v2" &&
+      index.executionManifest.ownerIssueId === 176 &&
+      index.executionManifest.replayRequired === true,
+    "execution manifest authority is incomplete",
+  );
+  const manifest = readJson(executionManifestPath);
+  assert(
+    manifest.authority?.planSha256 ===
+      "15fbc0806a52c8a0ae9e46f855360a775e9a78f46fad7e1919a6135b78b3cc72" &&
+      manifest.authority?.evidenceSha256 ===
+        "a141f641cf9254ca04f91c3084419094dc6d8169c3f8f0e0ad26c79f53437fc9",
+    "execution manifest planning authority drifted",
+  );
+  validateExecutionManifest(manifest, repositoryRoot, currentCommit());
+  assert(
+    index.executionManifest.sha256 === digest(readFileSync(executionManifestPath)),
+    "execution manifest digest drifted",
+  );
+  assert(
+    index.legacyV1Projection?.status === "inactive" &&
+      typeof index.legacyV1Projection.reason === "string" &&
+      index.legacyV1Projection.reason.includes("cannot promote"),
+    "legacy v1 projection is not explicitly inactive",
+  );
+}
+
+function assertReceiptPath(ref, label) {
+  assert(
+    ref && typeof ref.path === "string" && /^[0-9a-f]{64}$/u.test(ref.sha256),
+    `${label} reference is invalid`,
+  );
+  assert(
+    !ref.path.startsWith("/") &&
+      !ref.path.includes("\\") &&
+      ref.path.split("/").every((part) => part && part !== "." && part !== ".."),
+    `${label} path is not normalized`,
+  );
+}
+
+export function validateExecutableReceipt(receipt, manifest, step, options = {}) {
+  const label = `receipt ${receipt?.runId ?? "unknown"}`;
+  assert(receipt?.format === "agent-mail.executable-receipt/v2", `${label} format is invalid`);
+  assert(
+    typeof receipt.runId === "string" && receipt.runId.length >= 8,
+    `${label} run ID is invalid`,
+  );
+  assert(["primary", "independent-replay"].includes(receipt.role), `${label} role is invalid`);
+  assert(receipt.manifestStepId === step.id, `${label} step binding is invalid`);
+  assert(
+    Array.isArray(receipt.argv) && JSON.stringify(receipt.argv) === JSON.stringify(step.argv),
+    `${label} argv is detached`,
+  );
+  assert(receipt.cwd === step.cwd, `${label} cwd is detached`);
+  assert(
+    receipt.candidate &&
+      /^[0-9a-f]{40}$/u.test(receipt.candidate.commit) &&
+      /^[0-9a-f]{40}$/u.test(receipt.candidate.tree),
+    `${label} candidate identity is invalid`,
+  );
+  assert(
+    typeof receipt.candidate.manifestPath === "string" &&
+      /^[0-9a-f]{64}$/u.test(receipt.candidate.manifestSha256),
+    `${label} manifest binding is invalid`,
+  );
+  assert(
+    receipt.observedOutcome?.derivedFrom?.includes(receipt.candidate.commit),
+    `${label} candidate commit is not outcome-bound`,
+  );
+  assert(
+    receipt.observedOutcome?.derivedFrom?.includes(receipt.candidate.tree),
+    `${label} candidate tree is not outcome-bound`,
+  );
+  assert(
+    receipt.observedOutcome?.derivedFrom?.includes(receipt.candidate.manifestSha256),
+    `${label} manifest is not outcome-bound`,
+  );
+  assert(Array.isArray(receipt.sources), `${label} sources are missing`);
+  const expectedSources = new Map(step.sources.map((source) => [source.path, source]));
+  assert(receipt.sources.length === expectedSources.size, `${label} source count drifted`);
+  for (const source of receipt.sources) {
+    const expected = expectedSources.get(source.path);
+    assert(
+      expected &&
+        source.role === expected.role &&
+        source.gitBlob === expected.gitBlob &&
+        source.sha256 === expected.sha256,
+      `${label} source binding drifted`,
+    );
+  }
+  const utc = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+  assert(
+    utc.test(receipt.startedAt) && utc.test(receipt.completedAt),
+    `${label} wall timestamps are not strict UTC`,
+  );
+  assert(
+    Date.parse(receipt.completedAt) >= Date.parse(receipt.startedAt),
+    `${label} wall timestamps are reversed`,
+  );
+  assert(
+    receipt.monotonic &&
+      /^\d+$/u.test(receipt.monotonic.durationNs ?? "") &&
+      BigInt(receipt.monotonic.durationNs) > 0n,
+    `${label} monotonic duration is invalid`,
+  );
+  assert(
+    /^\d+$/u.test(receipt.monotonic.startedNs ?? "") &&
+      /^\d+$/u.test(receipt.monotonic.completedNs ?? ""),
+    `${label} monotonic timestamps are invalid`,
+  );
+  assert(
+    BigInt(receipt.monotonic.completedNs) > BigInt(receipt.monotonic.startedNs),
+    `${label} monotonic order is invalid`,
+  );
+  assert(
+    receipt.environment &&
+      typeof receipt.environment.os === "string" &&
+      typeof receipt.environment.arch === "string" &&
+      receipt.environment.runtime,
+    `${label} environment is incomplete`,
+  );
+  assert(
+    (receipt.process && Number.isInteger(receipt.process.exitCode)) ||
+      receipt.process.exitCode === null,
+    `${label} process observation is invalid`,
+  );
+  assert(["pass", "fail", "blocked"].includes(receipt.result), `${label} result is invalid`);
+  assert(
+    receipt.observedOutcome?.status === receipt.result,
+    `${label} observed outcome is detached`,
+  );
+  assert(
+    Array.isArray(receipt.assertions) && receipt.assertions.length === step.assertions.length,
+    `${label} assertion receipt is incomplete`,
+  );
+  for (const assertion of receipt.assertions) {
+    const expected = step.assertions.find((candidate) => candidate.id === assertion.id);
+    assert(
+      expected && assertion.observed !== undefined && typeof assertion.pass === "boolean",
+      `${label} assertion is detached`,
+    );
+    if (assertion.kind === "exitCode")
+      assert(
+        assertion.observed === receipt.process.exitCode &&
+          assertion.pass === (receipt.process.exitCode === assertion.expected),
+        `${label} exit assertion is detached`,
+      );
+  }
+  assert(
+    receipt.result !== "pass" ||
+      (receipt.process.exitCode === 0 && receipt.assertions.every((assertion) => assertion.pass)),
+    `${label} pass was not derived from runner observations`,
+  );
+  for (const key of ["stdout", "stderr", "events"])
+    assertReceiptPath(receipt.streams?.[key], `${label} ${key}`);
+  for (const key of ["stdout", "stderr", "events"]) {
+    const ref = receipt.streams[key];
+    assert(
+      Number.isSafeInteger(ref.bytes) && ref.bytes >= 0,
+      `${label} ${key} byte count is invalid`,
+    );
+    assert(
+      receipt.observedOutcome.derivedFrom?.includes(ref.sha256),
+      `${label} ${key} digest is not outcome-bound`,
+    );
+  }
+  if (options.outputRoot) {
+    for (const key of ["stdout", "stderr", "events"]) {
+      const ref = receipt.streams[key];
+      const path = resolve(options.outputRoot, ref.path);
+      assert(
+        path.startsWith(resolve(options.outputRoot) + "/"),
+        `${label} stream escapes output root`,
+      );
+      const bytes = readFileSync(path);
+      assert(
+        bytes.length === ref.bytes && digest(bytes) === ref.sha256,
+        `${label} ${key} digest drifted`,
+      );
+    }
+  }
+  if (!options.skipGit) {
+    assert(
+      gitExists(receipt.candidate.commit, "", options.repositoryRoot ?? repositoryRoot),
+      `${label} candidate commit is missing`,
+    );
+    const actualTree = execFileSync("git", ["rev-parse", `${receipt.candidate.commit}^{tree}`], {
+      cwd: options.repositoryRoot ?? repositoryRoot,
+      encoding: "utf8",
+    }).trim();
+    assert(actualTree === receipt.candidate.tree, `${label} candidate tree drifted`);
+  }
+  return true;
+}
+
+function runV2ExecutionSelfTest() {
+  const capturePath = join(repositoryRoot, "scripts/qualification/capture-release-evidence.mjs");
+  const replayPath = join(repositoryRoot, "scripts/qualification/replay-release-evidence.mjs");
+  const captureOutput = execFileSync("bun", [capturePath, "--self-test"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const replayOutput = execFileSync("bun", [replayPath, "--self-test"], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  const captureResult = JSON.parse(captureOutput);
+  const replayResult = JSON.parse(replayOutput);
+  assert(
+    captureResult.accepted === true && captureResult.receipt?.result === "pass",
+    "real tiny capture did not pass",
+  );
+  assert(
+    replayResult.accepted === true && replayResult.comparison?.replayResult === "pass",
+    "real tiny replay did not pass",
+  );
+  const receipt = captureResult.receipt;
+  const step = {
+    id: receipt.manifestStepId,
+    cwd: receipt.cwd,
+    argv: receipt.argv,
+    sources: receipt.sources,
+    assertions: receipt.assertions.map(({ id, kind, expected }) => ({ id, kind, expected })),
+  };
+  validateExecutableReceipt(receipt, null, step, { skipGit: true });
+  const attacks = [
+    [
+      "receipt forged exit",
+      () => {
+        const value = structuredClone(receipt);
+        value.process.exitCode = 1;
+        return value;
+      },
+    ],
+    [
+      "receipt forged result",
+      () => {
+        const value = structuredClone(receipt);
+        value.result = "fail";
+        return value;
+      },
+    ],
+    [
+      "receipt argv shell string",
+      () => {
+        const value = structuredClone(receipt);
+        value.argv = ["node", "tiny-receipt.mjs;rm"];
+        return value;
+      },
+    ],
+    [
+      "receipt source digest",
+      () => {
+        const value = structuredClone(receipt);
+        value.sources[0].sha256 = "0".repeat(64);
+        return value;
+      },
+    ],
+    [
+      "receipt source path",
+      () => {
+        const value = structuredClone(receipt);
+        value.sources[0].path = "../tiny.mjs";
+        return value;
+      },
+    ],
+    [
+      "receipt stream digest",
+      () => {
+        const value = structuredClone(receipt);
+        value.streams.stdout.sha256 = "0".repeat(64);
+        return value;
+      },
+    ],
+    [
+      "receipt stream traversal",
+      () => {
+        const value = structuredClone(receipt);
+        value.streams.stderr.path = "../stderr";
+        return value;
+      },
+    ],
+    [
+      "receipt timestamp",
+      () => {
+        const value = structuredClone(receipt);
+        value.completedAt = "2020-01-01T00:00:00.000Z";
+        return value;
+      },
+    ],
+    [
+      "receipt monotonic",
+      () => {
+        const value = structuredClone(receipt);
+        value.monotonic.completedNs = value.monotonic.startedNs;
+        return value;
+      },
+    ],
+    [
+      "receipt missing assertion",
+      () => {
+        const value = structuredClone(receipt);
+        value.assertions = [];
+        return value;
+      },
+    ],
+    [
+      "receipt role",
+      () => {
+        const value = structuredClone(receipt);
+        value.role = "primary-replay";
+        return value;
+      },
+    ],
+    [
+      "receipt candidate",
+      () => {
+        const value = structuredClone(receipt);
+        value.candidate.tree = "0".repeat(40);
+        return value;
+      },
+    ],
+  ];
+  let rejected = 0;
+  for (const [name, mutate] of attacks) {
+    let accepted = false;
+    try {
+      validateExecutableReceipt(mutate(), null, step, { skipGit: true });
+      accepted = true;
+    } catch {}
+    assert(!accepted, `${name} was accepted`);
+    rejected += 1;
+  }
+  return { attacks: rejected, accepted: true, capture: true, replay: true };
+}
+
 function checkGates(index, requireBaselineState = true) {
   assert(
     Array.isArray(index.gates) && index.gates.length === requiredGateIds.length,
@@ -1891,6 +2516,7 @@ export function validateIndex(index, options = {}) {
   );
   const authority = authorities();
   checkResultOwnerAuthority(index);
+  checkExecutionManifest(index);
   assert(
     JSON.stringify(index.resultRecordSchema) === JSON.stringify(resultRecordSchema),
     "result-record schema drifted",
@@ -3275,6 +3901,7 @@ export function runSelfTest() {
         ),
       "live result record history changed during self-test",
     );
+    const v2Execution = runV2ExecutionSelfTest();
     return {
       attacks: attacks.length + recordAttacks.length,
       validBeforeMutation,
@@ -3285,6 +3912,7 @@ export function runSelfTest() {
       staleClearRejected: true,
       corruptLiveRejected: true,
       doubleApplicationStable: true,
+      v2Execution,
       accepted: true,
     };
   } finally {
