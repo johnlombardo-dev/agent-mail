@@ -1,0 +1,2256 @@
+{
+  "format": "agent-mail.release-evidence-index/v1",
+  "schemaVersion": 1,
+  "status": "qualification-in-progress",
+  "oracle": {
+    "normative": true,
+    "issue": 166,
+    "description": "The release evidence index is the checked projection of the planning ledger. It records evidence classes separately and never promotes a source result implicitly.",
+    "requiredEvidenceClasses": [
+      "implementation",
+      "static",
+      "isolated",
+      "composed",
+      "capacity",
+      "liveRead",
+      "liveMutation",
+      "security",
+      "deployedOperations",
+      "delivery"
+    ],
+    "allowedStatuses": [
+      "specified",
+      "implemented",
+      "locally verified",
+      "live verified",
+      "deployed verified",
+      "release-ready",
+      "unverified",
+      "superseded"
+    ]
+  },
+  "frozenInputs": [
+    {
+      "id": "PLAN",
+      "path": "PLAN.md",
+      "sha256": "15fbc0806a52c8a0ae9e46f855360a775e9a78f46fad7e1919a6135b78b3cc72"
+    },
+    {
+      "id": "EVIDENCE",
+      "path": "docs/planning/EVIDENCE.md",
+      "sha256": "a141f641cf9254ca04f91c3084419094dc6d8169c3f8f0e0ad26c79f53437fc9"
+    },
+    {
+      "id": "CLI-OUTCOME-ORACLE",
+      "path": "docs/architecture/cli-command-outcome-oracle.v1.json",
+      "sha256": "428c4043a5cfa031d237bf9638911b8a2ec71d7c919c11dacfde31b70f3bcfa8"
+    },
+    {
+      "id": "CLI-OUTCOME-CHECK",
+      "path": "docs/architecture/cli-command-outcome-check.v1.mjs",
+      "sha256": "9f518c61dd1f26c3f489900047732b8a6322ea5b5499beb3b768aed27a999dae"
+    },
+    {
+      "id": "CLI-OUTCOME-COVERAGE",
+      "path": "docs/architecture/cli-command-outcome-coverage.v1.md",
+      "sha256": "12793068f43a163e3eaed644d16bb65ab909c0073d4d7fece1378704600db6ea"
+    }
+  ],
+  "retirements": [
+    {
+      "id": "F09",
+      "replacedBy": ["F09-P", "F09-R"],
+      "reason": "The historical bundled finding remains in the ledger; its two independently closable controls are indexed separately."
+    }
+  ],
+  "rows": [
+    {
+      "id": "F01",
+      "owner": "Phase 3",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `recurring-mailbox-sweep-p3-c11.test.ts` (`d510747`)",
+      "sourceProblem": "Completed backfills fail on the first non-empty periodic sweep.",
+      "sourceInvariant": "",
+      "sourceControl": "Separate initial-backfill completion from reusable sweep checkpoints and transitions.",
+      "sourceProof": "Complete backfill, add remote mail, run periodic sweep, and observe one durable ingestion.",
+      "artifact": "docs/planning/EVIDENCE.md#F01",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F01",
+        "candidateFingerprint": "d510747",
+        "commit": "d510747",
+        "command": "bun test packages/daemon/test/recurring-mailbox-sweep-p3-c11.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/daemon/test/recurring-mailbox-sweep-p3-c11.test.ts",
+            "sha256": "97b76bfecbabdb0f01facc38c6211652e56d73ee72ad24f56d810056318511cc"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `recurring-mailbox-sweep-p3-c11.test.ts` (`d510747`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F02",
+      "owner": "Phases 2, 4",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `canonical-promotion-p2-c13.test.ts`, `single-message-ingestion-p3-c08.test.ts`, and `routing-caller-adapter-p4-c14.test.ts`",
+      "sourceProblem": "Future routing is committed outside message promotion.",
+      "sourceInvariant": "",
+      "sourceControl": "Make promotion plus routing one transaction or durable outbox protocol.",
+      "sourceProof": "Fail between every step, restart, and prove exactly one correct routing result.",
+      "artifact": "docs/planning/EVIDENCE.md#F02",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F02",
+        "reason": "implemented; current focused pass: `canonical-promotion-p2-c13.test.ts`, `single-message-ingestion-p3-c08.test.ts`, and `routing-caller-adapter-p4-c14.test.ts`",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F03",
+      "owner": "Phase 3",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `idle-session-workflow-p3-c18.test.ts` (`8921289`)",
+      "sourceProblem": "The IDLE actor can remain healthy after its work stops.",
+      "sourceInvariant": "",
+      "sourceControl": "Observe normal completion and failure; transition out of `watching`; restart under policy.",
+      "sourceProof": "Production-shaped IDLE fake completes normally and errors; actor and API expose the new state.",
+      "artifact": "docs/planning/EVIDENCE.md#F03",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F03",
+        "candidateFingerprint": "8921289",
+        "commit": "8921289",
+        "command": "bun test packages/daemon/test/idle-session-workflow-p3-c18.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/daemon/test/idle-session-workflow-p3-c18.test.ts",
+            "sha256": "838ccd1d420ebbc1e0525383c023c43d4dfc5903b0011ce00b181fc99ab867bf"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `idle-session-workflow-p3-c18.test.ts` (`8921289`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F04",
+      "owner": "Phase 5",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current red: three action-plan tests fail to load because `actionAttemptDispatchSequence` and `actionResultReconciliationSequence` are not exported",
+      "sourceProblem": "A successful remote effect followed by result-store failure is unrecoverable.",
+      "sourceInvariant": "",
+      "sourceControl": "Persist per-target attempts and `uncertain`; reconcile remote state before retry.",
+      "sourceProof": "Let IMAP succeed, fail SQLite result write, restart, reconcile, and avoid duplicate effect.",
+      "artifact": "docs/planning/EVIDENCE.md#F04",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F04",
+        "reason": "implemented; current red: three action-plan tests fail to load because `actionAttemptDispatchSequence` and `actionResultReconciliationSequence` are not exported",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F05",
+      "owner": "Phase 2",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `blob-corruption-p2-c08.test.ts` (`48ab989`)",
+      "sourceProblem": "A corrupt pre-existing content-addressed blob is accepted.",
+      "sourceInvariant": "",
+      "sourceControl": "Verify digest and size before reuse; quarantine mismatch; atomically replace from valid stage.",
+      "sourceProof": "Preseed corrupt destination and prove detection, repair, and correct final hash.",
+      "artifact": "docs/planning/EVIDENCE.md#F05",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F05",
+        "candidateFingerprint": "48ab989",
+        "commit": "48ab989",
+        "command": "bun test packages/storage/test/blob-corruption-p2-c08.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/storage/test/blob-corruption-p2-c08.test.ts",
+            "sha256": "7e4dbcab3e900f12e7e648410b606e9bedbcbfac39702f30a213c3296fda16de"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `blob-corruption-p2-c08.test.ts` (`48ab989`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F06",
+      "owner": "Phase 3",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `status-normalizer.test.ts` (`7044adc`)",
+      "sourceProblem": "Missing IMAP UIDNEXT becomes `1`.",
+      "sourceInvariant": "",
+      "sourceControl": "Represent missing status as unknown and select an explicit safe rescan or fallback.",
+      "sourceProof": "Omit UIDNEXT in a production-shaped result and prove no checkpoint regression or skipped mail.",
+      "artifact": "docs/planning/EVIDENCE.md#F06",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F06",
+        "candidateFingerprint": "7044adc",
+        "commit": "7044adc",
+        "command": "bun test packages/imap/test/status-normalizer.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/imap/test/status-normalizer.test.ts",
+            "sha256": "c351d15f2ab157a8cf05d6b08b50949583e3143289ac14bd39c8c80a31c40cf3"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `status-normalizer.test.ts` (`7044adc`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F07",
+      "owner": "Phases 2, 7",
+      "ownerIssues": [231],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current red: `backup-restore-parity-p2-c19.test.ts` has two missing normalized-text repository reads; #231 reopened",
+      "sourceProblem": "Backup omits raw and attachment blobs.",
+      "sourceInvariant": "",
+      "sourceControl": "Manifest SQLite, raw EML, attachments, and required metadata; restore into an empty directory.",
+      "sourceProof": "Destructive isolated restore reproduces search, raw, attachment, labels, routing, and action history hashes.",
+      "artifact": "docs/planning/EVIDENCE.md#F07",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F07",
+        "reason": "implemented; current red: `backup-restore-parity-p2-c19.test.ts` has two missing normalized-text repository reads; #231 reopened",
+        "ownerIssueIds": [231]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F08",
+      "owner": "Phase 4",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `routing-preview-consumption-p4-c13.test.ts` (`8a9fabe`)",
+      "sourceProblem": "Routing previews are forgeable and replayable.",
+      "sourceInvariant": "",
+      "sourceControl": "Persist canonical preview, targets, expiry, nonce, and digest; atomically consume once.",
+      "sourceProof": "Tamper, extend expiry, recompute client data, and replay; every case is rejected.",
+      "artifact": "docs/planning/EVIDENCE.md#F08",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F08",
+        "candidateFingerprint": "8a9fabe",
+        "commit": "8a9fabe",
+        "command": "bun test packages/storage/test/routing-preview-consumption-p4-c13.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/storage/test/routing-preview-consumption-p4-c13.test.ts",
+            "sha256": "4b38dd984030bc61d0f465d8fda6c112e3e1a0e73754e588ac6a0e6bddca9223"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `routing-preview-consumption-p4-c13.test.ts` (`8a9fabe`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F09",
+      "owner": "Phases 5, 6",
+      "ownerIssues": [],
+      "proofClass": "superseded",
+      "status": "superseded",
+      "sourceStatus": "split below; F09-P current focused pass, F09-R currently load-blocked with F04",
+      "sourceProblem": "Bearer clients can impersonate the executor and resume expired plans.",
+      "sourceInvariant": "",
+      "sourceControl": "Keep claim/resume/finalize behind an internal actor capability; public routes expose only user intent.",
+      "sourceProof": "Enumerate routes/scopes and attempt executor calls and expired resume with every bearer scope.",
+      "artifact": "docs/planning/EVIDENCE.md#F09",
+      "result": {
+        "kind": "superseded",
+        "status": "superseded",
+        "ref": "docs/planning/EVIDENCE.md#F09",
+        "reason": "Historical F09 is retained and replaced by F09-P and F09-R."
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F10",
+      "owner": "Phase 3",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `mailbox-discovery.test.ts` (`0cc9858`)",
+      "sourceProblem": "A legal `\\\\Noselect` mailbox without UIDVALIDITY blocks discovery.",
+      "sourceInvariant": "",
+      "sourceControl": "Skip non-selectable mailboxes before requiring selectable-mailbox status fields.",
+      "sourceProof": "Discovery fixture begins with such a mailbox and still returns later selectable mailboxes.",
+      "artifact": "docs/planning/EVIDENCE.md#F10",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F10",
+        "candidateFingerprint": "0cc9858",
+        "commit": "0cc9858",
+        "command": "bun test packages/imap/test/mailbox-discovery.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/imap/test/mailbox-discovery.test.ts",
+            "sha256": "5405beeff99403ad41e7388e82585d91158d439488af03f59a8284720a2bcc65"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `mailbox-discovery.test.ts` (`0cc9858`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F11",
+      "owner": "Phase 4",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `routing-predicate.test.ts` and `routing-caller-adapter-p4-c14.test.ts` (`96de723`)",
+      "sourceProblem": "Sender preview and future routing use different semantics.",
+      "sourceInvariant": "",
+      "sourceControl": "Share one normalized exact-sender predicate across preview, existing apply, and arrival.",
+      "sourceProof": "Existing versus future routing matrix covers case, display-name, and address normalization.",
+      "artifact": "docs/planning/EVIDENCE.md#F11",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F11",
+        "candidateFingerprint": "96de723",
+        "commit": "96de723",
+        "command": "bun test packages/core/test/routing-predicate.test.ts packages/daemon/test/routing-caller-adapter-p4-c14.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/core/test/routing-predicate.test.ts",
+            "sha256": "90aedf15ac43877237ff709c9fff234b637bdfe8d1414a99ead9a1024a3dff6d"
+          },
+          {
+            "path": "packages/daemon/test/routing-caller-adapter-p4-c14.test.ts",
+            "sha256": "24471dfbdec22101db6322dd6d2aa977a4b43a0ab6e5f32080c66bd559866bc3"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `routing-predicate.test.ts` and `routing-caller-adapter-p4-c14.test.ts` (`96de723`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F12",
+      "owner": "Phase 4",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `routing-decision-dedup-p4-c11.test.ts` (`0f864fc`)",
+      "sourceProblem": "Local routing actions duplicate work per remote placement.",
+      "sourceInvariant": "",
+      "sourceControl": "Define local routing targets by canonical message and remote actions by placement.",
+      "sourceProof": "Multi-placement fixture produces one local transition and correctly scoped remote targets.",
+      "artifact": "docs/planning/EVIDENCE.md#F12",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F12",
+        "candidateFingerprint": "0f864fc",
+        "commit": "0f864fc",
+        "command": "bun test packages/storage/test/routing-decision-dedup-p4-c11.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/storage/test/routing-decision-dedup-p4-c11.test.ts",
+            "sha256": "aa78bfce32ed45aa39d591e290dd76cfc12f6b631f44856a227adb0d4a9bcf07"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `routing-decision-dedup-p4-c11.test.ts` (`0f864fc`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F13",
+      "owner": "Phase 6",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `selected-export-stream-p6-c19.test.ts` and `selected-export-command.test.ts` (`6567382`)",
+      "sourceProblem": "JSONL export duplicates and misattributes action history.",
+      "sourceInvariant": "",
+      "sourceControl": "Join history through explicit target identity and serialize each attributable event once.",
+      "sourceProof": "Multi-message, multi-placement, partial-action export has exact non-duplicated attribution.",
+      "artifact": "docs/planning/EVIDENCE.md#F13",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F13",
+        "reason": "Source-declared commits 6567382 do not share every retained artifact path; current-worktree evidence is inadmissible.",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F14",
+      "owner": "Phase 4",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `search-candidate-repository-p4-c05.test.ts` (`472de0b`, `24e6e96`)",
+      "sourceProblem": "Mailbox and flag filters include tombstoned placements.",
+      "sourceInvariant": "",
+      "sourceControl": "Default active-placement filters exclude tombstones; expose history only explicitly.",
+      "sourceProof": "Tombstoned fixtures do not match active mailbox or flag filters and remain available to history queries.",
+      "artifact": "docs/planning/EVIDENCE.md#F14",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F14",
+        "candidateFingerprint": "472de0b",
+        "commit": "472de0b",
+        "command": "bun test packages/storage/test/search-candidate-repository-p4-c05.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/storage/test/search-candidate-repository-p4-c05.test.ts",
+            "sha256": "a6d87c6cfd23561d8802165cacbe6dd271c3fdcc7f5cc58ab8a5628075836872"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `search-candidate-repository-p4-c05.test.ts` (`472de0b`, `24e6e96`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F15",
+      "owner": "Phases 1, 4",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `time-cursor.test.ts` (`c6e3cb8`)",
+      "sourceProblem": "Offset timestamps are compared lexicographically.",
+      "sourceInvariant": "",
+      "sourceControl": "Parse and normalize timestamps to instants at the boundary.",
+      "sourceProof": "Equivalent instants with different offsets sort and filter chronologically.",
+      "artifact": "docs/planning/EVIDENCE.md#F15",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F15",
+        "candidateFingerprint": "c6e3cb8",
+        "commit": "c6e3cb8",
+        "command": "bun test packages/core/test/time-cursor.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/core/test/time-cursor.test.ts",
+            "sha256": "a83a5079dfd95dd5280269b6d2ea6d860cd05ae94157f23e7c6cf8430fb4c0b4"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `time-cursor.test.ts` (`c6e3cb8`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F16",
+      "owner": "Phases 1, 6",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `retrieval-error-closure-p6-c20.test.ts` (`b74fa98`)",
+      "sourceProblem": "Unknown threads return HTTP 200 with an empty array.",
+      "sourceInvariant": "",
+      "sourceControl": "Specify not-found versus empty semantics in storage, route, contract, and CLI.",
+      "sourceProof": "Storage versus route matrix returns the shared 404/error envelope for an unknown thread.",
+      "artifact": "docs/planning/EVIDENCE.md#F16",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F16",
+        "candidateFingerprint": "b74fa98",
+        "commit": "b74fa98",
+        "command": "bun test packages/daemon/test/retrieval-error-closure-p6-c20.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/daemon/test/retrieval-error-closure-p6-c20.test.ts",
+            "sha256": "2480004175142121c66a62c67fbb95580733a9c9f5449d1a070224e3488d7320"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `retrieval-error-closure-p6-c20.test.ts` (`b74fa98`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F17",
+      "owner": "Phases 3, 5",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; polling seam passes `polling-timer-actor-p3-c20.test.ts`, but action-loop qualification is load-blocked with F04",
+      "sourceProblem": "The remote-action poller leaks abort listeners.",
+      "sourceInvariant": "",
+      "sourceControl": "Use owned listener cleanup or one-shot signals on every settle or cancel path.",
+      "sourceProof": "Repeated poll/cancel cycles keep listener counts and memory bounded.",
+      "artifact": "docs/planning/EVIDENCE.md#F17",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F17",
+        "reason": "implemented; polling seam passes `polling-timer-actor-p3-c20.test.ts`, but action-loop qualification is load-blocked with F04",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F18",
+      "owner": "Phase 3",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current red: `restart-convergence-p3-c23.test.ts` produces a different convergence digest than expected",
+      "sourceProblem": "Shutdown invokes cleanup twice and races itself.",
+      "sourceInvariant": "",
+      "sourceControl": "Route all stops and restarts through one awaited idempotent barrier.",
+      "sourceProof": "Concurrent stop, signal, failure, and restart calls close each resource once in order.",
+      "artifact": "docs/planning/EVIDENCE.md#F18",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F18",
+        "reason": "implemented; current red: `restart-convergence-p3-c23.test.ts` produces a different convergence digest than expected",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F19",
+      "owner": "Phases 1, 3, 6",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `sync-control-service-issue-144.test.ts` and `sync-http-issue-147.test.ts` (`1e4eeb2`)",
+      "sourceProblem": "Sync-control responses report success without observing the actor.",
+      "sourceInvariant": "",
+      "sourceControl": "Acknowledge accepted events with observed state/version or return a conflict/failure.",
+      "sourceProof": "Actor versus API matrix covers accepted, rejected, failed, cancelled, and completed controls.",
+      "artifact": "docs/planning/EVIDENCE.md#F19",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F19",
+        "reason": "Source-declared commits 1e4eeb2 do not share every retained artifact path; current-worktree evidence is inadmissible.",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F20",
+      "owner": "Phase 3",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `auth-failure-workflow-p3-c16.test.ts` (`f29a566`)",
+      "sourceProblem": "Production adapters prevent `authBlocked`.",
+      "sourceInvariant": "",
+      "sourceControl": "Translate provider authentication failures to one typed boundary error consumed by the machine.",
+      "sourceProof": "Production-shaped auth failure reaches `authBlocked` and blocks automatic retry until credentials change.",
+      "artifact": "docs/planning/EVIDENCE.md#F20",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F20",
+        "candidateFingerprint": "f29a566",
+        "commit": "f29a566",
+        "command": "bun test packages/daemon/test/auth-failure-workflow-p3-c16.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/daemon/test/auth-failure-workflow-p3-c16.test.ts",
+            "sha256": "3d5959373d9a6f2d38d2efb67540714f4b55a165f86a9a43293ae1a6627b954d"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `auth-failure-workflow-p3-c16.test.ts` (`f29a566`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F21",
+      "owner": "Phases 2, 3",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current red: `identity-only-repository-p2-c12.test.ts` has two stale full-schema expectation failures",
+      "sourceProblem": "Retained identity-only messages are redownloaded.",
+      "sourceInvariant": "",
+      "sourceControl": "Reparse verified retained raw EML before any network fetch.",
+      "sourceProof": "Restart with identity-only row and raw blob; normalization completes with zero IMAP body fetches.",
+      "artifact": "docs/planning/EVIDENCE.md#F21",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F21",
+        "reason": "implemented; current red: `identity-only-repository-p2-c12.test.ts` has two stale full-schema expectation failures",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F22",
+      "owner": "Phase 3",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `uid-range-planner.test.ts` and `metadata-batch.test.ts` (`ab7a998`)",
+      "sourceProblem": "Sparse UID mailboxes do work proportional to the highest UID.",
+      "sourceInvariant": "",
+      "sourceControl": "Use server UID sets/ranges and bounded batches; never enumerate `1..maxUid`.",
+      "sourceProof": "Sparse high-UID fixture stays under the stated round-trip and allocation ceiling.",
+      "artifact": "docs/planning/EVIDENCE.md#F22",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F22",
+        "reason": "Source-declared commits ab7a998 do not share every retained artifact path; current-worktree evidence is inadmissible.",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F23",
+      "owner": "Phase 6",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `packages/cli/test/client.test.ts` and `selected-export-command.test.ts` (`778e01b`)",
+      "sourceProblem": "CLI streaming ignores backpressure and keeps a 30-second request timeout.",
+      "sourceInvariant": "",
+      "sourceControl": "Await sink backpressure and separate connect/control deadlines from stream-idle policy.",
+      "sourceProof": "Slow stdout and slow network consumers keep memory bounded and complete beyond 30 seconds when progressing.",
+      "artifact": "docs/planning/EVIDENCE.md#F23",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F23",
+        "reason": "Source-declared commits 778e01b do not share every retained artifact path; current-worktree evidence is inadmissible.",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F24",
+      "owner": "Phase 7",
+      "ownerIssues": [],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `doctor-integrity-p7-c01.test.ts` and `admin-parity-issue-164.test.ts` (`b3a81e3`)",
+      "sourceProblem": "Doctor reports foreign-key violations as healthy and erases diagnoses.",
+      "sourceInvariant": "",
+      "sourceControl": "Use `foreign_key_check`, preserve issue detail, and compute health from diagnoses.",
+      "sourceProof": "Seeded violation appears through storage, API, and CLI as unhealthy with exact issue data.",
+      "artifact": "docs/planning/EVIDENCE.md#F24",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F24",
+        "reason": "Source-declared commits b3a81e3 do not share every retained artifact path; current-worktree evidence is inadmissible.",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F25",
+      "owner": "Phase 7",
+      "ownerIssues": [167, 175],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "specified; #167 and #175 remain open",
+      "sourceProblem": "launchd uninstall leaves the plist behind.",
+      "sourceInvariant": "",
+      "sourceControl": "Boot out the exact service, remove the exact installed plist, and verify both postconditions.",
+      "sourceProof": "Isolated install/uninstall leaves neither loaded service nor plist.",
+      "artifact": "docs/planning/EVIDENCE.md#F25",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F25",
+        "reason": "specified; #167 and #175 remain open",
+        "ownerIssueIds": [167, 175]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F26",
+      "owner": "Phase 7",
+      "ownerIssues": [174, 180],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "specified; #174 and #180 remain open; deployed proof absent",
+      "sourceProblem": "Tailscale setup is destructive and verifies the wrong state.",
+      "sourceInvariant": "",
+      "sourceControl": "Change only the owned Serve entry, honor config path, disable owned Funnel state, and inspect exact config.",
+      "sourceProof": "Fake-state and authorized live probes preserve unrelated services and verify the exact active entry.",
+      "artifact": "docs/planning/EVIDENCE.md#F26",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F26",
+        "reason": "specified; #174 and #180 remain open; deployed proof absent",
+        "ownerIssueIds": [174, 180]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F27",
+      "owner": "Phases 1, 6",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `routing-commands.test.ts` (`d0c6dfc`, `e1b2a8f`)",
+      "sourceProblem": "Successful routing apply prints `committed:false`.",
+      "sourceInvariant": "",
+      "sourceControl": "Use the shared response schema and preserve server commit metadata through CLI rendering.",
+      "sourceProof": "API versus CLI matrix observes `committed:true` for a successful apply.",
+      "artifact": "docs/planning/EVIDENCE.md#F27",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F27",
+        "candidateFingerprint": "d0c6dfc",
+        "commit": "d0c6dfc",
+        "command": "bun test packages/cli/src/routing-commands.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/cli/src/routing-commands.test.ts",
+            "sha256": "9414c2c59ebf1fc8dbd461191a4c56c9071131bc51beb8cbdbbdd7983e0dd659"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `routing-commands.test.ts` (`d0c6dfc`, `e1b2a8f`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F28",
+      "owner": "Phases 4, 6",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `search-query-compiler-p4-c03.test.ts` and `retrieval-error-closure-p6-c20.test.ts`",
+      "sourceProblem": "Some invalid FTS expressions become HTTP 500.",
+      "sourceInvariant": "",
+      "sourceControl": "Validate or translate the full user-query error class at the search boundary.",
+      "sourceProof": "Invalid-expression corpus returns stable 400 errors without leaking SQLite internals.",
+      "artifact": "docs/planning/EVIDENCE.md#F28",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F28",
+        "reason": "implemented; current focused pass: `search-query-compiler-p4-c03.test.ts` and `retrieval-error-closure-p6-c20.test.ts`",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F29",
+      "owner": "Phases 2, 3",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `operational-journal-compaction-p4-c13.test.ts` (`7da7514`)",
+      "sourceProblem": "The sweep journal grows without retention.",
+      "sourceInvariant": "",
+      "sourceControl": "Define completion compaction, interrupted-run retention, and an explicit size or time ceiling.",
+      "sourceProof": "Repeated success, failure, and restart cycles remain within the bound while preserving recovery evidence.",
+      "artifact": "docs/planning/EVIDENCE.md#F29",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F29",
+        "candidateFingerprint": "7da7514",
+        "commit": "7da7514",
+        "command": "bun test packages/storage/test/operational-journal-compaction-p4-c13.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/storage/test/operational-journal-compaction-p4-c13.test.ts",
+            "sha256": "184fabd7c84725ccb82a1161e88cea4ab6caa4ec2cea7df640a9a6d4776c6cb4"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `operational-journal-compaction-p4-c13.test.ts` (`7da7514`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "implemented",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F30",
+      "owner": "Phase 6",
+      "ownerIssues": [],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused 250,000-row composed pass: `selected-export-stream-p6-c19.test.ts` and `selected-export-command.test.ts` (`6567382`, `e633a95`)",
+      "sourceProblem": "Selected export scans and serializes the entire archive.",
+      "sourceInvariant": "",
+      "sourceControl": "Query selected identities directly and stream only selected records.",
+      "sourceProof": "On 250,000 rows, selected-export work scales with selected IDs and meets the public-boundary budget.",
+      "artifact": "docs/planning/EVIDENCE.md#F30",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F30",
+        "candidateFingerprint": "e633a95",
+        "commit": "e633a95",
+        "command": "bun test packages/daemon/test/selected-export-stream-p6-c19.test.ts packages/cli/src/selected-export-command.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/daemon/test/selected-export-stream-p6-c19.test.ts",
+            "sha256": "b13ab48beed594d2da0155ab8d78ade98853e3ed6da351ce533c7445cfd9454f"
+          },
+          {
+            "path": "packages/cli/src/selected-export-command.test.ts",
+            "sha256": "5a08ed01cf2b9b837ed045eb261d66f9ba9df08e7ccb1f09a31bd7f04654e0ae"
+          }
+        ],
+        "sourceStatus": "implemented; current focused 250,000-row composed pass: `selected-export-stream-p6-c19.test.ts` and `selected-export-command.test.ts` (`6567382`, `e633a95`)"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "implemented",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F09-P",
+      "owner": "#183, #185",
+      "ownerIssues": [183, 185],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "implemented; current focused pass: `tests/public-reachability-audit/audit.test.ts` (`6a072a6`); #183/#185 release qualification pending",
+      "sourceProblem": "Historical F09 bundled bearer executor impersonation with expired-plan recovery; public bearer routes could reach executor capabilities.",
+      "sourceInvariant": "Public credentials cannot invoke claim, resume, or finalize capabilities reserved for the internal actor.",
+      "sourceControl": "Keep executor capability internal, enumerate every route/scope, and reject every bearer path before any effect.",
+      "sourceProof": "Enumerate registered routes and scopes, exercise each bearer profile against executor calls, and assert zero executor effects and stable denial.",
+      "artifact": "docs/planning/EVIDENCE.md#F09-P",
+      "result": {
+        "kind": "retained-proof",
+        "status": "implemented",
+        "ref": "docs/planning/EVIDENCE.md#F09-P",
+        "candidateFingerprint": "6a072a6",
+        "commit": "6a072a6",
+        "command": "bun test tests/public-reachability-audit/audit.test.ts",
+        "artifacts": [
+          {
+            "path": "tests/public-reachability-audit/audit.test.ts",
+            "sha256": "225109c7fc176a583afae1b064fb22e2141d9ebebb09d1bc163033581ff887fe"
+          }
+        ],
+        "sourceStatus": "implemented; current focused pass: `tests/public-reachability-audit/audit.test.ts` (`6a072a6`); #183/#185 release qualification pending"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "implemented",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "F09-R",
+      "owner": "#202, #183, #185",
+      "ownerIssues": [202, 183, 185],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "commit-bound local pass at `df02745`; current candidate load-blocked because `actionResultReconciliationSequence` is not exported; Stage 4 release-blocking",
+      "sourceProblem": "Historical F09 bundled public reachability with a persisted undispatched attempt recovered after plan expiry; creation-time expiry did not protect recovery dispatch.",
+      "sourceInvariant": "After authority expiry, no new remote effect begins; only an already-dispatched uncertain attempt may reconcile read-only.",
+      "sourceControl": "Revalidate plan state, claim/version, target identity, and expiry immediately before every new external effect, including recovered attempts and later targets; classify expired undispatched attempts durably.",
+      "sourceProof": "Persist an undispatched attempt before expiry, recover after expiry, and assert zero precondition reads that mutate, zero mutation-adapter calls, and a durable non-executing result; repeat between targets.",
+      "artifact": "docs/planning/EVIDENCE.md#F09-R",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#F09-R",
+        "reason": "commit-bound local pass at `df02745`; current candidate load-blocked because `actionResultReconciliationSequence` is not exported; Stage 4 release-blocking",
+        "ownerIssueIds": [202, 183, 185]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "SEC-R01",
+      "owner": "#202",
+      "ownerIssues": [202],
+      "proofClass": "blocked",
+      "status": "implemented",
+      "sourceStatus": "commit-bound local pass at `df02745`; current candidate load-blocked because `actionResultReconciliationSequence` is not exported; Stage 4 release-blocking",
+      "sourceProblem": "Same expired-undispatched recovery counterexample as F09-R.",
+      "sourceInvariant": "No fresh external effect is admitted after plan authority expiry.",
+      "sourceControl": "Use one explicit per-effect authority guard with constructive expired-versus-dispatched states and read-only reconciliation for uncertainty.",
+      "sourceProof": "Crash after persisting an undispatched attempt, advance past expiry, restart, and retain remote-call traces plus durable terminal snapshots.",
+      "artifact": "docs/planning/EVIDENCE.md#SEC-R01",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#SEC-R01",
+        "reason": "commit-bound local pass at `df02745`; current candidate load-blocked because `actionResultReconciliationSequence` is not exported; Stage 4 release-blocking",
+        "ownerIssueIds": [202]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "SEC-R02",
+      "owner": "#203, #204",
+      "ownerIssues": [203, 204],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "locally verified by `packages/daemon/test/action-approval-service-composed.test.ts` and `packages/storage/test/action-approval-authority.test.ts` at `9d1f777` against oracle `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; Stage 4 release-blocking",
+      "sourceProblem": "A bearer with authorize and commit scopes can self-mint approval; durable evidence stores only a scope and accepts caller-spoofed principal data.",
+      "sourceInvariant": "An unattended acting credential cannot mint the independent approval it consumes, and authenticated principal/profile provenance survives restart and restore.",
+      "sourceControl": "Apply #203's accepted independent-authority decision at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`; persist trusted principal/profile, exact digest/targets/intent/version, expiry, nonce, and one-use consumption; fail closed for legacy scope-only rows.",
+      "sourceProof": "Reject same-token approval, spoofed principal, changed digest/targets/intent/version, replay, concurrent consume, and restart-around-consume with zero unauthorized effects; run direct and composed paths.",
+      "artifact": "docs/planning/EVIDENCE.md#SEC-R02",
+      "result": {
+        "kind": "retained-proof",
+        "status": "locally verified",
+        "ref": "docs/planning/EVIDENCE.md#SEC-R02",
+        "candidateFingerprint": "9d1f777",
+        "commit": "9d1f777",
+        "command": "bun test packages/daemon/test/action-approval-service-composed.test.ts packages/storage/test/action-approval-authority.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/daemon/test/action-approval-service-composed.test.ts",
+            "sha256": "ab38c8b1367eb9b23eba0929ebc55810a6f203c3a25c1de48fcabd6fbdb295f9"
+          },
+          {
+            "path": "packages/storage/test/action-approval-authority.test.ts",
+            "sha256": "fd75d98e895d94c6d5c62604588f644e0ceaac366c91df03412ad4412de4bc2a"
+          }
+        ],
+        "sourceStatus": "locally verified by `packages/daemon/test/action-approval-service-composed.test.ts` and `packages/storage/test/action-approval-authority.test.ts` at `9d1f777` against oracle `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; Stage 4 release-blocking"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "locally verified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "SEC-R03",
+      "owner": "#205, #176",
+      "ownerIssues": [205, 176],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "locally verified by `packages/daemon/test/http-admission-sec-r03.test.ts` at `44a0b28`; Stage 4 #176 release-blocking",
+      "sourceProblem": "A valid wrong-scope bearer can send an unlimited chunked JSON body; current ingress materializes JSON before exact-scope and byte admission.",
+      "sourceInvariant": "Authenticate, authorize exact scope, and enforce received-byte/item/time budgets before parsing, decoding, decompression, or large retention, including streaming input.",
+      "sourceControl": "Route every request through one bounded streaming admission helper; reject wrong scope and oversize before materialization and keep stable errors.",
+      "sourceProof": "Exercise honest, absent, malformed, exact, and oversized Content-Length plus chunked/slow/aborted bodies with correct and wrong-scope credentials; assert zero body-reader/handler calls on wrong scope and bounded retained RSS.",
+      "artifact": "docs/planning/EVIDENCE.md#SEC-R03",
+      "result": {
+        "kind": "retained-proof",
+        "status": "locally verified",
+        "ref": "docs/planning/EVIDENCE.md#SEC-R03",
+        "candidateFingerprint": "44a0b28",
+        "commit": "44a0b28",
+        "command": "bun test packages/daemon/test/http-admission-sec-r03.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/daemon/test/http-admission-sec-r03.test.ts",
+            "sha256": "cf925dc9b1e4693304441d35d92d222fec79a6ee5e0e408a5dcb9c51faf58722"
+          }
+        ],
+        "sourceStatus": "locally verified by `packages/daemon/test/http-admission-sec-r03.test.ts` at `44a0b28`; Stage 4 #176 release-blocking"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "locally verified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "SEC-R04",
+      "owner": "#206, #183, #185",
+      "ownerIssues": [206, 183, 185],
+      "proofClass": "retained",
+      "status": "implemented",
+      "sourceStatus": "locally verified by `packages/cli/test/output-context.test.ts` at `20e4d0e`; Stage 4 #183/#185 release-blocking",
+      "sourceProblem": "Untrusted subject text containing OSC 52 or carriage return can forge terminal output; input schemas do not protect human rendering.",
+      "sourceInvariant": "Human output cannot emit terminal controls or overwrite trusted chrome, while structured output remains schema-valid and raw bytes remain exact.",
+      "sourceControl": "Centralize typed output contexts for human terminal, JSON/JSONL, reports, logs, and raw binary; use a hostile corpus and explicit TTY policy.",
+      "sourceProof": "Run ESC/CSI/OSC, CR/backspace, C0/C1, bidi, links, and filenames through each context; assert inert human bytes, faithful structured bytes, and byte-exact permitted raw streams.",
+      "artifact": "docs/planning/EVIDENCE.md#SEC-R04",
+      "result": {
+        "kind": "retained-proof",
+        "status": "locally verified",
+        "ref": "docs/planning/EVIDENCE.md#SEC-R04",
+        "candidateFingerprint": "20e4d0e",
+        "commit": "20e4d0e",
+        "command": "bun test packages/cli/test/output-context.test.ts",
+        "artifacts": [
+          {
+            "path": "packages/cli/test/output-context.test.ts",
+            "sha256": "7143d4f8bba1fb81ba35f5f9f5a6e18fd9febe0cf41decb52ac5014c7e869a05"
+          }
+        ],
+        "sourceStatus": "locally verified by `packages/cli/test/output-context.test.ts` at `20e4d0e`; Stage 4 #183/#185 release-blocking"
+      },
+      "evidence": {
+        "implementation": "implemented",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "locally verified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "SEC-R05",
+      "owner": "#180, #183",
+      "ownerIssues": [180, 183],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "specified; release-blocking",
+      "sourceProblem": "A direct client can supply Tailscale/proxy identity headers over a backend path and appear to be the trusted owner; loopback binding alone does not prove provenance.",
+      "sourceInvariant": "Intermediary identity is trusted only across a verified hop; direct copies of trusted headers are stripped or overwritten before authorization.",
+      "sourceControl": "Define the exact intermediary topology, direct-backend policy, owner mapping, and header allowlist; strip direct-client identity headers and verify owned Serve state.",
+      "sourceProof": "Exercise direct loopback/LAN/tailnet requests with spoofed, missing, stale, and wrong-owner headers versus a verified intermediary/Serve-mediated request; retain topology/config evidence without secrets.",
+      "artifact": "docs/planning/EVIDENCE.md#SEC-R05",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#SEC-R05",
+        "reason": "specified; release-blocking",
+        "ownerIssueIds": [180, 183]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "SEC-R06",
+      "owner": "#183, #185",
+      "ownerIssues": [183, 185],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "specified; release-blocking",
+      "sourceProblem": "A client or stored record can tamper with or replay keyed previews, content digests, nonces, versions, or target summaries when the consumer trusts the supplied commitment.",
+      "sourceInvariant": "Every commitment is recomputed from canonical current inputs at each consume/reuse boundary and mismatch or replay cannot authorize an effect.",
+      "sourceControl": "Bind canonical intent, target set, plan/version, nonce, and content digest to a server-authoritative commitment; recompute at consume/reuse and retain uncertainty.",
+      "sourceProof": "Tamper and replay each commitment field with attacker-known algorithms, changed targets, and restored state; assert rejection before effect and matching durable audit evidence.",
+      "artifact": "docs/planning/EVIDENCE.md#SEC-R06",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#SEC-R06",
+        "reason": "specified; release-blocking",
+        "ownerIssueIds": [183, 185]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "SEC-R07",
+      "owner": "#183, #185",
+      "ownerIssues": [183, 185],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "specified; release-blocking",
+      "sourceProblem": "An advisory scan can be green while a vulnerable transitive dependency is reachable, or an old exception persists without an owner/removal condition.",
+      "sourceInvariant": "Dependency security decisions combine advisory results with installed-version reachability, affected-surface proof, named exception owner, removal condition, and release recheck.",
+      "sourceControl": "Require an exact dependency inventory, reachability/affected-version proof, explicit exception record, and bootstrap/release recheck; stale exceptions fail qualification.",
+      "sourceProof": "Pair advisory output with installed graph/runtime reachability, exercise the affected boundary where feasible, and assert every exception has owner, removal condition, and current recheck.",
+      "artifact": "docs/planning/EVIDENCE.md#SEC-R07",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#SEC-R07",
+        "reason": "specified; release-blocking",
+        "ownerIssueIds": [183, 185]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-01",
+      "owner": "credential-provider implementation",
+      "ownerIssues": [153, 177, 215, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; implementation and local, signed-installed, live-read-only, deployed, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "no usable credential-provisioning path",
+      "sourceInvariant": "one signed secure-paste ceremony stores only in Keychain",
+      "sourceControl": "Use one signed secure-paste ceremony; the native broker writes directly to Keychain and returns only an opaque reference; reject argv, stdin, environment, file, config, HTTP, log, result, transcript, evidence, and backup paths.",
+      "sourceProof": "Connect positive plus plaintext negative matrix exercises the signed broker/Keychain path and every forbidden sink, asserting only an opaque reference and no raw secret.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-01",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-01",
+        "reason": "design accepted and checker-verified by #236; implementation and local, signed-installed, live-read-only, deployed, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [153, 177, 215, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-02",
+      "owner": "credential-provider implementation and signed qualification",
+      "ownerIssues": [167, 168, 183, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; signed-installed, deployed, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "signed construction, background access, first unlock, and peer authority unresolved",
+      "sourceInvariant": "acyclic nested signing, challenge-first symmetric exact peers, and AfterFirstUnlockThisDeviceOnly",
+      "sourceControl": "Freeze inside-out signed bundle construction, exact principal/profile/access-group and user LaunchAgent topology, challenge-first symmetric XPC hello, and AfterFirstUnlockThisDeviceOnly Keychain behavior.",
+      "sourceProof": "SBUILD topology/tamper, peer hello, principal, and first-unlock matrices reject wrong UID/team, unsigned or resigned peers, and pre-first-unlock retry.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-02",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-02",
+        "reason": "design accepted and checker-verified by #236; signed-installed, deployed, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [167, 168, 183, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-03",
+      "owner": "sole actor/journal and local-command implementations",
+      "ownerIssues": [171, 175, 183, 215, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; local, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "non-atomic Keychain/config/removal writes, receipt exhaustion, and interruption",
+      "sourceInvariant": "one actor journals before effect; REC-00..REC-15 and REM-00..REM-17 converge; request 257 rejects before UI/effect",
+      "sourceControl": "Make one LocalAccountAuthorityActor journal before every effect; enforce REC-00..REC-15, REM-00..REM-17, the finite recovery map, a 256-record receipt cap, admission before UI/effect, and no orphan or fallback.",
+      "sourceProof": "All crash/compensation/rerun/removal/capacity rows prove convergence, bounded receipts, exact target absence, and no duplicate effect.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-03",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-03",
+        "reason": "design accepted and checker-verified by #236; local, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [171, 175, 183, 215, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-04",
+      "owner": "connection/recovery implementation",
+      "ownerIssues": [168, 177, 185, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; local, live-read-only, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "revoked credential, authBlocked, rotation, and retry bounds",
+      "sourceInvariant": "strict newer-revision release and zero blocked retry",
+      "sourceControl": "Bind authentication to credential generation; final full-address rejection enters authentication-blocked; only a strictly newer validated revision releases it; share one three-session and two-delay budget with zero blocked retry.",
+      "sourceProof": "All authentication rows cover equal/older/newer revisions, structural and transient failures, the five candidate schedules, and the final authentication-blocked outcome.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-04",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-04",
+        "reason": "design accepted and checker-verified by #236; local, live-read-only, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [168, 177, 185, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-05",
+      "owner": "local-command implementation and qualification",
+      "ownerIssues": [175, 183, 217, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; local, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "backup, restore, reinstall, removal, and Apple revocation conflated",
+      "sourceInvariant": "secret-free backup and four distinct removal authorities",
+      "sourceControl": "Exclude raw secrets and Keychain exports from backup; restore without the exact same-device item enters credentials-required; keep daemon uninstall, local item removal, archive deletion, and Apple-side revocation distinct.",
+      "sourceProof": "Restore/reinstall/remove/uninstall rows assert secret-free restore, exact local absence, preserved archive, and no false Apple-revocation claim.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-05",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-05",
+        "reason": "design accepted and checker-verified by #236; local, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [175, 183, 217, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-06",
+      "owner": "connection/recovery implementation and live qualification",
+      "ownerIssues": [153, 168, 177, 185, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; local, signed-installed, live-read-only, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "production connection factory and live-provider closure absent",
+      "sourceInvariant": "only exact-ref resolution reaches the declaration-pinned constructive listOnly:true adapter and runtime-pinned ImapFlow with three total sessions and two delays",
+      "sourceControl": "Resolve only the exact opaque reference through the production factory; constructively type listOnly:true against pinned ImapFlow 1.7.1 declarations/runtime; enforce all five allowlist/denylist branches, three total sessions, and two delays with no mailbox, body, or mutation command.",
+      "sourceProof": "Real TypeScript compile fixture, installed five-branch LIST transcript, shared-attempt schedules, production adapter, live authentication, and secret-lifetime rows prove the allowlist and denylist.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-06",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-06",
+        "reason": "design accepted and checker-verified by #236; local, signed-installed, live-read-only, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [153, 168, 177, 185, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-07",
+      "owner": "credential-provider and local-command implementations",
+      "ownerIssues": [183, 215, 221, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; local, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "local administration could be confused with public bearer authority",
+      "sourceInvariant": "authenticated local XPC registry is absent from HTTP/OpenAPI/demo",
+      "sourceControl": "Keep the authenticated local XPC registry outside HTTP, OpenAPI, bearer, and demo authority; enforce signed challenge-first broker admission and production/demo isolation.",
+      "sourceProof": "Broker, public-reachability, and demo-isolation rows assert zero public operation registration, zero wrong-peer payload access, and zero production/provider import or fallback in demo.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-07",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-07",
+        "reason": "design accepted and checker-verified by #236; local, signed-installed, deployed, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [183, 215, 221, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "CRED-08",
+      "owner": "local-command implementation and #215",
+      "ownerIssues": [215, 217, 236],
+      "proofClass": "blocked",
+      "status": "specified",
+      "sourceStatus": "design accepted and checker-verified by #236; local, deployed, security, documentation, and delivery evidence unverified",
+      "sourceProblem": "guided and structured setup could fork behavior",
+      "sourceInvariant": "one local schema/state/outcome model and setup orchestration only",
+      "sourceControl": "Use one local request/result/error/state/semantic/exit/journal model and generated views; guided setup orchestrates only the canonical actor and provides no second credential or plaintext path.",
+      "sourceProof": "Guided/structured and setup/direct parity rows assert identical operation, error, state, semantic, exit, journal, and effect outcomes with presentation-only differences.",
+      "artifact": "docs/planning/EVIDENCE.md#CRED-08",
+      "result": {
+        "kind": "blocked",
+        "status": "unverified",
+        "ref": "docs/planning/EVIDENCE.md#CRED-08",
+        "reason": "design accepted and checker-verified by #236; local, deployed, security, documentation, and delivery evidence unverified",
+        "ownerIssueIds": [215, 217, 236]
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S01",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "Two source sessions disagree on early readiness; fingerprint and precedence must remain explicit.",
+      "sourceInvariant": "",
+      "sourceControl": "Two source sessions disagree on early readiness; fingerprint and precedence must remain explicit.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S01",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S01",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S02",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "The daemon crosses persistence, external protocol, workflow, public, trust, capacity, and operations seams.",
+      "sourceInvariant": "",
+      "sourceControl": "The daemon crosses persistence, external protocol, workflow, public, trust, capacity, and operations seams.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S02",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S02",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S03",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "Ingestion, routing, labels, reports, export, and action history transform and round-trip durable values.",
+      "sourceInvariant": "",
+      "sourceControl": "Ingestion, routing, labels, reports, export, and action history transform and round-trip durable values.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S03",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S03",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S04",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "IMAP effects and SQLite results cannot commit atomically.",
+      "sourceInvariant": "",
+      "sourceControl": "IMAP effects and SQLite results cannot commit atomically.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S04",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S04",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S05",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "XState, IDLE, sweeps, downloads, cleanup, and action execution form interacting workflows.",
+      "sourceInvariant": "",
+      "sourceControl": "XState, IDLE, sweeps, downloads, cleanup, and action execution form interacting workflows.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S05",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S05",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S06",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "The archive comprises SQLite, raw EML, attachments, metadata, and rebuild/recovery behavior.",
+      "sourceInvariant": "",
+      "sourceControl": "The archive comprises SQLite, raw EML, attachments, metadata, and rebuild/recovery behavior.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S06",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S06",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S07",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "Existing/future, API/CLI, storage/route, and actor/API paths previously drifted.",
+      "sourceInvariant": "",
+      "sourceControl": "Existing/future, API/CLI, storage/route, and actor/API paths previously drifted.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S07",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S07",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S08",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "Provider-shaped fakes masked UIDNEXT, IDLE, auth, and storage-return behavior.",
+      "sourceInvariant": "",
+      "sourceControl": "Provider-shaped fakes masked UIDNEXT, IDLE, auth, and storage-return behavior.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S08",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S08",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S09",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "FTS, MIME RSS, sparse UIDs, selected export, journals, streaming, and timeouts grow differently.",
+      "sourceInvariant": "",
+      "sourceControl": "FTS, MIME RSS, sparse UIDs, selected export, journals, streaming, and timeouts grow differently.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S09",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S09",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S10",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "The product indexes private email and exposes identity, bearer, report, filesystem, and mutation boundaries. Daybreak access is approved; the complete applicable security lane remains unverified and release-blocking until run.",
+      "sourceInvariant": "",
+      "sourceControl": "The product indexes private email and exposes identity, bearer, report, filesystem, and mutation boundaries. Daybreak access is approved; the complete applicable security lane remains unverified and release-blocking until run.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S10",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S10",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S11",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "README truth, Git history, doctor, restore, launchd, Tailscale, and rollback determine operability.",
+      "sourceInvariant": "",
+      "sourceControl": "README truth, Git history, doctor, restore, launchd, Tailscale, and rollback determine operability.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S11",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S11",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    },
+    {
+      "id": "S12",
+      "owner": "PLAN planning-shield registry",
+      "ownerIssues": [],
+      "proofClass": "unverified",
+      "status": "specified",
+      "sourceStatus": "required",
+      "sourceProblem": "Local, live, security, deployed, and delivery evidence were previously easy to conflate.",
+      "sourceInvariant": "",
+      "sourceControl": "Local, live, security, deployed, and delivery evidence were previously easy to conflate.",
+      "sourceProof": "PLAN planning-shield applicability row",
+      "artifact": "PLAN.md#S12",
+      "result": {
+        "kind": "unverified",
+        "status": "unverified",
+        "ref": "PLAN.md#S12",
+        "reason": "required",
+        "ownerIssueIds": []
+      },
+      "evidence": {
+        "implementation": "unverified",
+        "static": "unverified",
+        "isolated": "unverified",
+        "composed": "unverified",
+        "capacity": "unverified",
+        "liveRead": "unverified",
+        "liveMutation": "unverified",
+        "security": "unverified",
+        "deployedOperations": "unverified",
+        "delivery": "unverified"
+      }
+    }
+  ],
+  "gates": [
+    {
+      "id": "static",
+      "label": "Static",
+      "requiredEvidence": "Check-only format, lint, typecheck, dependency policy, build, clean fingerprint.",
+      "notProven": "Runtime behavior or composed closure.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "isolated",
+      "label": "Isolated",
+      "requiredEvidence": "Unit, property, migration, parser, schema, and adapter-contract tests.",
+      "notProven": "Cross-component persistence/effect outcomes.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "composed",
+      "label": "Composed",
+      "requiredEvidence": "Promotion plus routing; IMAP effect plus durable result; runtime API plus XState; backup plus full restore; all four parity matrices.",
+      "notProven": "Live vendor behavior or deployed configuration.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "capacity",
+      "label": "Capacity",
+      "requiredEvidence": "250k FTS, 250 MiB MIME, sparse UID, selected export, slow stdout/network, whole-response timeout semantics, bounded journals.",
+      "notProven": "Correctness outside measured cases.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "liveRead",
+      "label": "Live read",
+      "requiredEvidence": "Opt-in iCloud discovery/download/search with unread state preserved.",
+      "notProven": "Remote mutation safety.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "liveMutation",
+      "label": "Live mutation",
+      "requiredEvidence": "Explicit disposable mailbox, exact confirmed preview, stale/partial/reconcile cases, no expunge.",
+      "notProven": "General security or deployment correctness.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "security",
+      "label": "Security",
+      "requiredEvidence": "With the required ChatGPT cybersecurity access, complete the applicable security lane across authn/authz, secrets, reports/proxy provenance, local privilege, logging, injection, dependencies, untrusted content, and declared trust boundaries.",
+      "notProven": "Operational installation or risks outside the declared review scope.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "deployedOperations",
+      "label": "Deployed operations",
+      "requiredEvidence": "Private paths, launchd install/restart/uninstall, exact Tailscale Serve state, doctor, full restore drill.",
+      "notProven": "Git delivery.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    },
+    {
+      "id": "delivery",
+      "label": "Delivery",
+      "requiredEvidence": "Clean exact commit/branch, intended diff, remote and CI state when a remote is available.",
+      "notProven": "Live or deployed readiness unless separately proven.",
+      "source": "PLAN.md#Evidence tiers and promotion",
+      "status": "unverified",
+      "result": {
+        "kind": "unverified",
+        "reason": "No retained result for this release gate is recorded in the current planning authority.",
+        "ownerIssueIds": []
+      }
+    }
+  ],
+  "authorityBinding": {
+    "findingRows": "docs/planning/EVIDENCE.md",
+    "shieldRows": "PLAN.md",
+    "fields": [
+      "owner",
+      "ownerIssues",
+      "sourceStatus",
+      "sourceProblem",
+      "sourceInvariant",
+      "sourceControl",
+      "sourceProof"
+    ],
+    "binding": "Every field is checked against its authoritative markdown row; the index is not an authority copy."
+  },
+  "promotion": {
+    "releaseReady": false,
+    "rule": "All non-superseded rows and all nine PLAN gates must be release-ready with retained proof; current candidate remains false."
+  }
+}
