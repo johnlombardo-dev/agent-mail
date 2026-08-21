@@ -17,13 +17,55 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345";
+const EXPECTED_ORACLE_SHA256 = "bdf6247f1bfe41b48b171b40b923240eb16616026347e78bf10ec66fce894afc";
 const EXPECTED_VIEW_SHA256 = [
-  "d88a844683490e20da12ba57a4f99496ee97878e777e00ae407d5e78f8b61609",
-  "38feb62fae9dc733ed41dd2c1a0bfe23147e3237c64f081abcf12c0c4d3d2c0e",
-  "ca2454f35a5f84ae87db783e1fccc7c2d3acb12aa61fafe5bbb5e29696cd03d6",
+  "dd29de39c0dbba22c9e874c346e9650fe7c4b46c90cc752b29032f5d8222cbad",
+  "b8e4806025d842d743f9150f813b8342248d5bd906b261eccefd6d9ab06c524f",
+  "cd60f7bf398b1a8be8017e181c0c3f485cb35976e04597a38bf0ba515f967c5c",
 ];
 const ACCEPTED_HEAD = "547f70dd67959541324688b7b737749bc43791ab";
+const APPROVAL_REPAIR_ACCEPTED_COMMIT = "8b356bb15a9de481460a0d46b54b395a08dad82a";
+const APPROVAL_REPAIR_ACCEPTED_ISSUE = 246;
+const APPROVAL_REPAIR_SOURCE_SHA256 =
+  "007b6582439f5c9e50ff154ef8ebd9f181708b98f28f458dd153622dfa9925a6";
+const APPROVAL_REPAIR_SQL_SHA256 =
+  "1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc";
+const HISTORICAL_CONVERSION_TARGET_VERSION = 27;
+const LIVE_CANONICAL_VERSION = 29;
+const LIVE_CANONICAL_IDENTITY_SHA256 =
+  "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57";
+const LIVE_SUFFIX_VERSIONS = [28, 29];
+const SYNTHETIC_PROOF_VERSIONS = [30, 31];
+const LIVE_RETURN_RULE =
+  "after any target-27 conversion, apply and verify gated live suffixes 28 and 29 in order; admit writers and return the handle only at exact live canonical version 29 with its complete 1..29 history. Synthetic proof versions 30 and 31 are child-local checker registries and are never a production return state";
+const LIVE_NEWER_VERSION_RULE =
+  "Against the production live registry at tip 29, user_version greater than 29 or any unknown later ledger row fails before mutation. Synthetic checker tips 30 and 31 confer no production admission authority. Downgrade and automatic repair are forbidden.";
+const LIVE_OPENER_DECISION =
+  "The database opener owns registry application and callers cannot select a version or subset. Historical conversion target 27 is an intermediate boundary only: production applies gated suffixes 28 and 29, returns only after exact live tip 29, and rejects versions above 29. Checker-only tips 30 and 31 never authorize a production return state.";
+const LIVE_PROOF_SCOPE_RULE =
+  "Versions 30 and 31 exist only in child-local synthetic checker registries that extend the exact live 1..29 prefix. They prove append stability and compatibility without changing the production live tip, opener return authority, or newer-version threshold.";
+const LIVE_REPEATED_OPEN_RULE =
+  "An exact live-tip-29 database performs no schema, history, conversion-ledger, reindex-actor, or domain write. It revalidates names, checksums, the exact live 1..29 identity, migration infrastructure, every immutable historical conversion target, and the reindex overlay before return.";
+const LIVE_METADATA_RULE =
+  "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows. Every accepted legacy conversion first commits exact historical target 27 and preserves and digests the exact old history, base schema, overlay snapshot, immutable target-27 identity, verified backup identity, canonical timestamp, conversion id, and complete record. The opener then applies gated production suffixes 28 and 29 and returns only after exact live-tip-29 verification. Child-local synthetic tips 30 and 31 never change production admission authority or historical conversion rows.";
+const LIVE_FIXTURE_APPEND_RULE =
+  "Registration derives the only admissible application tip from the registry supplied to that process and its exact rows, never a hard-coded version, a minimum version, the fixture array length, or any caller ceiling. Production authority contains historical target 27 followed by gated live suffixes 28 and 29 and admits only exact live tip 29. Child-local checker registries may append synthetic tips 30 and 31 to prove the same derivation rule, but those tips never confer production admission authority.";
+const LIVE_CANONICAL_UPGRADE_EXPECTED =
+  "apply each exact missing production suffix through 28 and 29 only after its locked strict provenance gate, then return only after complete live-tip-29 verification; checker-only tips 30 and 31 are not production suffixes";
+const LIVE_CANONICAL_UPGRADE_WRITES =
+  "one transaction per missing production semantic migration through live tip 29; no suffix write when current provenance is invalid";
+const LIVE_LEGACY_UPGRADE_EXPECTED =
+  "no-source-write preflight, verified backup, exclusive barrier, and locked revalidation; the real converter atomically executes and ledgers exactly historical target 1..27 with target-27 provenance and user_version 27, then the common opener runner applies gated production suffixes 28 and 29 through beforePendingMigration and returns only after exact live-tip-29 verification";
+const LIVE_LEGACY_UPGRADE_WRITES =
+  "one all-or-nothing conversion transaction to historical target 27 followed by independently gated production suffix transactions 28 and 29";
+const LIVE_REOPEN_EXPECTED =
+  "validated no-op only at exact live tip 29 with any conversion row resolved to the explicit accepted target-27 identity; checker-only tips 30 and 31 do not authorize production reopen";
+const LIVE_NEWER_INPUT =
+  "user_version above production live tip 29, including 30 or later, or any unknown later ledger row";
+const LIVE_NEWER_EXPECTED =
+  "stable newer-schema rejection before mutation; child-local proof tips 30 and 31 confer no production admission authority";
+const CHECKER_COUNT_RULE =
+  "structuralMutationCount is the exact mutations.length value returned by --self-test after every mutation independently fails validation; sourceMutationCount is the exact sourceMutationIds.length value returned by --source-self-test after every fresh child rejects its assigned mutation. Neither count may be inferred from prose, combined, or reported from an unexecuted corpus.";
 const directory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(directory, "../..");
 const oraclePath = join(directory, "database-migration-registry-oracle.v1.json");
@@ -66,6 +108,8 @@ const CANONICAL_SIGNATURES = [
   "action-approval-authority-v1:0f3bf555e87b7e82e0f50725301cced4ef00391715ec91bcaad53f0c16d15264:on",
   "action-plan-restore-quarantine:150cb6277c84be4e6cd5e056d99662f2db12b65f47e96ec45d20b20de6df6cab:off",
   "seal-key-administration-authority:0715be56cd5ee39745a5be25d2c041ec0ccac70d6c09abb9e455820bf091e184:off",
+  "report-creation-v1:c7f21410a3e6e52373199531e6932c65df86ab40828af8268ddd735a1e8c1b52:on",
+  "approval-creator-provenance-repair:1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc:on",
 ];
 
 function fail(message) {
@@ -158,6 +202,10 @@ function readCommitted(path) {
   return git(["show", ACCEPTED_HEAD + ":" + path], { buffer: true });
 }
 
+function readAtCommit(commit, path) {
+  return git(["show", commit + ":" + path], { buffer: true });
+}
+
 function assertAncestor(commit, descendant, label) {
   try {
     execFileSync("git", ["merge-base", "--is-ancestor", commit, descendant], {
@@ -224,10 +272,28 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   exact(oracle.modelVersion, "1.0.0", "model version");
   exact(oracle.status, "frozen-design", "status");
   exact(oracle.oracle.issue, 233, "issue");
+  exact(oracle.oracle.rebindIssue, 247, "rebind issue");
   exact(oracle.oracle.implementationIssue, 234, "implementation issue");
+  exact(
+    oracle.oracle.appendImplementationIssue,
+    APPROVAL_REPAIR_ACCEPTED_ISSUE,
+    "append implementation issue",
+  );
+  exact(
+    oracle.oracle.appendImplementationCommit,
+    APPROVAL_REPAIR_ACCEPTED_COMMIT,
+    "append implementation commit",
+  );
   exact(oracle.oracle.shapingCommit, ACCEPTED_HEAD, "shaping commit");
   exact(oracle.oracle.normative, true, "normative flag");
-  for (const key of ["scope", "compatibilityRule", "absenceOfDeploymentAuthority"]) {
+  exact(oracle.oracle.signable, true, "signable flag");
+  exact(oracle.oracle.signatureState, "signed", "signature state");
+  for (const key of [
+    "scope",
+    "compatibilityRule",
+    "absenceOfDeploymentAuthority",
+    "acceptedAppendRule",
+  ]) {
     nonempty(oracle.oracle[key], "oracle " + key);
   }
 
@@ -279,9 +345,11 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     nonempty(oracle.checksumAuthority[key], "checksum authority " + key);
   }
 
-  exact(oracle.canonicalRegistry.schemaVersion, 27, "canonical schema version");
-  exact(oracle.canonicalRegistry.nextLegalMigrationVersion, 28, "next migration version");
-  exact(oracle.canonicalRegistry.nextLegalReportMigrationVersion, 28, "report migration version");
+  exact(oracle.canonicalRegistry.schemaVersion, 29, "canonical schema version");
+  exact(oracle.canonicalRegistry.freshSchemaObjectCount, 220, "current schema object count");
+  exact(oracle.canonicalRegistry.reportMigrationVersion, 28, "accepted report version");
+  exact(oracle.canonicalRegistry.nextLegalMigrationVersion, 30, "next migration version");
+  exact(oracle.canonicalRegistry.nextLegalReportMigrationVersion, 30, "next report version");
   exact(
     oracle.canonicalRegistry.identityDigestAlgorithm,
     "sha256(utf8(JSON.stringify(migrations.map(m => [m.version, m.name, m.contentHash, m.requiresForeignKeysOff]))))",
@@ -300,8 +368,8 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   nonempty(oracle.canonicalRegistry.orderRule, "canonical order rule");
 
   const migrations = oracle.canonicalRegistry.migrations;
-  if (!Array.isArray(migrations) || migrations.length !== 27)
-    fail("canonical registry must have 27 rows");
+  if (!Array.isArray(migrations) || migrations.length !== 29)
+    fail("canonical registry must have 29 rows");
   const byId = uniqueRows(migrations, "id", "canonical migrations");
   uniqueRows(migrations, "version", "canonical migrations");
   uniqueRows(migrations, "name", "canonical migrations");
@@ -324,15 +392,64 @@ function validateOracle(oracle, { checkGit = true } = {}) {
       if (migration.legacyRecorded !== undefined || migration.sourceKind !== undefined) {
         fail("unexpected legacy source metadata: " + migration.id);
       }
-      declaredVersions[migration.declaredVersion] =
-        (declaredVersions[migration.declaredVersion] ?? 0) + 1;
+      if (index < oracle.baseline.acceptedSemanticMigrationCount) {
+        declaredVersions[migration.declaredVersion] =
+          (declaredVersions[migration.declaredVersion] ?? 0) + 1;
+      }
     }
     if (!/^[0-9a-f]{64}$/.test(migration.contentHash))
       fail("invalid content hash: " + migration.id);
-    if (!/^[0-9a-f]{40}$/.test(migration.acceptedCommit))
+    if (!/^[0-9a-f]{40}$/.test(migration.acceptedCommit)) {
       fail("invalid accepted commit: " + migration.id);
+    }
     if (!Number.isSafeInteger(migration.acceptedIssue) || migration.acceptedIssue < 1) {
       fail("invalid accepted issue: " + migration.id);
+    }
+    if (
+      migration.authorityState !== undefined ||
+      migration.candidateIssue !== undefined ||
+      migration.authorityIssue !== undefined ||
+      migration.candidateSourceSha256 !== undefined ||
+      migration.candidateSqlSha256 !== undefined
+    ) {
+      fail("accepted migration has candidate provenance: " + migration.id);
+    }
+    if (migration.version === LIVE_CANONICAL_VERSION) {
+      exact(migration.id, "approval-creator-provenance-repair", "accepted append id");
+      exact(migration.name, "approval-creator-provenance-repair", "accepted append name");
+      exact(migration.declaredVersion, 29, "accepted append declared version");
+      exact(
+        migration.source,
+        "packages/storage/src/migrations/0029-approval-creator-provenance-repair.ts",
+        "accepted append path",
+      );
+      exact(migration.export, "approvalCreatorProvenanceRepairMigration", "accepted append export");
+      exact(
+        migration.acceptedSourceSha256,
+        APPROVAL_REPAIR_SOURCE_SHA256,
+        "accepted append source hash",
+      );
+      exact(migration.acceptedSqlSha256, APPROVAL_REPAIR_SQL_SHA256, "accepted append SQL hash");
+      exact(migration.contentHash, APPROVAL_REPAIR_SQL_SHA256, "accepted append content hash");
+      exact(migration.requiresForeignKeysOff, false, "accepted append execution mode");
+      exact(
+        migration.dependsOn,
+        ["action-plan-restore-quarantine"],
+        "accepted append dependencies",
+      );
+      exact(migration.acceptedIssue, APPROVAL_REPAIR_ACCEPTED_ISSUE, "accepted append issue");
+      exact(migration.acceptedCommit, APPROVAL_REPAIR_ACCEPTED_COMMIT, "accepted append commit");
+      if (!/^[0-9a-f]{64}$/.test(migration.acceptedSourceSha256)) {
+        fail("invalid accepted append source hash: " + migration.id);
+      }
+      if (!/^[0-9a-f]{64}$/.test(migration.acceptedSqlSha256)) {
+        fail("invalid accepted append SQL hash: " + migration.id);
+      }
+    } else if (
+      migration.acceptedSourceSha256 !== undefined ||
+      migration.acceptedSqlSha256 !== undefined
+    ) {
+      fail("historical migration has append-only byte provenance: " + migration.id);
     }
     nonempty(migration.source, "source " + migration.id);
     nonempty(migration.export, "export " + migration.id);
@@ -352,11 +469,16 @@ function validateOracle(oracle, { checkGit = true } = {}) {
       }
     }
     if (checkGit) {
-      assertAncestor(migration.acceptedCommit, ACCEPTED_HEAD, "accepted migration commit");
+      if (migration.version <= oracle.baseline.acceptedSemanticMigrationCount) {
+        assertAncestor(migration.acceptedCommit, ACCEPTED_HEAD, "accepted migration commit");
+        readCommitted(migration.source);
+      } else {
+        assertAncestor(ACCEPTED_HEAD, migration.acceptedCommit, "accepted append commit");
+        readAtCommit(migration.acceptedCommit, migration.source);
+      }
       if (previousCommit !== undefined && previousCommit !== migration.acceptedCommit) {
         assertAncestor(previousCommit, migration.acceptedCommit, "canonical commit order");
       }
-      readCommitted(migration.source);
     }
     previousCommit = migration.acceptedCommit;
   }
@@ -379,6 +501,15 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     registryIdentityDigest,
     "registry identity digest",
   );
+  const historicalTargetDigest = computeRegistryIdentityDigest(
+    migrations.slice(0, oracle.baseline.acceptedSemanticMigrationCount),
+  );
+  exact(
+    historicalTargetDigest,
+    "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+    "historical target prefix digest",
+  );
+  exact(registryIdentityDigest === historicalTargetDigest, false, "live and historical identity");
   const appendAuthority = oracle.appendStableProvenance;
   exact(appendAuthority.legacyConversionTargetVersion, 27, "legacy conversion target version");
   exact(
@@ -404,13 +535,18 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   }
   exact(
     appendAuthority.acceptedHistoricalTargets,
-    [{ targetVersion: 27, targetRegistrySha256: registryIdentityDigest }],
+    [{ targetVersion: 27, targetRegistrySha256: historicalTargetDigest }],
     "accepted historical conversion targets",
   );
   exact(
-    acceptedConversionTargets(oracle).get(registryIdentityDigest),
+    acceptedConversionTargets(oracle).get(historicalTargetDigest),
     27,
-    "current registry is recognized conversion target",
+    "historical target is recognized conversion target",
+  );
+  exact(
+    acceptedConversionTargets(oracle).has(registryIdentityDigest),
+    false,
+    "live registry is not a conversion target",
   );
   exact(
     appendAuthority.legacyConversionSequence,
@@ -439,19 +575,19 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   );
   exact(appendAuthority.proofSuffixes.length, 2, "append proof suffix count");
   for (const [index, suffix] of appendAuthority.proofSuffixes.entries()) {
-    exact(suffix.version, 28 + index, "append proof suffix version");
+    exact(suffix.version, 30 + index, "append proof suffix version");
     exact(suffix.name, "append-stability-probe-" + suffix.version, "append proof suffix name");
     exact(suffix.requiresForeignKeysOff, false, "append proof suffix mode");
     exact(sha256(Buffer.from(suffix.sql, "utf8")), suffix.contentHash, "append proof suffix hash");
   }
-  const proof28FullDigest = computeRegistryIdentityDigest([
+  const proof30FullDigest = computeRegistryIdentityDigest([
     ...migrations,
     appendAuthority.proofSuffixes[0],
   ]);
   exact(
-    acceptedConversionTargets(oracle).has(proof28FullDigest),
+    acceptedConversionTargets(oracle).has(proof30FullDigest),
     false,
-    "proof suffix 28 full digest is not an accepted conversion target",
+    "proof suffix 30 full digest is not an accepted conversion target",
   );
   exact(
     appendAuthority.implementationSequenceMode,
@@ -462,6 +598,63 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     appendAuthority.implementationSequenceMutationIds,
     ["converter-live-tip-loop", "legacy-opener-skips-suffix-runner"],
     "implementation sequence mutation IDs",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionMutationIds,
+    ["live-imported-registry-stale-schema-27", "live-imported-registry-stale-next-28"],
+    "implementation registry version mutation IDs",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionProofChildMode,
+    "--implementation-registry-version-assertion-proof-child",
+    "implementation registry version proof child mode",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionProofFormat,
+    "agent-mail.database-migration-registry-version-assertion-proof/v1",
+    "implementation registry version proof format",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionPhraseSpoofId,
+    "unrelated-pre-assertion-version-phrase-spoof",
+    "implementation registry version phrase-spoof ID",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionPhraseSpoofMode,
+    "--implementation-registry-version-assertion-phrase-spoof",
+    "implementation registry version phrase-spoof mode",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionTransportMutationPrefix,
+    "--implementation-registry-version-proof-transport-mutation=",
+    "implementation registry version transport mutation prefix",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionTransportCounterexampleIds,
+    [
+      "duplicate-format-key-before-expected",
+      "duplicate-actual-key-before-expected",
+      "wrong-proof-record",
+      "extra-proof-record",
+      "missing-proof-record",
+      "mixed-proof-record",
+      "extra-whitespace-proof-record",
+    ],
+    "implementation registry version transport counterexample IDs",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionGenericFailureId,
+    "unrelated-generic-pre-assertion-failure",
+    "implementation registry version generic-failure ID",
+  );
+  exact(
+    appendAuthority.implementationRegistryVersionGenericFailureMode,
+    "--implementation-registry-version-assertion-generic-failure",
+    "implementation registry version generic-failure mode",
+  );
+  nonempty(
+    appendAuthority.implementationRegistryVersionMutationRule,
+    "implementation registry version mutation rule",
   );
   exact(appendAuthority.selfMutationCases.length, 5, "append self-mutation cases");
   for (const value of appendAuthority.selfMutationCases) {
@@ -557,7 +750,10 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   );
   exactSet(
     coveredMigrations,
-    migrations.filter((row) => row.legacyRecorded !== false).map((row) => row.id),
+    migrations
+      .slice(0, oracle.baseline.acceptedSemanticMigrationCount)
+      .filter((row) => row.legacyRecorded !== false)
+      .map((row) => row.id),
     "recorded migrations covered by convertible histories",
   );
   if (compositionMap.get("H-ACTION-PLACEHOLDER")?.classification !== "unsupported-placeholder") {
@@ -673,6 +869,43 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   ]) {
     for (const key of keys) nonempty(section[key], "authority " + key);
   }
+  exact(
+    oracle.runtimeAuthority.tipAuthority,
+    {
+      historicalConversionTargetVersion: HISTORICAL_CONVERSION_TARGET_VERSION,
+      liveCanonicalVersion: LIVE_CANONICAL_VERSION,
+      liveCanonicalIdentitySha256: LIVE_CANONICAL_IDENTITY_SHA256,
+      liveSuffixVersions: LIVE_SUFFIX_VERSIONS,
+      syntheticProofVersions: SYNTHETIC_PROOF_VERSIONS,
+      returnRule: LIVE_RETURN_RULE,
+      newerVersionRule: LIVE_NEWER_VERSION_RULE,
+      syntheticProofScope: LIVE_PROOF_SCOPE_RULE,
+    },
+    "runtime tip authority",
+  );
+  exact(
+    oracle.canonicalRegistry.schemaVersion,
+    oracle.runtimeAuthority.tipAuthority.liveCanonicalVersion,
+    "live registry version authority",
+  );
+  exact(
+    oracle.canonicalRegistry.identityDigest,
+    oracle.runtimeAuthority.tipAuthority.liveCanonicalIdentitySha256,
+    "live registry identity authority",
+  );
+  exact(
+    oracle.appendStableProvenance.legacyConversionTargetVersion,
+    oracle.runtimeAuthority.tipAuthority.historicalConversionTargetVersion,
+    "historical target authority",
+  );
+  exact(
+    oracle.appendStableProvenance.proofSuffixes.map((row) => row.version),
+    oracle.runtimeAuthority.tipAuthority.syntheticProofVersions,
+    "synthetic proof authority",
+  );
+  exact(oracle.runtimeAuthority.repeatedOpen, LIVE_REPEATED_OPEN_RULE, "live repeated-open rule");
+  exact(oracle.runtimeAuthority.newerVersion, LIVE_NEWER_VERSION_RULE, "live newer-version rule");
+  exact(oracle.runtimeAuthority.metadata, LIVE_METADATA_RULE, "live metadata rule");
   exact(oracle.conversionMetadata.table, "schema_migration_conversions", "conversion table");
   exact(oracle.conversionMetadata.layoutVersion, 1, "conversion metadata layout");
   exact(
@@ -697,7 +930,7 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   );
   exact(
     oracle.conversionMetadata.targetRegistrySha256,
-    registryIdentityDigest,
+    historicalTargetDigest,
     "conversion target registry digest",
   );
   for (const key of [
@@ -797,6 +1030,11 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   ) {
     fail("runtime open order must have twelve steps");
   }
+  exact(
+    oracle.runtimeAuthority.openOrder[11],
+    oracle.runtimeAuthority.tipAuthority.returnRule,
+    "live opener return rule",
+  );
   const fixtureCompatibility = oracle.runtimeAuthority.legacyFixtureCompatibility;
   for (const key of [
     "entryPoint",
@@ -824,7 +1062,8 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     ],
     "legacy fixture adapter order",
   );
-  exact(fixtureCompatibility.releaseProbeVersions, [27, 28, 29], "fixture release probes");
+  exact(fixtureCompatibility.appendRule, LIVE_FIXTURE_APPEND_RULE, "fixture append authority");
+  exact(fixtureCompatibility.releaseProbeVersions, [27, 28, 29, 30, 31], "fixture release probes");
   exact(
     fixtureCompatibility.packageNamedExportAllowlist,
     [
@@ -892,6 +1131,34 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   for (const row of oracle.lifecycleCases) {
     for (const key of ["input", "expected", "writes"]) nonempty(row[key], row.id + " " + key);
   }
+  exact(
+    lifecycle.get("LC-FRESH").expected,
+    "canonical live 1..29 with accepted rows 1..29 and exact issue 246 commit 8b356bb15a9de481460a0d46b54b395a08dad82a provenance at 29; historical conversion target 27 remains an intermediate boundary and checker-only tips 30/31 are not production return states",
+    "fresh live-tip result",
+  );
+  exact(
+    lifecycle.get("LC-CANONICAL-UPGRADE").expected,
+    LIVE_CANONICAL_UPGRADE_EXPECTED,
+    "canonical upgrade live-tip result",
+  );
+  exact(
+    lifecycle.get("LC-CANONICAL-UPGRADE").writes,
+    LIVE_CANONICAL_UPGRADE_WRITES,
+    "canonical upgrade live-tip writes",
+  );
+  exact(
+    lifecycle.get("LC-LEGACY-UPGRADE").expected,
+    LIVE_LEGACY_UPGRADE_EXPECTED,
+    "legacy upgrade live-tip result",
+  );
+  exact(
+    lifecycle.get("LC-LEGACY-UPGRADE").writes,
+    LIVE_LEGACY_UPGRADE_WRITES,
+    "legacy upgrade live-tip writes",
+  );
+  exact(lifecycle.get("LC-REOPEN").expected, LIVE_REOPEN_EXPECTED, "reopen live-tip result");
+  exact(lifecycle.get("LC-NEWER").input, LIVE_NEWER_INPUT, "newer live-tip input");
+  exact(lifecycle.get("LC-NEWER").expected, LIVE_NEWER_EXPECTED, "newer live-tip result");
 
   const retirement = uniqueRows(oracle.retirement, "id", "retirement rows");
   exact(retirement.size, 10, "retirement count");
@@ -899,8 +1166,9 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   const decisions = uniqueRows(oracle.decisions, "id", "decisions");
   const proofs = uniqueRows(oracle.proofs, "id", "proofs");
   exact(requirements.size, 15, "requirement count");
-  exact(decisions.size, 15, "decision count");
+  exact(decisions.size, 16, "decision count");
   exact(proofs.size, 14, "proof count");
+  exact(decisions.get("DEC-ONE-OPENER").text, LIVE_OPENER_DECISION, "live opener decision");
   exactSet(Object.keys(oracle.coverage), requirements.keys(), "coverage requirement IDs");
   for (const [requirement, references] of Object.entries(oracle.coverage)) {
     if (!Array.isArray(references) || references.length < 2) fail("thin coverage: " + requirement);
@@ -1058,12 +1326,20 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   exact(
     currentTree.postImplementationApplyMigrationPaths,
     [
-      "packages/storage/src/migration-runner.ts",
+      "packages/cli/src/report-create-command.test.ts",
+      "packages/daemon/test/report-create-composed.test.ts",
+      "packages/daemon/test/report-creation-service.test.ts",
       "packages/storage/src/database.ts",
+      "packages/storage/src/migration-runner.ts",
+      "packages/storage/test/approval-creator-provenance-migration.test.ts",
       "packages/storage/test/helpers/legacy-migration-history-fixtures.ts",
-      "packages/storage/test/migration-runner.test.ts",
-      "packages/storage/test/migration-registry.test.ts",
+      "packages/storage/test/message-text-materializer.test.ts",
       "packages/storage/test/migration-history-conversion.test.ts",
+      "packages/storage/test/migration-registry.test.ts",
+      "packages/storage/test/migration-runner.test.ts",
+      "packages/storage/test/report-creation-backup-restore.test.ts",
+      "packages/storage/test/report-creation-migration.test.ts",
+      "packages/storage/test/report-creation-repository.test.ts",
     ],
     "post-implementation applyMigrations paths",
   );
@@ -1119,13 +1395,13 @@ function validateOracle(oracle, { checkGit = true } = {}) {
     oracle.issue234.semanticSourceScope,
     {
       pathsFrom: "canonicalRegistry.migrations[].source",
-      count: 27,
+      count: 29,
       allowedChanges:
-        "Only remove obsolete aggregate/lazy-schema exports, wrap SEARCH_REINDEX_SCHEMA_SQL as canonical slot 20 without changing its bytes, or relocate initial-backfill-completion into its registrySource; every other accepted name, SQL byte, execution mode, declared version, checksum, and canonical slot remains frozen.",
+        "Only remove obsolete aggregate/lazy-schema exports, wrap SEARCH_REINDEX_SCHEMA_SQL as canonical slot 20 without changing its bytes, relocate initial-backfill-completion into its registrySource, retain accepted report-creation-v1 exactly at slot 28, or bind exact accepted issue 246 approval-creator-provenance-repair source at slot 29 and commit 8b356bb15a9de481460a0d46b54b395a08dad82a; every accepted name, SQL byte, execution mode, declared version, checksum, canonical slot, and provenance state remains frozen.",
     },
     "issue 234 semantic source scope",
   );
-  exact(currentTree.allowedMutationPathCount, 111, "implementation allowed path count authority");
+  exact(currentTree.allowedMutationPathCount, 113, "implementation allowed path count authority");
   exactSet(
     currentTree.semanticAllowedPaths,
     oracle.canonicalRegistry.migrations.map((row) => row.source),
@@ -1194,6 +1470,17 @@ function validateOracle(oracle, { checkGit = true } = {}) {
   if (oracle.issue234.productionPaths.some((path) => path.includes("report"))) {
     fail("issue 234 production scope absorbed report creation");
   }
+  exact(
+    mutations.length,
+    oracle.checkerAuthority.structuralMutationCount,
+    "structural mutation count authority",
+  );
+  exact(
+    currentTree.sourceMutationIds.length,
+    oracle.checkerAuthority.sourceMutationCount,
+    "source mutation count authority",
+  );
+  exact(oracle.checkerAuthority.countRule, CHECKER_COUNT_RULE, "checker count rule");
   exact(oracle.blockers, [], "blockers");
   validateFrozenInputs(oracle, checkGit);
   return { byId, evidencePaths };
@@ -1238,6 +1525,13 @@ async function sourceProjection(oracle) {
       row.contentHash,
       "runtime content hash " + row.id,
     );
+    if (row.acceptedSqlSha256 !== undefined) {
+      exact(
+        sha256(Buffer.from(definition.sql, "utf8")),
+        row.acceptedSqlSha256,
+        "runtime accepted append SQL hash " + row.id,
+      );
+    }
     definitions.push({ ...definition, version: row.version });
   }
   const semanticIdentityDigest = sha256(
@@ -1360,7 +1654,9 @@ function schemaSourceProjection(oracle) {
   exact(listed.length, oracle.baseline.schemaDefinitionSourceFiles, "schema source files");
   exactSet(
     listed,
-    oracle.canonicalRegistry.migrations.map((row) => row.source),
+    oracle.canonicalRegistry.migrations
+      .slice(0, oracle.baseline.acceptedSemanticMigrationCount)
+      .map((row) => row.source),
     "schema source closure",
   );
   return { files: listed.length };
@@ -1384,7 +1680,7 @@ async function freshSqliteProjection(oracle, runtime) {
     exact(history, expected, "fresh SQLite history");
     exact(
       database.query("PRAGMA user_version").get()?.user_version,
-      27,
+      oracle.canonicalRegistry.schemaVersion,
       "fresh SQLite user_version",
     );
     exact(
@@ -1396,7 +1692,11 @@ async function freshSqliteProjection(oracle, runtime) {
     const objectCount = database
       .query("SELECT count(*) AS count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'")
       .get()?.count;
-    exact(objectCount, oracle.baseline.freshSchemaObjectCount, "fresh SQLite object count");
+    exact(
+      objectCount,
+      oracle.canonicalRegistry.freshSchemaObjectCount,
+      "fresh SQLite object count",
+    );
     const before = JSON.stringify(history);
     runtime.applyMigrations(database, runtime.definitions);
     const after = JSON.stringify(
@@ -1405,7 +1705,11 @@ async function freshSqliteProjection(oracle, runtime) {
         .all(),
     );
     exact(after, before, "repeated migration application");
-    return { userVersion: 27, historyRows: history.length, schemaObjects: objectCount };
+    return {
+      userVersion: oracle.canonicalRegistry.schemaVersion,
+      historyRows: history.length,
+      schemaObjects: objectCount,
+    };
   } finally {
     database.close();
   }
@@ -1801,7 +2105,7 @@ async function legacySchemaProjection(oracle, runtime) {
             "SELECT count(*) AS count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations'",
           )
           .get()?.count,
-        oracle.baseline.freshSchemaObjectCount - 1,
+        oracle.canonicalRegistry.freshSchemaObjectCount - 1,
         "legacy projection application schema",
       );
     } finally {
@@ -3233,16 +3537,34 @@ async function provenanceProjection(oracle, runtime) {
   const converter = await import(
     pathToFileURL(join(repositoryRoot, "packages/storage/src/migration-history-conversion.ts")).href
   );
+  const historicalTargetVersion = oracle.appendStableProvenance.legacyConversionTargetVersion;
+  const registry27 = oracle.canonicalRegistry.migrations.slice(0, historicalTargetVersion);
+  const registry28 = oracle.canonicalRegistry.migrations.slice(0, 28);
+  const registry29 = oracle.canonicalRegistry.migrations;
+  const registry30 = proofRegistryRows(oracle, 1);
+  const registry31 = proofRegistryRows(oracle, 2);
+  const realSuffix28 = {
+    ...runtime.definitions[27],
+    contentHash: oracle.canonicalRegistry.migrations[27].contentHash,
+  };
+  const realSuffix29 = {
+    ...runtime.definitions[28],
+    contentHash: oracle.canonicalRegistry.migrations[28].contentHash,
+  };
   const fresh = new Database(":memory:", { strict: true });
   fresh.exec("PRAGMA foreign_keys = ON");
   runtime.applyMigrations(fresh, runtime.definitions);
   installConversionInfrastructure(fresh, oracle);
   verifyConversionProjection(fresh, oracle, 0, runtime);
-  exact(fresh.query("PRAGMA user_version").get()?.user_version, 27, "provenance fresh version");
+  exact(
+    fresh.query("PRAGMA user_version").get()?.user_version,
+    oracle.canonicalRegistry.schemaVersion,
+    "provenance fresh version",
+  );
   exact(
     fresh.query("SELECT count(*) AS count FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'").get()
       ?.count,
-    oracle.baseline.freshSchemaObjectCount + 5,
+    oracle.canonicalRegistry.freshSchemaObjectCount + 5,
     "provenance fresh schema object count",
   );
   fresh.close();
@@ -3304,7 +3626,7 @@ async function provenanceProjection(oracle, runtime) {
     27,
     "real production converter target ledger count",
   );
-  verifyConversionProjection(converted, oracle, 1, runtime);
+  verifyConversionProjection(converted, oracle, 1, runtime, registry27);
   exact(reindexOverlaySnapshot(converted), overlaySnapshot, "real converter overlay preservation");
   const record = converted
     .query(
@@ -3350,14 +3672,14 @@ async function provenanceProjection(oracle, runtime) {
   const serialized = converted.serialize();
   converted.close();
   const reopened = Database.deserialize(serialized, { strict: true });
-  verifyConversionProjection(reopened, oracle, 1, runtime);
+  verifyConversionProjection(reopened, oracle, 1, runtime, registry27);
   exact(reindexOverlaySnapshot(reopened), overlaySnapshot, "reopened provenance overlay");
-  verifyConversionProjection(reopened, oracle, 1, runtime);
+  verifyConversionProjection(reopened, oracle, 1, runtime, registry27);
   exact(reindexOverlaySnapshot(reopened), overlaySnapshot, "doctor provenance overlay");
   const backupBytes = reopened.serialize();
   reopened.close();
   const restored = Database.deserialize(backupBytes, { strict: true });
-  verifyConversionProjection(restored, oracle, 1, runtime);
+  verifyConversionProjection(restored, oracle, 1, runtime, registry27);
   exact(reindexOverlaySnapshot(restored), overlaySnapshot, "restored provenance overlay");
   restored.close();
 
@@ -3373,9 +3695,6 @@ async function provenanceProjection(oracle, runtime) {
       .all(),
   );
   target27Snapshot.close();
-  const registry27 = proofRegistryRows(oracle, 0);
-  const registry28 = proofRegistryRows(oracle, 1);
-  const registry29 = proofRegistryRows(oracle, 2);
   exact(
     acceptedConversionTargets(oracle).get(oracle.conversionMetadata.targetRegistrySha256),
     27,
@@ -3386,16 +3705,21 @@ async function provenanceProjection(oracle, runtime) {
     27,
     "target 27 remains recognized after later append 29",
   );
-  const target28RegistrySha256 = computeRegistryIdentityDigest(registry28);
-  if (target28RegistrySha256 === oracle.conversionMetadata.targetRegistrySha256) {
-    fail("proof suffix 28 did not change the live full-registry digest");
+  const liveRegistrySha256 = computeRegistryIdentityDigest(registry29);
+  exact(
+    liveRegistrySha256,
+    oracle.canonicalRegistry.identityDigest,
+    "live registry identity after real suffixes 28 and 29",
+  );
+  if (liveRegistrySha256 === oracle.conversionMetadata.targetRegistrySha256) {
+    fail("real suffixes 28 and 29 did not change the live full-registry digest");
   }
   const fullDigestSubstitutionRecord = makeConversionRecord(oracle, {
     historyRows: JSON.parse(record.source_history_json),
     source_overlay_id: record.source_overlay_id,
     source_overlay_json: record.source_overlay_json,
     source_schema_json: record.source_schema_json,
-    target_registry_sha256: target28RegistrySha256,
+    target_registry_sha256: liveRegistrySha256,
     backup_id: record.backup_id,
     backup_manifest_sha256: record.backup_manifest_sha256,
     completed_at: record.completed_at,
@@ -3431,7 +3755,7 @@ async function provenanceProjection(oracle, runtime) {
       oracle,
       runtime,
       registry27,
-      oracle.appendStableProvenance.proofSuffixes[0],
+      realSuffix28,
     );
   } catch {
     fullDigestSubstitutionBeforeSuffixRejected = true;
@@ -3447,7 +3771,7 @@ async function provenanceProjection(oracle, runtime) {
     "full-digest substitution suffix version unchanged",
   );
   exact(
-    hasSchemaObject(substitutedBeforeSuffix, "append_stability_probe_28"),
+    hasSchemaObject(substitutedBeforeSuffix, "reports"),
     false,
     "full-digest substitution executes no suffix SQL",
   );
@@ -3466,7 +3790,7 @@ async function provenanceProjection(oracle, runtime) {
       oracle,
       runtime,
       registry27,
-      oracle.appendStableProvenance.proofSuffixes[0],
+      realSuffix28,
       { failBeforeCommit: true },
     );
   } catch (error) {
@@ -3479,21 +3803,15 @@ async function provenanceProjection(oracle, runtime) {
     27,
     "precommit suffix crash version",
   );
-  exact(hasSchemaObject(beforeCommitCrash, "append_stability_probe_28"), false, "precommit SQL");
+  exact(hasSchemaObject(beforeCommitCrash, "reports"), false, "precommit report SQL");
   verifyConversionProjection(beforeCommitCrash, oracle, 1, runtime, registry27);
   beforeCommitCrash.close();
 
   const appended = Database.deserialize(backupBytes, { strict: true });
-  applyProofSuffixWithProvenanceGate(
-    appended,
-    oracle,
-    runtime,
-    registry27,
-    oracle.appendStableProvenance.proofSuffixes[0],
-  );
+  applyProofSuffixWithProvenanceGate(appended, oracle, runtime, registry27, realSuffix28);
   verifyConversionProjection(appended, oracle, 1, runtime, registry28);
   exact(appended.query("PRAGMA user_version").get()?.user_version, 28, "appended version 28");
-  exact(hasSchemaObject(appended, "append_stability_probe_28"), true, "appended SQL 28");
+  exact(hasSchemaObject(appended, "reports"), true, "real report SQL 28");
   exact(
     JSON.stringify(
       appended
@@ -3533,15 +3851,39 @@ async function provenanceProjection(oracle, runtime) {
     "full restore published overlay",
   );
   fullRestorePublished.close();
+  applyProofSuffixWithProvenanceGate(appendedRestore, oracle, runtime, registry28, realSuffix29);
+  verifyConversionProjection(appendedRestore, oracle, 1, runtime, registry29);
+  exact(appendedRestore.query("PRAGMA user_version").get()?.user_version, 29, "real repair append");
+  exact(
+    hasSchemaObject(appendedRestore, "authority_v11_approval_creator_provenance_guard"),
+    true,
+    "real approval-repair SQL 29",
+  );
+  exact(
+    hasSchemaObject(appendedRestore, "authority_v10_approval_creator_exact_guard"),
+    false,
+    "retired approval guard SQL 29",
+  );
   applyProofSuffixWithProvenanceGate(
     appendedRestore,
     oracle,
     runtime,
-    registry28,
+    registry29,
+    oracle.appendStableProvenance.proofSuffixes[0],
+  );
+  verifyConversionProjection(appendedRestore, oracle, 1, runtime, registry30);
+  exact(appendedRestore.query("PRAGMA user_version").get()?.user_version, 30, "future append 30");
+  exact(hasSchemaObject(appendedRestore, "append_stability_probe_30"), true, "future SQL 30");
+  applyProofSuffixWithProvenanceGate(
+    appendedRestore,
+    oracle,
+    runtime,
+    registry30,
     oracle.appendStableProvenance.proofSuffixes[1],
   );
-  verifyConversionProjection(appendedRestore, oracle, 1, runtime, registry29);
-  exact(appendedRestore.query("PRAGMA user_version").get()?.user_version, 29, "later append");
+  verifyConversionProjection(appendedRestore, oracle, 1, runtime, registry31);
+  exact(appendedRestore.query("PRAGMA user_version").get()?.user_version, 31, "future append 31");
+  exact(hasSchemaObject(appendedRestore, "append_stability_probe_31"), true, "future SQL 31");
   appendedRestore.close();
 
   const afterCommitCrash = Database.deserialize(backupBytes, { strict: true });
@@ -3552,7 +3894,7 @@ async function provenanceProjection(oracle, runtime) {
       oracle,
       runtime,
       registry27,
-      oracle.appendStableProvenance.proofSuffixes[0],
+      realSuffix28,
       { failAfterCommit: true },
     );
   } catch (error) {
@@ -3576,7 +3918,7 @@ async function provenanceProjection(oracle, runtime) {
       oracle,
       runtime,
       registry27,
-      oracle.appendStableProvenance.proofSuffixes[0],
+      realSuffix28,
     );
   } catch {
     invalidBeforeSuffixRejected = true;
@@ -3588,7 +3930,7 @@ async function provenanceProjection(oracle, runtime) {
     "invalid provenance suffix version unchanged",
   );
   exact(
-    hasSchemaObject(invalidBeforeSuffix, "append_stability_probe_28"),
+    hasSchemaObject(invalidBeforeSuffix, "reports"),
     false,
     "invalid provenance executes no suffix SQL",
   );
@@ -3623,7 +3965,7 @@ async function provenanceProjection(oracle, runtime) {
       mutate(database);
       let rejected = false;
       try {
-        verifyConversionProjection(database, oracle, 1, runtime);
+        verifyConversionProjection(database, oracle, 1, runtime, registry27);
       } catch {
         rejected = true;
       }
@@ -3687,7 +4029,7 @@ async function provenanceProjection(oracle, runtime) {
       insertConversionRecord(database, oracle, forgedRecord);
       let rejected = false;
       try {
-        verifyConversionProjection(database, oracle, 2, runtime);
+        verifyConversionProjection(database, oracle, 2, runtime, registry27);
       } catch {
         rejected = true;
       }
@@ -3707,7 +4049,10 @@ async function provenanceProjection(oracle, runtime) {
       "backup",
       "restore",
       "full-restore",
-      "later-append-29",
+      "report-append-28",
+      "approval-repair-append-29",
+      "future-append-30",
+      "future-append-31",
     ],
     rows: 1,
     ddlObjects: 5,
@@ -3716,8 +4061,9 @@ async function provenanceProjection(oracle, runtime) {
     realProductionConverterSource: oracle.canonicalRegistry.conversionPath,
     realProductionConversionSourceHistoryRows: 3,
     realProductionConversionTargetRows: 27,
-    appendVersions: [28, 29],
-    target28RegistrySha256,
+    appendVersions: [28, 29, 30, 31],
+    syntheticAppendVersions: [30, 31],
+    liveRegistrySha256,
     fullDigestSubstitutionRejections,
     fullDigestSubstitutionBeforeSuffixRejected,
     beforeCommitCrashObserved,
@@ -3892,7 +4238,14 @@ async function createPreflightFixture(oracle, runtime, kind) {
   const writer = new Database(databasePath, { create: true, strict: true });
   writer.exec("PRAGMA journal_mode = WAL");
   writer.exec("PRAGMA wal_autocheckpoint = 0");
-  runtime.applyMigrations(writer, runtime.definitions);
+  const provenanceFixture =
+    kind === "provenance-invalid" || kind === "provenance-full-digest-substitution";
+  runtime.applyMigrations(
+    writer,
+    provenanceFixture
+      ? runtime.definitions.slice(0, oracle.appendStableProvenance.legacyConversionTargetVersion)
+      : runtime.definitions,
+  );
   if (kind === "unknown") {
     writer.exec("UPDATE schema_migrations SET name = 'unknown-migration' WHERE version = 1");
   }
@@ -3935,7 +4288,7 @@ async function createPreflightFixture(oracle, runtime, kind) {
         schemaTupleArrays(expectedBaseSchemaRows(["message-catalog"], oracle, runtime)),
       ),
       ...(kind === "provenance-full-digest-substitution"
-        ? { target_registry_sha256: computeRegistryIdentityDigest(proofRegistryRows(oracle, 1)) }
+        ? { target_registry_sha256: oracle.canonicalRegistry.identityDigest }
         : {}),
     });
     insertConversionRecord(writer, oracle, record);
@@ -3945,7 +4298,14 @@ async function createPreflightFixture(oracle, runtime, kind) {
       writer.exec(oracle.conversionMetadata.ddl.updateTriggerSql);
     }
   }
-  writer.exec("PRAGMA user_version = " + (kind === "newer" ? 28 : 27));
+  writer.exec(
+    "PRAGMA user_version = " +
+      (provenanceFixture
+        ? oracle.appendStableProvenance.legacyConversionTargetVersion
+        : kind === "newer"
+          ? oracle.canonicalRegistry.schemaVersion + 1
+          : oracle.canonicalRegistry.schemaVersion),
+  );
   chmodSync(databasePath, 0o440);
   return { fixtureRoot, privateRoot, databasePath, writer };
 }
@@ -4004,6 +4364,32 @@ function acceptedTypeScriptSourceMap() {
     .filter((path) => path.endsWith(".ts"))
     .sort();
   return new Map(paths.map((path) => [path, readCommitted(path).toString("utf8")]));
+}
+
+function migrationAuthoritySourceSha256(migration) {
+  const bytes =
+    migration.version <= 27
+      ? readCommitted(migration.source)
+      : readAtCommit(migration.acceptedCommit, migration.source);
+  const digest = sha256(bytes);
+  if (migration.acceptedSourceSha256 !== undefined) {
+    exact(digest, migration.acceptedSourceSha256, "accepted append source hash " + migration.id);
+  }
+  return digest;
+}
+
+function semanticAuthorityTypeScriptSourceMap(oracle) {
+  const sources = acceptedTypeScriptSourceMap();
+  for (const migration of oracle.canonicalRegistry.migrations.slice(27)) {
+    const bytes = readAtCommit(migration.acceptedCommit, migration.source);
+    exact(
+      sha256(bytes),
+      migrationAuthoritySourceSha256(migration),
+      "semantic authority source bytes " + migration.id,
+    );
+    sources.set(migration.source, bytes.toString("utf8"));
+  }
+  return sources;
 }
 
 function countPattern(text, pattern) {
@@ -4335,7 +4721,7 @@ function importedDirectSqlReferenceCount(path, text, sources, oracle) {
 function sourceMutationFacts(oracle, sources) {
   const semantic = oracle.canonicalRegistry.migrations.map((row) => ({
     path: row.source,
-    expectedSha256: sha256(readCommitted(row.source)),
+    expectedSha256: migrationAuthoritySourceSha256(row),
     observedSha256: sources.has(row.source)
       ? sha256(Buffer.from(sources.get(row.source), "utf8"))
       : null,
@@ -5131,7 +5517,7 @@ const REVIEWER_CAPABILITY_MUTATION_SOURCES = new Map([
 ]);
 
 function runSourceMutationChild(oracle, id) {
-  const accepted = acceptedTypeScriptSourceMap();
+  const accepted = semanticAuthorityTypeScriptSourceMap(oracle);
   const baseline = sourceMutationFacts(oracle, accepted);
   const candidate = new Map(accepted);
   const firstSource = oracle.canonicalRegistry.migrations[0].source;
@@ -5851,12 +6237,9 @@ async function implementationSequenceCheck(oracle) {
   );
   const liveRegistry = Object.freeze([
     ...registry.canonicalDatabaseMigrations,
-    ...suffixes.filter(
-      (suffix) =>
-        suffix.version > registry.canonicalDatabaseMigrations.length && suffix.version <= 29,
-    ),
+    ...suffixes.filter((suffix) => suffix.version > registry.canonicalDatabaseMigrations.length),
   ]);
-  exact(liveRegistry.length, 29, "implementation sequence live plus proof registry length");
+  exact(liveRegistry.length, 31, "implementation sequence live plus proof registry length");
   const digestAtVersion = (targetVersion) => {
     if (
       !Number.isSafeInteger(targetVersion) ||
@@ -5904,7 +6287,10 @@ async function implementationSequenceCheck(oracle) {
     if (
       convertedVersion !== 27 ||
       convertedRows.length !== 27 ||
-      hasSchemaObject(database, "append_stability_probe_29")
+      hasSchemaObject(database, "reports") ||
+      hasSchemaObject(database, "authority_v11_approval_creator_provenance_guard") ||
+      hasSchemaObject(database, "append_stability_probe_30") ||
+      hasSchemaObject(database, "append_stability_probe_31")
     ) {
       runtimeViolations.push("converter-live-tip-loop");
     } else {
@@ -5922,13 +6308,25 @@ async function implementationSequenceCheck(oracle) {
           gatedSuffixes.push(pendingMigration.version);
         },
       });
-      exact(gatedSuffixes, [28, 29], "real opener suffix gate sequence");
+      exact(gatedSuffixes, [28, 29, 30, 31], "real opener suffix gate sequence");
       exact(
         database.query("PRAGMA user_version").get()?.user_version,
-        29,
+        31,
         "real suffix final version",
       );
-      exact(hasSchemaObject(database, "append_stability_probe_29"), true, "real suffix 29 SQL");
+      exact(hasSchemaObject(database, "reports"), true, "real report suffix 28 SQL");
+      exact(
+        hasSchemaObject(database, "authority_v11_approval_creator_provenance_guard"),
+        true,
+        "real approval-repair suffix 29 SQL",
+      );
+      exact(
+        hasSchemaObject(database, "authority_v10_approval_creator_exact_guard"),
+        false,
+        "retired approval guard after suffix 29",
+      );
+      exact(hasSchemaObject(database, "append_stability_probe_30"), true, "proof suffix 30 SQL");
+      exact(hasSchemaObject(database, "append_stability_probe_31"), true, "proof suffix 31 SQL");
       exact(
         JSON.stringify(
           database.query("SELECT * FROM schema_migration_conversions ORDER BY conversion_id").all(),
@@ -5954,7 +6352,7 @@ async function implementationSequenceCheck(oracle) {
     productionOpener: "packages/storage/src/database.ts",
     conversionTargetVersion: 27,
     convertedHistoryRows: 27,
-    suffixGateVersions: [28, 29],
+    suffixGateVersions: [28, 29, 30, 31],
     mutationsRejected: oracle.appendStableProvenance.implementationSequenceMutationIds.length,
   };
 }
@@ -6687,7 +7085,417 @@ function implementationCompatibilityCheck(oracle) {
   };
 }
 
+const implementationRegistryVersionAssertionTag = Symbol(
+  "implementation-registry-version-assertion-origin",
+);
+
+class ImplementationRegistryVersionAssertionError extends Error {
+  constructor(code, actual, expected) {
+    super(code + ": expected " + String(expected) + ", observed " + String(actual));
+    this.name = "ImplementationRegistryVersionAssertionError";
+    this.code = code;
+    this.actual = actual;
+    this.expected = expected;
+    Object.defineProperty(this, implementationRegistryVersionAssertionTag, { value: true });
+  }
+}
+
+function isImplementationRegistryVersionAssertionError(value) {
+  return (
+    value instanceof ImplementationRegistryVersionAssertionError &&
+    value[implementationRegistryVersionAssertionTag] === true
+  );
+}
+
+function assertImplementationRegistryVersionAuthority(oracle, registry) {
+  if (registry.CANONICAL_DATABASE_SCHEMA_VERSION !== oracle.canonicalRegistry.schemaVersion) {
+    throw new ImplementationRegistryVersionAssertionError(
+      "IMPLEMENTATION_SCHEMA_VERSION_MISMATCH",
+      registry.CANONICAL_DATABASE_SCHEMA_VERSION,
+      oracle.canonicalRegistry.schemaVersion,
+    );
+  }
+  if (
+    registry.NEXT_DATABASE_MIGRATION_VERSION !== oracle.canonicalRegistry.nextLegalMigrationVersion
+  ) {
+    throw new ImplementationRegistryVersionAssertionError(
+      "IMPLEMENTATION_NEXT_VERSION_MISMATCH",
+      registry.NEXT_DATABASE_MIGRATION_VERSION,
+      oracle.canonicalRegistry.nextLegalMigrationVersion,
+    );
+  }
+}
+
+function implementationRegistryVersionExpectedProof(oracle, id) {
+  return id === "implementation-check-stale-schema-version-27" ||
+    id === "live-imported-registry-stale-schema-27"
+    ? {
+        format: oracle.appendStableProvenance.implementationRegistryVersionProofFormat,
+        mutationId: id,
+        assertion: "assertImplementationRegistryVersionAuthority",
+        code: "IMPLEMENTATION_SCHEMA_VERSION_MISMATCH",
+        actual: 27,
+        expected: oracle.canonicalRegistry.schemaVersion,
+      }
+    : {
+        format: oracle.appendStableProvenance.implementationRegistryVersionProofFormat,
+        mutationId: id,
+        assertion: "assertImplementationRegistryVersionAuthority",
+        code: "IMPLEMENTATION_NEXT_VERSION_MISMATCH",
+        actual: 28,
+        expected: oracle.canonicalRegistry.nextLegalMigrationVersion,
+      };
+}
+
+function implementationRegistryVersionCounterexamples(oracle) {
+  const cases = [
+    {
+      id: "implementation-check-stale-schema-version-27",
+      registry: {
+        CANONICAL_DATABASE_SCHEMA_VERSION: 27,
+        NEXT_DATABASE_MIGRATION_VERSION: oracle.canonicalRegistry.nextLegalMigrationVersion,
+      },
+    },
+    {
+      id: "implementation-check-stale-next-version-28",
+      registry: {
+        CANONICAL_DATABASE_SCHEMA_VERSION: oracle.canonicalRegistry.schemaVersion,
+        NEXT_DATABASE_MIGRATION_VERSION: 28,
+      },
+    },
+  ];
+  const survived = [];
+  for (const counterexample of cases) {
+    try {
+      assertImplementationRegistryVersionAuthority(oracle, counterexample.registry);
+    } catch (error) {
+      const expected = implementationRegistryVersionExpectedProof(oracle, counterexample.id);
+      if (
+        !isImplementationRegistryVersionAssertionError(error) ||
+        error.code !== expected.code ||
+        error.actual !== expected.actual ||
+        error.expected !== expected.expected
+      ) {
+        throw error;
+      }
+      continue;
+    }
+    survived.push(counterexample.id);
+  }
+  if (survived.length > 0) {
+    fail("implementation registry version counterexamples survived: " + survived.join(", "));
+  }
+  return {
+    mutationIds: cases.map((counterexample) => counterexample.id),
+    mutationsRejected: cases.length,
+  };
+}
+
+const implementationRegistryVersionMutationPrefix = "--implementation-registry-version-mutation=";
+
+function requestedImplementationRegistryVersionMutation(oracle) {
+  const values = process.argv
+    .filter((value) => value.startsWith(implementationRegistryVersionMutationPrefix))
+    .map((value) => value.slice(implementationRegistryVersionMutationPrefix.length));
+  if (values.length > 1) fail("multiple implementation registry version mutations requested");
+  const id = values[0] ?? null;
+  if (
+    id !== null &&
+    !oracle.appendStableProvenance.implementationRegistryVersionMutationIds.includes(id)
+  ) {
+    fail("unknown implementation registry version mutation: " + id);
+  }
+  return id;
+}
+
+function requestedImplementationRegistryVersionTransportMutation(oracle) {
+  const prefix = oracle.appendStableProvenance.implementationRegistryVersionTransportMutationPrefix;
+  const values = process.argv
+    .filter((value) => value.startsWith(prefix))
+    .map((value) => value.slice(prefix.length));
+  if (values.length > 1)
+    fail("multiple implementation registry proof transport mutations requested");
+  const id = values[0] ?? null;
+  if (
+    id !== null &&
+    !oracle.appendStableProvenance.implementationRegistryVersionTransportCounterexampleIds.includes(
+      id,
+    )
+  ) {
+    fail("unknown implementation registry proof transport mutation: " + id);
+  }
+  return id;
+}
+
+function canonicalImplementationRegistryVersionProofBytes(expected) {
+  return JSON.stringify(expected) + "\n";
+}
+
+function mutatedImplementationRegistryVersionProofBytes(oracle, expected, transportId) {
+  const canonical = JSON.stringify(expected);
+  switch (transportId) {
+    case "duplicate-format-key-before-expected":
+      return canonical.replace('{"format":', '{"format":"wrong-proof-format","format":') + "\n";
+    case "duplicate-actual-key-before-expected":
+      return (
+        canonical.replace(
+          '"actual":' + String(expected.actual),
+          '"actual":999,"actual":' + String(expected.actual),
+        ) + "\n"
+      );
+    case "wrong-proof-record":
+      return JSON.stringify({ ...expected, actual: expected.actual + 1 }) + "\n";
+    case "extra-proof-record":
+      return canonical + "\n" + canonical + "\n";
+    case "missing-proof-record":
+      return "";
+    case "mixed-proof-record": {
+      const otherId = oracle.appendStableProvenance.implementationRegistryVersionMutationIds.find(
+        (id) => id !== expected.mutationId,
+      );
+      return (
+        canonical +
+        "\n" +
+        JSON.stringify(implementationRegistryVersionExpectedProof(oracle, otherId)) +
+        "\n"
+      );
+    }
+    case "extra-whitespace-proof-record":
+      return " " + canonical + "\n";
+    default:
+      fail("implementation registry proof transport mutation is absent");
+  }
+}
+
+function acceptsImplementationRegistryVersionProof(outcome, expected) {
+  return (
+    outcome.status === 0 &&
+    (outcome.stderr ?? "") === "" &&
+    (outcome.stdout ?? "") === canonicalImplementationRegistryVersionProofBytes(expected)
+  );
+}
+
+function emitImplementationRegistryVersionProof(oracle, id, error, transportId) {
+  const expected = implementationRegistryVersionExpectedProof(oracle, id);
+  if (
+    !isImplementationRegistryVersionAssertionError(error) ||
+    error.code !== expected.code ||
+    error.actual !== expected.actual ||
+    error.expected !== expected.expected
+  ) {
+    throw error;
+  }
+  process.stdout.write(
+    transportId === null
+      ? canonicalImplementationRegistryVersionProofBytes(expected)
+      : mutatedImplementationRegistryVersionProofBytes(oracle, expected, transportId),
+  );
+  process.exit(0);
+}
+
+function implementationRegistryVersionMutationProof(oracle) {
+  const results = [];
+  const survived = [];
+  for (const id of oracle.appendStableProvenance.implementationRegistryVersionMutationIds) {
+    const expected = implementationRegistryVersionExpectedProof(oracle, id);
+    const outcome = spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(import.meta.url),
+        "--implementation-check",
+        "--json",
+        oracle.appendStableProvenance.implementationRegistryVersionProofChildMode,
+        implementationRegistryVersionMutationPrefix + id,
+      ],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    const structuredAssertionOriginObserved = acceptsImplementationRegistryVersionProof(
+      outcome,
+      expected,
+    );
+    results.push({ id, structuredAssertionOriginObserved });
+    if (!structuredAssertionOriginObserved) {
+      survived.push(id + " (status " + String(outcome.status) + ")");
+    }
+  }
+  if (survived.length > 0) {
+    fail("live imported registry version mutations survived: " + survived.join(", "));
+  }
+  const transportResults = [];
+  const transportMutationId =
+    oracle.appendStableProvenance.implementationRegistryVersionMutationIds[0];
+  const transportExpected = implementationRegistryVersionExpectedProof(oracle, transportMutationId);
+  for (const id of oracle.appendStableProvenance
+    .implementationRegistryVersionTransportCounterexampleIds) {
+    const outcome = spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(import.meta.url),
+        "--implementation-check",
+        "--json",
+        oracle.appendStableProvenance.implementationRegistryVersionProofChildMode,
+        implementationRegistryVersionMutationPrefix + transportMutationId,
+        oracle.appendStableProvenance.implementationRegistryVersionTransportMutationPrefix + id,
+      ],
+      {
+        cwd: repositoryRoot,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
+    const intendedBytes = mutatedImplementationRegistryVersionProofBytes(
+      oracle,
+      transportExpected,
+      id,
+    );
+    const intendedCounterexampleObserved =
+      outcome.status === 0 &&
+      (outcome.stderr ?? "") === "" &&
+      (outcome.stdout ?? "") === intendedBytes;
+    const canonicalRecordAccepted = acceptsImplementationRegistryVersionProof(
+      outcome,
+      transportExpected,
+    );
+    if (!intendedCounterexampleObserved || canonicalRecordAccepted) {
+      fail("implementation registry proof transport counterexample survived: " + id);
+    }
+    transportResults.push({ id, intendedCounterexampleObserved, canonicalRecordAccepted });
+  }
+  const spoofId = oracle.appendStableProvenance.implementationRegistryVersionPhraseSpoofId;
+  const spoofPhrase = "implemented schema version differs: 27";
+  const spoofOutcome = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(import.meta.url),
+      "--implementation-check",
+      "--json",
+      oracle.appendStableProvenance.implementationRegistryVersionProofChildMode,
+      oracle.appendStableProvenance.implementationRegistryVersionPhraseSpoofMode,
+      implementationRegistryVersionMutationPrefix +
+        oracle.appendStableProvenance.implementationRegistryVersionMutationIds[0],
+    ],
+    {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+  const spoofOutput = (spoofOutcome.stderr ?? "") + "\n" + (spoofOutcome.stdout ?? "");
+  const legacyPhraseCriterionWouldAccept =
+    spoofOutcome.status !== 0 && spoofOutput.includes(spoofPhrase);
+  const structuredRecordAccepted = acceptsImplementationRegistryVersionProof(
+    spoofOutcome,
+    implementationRegistryVersionExpectedProof(
+      oracle,
+      oracle.appendStableProvenance.implementationRegistryVersionMutationIds[0],
+    ),
+  );
+  if (!legacyPhraseCriterionWouldAccept || structuredRecordAccepted) {
+    fail("implementation registry version phrase-spoof counterexample was not distinguished");
+  }
+  const genericId = oracle.appendStableProvenance.implementationRegistryVersionGenericFailureId;
+  const genericOutcome = spawnSync(
+    process.execPath,
+    [
+      fileURLToPath(import.meta.url),
+      "--implementation-check",
+      "--json",
+      oracle.appendStableProvenance.implementationRegistryVersionProofChildMode,
+      oracle.appendStableProvenance.implementationRegistryVersionGenericFailureMode,
+      implementationRegistryVersionMutationPrefix + transportMutationId,
+    ],
+    {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+  const genericFailureObserved =
+    genericOutcome.status !== 0 &&
+    (genericOutcome.stdout ?? "") === "" &&
+    (genericOutcome.stderr ?? "").includes("unrelated generic pre-assertion failure");
+  const genericRecordAccepted = acceptsImplementationRegistryVersionProof(
+    genericOutcome,
+    transportExpected,
+  );
+  if (!genericFailureObserved || genericRecordAccepted) {
+    fail("implementation registry version generic-failure counterexample was not distinguished");
+  }
+  return {
+    mutationIds: results.map((result) => result.id),
+    mutationsRejected: results.length,
+    structuredAssertionOriginObserved: results.every(
+      (result) => result.structuredAssertionOriginObserved,
+    ),
+    canonicalProofBytes: {
+      format: oracle.appendStableProvenance.implementationRegistryVersionProofFormat,
+      exactSingleRecord: true,
+      transportCounterexampleIds: transportResults.map((result) => result.id),
+      counterexamplesRejected: transportResults.length,
+      intendedCounterexamplesObserved: transportResults.every(
+        (result) => result.intendedCounterexampleObserved,
+      ),
+      noncanonicalRecordsAccepted: transportResults.some(
+        (result) => result.canonicalRecordAccepted,
+      ),
+    },
+    phraseSpoofCounterexample: {
+      id: spoofId,
+      childStatus: spoofOutcome.status,
+      legacyPhraseCriterionWouldAccept,
+      structuredRecordAccepted,
+    },
+    genericFailureCounterexample: {
+      id: genericId,
+      childStatus: genericOutcome.status,
+      genericFailureObserved,
+      structuredRecordAccepted: genericRecordAccepted,
+    },
+  };
+}
+
 async function implementationCheck(oracle, runtime) {
+  const registryVersionMutationId = requestedImplementationRegistryVersionMutation(oracle);
+  const registryVersionTransportMutationId =
+    requestedImplementationRegistryVersionTransportMutation(oracle);
+  const registryVersionProofChild = process.argv.includes(
+    oracle.appendStableProvenance.implementationRegistryVersionProofChildMode,
+  );
+  const registryVersionPhraseSpoof = process.argv.includes(
+    oracle.appendStableProvenance.implementationRegistryVersionPhraseSpoofMode,
+  );
+  const registryVersionGenericFailure = process.argv.includes(
+    oracle.appendStableProvenance.implementationRegistryVersionGenericFailureMode,
+  );
+  if (registryVersionProofChild && registryVersionMutationId === null) {
+    fail("implementation registry version proof child lacks a mutation");
+  }
+  if (
+    (registryVersionPhraseSpoof ||
+      registryVersionGenericFailure ||
+      registryVersionTransportMutationId !== null) &&
+    !registryVersionProofChild
+  ) {
+    fail("implementation registry version proof counterexample lacks proof-child mode");
+  }
+  if (
+    Number(registryVersionPhraseSpoof) +
+      Number(registryVersionGenericFailure) +
+      Number(registryVersionTransportMutationId !== null) >
+    1
+  ) {
+    fail("multiple implementation registry version proof counterexamples requested");
+  }
+  if (registryVersionPhraseSpoof) {
+    throw new Error("unrelated pre-assertion failure: implemented schema version differs: 27");
+  }
+  if (registryVersionGenericFailure) {
+    throw new Error("unrelated generic pre-assertion failure");
+  }
   const authority = oracle.issue234.currentTreeAuthority;
   const trackedChangeRecords = trackedImplementationChangeRecords();
   const untracked = new Set(nulPaths(git(["ls-files", "--others", "--exclude-standard", "-z"])));
@@ -6769,16 +7577,49 @@ async function implementationCheck(oracle, runtime) {
   const converterPath = join(repositoryRoot, oracle.canonicalRegistry.conversionPath);
   if (!existsSync(registryPath) || !existsSync(converterPath))
     fail("implementation registry/converter is absent");
-  const registry = await import(
+  let registry = await import(
     pathToFileURL(registryPath).href + "?implementation-check=" + Date.now()
   );
+  if (registryVersionMutationId !== null) {
+    const { mock } = await import("bun:test");
+    const registryUrl = pathToFileURL(registryPath).href;
+    mock.module(registryUrl, () => ({
+      ...registry,
+      CANONICAL_DATABASE_SCHEMA_VERSION: registryVersionMutationId.endsWith("schema-27")
+        ? 27
+        : registry.CANONICAL_DATABASE_SCHEMA_VERSION,
+      NEXT_DATABASE_MIGRATION_VERSION: registryVersionMutationId.endsWith("next-28")
+        ? 28
+        : registry.NEXT_DATABASE_MIGRATION_VERSION,
+    }));
+    registry = await import(
+      registryUrl + "?implementation-registry-version-mutation=" + Date.now()
+    );
+  }
   const converter = await import(
     pathToFileURL(converterPath).href + "?implementation-check=" + Date.now()
   );
   const projected = registry.canonicalDatabaseMigrations;
   if (!Array.isArray(projected)) fail("implemented canonicalDatabaseMigrations export is absent");
-  exact(registry.CANONICAL_DATABASE_SCHEMA_VERSION, 27, "implemented schema version");
-  exact(registry.NEXT_DATABASE_MIGRATION_VERSION, 28, "implemented next version");
+  try {
+    assertImplementationRegistryVersionAuthority(oracle, registry);
+  } catch (error) {
+    if (!registryVersionProofChild) throw error;
+    emitImplementationRegistryVersionProof(
+      oracle,
+      registryVersionMutationId,
+      error,
+      registryVersionTransportMutationId,
+    );
+  }
+  if (registryVersionProofChild) {
+    fail("implementation registry version proof child missed the live assertion origin");
+  }
+  const implementationSchemaVersion = registry.CANONICAL_DATABASE_SCHEMA_VERSION;
+  const implementationNextVersion = registry.NEXT_DATABASE_MIGRATION_VERSION;
+  const versionCounterexamples = implementationRegistryVersionCounterexamples(oracle);
+  const liveImportedRegistryMutations =
+    registryVersionMutationId === null ? implementationRegistryVersionMutationProof(oracle) : null;
   const runner = await import(
     pathToFileURL(join(repositoryRoot, "packages/storage/src/migration-runner.ts")).href
   );
@@ -6827,6 +7668,12 @@ async function implementationCheck(oracle, runtime) {
     changedPaths: changed.size,
     typeScriptPaths: typeScriptPaths.length,
     applyMigrationPaths: applyPaths.length,
+    registryVersionAuthority: {
+      schemaVersion: implementationSchemaVersion,
+      nextVersion: implementationNextVersion,
+      ...versionCounterexamples,
+      liveImportedRegistryMutations,
+    },
     sequence,
   };
 }
@@ -6835,20 +7682,26 @@ function acceptedFileDrift(oracle) {
   const paths = new Map();
   for (const input of oracle.frozenInputs) paths.set(input.path, input.id);
   for (const migration of oracle.canonicalRegistry.migrations) {
-    paths.set(migration.source, "MIGRATION-" + migration.version);
+    paths.set(migration.source, {
+      id: "MIGRATION-" + migration.version,
+      acceptedSha256: migrationAuthoritySourceSha256(migration),
+    });
   }
   const drift = [];
-  for (const [path, id] of paths) {
+  for (const [path, authority] of paths) {
+    const id = typeof authority === "string" ? authority : authority.id;
+    const acceptedSha256 =
+      typeof authority === "string" ? sha256(readCommitted(path)) : authority.acceptedSha256;
     let observed;
     try {
       observed = sha256(readFileSync(join(repositoryRoot, path)));
     } catch {
-      drift.push({ id, path, acceptedSha256: sha256(readCommitted(path)), worktreeSha256: null });
+      drift.push({ id, path, acceptedSha256, worktreeSha256: null });
       continue;
     }
-    const accepted = sha256(readCommitted(path));
-    if (observed !== accepted)
-      drift.push({ id, path, acceptedSha256: accepted, worktreeSha256: observed });
+    if (observed !== acceptedSha256) {
+      drift.push({ id, path, acceptedSha256, worktreeSha256: observed });
+    }
   }
   return drift;
 }
@@ -6866,10 +7719,15 @@ function table(headers, rows) {
 }
 
 function renderDesign(oracle, digest) {
+  const acceptedAppend = oracle.canonicalRegistry.migrations.find(
+    (row) => row.version === LIVE_CANONICAL_VERSION,
+  );
   const lines = [
     "# Canonical database migration registry v1",
     "",
-    "Status: **frozen design for issue #233**. Implementation belongs to issue #234.",
+    "Status: **frozen-design; signed; normative; issue #247 rebind accepted**. Accepted rows 1 through 29 are frozen; slot 29 is exact issue #246 provenance at commit `" +
+      APPROVAL_REPAIR_ACCEPTED_COMMIT +
+      "`.",
     "",
     "Oracle SHA-256: `" + digest + "`.",
     "",
@@ -6877,35 +7735,40 @@ function renderDesign(oracle, digest) {
     "",
     "## Result",
     "",
-    "The application has **27 accepted semantic migrations**. Their one canonical contiguous order is 1 through 27. The exact next legal migration, including report creation, is **28**. The existing schema ceiling 11 is not a registry.",
+    "The authority contains **29 accepted semantic migrations** in one canonical contiguous order from 1 through 29. Accepted report creation remains exact slot 28, accepted approval-creator-provenance-repair remains exact slot 29, and the next legal migration is **30**. The historical schema ceiling 11 is not a registry.",
     "",
     "`" +
       oracle.canonicalRegistry.registryPath +
       "` is the only production registry. `" +
       oracle.canonicalRegistry.conversionPath +
-      "` owns exact historical conversion. Both are issue #234 deliverables; neither is implemented by this design issue.",
+      "` owns exact historical conversion to the immutable accepted target at 27. Issue #247 rebinds that implemented authority to accepted report slot 28 and exact accepted issue #246 slot 29 at commit `" +
+      APPROVAL_REPAIR_ACCEPTED_COMMIT +
+      "` without changing historical conversion provenance.",
+    "",
+    "Production tip authority is explicit: historical conversion stops at **" +
+      oracle.runtimeAuthority.tipAuthority.historicalConversionTargetVersion +
+      "**, the common gated runner applies suffixes **" +
+      oracle.runtimeAuthority.tipAuthority.liveSuffixVersions.join(" and ") +
+      "**, and the opener returns only at exact live tip **" +
+      oracle.runtimeAuthority.tipAuthority.liveCanonicalVersion +
+      "** with registry identity `" +
+      oracle.runtimeAuthority.tipAuthority.liveCanonicalIdentitySha256 +
+      "`. " +
+      oracle.runtimeAuthority.tipAuthority.syntheticProofScope,
     "",
     "Package boundary: " + oracle.runtimeAuthority.packageBoundary,
     "",
     "## Canonical registry",
     "",
     table(
-      [
-        "Slot",
-        "Semantic identity",
-        "Legacy slot",
-        "SHA-256",
-        "FK mode",
-        "Accepted issue",
-        "Source",
-      ],
+      ["Slot", "Semantic identity", "Legacy slot", "SHA-256", "FK mode", "Authority", "Source"],
       oracle.canonicalRegistry.migrations.map((row) => [
         row.version,
         row.id,
         row.declaredVersion ?? "unrecorded",
         "`" + row.contentHash + "`",
         row.requiresForeignKeysOff ? "off around transaction" : "on",
-        "#" + row.acceptedIssue,
+        "accepted #" + row.acceptedIssue,
         "`" +
           row.source +
           "#" +
@@ -6918,6 +7781,18 @@ function renderDesign(oracle, digest) {
     "Order rule: " + oracle.canonicalRegistry.orderRule,
     "",
     "Checksum rule: " + oracle.checksumAuthority.immutability,
+    "",
+    "Accepted slot-29 provenance: issue #" +
+      acceptedAppend.acceptedIssue +
+      ", commit `" +
+      acceptedAppend.acceptedCommit +
+      "`, source SHA-256 `" +
+      acceptedAppend.acceptedSourceSha256 +
+      "`; raw SQL SHA-256 `" +
+      acceptedAppend.acceptedSqlSha256 +
+      "`; migration content hash `" +
+      acceptedAppend.contentHash +
+      "`.",
     "",
     "Registry identity SHA-256: `" + oracle.canonicalRegistry.identityDigest + "`.",
     "",
@@ -7092,6 +7967,13 @@ function renderDesign(oracle, digest) {
         .join(", ") +
       ".",
     "",
+    "Live imported registry-version gate: `--implementation-check`; exact whole-checker mutations: " +
+      oracle.appendStableProvenance.implementationRegistryVersionMutationIds
+        .map((id) => "`" + id + "`")
+        .join(", ") +
+      ". " +
+      oracle.appendStableProvenance.implementationRegistryVersionMutationRule,
+    "",
     "### Legacy fixture compatibility after registry append",
     "",
     oracle.runtimeAuthority.legacyFixtureCompatibility.entryPoint,
@@ -7200,7 +8082,7 @@ function renderDesign(oracle, digest) {
     "",
     "- Historical backup rule: " + oracle.operationsAuthority.restoreAuthority,
     "",
-    "## Issue #234 implementation boundary",
+    "## Retained implementation and issue #247 rebind boundary",
     "",
     "Production paths:",
     "",
@@ -7268,7 +8150,9 @@ function renderDesign(oracle, digest) {
       "`, contains " +
       oracle.issue234.currentTreeAuthority.productionSourceClassification.positiveFixture
         .ddlStatements +
-      " local DDL statements, and remains outside the 111-path mutation, canonical-DDL, and direct-SQL allowlists.",
+      " local DDL statements, and remains outside the " +
+      oracle.issue234.currentTreeAuthority.allowedMutationPathCount +
+      "-path mutation, canonical-DDL, and direct-SQL allowlists.",
     "",
     "Implemented registry proof: " + oracle.issue234.currentTreeAuthority.registryImport,
     "",
@@ -7284,7 +8168,9 @@ function renderDesign(oracle, digest) {
       (row, index) => String(index + 1) + ". **" + row.id + "**: " + row.text,
     ),
     "",
-    "Report creation remains outside #234. It may consume slot 28 only after this registry is implemented and verified.",
+    "Accepted report creation remains exact slot 28. Accepted issue #246 approval-creator-provenance-repair remains exact slot 29 at immutable implementation/test commit `" +
+      APPROVAL_REPAIR_ACCEPTED_COMMIT +
+      "`; independent issue #247 review is complete.",
     "",
   ];
   return lines.join("\n");
@@ -7294,7 +8180,7 @@ function renderDecisions(oracle, digest) {
   const lines = [
     "# Database migration registry decisions v1",
     "",
-    "Status: **frozen design for issue #233**.",
+    "Status: **frozen-design; signed; normative; issue #247 rebind accepted**.",
     "",
     "Oracle SHA-256: `" + digest + "`.",
     "",
@@ -7353,7 +8239,11 @@ function renderDecisions(oracle, digest) {
     "",
     "Repeated open: " + oracle.runtimeAuthority.repeatedOpen,
     "",
+    "Live return authority: " + oracle.runtimeAuthority.tipAuthority.returnRule,
+    "",
     "Newer version: " + oracle.runtimeAuthority.newerVersion,
+    "",
+    "Synthetic proof scope: " + oracle.runtimeAuthority.tipAuthority.syntheticProofScope,
     "",
     "Partial failure: " + oracle.runtimeAuthority.partialFailure,
     "",
@@ -7375,7 +8265,9 @@ function renderDecisions(oracle, digest) {
     "",
     oracle.oracle.absenceOfDeploymentAuthority,
     "",
-    "No user decision is required for this design. The blocker list is empty. Discovery of an external history that does not match the frozen whitelist is a new consequential compatibility decision and must stop before mutation.",
+    "No new runtime compatibility decision is required by this rebind. Independent issue #247 review is complete, and accepted slot 29 is bound to issue #246 commit `" +
+      APPROVAL_REPAIR_ACCEPTED_COMMIT +
+      "`. Discovery of an external history that does not match the frozen whitelist remains a consequential compatibility decision and must stop before mutation.",
     "",
   ];
   return lines.join("\n");
@@ -7387,7 +8279,7 @@ function renderCoverage(oracle, digest) {
   const lines = [
     "# Database migration registry coverage v1",
     "",
-    "Status: **frozen design for issue #233**.",
+    "Status: **frozen-design; signed; normative; issue #247 rebind accepted**.",
     "",
     "Oracle SHA-256: `" + digest + "`.",
     "",
@@ -7404,19 +8296,28 @@ function renderCoverage(oracle, digest) {
       ]),
     ),
     "",
-    "## Required executable proofs for issue #234",
+    "## Required executable proofs retained by the rebound authority",
+    "",
+    "The executable checker corpus contains **" +
+      oracle.checkerAuthority.structuralMutationCount +
+      " structural mutations** and **" +
+      oracle.checkerAuthority.sourceMutationCount +
+      " isolated source mutations**. " +
+      oracle.checkerAuthority.countRule,
     "",
     table(
       ["Proof", "Kind", "Required postcondition"],
       oracle.proofs.map((row) => [row.id, row.kind, row.postcondition]),
     ),
     "",
-    "The design checker closes all 27 accepted production DDL source files against the registry; classifies the exact 18-file accepted package-src test/fixture naming inventory and proves the unchanged selected-export local-DDL fixture is non-production without adding an allowlist exception; freezes all 62 TypeScript execution roots and 94 calls; executes the immutable source projection, fresh/repeated-open real-SQLite projection, append-stable legacy-fixture compatibility at release tips 27/28/29, schema-only convergence for all 44 convertible histories and 76 unique prefixes, all seven convertible reindex overlays plus 12 forgeries, 16 no-source-write preflight cases including every added/changed table/index/trigger/view adjacency with whole-tree and sidecar equality, and one shared strict provenance decoder through a real production legacy conversion to target 27 plus synthetic suffix/reopen/doctor/backup/empty/full-restore projections and five forged records. Dedicated implementation-sequence and implementation-compatibility gates import the real production converter/opener/runner. At exact release tips 27, 28, and 29, the compatibility child requires direct, early, and dynamic-equivalent recorder calls to verify the complete current-tip authority before WeakMap mutation and change zero serialized bytes; then runMigrations must rederive and byte-compare the fingerprint before its zero-write no-op. Each tip rejects eight invalid authorities through all three access forms, proves failed recording leaves three standalone fixtures unrecorded, and rejects five independent post-record tamper classes before fixture SQL with byte-identical state. Each access form also rejects a same-cardinality action_plans_state_idx replacement whose type/name/table remain fixed but SQL differs. After restoration it passes a standalone fixture registry: strict unrecorded apply must reject without changing bytes or creating the fixture table, while any leaked canonical marker would produce a detectable false no-op. A self-contained mutation stores that expected fingerprint on the verifier failure and rethrows, then is killed by this discriminator. The mutation runtime also first proves its exact verifier accepts valid authority before killing a count-only schema verifier. It proves strong and weak fingerprint implementations accept an initial valid reindex state, transitions to a second verifier-valid but fingerprint-distinct overlay state, revalidates that state with the strong verifier, and kills the weak constant only after observing its false no-op; precondition exceptions cannot count as kills. Verify-after-set remains covered. The exact eight-name storage index re-export is checked only as non-authoritative API hygiene; source reachability, recorder identifier counts, caller location, call order outside the recorder boundary, and dynamic-code capability bans are not security evidence. Domain-data parity, injected production crash hooks, operational doctor, filesystem backup/restore, and the complete Bun suite remain #234 implementation gates; this document does not claim them as implemented.",
+    "The checker closes all 29 accepted canonical semantic source paths against the registry. Row 29 uses exact issue #246 commit `" +
+      APPROVAL_REPAIR_ACCEPTED_COMMIT +
+      "`, source SHA-256, raw SQL SHA-256, and migration content hash provenance. It retains the 62-file / 94-call historical composition corpus, all 44 convertible histories and 76 unique prefixes, seven convertible reindex overlays plus 12 forgeries, 16 no-source-write preflight cases, and one shared strict provenance decoder. The sequence projection converts only to immutable historical target 27, then routes real report slot 28, accepted approval-repair slot 29, and checker-only proof slots 30 and 31 through the same pre-suffix gate. The compatibility projection runs at exact release tips 27, 28, 29, 30, and 31. At every tip, direct, early, and dynamic-equivalent recorder access verifies complete authority before WeakMap mutation; eight invalid authorities, same-cardinality schema substitution, failed-record marker leakage, five post-record tamper classes, count-only schema, weak-constant fingerprint, verify-after-set, package export-surface, and strict-runner bypass mutations remain fail closed. Recorder reachability and source-location heuristics are not security evidence.",
     "",
     "## Retirement closure",
     "",
     table(
-      ["Retirement", "Accepted baseline", "Issue #234 postcondition"],
+      ["Retirement", "Accepted baseline", "Required postcondition"],
       oracle.retirement.map((row) => [row.id, row.current, row.required]),
     ),
     "",
@@ -7454,6 +8355,7 @@ function renderCoverage(oracle, digest) {
     "bun docs/architecture/database-migration-registry-check.v1.mjs --self-test",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --source-self-test",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --source-drift --json",
+    "bun docs/architecture/database-migration-registry-check.v1.mjs --implementation-check --json",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --implementation-sequence-check",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --implementation-compatibility-check",
     "bun docs/architecture/database-migration-registry-check.v1.mjs --digest",
@@ -7461,9 +8363,21 @@ function renderCoverage(oracle, digest) {
     "python3 .agents/skills/plan-agent-mail/scripts/check_plan.py",
     "```",
     "",
-    "Issue #234 must make `--implementation-sequence-check` green with the real production converter and opener under live/synthetic suffixes 28/29, make `--implementation-compatibility-check` green for exact release tips 27/28/29, and run `bun test` before the complete scoped `--implementation-check`. The compatibility gate intentionally rejects the current literal-27 runner shortcut until #234 replaces it with the verified-handle fingerprint boundary.",
+    "The signed issue #247 authority requires `--implementation-check` to derive exact exported versions 29/30 from the oracle, reject separate helper-level stale 27/28 counterexamples, and kill fresh whole-checker live-import mutations `" +
+      oracle.appendStableProvenance.implementationRegistryVersionMutationIds.join("`, `") +
+      "` only through their exact private-tagged assertion-origin records and canonical serialized proof bytes. Whole-parent transport counterexamples `" +
+      oracle.appendStableProvenance.implementationRegistryVersionTransportCounterexampleIds.join(
+        "`, `",
+      ) +
+      "` must all remain non-success, including duplicate format and actual keys preceding the expected keys. The unrelated pre-assertion counterexample `" +
+      oracle.appendStableProvenance.implementationRegistryVersionPhraseSpoofId +
+      "` contains the former success phrase but must remain non-success, as must `" +
+      oracle.appendStableProvenance.implementationRegistryVersionGenericFailureId +
+      "`. `--implementation-sequence-check` stays green with real production slots 28 and 29 followed by checker-only suffixes 30 and 31, and `--implementation-compatibility-check` stays green at exact release tips 27, 28, 29, 30, and 31. Slot 29 is accepted issue #246 provenance at immutable commit `" +
+      APPROVAL_REPAIR_ACCEPTED_COMMIT +
+      "`.",
     "",
-    "Checker mutations cover canonical identity/order, the all-TypeScript corpus and capacity roots, sequence-derived preflight effects/schema/order, strict provenance DDL/row/gate/trigger/domain/forgery checks, generic reindex grammar/full-object-tuple/counter forgeries, lifecycle and coverage closure, live-tip converter-loop, legacy-opener-bypass, literal fixture tip, caller ceiling, complete-fingerprint, same-cardinality/count-only schema, verifier-failure marker leakage, weak-constant, verify-after-set, exact package export-surface, and strict-runner-bypass counterexamples, the exact 111-path/27-semantic-source allowlist including removal and unrelated-addition negatives, current-tree deletion/rename allow/protect/import-alias/slot-20-sql-constant/registry-index/direct-bracket-at-find-destructuring/bypass policy, report-scope exclusion, blockers, and frozen-input drift. The source self-test launches one fresh checker process for each frozen source mutation over real accepted source bytes or explicit virtual Git source/test/deletion/rename records. Runtime children independently prove that recorder reachability is harmless because invalid authority cannot mutate compatibility state, rather than treating source exclusivity or dynamic-code syntax as trust.",
+    "Checker mutations cover every field of accepted slot 29, including issue, commit, source bytes, raw SQL bytes, and rejection of reintroduced candidate provenance; every structured live-tip field; exact target-27 conversion, live-29 return/newer-version, synthetic-30/31 proof-scope, opener, lifecycle, and rendered-view authority; canonical identity/order; the all-TypeScript corpus and capacity roots; sequence-derived preflight effects/schema/order; strict provenance DDL/row/gate/trigger/domain/forgery checks; generic reindex grammar/full-object-tuple/counter forgeries; lifecycle and coverage closure; live-tip converter-loop; legacy-opener-bypass; whole-checker live imported stale-version assertion bypass, duplicate-key/canonical-proof-byte transport mutations, unrelated generic failure, and unrelated matching-phrase origin spoof; literal fixture tip; caller ceiling; complete-fingerprint; same-cardinality/count-only schema; verifier-failure marker leakage; weak-constant; verify-after-set; exact package export-surface; and strict-runner-bypass counterexamples. The exact 113-path / 29-semantic-source union retains deletion/rename allow/protect, import-alias, slot-20 SQL constant, registry-index, direct bracket/at/find/destructuring, bypass, protected #231, blockers, and frozen-input negatives. Source mutations run in fresh checker processes over exact accepted authority bytes plus explicit virtual Git records.",
     "",
   ];
   return lines.join("\n");
@@ -7495,9 +8409,66 @@ const mutations = [
   ["slot-gap", (value) => (value.canonicalRegistry.migrations[2].version = 4)],
   ["row-reorder", (value) => value.canonicalRegistry.migrations.reverse()],
   ["name-drift", (value) => (value.canonicalRegistry.migrations[0].name = "messages")],
+  ["live-schema-version", (value) => (value.canonicalRegistry.schemaVersion = 27)],
+  ["live-schema-object-count", (value) => (value.canonicalRegistry.freshSchemaObjectCount = 219)],
+  ["accepted-report-version", (value) => (value.canonicalRegistry.reportMigrationVersion = 27)],
+  ["next-live-slot", (value) => (value.canonicalRegistry.nextLegalMigrationVersion = 29)],
   [
     "checksum-drift",
     (value) => (value.canonicalRegistry.migrations[0].contentHash = "0".repeat(64)),
+  ],
+  [
+    "accepted-append-source-hash",
+    (value) => (value.canonicalRegistry.migrations[28].acceptedSourceSha256 = "0".repeat(64)),
+  ],
+  [
+    "accepted-append-sql-hash",
+    (value) => (value.canonicalRegistry.migrations[28].acceptedSqlSha256 = "0".repeat(64)),
+  ],
+  ["accepted-append-slot", (value) => (value.canonicalRegistry.migrations[28].version = 30)],
+  ["accepted-append-id", (value) => (value.canonicalRegistry.migrations[28].id = "forged-append")],
+  [
+    "accepted-append-name",
+    (value) => (value.canonicalRegistry.migrations[28].name = "forged-append"),
+  ],
+  [
+    "accepted-append-declared-version",
+    (value) => (value.canonicalRegistry.migrations[28].declaredVersion = 28),
+  ],
+  ["accepted-append-path", (value) => (value.canonicalRegistry.migrations[28].source += ".forged")],
+  ["accepted-append-export", (value) => (value.canonicalRegistry.migrations[28].export = "forged")],
+  [
+    "accepted-append-content-hash",
+    (value) => (value.canonicalRegistry.migrations[28].contentHash = "f".repeat(64)),
+  ],
+  [
+    "accepted-append-execution-mode",
+    (value) => (value.canonicalRegistry.migrations[28].requiresForeignKeysOff = true),
+  ],
+  [
+    "accepted-append-reintroduced-authority-state",
+    (value) => (value.canonicalRegistry.migrations[28].authorityState = "accepted"),
+  ],
+  [
+    "accepted-append-reintroduced-candidate-issue",
+    (value) => (value.canonicalRegistry.migrations[28].candidateIssue = 245),
+  ],
+  [
+    "accepted-append-reintroduced-authority-issue",
+    (value) => (value.canonicalRegistry.migrations[28].authorityIssue = 233),
+  ],
+  [
+    "accepted-append-dependency",
+    (value) =>
+      (value.canonicalRegistry.migrations[28].dependsOn = ["seal-key-administration-authority"]),
+  ],
+  [
+    "accepted-append-commit",
+    (value) => (value.canonicalRegistry.migrations[28].acceptedCommit = ACCEPTED_HEAD),
+  ],
+  [
+    "accepted-append-issue",
+    (value) => (value.canonicalRegistry.migrations[28].acceptedIssue = 245),
   ],
   [
     "execution-mode",
@@ -7520,6 +8491,41 @@ const mutations = [
   ["coverage-loss", (value) => delete value.coverage["REQ-RESTORE"]],
   ["operations-loss", (value) => (value.operationsAuthority.fullRestore = "")],
   ["backup-capability-loss", (value) => (value.runtimeAuthority.conversionBackupCapability = "")],
+  [
+    "runtime-historical-target-version",
+    (value) => (value.runtimeAuthority.tipAuthority.historicalConversionTargetVersion = 29),
+  ],
+  [
+    "runtime-live-tip-version",
+    (value) => (value.runtimeAuthority.tipAuthority.liveCanonicalVersion = 27),
+  ],
+  [
+    "runtime-live-tip-digest",
+    (value) => (value.runtimeAuthority.tipAuthority.liveCanonicalIdentitySha256 = "0".repeat(64)),
+  ],
+  [
+    "runtime-live-suffixes",
+    (value) => (value.runtimeAuthority.tipAuthority.liveSuffixVersions = [28]),
+  ],
+  [
+    "runtime-synthetic-proof-versions",
+    (value) => (value.runtimeAuthority.tipAuthority.syntheticProofVersions = [29, 30]),
+  ],
+  [
+    "runtime-live-return-rule",
+    (value) => (value.runtimeAuthority.tipAuthority.returnRule = "return at target 27"),
+  ],
+  [
+    "runtime-live-newer-rule",
+    (value) => (value.runtimeAuthority.tipAuthority.newerVersionRule = "reject above 27"),
+  ],
+  [
+    "runtime-synthetic-proof-scope",
+    (value) => (value.runtimeAuthority.tipAuthority.syntheticProofScope = "production tips"),
+  ],
+  ["runtime-repeated-open-tip", (value) => (value.runtimeAuthority.repeatedOpen = "tip 27")],
+  ["runtime-newer-version-tip", (value) => (value.runtimeAuthority.newerVersion = "above 27")],
+  ["runtime-live-metadata", (value) => (value.runtimeAuthority.metadata = "target 27 only")],
   ["conversion-metadata-loss", (value) => value.conversionMetadata.columns.pop()],
   ["conversion-ddl", (value) => (value.conversionMetadata.ddl.tableSql += " ")],
   ["conversion-row-domain", (value) => (value.conversionMetadata.recordEncoding = "")],
@@ -7603,6 +8609,10 @@ const mutations = [
   ],
   ["preflight-schema-mutation", (value) => value.preflightAuthority.schemaMutationCases.pop()],
   ["preflight-open-order", (value) => value.runtimeAuthority.openOrder.pop()],
+  [
+    "live-opener-return",
+    (value) => (value.runtimeAuthority.openOrder[11] = "return at canonical version 27"),
+  ],
   ["reindex-grammar", (value) => (value.reindexAuthority.operationNamePattern = ".*")],
   ["reindex-family", (value) => value.reindexAuthority.replacementObjectFamily.pop()],
   [
@@ -7657,11 +8667,74 @@ const mutations = [
   ],
   ["registry-relocation", (value) => delete value.canonicalRegistry.migrations[17].registrySource],
   [
+    "synthetic-proof-suffix-version",
+    (value) => (value.appendStableProvenance.proofSuffixes[0].version = 29),
+  ],
+  [
+    "compatibility-release-probes",
+    (value) =>
+      (value.runtimeAuthority.legacyFixtureCompatibility.releaseProbeVersions = [27, 28, 29]),
+  ],
+  [
+    "lifecycle-fresh-live-tip",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-FRESH").expected = "canonical 27"),
+  ],
+  [
+    "lifecycle-canonical-upgrade-live-tip",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-CANONICAL-UPGRADE").expected =
+        "return at target 27"),
+  ],
+  [
+    "lifecycle-canonical-upgrade-writes",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-CANONICAL-UPGRADE").writes =
+        "one target-27 transaction"),
+  ],
+  [
+    "lifecycle-legacy-upgrade-live-tip",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-LEGACY-UPGRADE").expected =
+        "convert and return at target 27"),
+  ],
+  [
+    "lifecycle-legacy-upgrade-writes",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-LEGACY-UPGRADE").writes =
+        "one target-27 transaction"),
+  ],
+  [
+    "lifecycle-reopen-live-tip",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-REOPEN").expected =
+        "validated target-27 no-op"),
+  ],
+  [
+    "lifecycle-newer-live-tip-input",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-NEWER").input = "user_version above 27"),
+  ],
+  [
+    "lifecycle-newer-live-tip-result",
+    (value) =>
+      (value.lifecycleCases.find((row) => row.id === "LC-NEWER").expected = "accept proof tip 30"),
+  ],
+  [
+    "live-opener-decision",
+    (value) =>
+      (value.decisions.find((row) => row.id === "DEC-ONE-OPENER").text =
+        "The database opener returns target 27."),
+  ],
+  [
     "report-scope",
     (value) => value.issue234.productionPaths.push("packages/storage/src/report-migration.ts"),
   ],
   ["blocker-invention", (value) => value.blockers.push("invented")],
   ["frozen-input", (value) => (value.frozenInputs[0].sha256 = "invalid")],
+  ["structural-mutation-count", (value) => (value.checkerAuthority.structuralMutationCount = 0)],
+  ["source-mutation-count", (value) => (value.checkerAuthority.sourceMutationCount = 0)],
+  ["checker-count-rule", (value) => (value.checkerAuthority.countRule = "reported from prose")],
 ];
 
 function runSelfTest(oracle) {
@@ -7732,7 +8805,9 @@ if (compatibilityChildArgument !== undefined) {
     compatibilityChildArgument.slice("--compatibility-child=".length),
     10,
   );
-  if (![27, 28, 29].includes(releaseVersion)) fail("invalid compatibility child release");
+  if (![27, 28, 29, 30, 31].includes(releaseVersion)) {
+    fail("invalid compatibility child release");
+  }
   const childResult = await implementationCompatibilityChild(oracle, releaseVersion);
   process.stdout.write(JSON.stringify(childResult) + "\n");
   process.exit(0);

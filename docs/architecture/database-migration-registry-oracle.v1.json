@@ -5,12 +5,18 @@
   "status": "frozen-design",
   "oracle": {
     "normative": true,
+    "signable": true,
+    "signatureState": "signed",
     "issue": 233,
+    "rebindIssue": 247,
     "implementationIssue": 234,
+    "appendImplementationIssue": 246,
+    "appendImplementationCommit": "8b356bb15a9de481460a0d46b54b395a08dad82a",
     "shapingCommit": "547f70dd67959541324688b7b737749bc43791ab",
     "scope": "Canonical SQLite migration identity, ordering, history conversion, opener authority, diagnostics, backup, and restore behavior.",
     "compatibilityRule": "Only an exact canonical prefix or an exact prefix of a listed convertible legacy composition may be changed. Unknown, ambiguous, corrupt, direct-SQL, and placeholder histories remain byte-untouched and fail closed.",
-    "absenceOfDeploymentAuthority": "The repository and accepted planning evidence contain no live, deployed, or externally inventoried database history. This oracle therefore freezes lossless conversion for every exact accepted ledger observed in source without inventing a data-discard policy."
+    "absenceOfDeploymentAuthority": "The repository and accepted planning evidence contain no live, deployed, or externally inventoried database history. This oracle therefore freezes lossless conversion for every exact accepted ledger observed in source without inventing a data-discard policy.",
+    "acceptedAppendRule": "Accepted canonical rows 1 through 28 retain exact accepted commit provenance. Slot 29 is accepted issue 246 provenance bound to commit 8b356bb15a9de481460a0d46b54b395a08dad82a, its exact path, source SHA-256, raw SQL SHA-256, migration content hash, execution mode, and dependencies. Independent issue 247 review is complete, and this signed normative rebind changes no historical conversion target, live-tip identity, compatibility rule, or implementation scope."
   },
   "baseline": {
     "productionRegistry": "absent",
@@ -60,12 +66,14 @@
   "canonicalRegistry": {
     "registryPath": "packages/storage/src/migration-registry.ts",
     "conversionPath": "packages/storage/src/migration-history-conversion.ts",
-    "schemaVersion": 27,
-    "nextLegalMigrationVersion": 28,
-    "nextLegalReportMigrationVersion": 28,
+    "schemaVersion": 29,
+    "freshSchemaObjectCount": 220,
+    "reportMigrationVersion": 28,
+    "nextLegalMigrationVersion": 30,
+    "nextLegalReportMigrationVersion": 30,
     "identityDigestAlgorithm": "sha256(utf8(JSON.stringify(migrations.map(m => [m.version, m.name, m.contentHash, m.requiresForeignKeysOff]))))",
-    "identityDigest": "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
-    "orderRule": "Ascending first-accepted commit ancestry at shaping commit 547f70dd67959541324688b7b737749bc43791ab, with dependency order inside the three migrations first accepted together at 9d1f77791c2af1c024347c462899ca645823716a.",
+    "identityDigest": "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57",
+    "orderRule": "Rows 1 through 27 preserve ascending first-accepted commit ancestry at shaping commit 547f70dd67959541324688b7b737749bc43791ab, with dependency order inside the three migrations first accepted together at 9d1f77791c2af1c024347c462899ca645823716a. Accepted report-creation-v1 remains exact slot 28 at commit 78edad8196dd1ab622c4c17537f49435c1b14694. Accepted approval-creator-provenance-repair is exact issue 246 slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a after independent issue 247 review.",
     "migrations": [
       {
         "version": 1,
@@ -426,6 +434,34 @@
         "acceptedIssue": 204,
         "acceptedCommit": "9d1f77791c2af1c024347c462899ca645823716a",
         "dependsOn": ["action-plan-restore-quarantine"]
+      },
+      {
+        "version": 28,
+        "id": "report-creation-v1",
+        "name": "report-creation-v1",
+        "declaredVersion": 28,
+        "source": "packages/storage/src/migrations/0028-report-creation.ts",
+        "export": "reportCreationMigration",
+        "contentHash": "c7f21410a3e6e52373199531e6932c65df86ab40828af8268ddd735a1e8c1b52",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 232,
+        "acceptedCommit": "78edad8196dd1ab622c4c17537f49435c1b14694",
+        "dependsOn": ["message-catalog"]
+      },
+      {
+        "version": 29,
+        "id": "approval-creator-provenance-repair",
+        "name": "approval-creator-provenance-repair",
+        "declaredVersion": 29,
+        "source": "packages/storage/src/migrations/0029-approval-creator-provenance-repair.ts",
+        "export": "approvalCreatorProvenanceRepairMigration",
+        "acceptedSourceSha256": "007b6582439f5c9e50ff154ef8ebd9f181708b98f28f458dd153622dfa9925a6",
+        "acceptedSqlSha256": "1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc",
+        "contentHash": "1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc",
+        "requiresForeignKeysOff": false,
+        "acceptedIssue": 246,
+        "acceptedCommit": "8b356bb15a9de481460a0d46b54b395a08dad82a",
+        "dependsOn": ["action-plan-restore-quarantine"]
       }
     ]
   },
@@ -435,7 +471,7 @@
     "schemaFingerprint": "Decode one complete supported ledger sequence, then build its expected base schema in isolated in-memory SQLite from the exact frozen semantic definitions at the decoded contiguous positions. Compare the complete ordered tuple sequence and its digest, encoded as UTF-8 JSON.stringify of [type,name,tbl_name,sql] rows from sqlite_schema with SQLite null encoded as JSON null. Exclude only sqlite_ internals, exact fully validated schema_migrations infrastructure, exact fully validated conversion-provenance infrastructure and rows, and one fully classified reindex overlay. Never use a literal object allowlist, selected-table presence, unchecked name prefix, or digest without tuple equality; any added or changed table, index, trigger, or view is unsupported before a source effect.",
     "schemaOverlayRule": "Classify the unledgered search-reindex schema independently. Absent and exact empty one-table partial states are completed by canonical slot 20. Exact idle, both building-empty variants, nonempty building, or activating states preserve their control rows and deterministic replacement FTS objects; every active state accepts any operation name matching reindexAuthority.operationNamePattern and verifies the frozen name derivation and row/object relations. Any other control DDL, lease, progress, replacement name, object family, counter, digest, or orphan state is unsupported before write.",
     "conversionBackup": "Before changing a file-backed legacy database, automatically publish and verify one complete backup in the configured privateRoot/backups directory, outside the mutable data, blob, journal, and configuration subtrees. Conversion does not begin if backup creation or verification fails.",
-    "conversionTransaction": "Disable foreign keys before BEGIN IMMEDIATE, archive the exact legacy ledger, overlay classification, and their digests in immutable registry metadata, execute each missing semantic SQL body once in canonical slot order, preserve any valid active reindex actor state, validate integrity and foreign keys, replace schema_migrations with all 27 canonical rows, set user_version to 27, commit, and restore foreign_keys=ON. Any failure before commit rolls back the entire database conversion.",
+    "conversionTransaction": "Disable foreign keys before BEGIN IMMEDIATE, archive the exact legacy ledger, overlay classification, and their digests in immutable registry metadata, execute each missing target-27 semantic SQL body once in canonical slot order, preserve any valid active reindex actor state, validate integrity and foreign keys, replace schema_migrations with the exact canonical prefix 1..27, set user_version to 27, commit, and restore foreign_keys=ON. Any failure before commit rolls back the entire database conversion; later real and proof suffixes remain outside this transaction.",
     "conversionFeasibility": "At the shaping commit, every one of the 44 convertible full ledgers and all 76 unique non-empty prefixes can execute its missing frozen SQL bodies, including absent search-reindex control schema, inside one foreign-keys-off BEGIN IMMEDIATE transaction and reach the same 192 application schema objects with integrity ok and no foreign-key findings. Focused overlay probes cover absent, partial-empty, idle, both building-empty variants, nondefault nonempty building, and nondefault activating states plus forged negatives. This proves schema feasibility only; issue 234 must still prove ledger archival, backup, domain-row parity, and injected rollback.",
     "dataRule": "No table, row, blob reference, or accepted provenance may be dropped as a compatibility shortcut. Existing semantic SQL is skipped only after exact identity plus schema proof.",
     "unknownRule": "A missing ledger on a non-empty database, nonzero user_version without a ledger, unknown name or checksum, duplicate semantic identity, unexpected schema object, dependency contradiction, placeholder, direct-SQL bypass, or ambiguous fingerprint returns a stable unsupported-history error before any write.",
@@ -1071,6 +1107,16 @@
     "packageBoundary": "The storage registry never imports the daemon. Issue 234 moves the unchanged initial-backfill-completion definition from its accepted daemon source to packages/storage/src/migrations/initial-backfill-completion.ts, then makes the daemon consume the storage-owned definition.",
     "derivedConstants": "CANONICAL_DATABASE_SCHEMA_VERSION is registry.length and NEXT_DATABASE_MIGRATION_VERSION is schemaVersion + 1; no independent numeric ceiling is authoritative.",
     "conversionBackupCapability": "The application opener is constructed with validated archive-root paths and one pre-conversion backup capability. It invokes that capability only after the no-source-write scratch preflight classifies an exact legacy history, targeting configured privateRoot/backups. A missing capability, failed publication, failed verification, or locked fingerprint drift rejects legacy open before the source is opened read-write; fresh and canonical-prefix opens do not invoke it.",
+    "tipAuthority": {
+      "historicalConversionTargetVersion": 27,
+      "liveCanonicalVersion": 29,
+      "liveCanonicalIdentitySha256": "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57",
+      "liveSuffixVersions": [28, 29],
+      "syntheticProofVersions": [30, 31],
+      "returnRule": "after any target-27 conversion, apply and verify gated live suffixes 28 and 29 in order; admit writers and return the handle only at exact live canonical version 29 with its complete 1..29 history. Synthetic proof versions 30 and 31 are child-local checker registries and are never a production return state",
+      "newerVersionRule": "Against the production live registry at tip 29, user_version greater than 29 or any unknown later ledger row fails before mutation. Synthetic checker tips 30 and 31 confer no production admission authority. Downgrade and automatic repair are forbidden.",
+      "syntheticProofScope": "Versions 30 and 31 exist only in child-local synthetic checker registries that extend the exact live 1..29 prefix. They prove append stability and compatibility without changing the production live tip, opener return authority, or newer-version threshold."
+    },
     "openOrder": [
       "lstat and read a stable whole-tree plus main/WAL/SHM source snapshot without opening source SQLite or changing permissions",
       "materialize the main/WAL bytes into unpublishable owner-only scratch outside privateRoot",
@@ -1083,12 +1129,12 @@
       "BEGIN IMMEDIATE and revalidate the full logical fingerprint on the write connection, including every historical conversion row against the explicit accepted target-27 identity",
       "convert an exact legacy history atomically, or invoke the mandatory provenance gate before executing any pending canonical suffix SQL, history INSERT, or user_version write",
       "commit, restore foreign_keys, verify integrity, history, provenance, and reindex overlay, then admit writers",
-      "return the handle only at canonical version 27 with exact canonical history"
+      "after any target-27 conversion, apply and verify gated live suffixes 28 and 29 in order; admit writers and return the handle only at exact live canonical version 29 with its complete 1..29 history. Synthetic proof versions 30 and 31 are child-local checker registries and are never a production return state"
     ],
-    "repeatedOpen": "An exact current-version database performs no schema, history, conversion-ledger, reindex-actor, or domain write. It revalidates names, checksums, migration infrastructure, every immutable historical conversion target, and the reindex overlay before return.",
-    "newerVersion": "user_version greater than 27 or any unknown later ledger row fails before mutation. Downgrade and automatic repair are forbidden.",
+    "repeatedOpen": "An exact live-tip-29 database performs no schema, history, conversion-ledger, reindex-actor, or domain write. It revalidates names, checksums, the exact live 1..29 identity, migration infrastructure, every immutable historical conversion target, and the reindex overlay before return.",
+    "newerVersion": "Against the production live registry at tip 29, user_version greater than 29 or any unknown later ledger row fails before mutation. Synthetic checker tips 30 and 31 confer no production admission authority. Downgrade and automatic repair are forbidden.",
     "partialFailure": "The transaction commit is the only registry cutover. Preflight rejection leaves the complete source tree and sidecar presence/bytes/modes unchanged. Backup or locked-revalidation failure leaves the source database unchanged and retains any verified backup. Invalid current provenance aborts inside BEGIN IMMEDIATE before the first pending suffix SQL, history INSERT, or user_version write. Before commit, ordinary suffix failure leaves the previous canonical prefix and legacy conversion failure leaves the original legacy history, reindex overlay, and data. After commit, the complete new canonical prefix is authoritative and its immutable historical conversion-target rows remain valid. No mixed ledger/schema/provenance state is accepted; foreign keys and the persistent always-deny insertion trigger are restored on every non-crash exit.",
-    "metadata": "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows. Every accepted legacy conversion first commits exact canonical target 27 and preserves and digests the exact old history, base schema, overlay snapshot, immutable target-27 identity, verified backup identity, canonical timestamp, conversion id, and complete record. Version 28 and later are applied only as separately verified suffix migrations. The live full-registry identity is separate and may grow by append without rewriting historical rows.",
+    "metadata": "schema_migration_conversions is versioned migration-runner infrastructure beside schema_migrations, not an application migration slot. Registry v1 creates and verifies the byte-frozen table/index/trigger bundle in the first registry transaction. Fresh databases contain no conversion rows. Every accepted legacy conversion first commits exact historical target 27 and preserves and digests the exact old history, base schema, overlay snapshot, immutable target-27 identity, verified backup identity, canonical timestamp, conversion id, and complete record. The opener then applies gated production suffixes 28 and 29 and returns only after exact live-tip-29 verification. Child-local synthetic tips 30 and 31 never change production admission authority or historical conversion rows.",
     "legacyFixtureCompatibility": {
       "entryPoint": "runMigrations is a compatibility adapter for standalone test fixtures; applyMigrations remains the only strict migration executor and its sequence/history/version semantics are unchanged.",
       "registrationApi": "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures(connection) is a synchronous effect-safe recorder. It accepts only the Database object and no caller-supplied version, registry, ceiling, verifier, or trust flag. Before the first WeakMap mutation it independently recomputes and verifies the complete exact current-tip authority derived from canonicalDatabaseMigrations. Calling it early, through a re-export, dynamic import, eval, reflection, or any package location is harmless: invalid authority rejects without writes, while already-valid authority can be recorded observationally safely.",
@@ -1102,7 +1148,7 @@
         "if a recorded object drifted, reject with a stable migration mismatch before fixture SQL",
         "if the object is unrecorded, delegate unchanged to applyMigrations for a standalone fixture sequence"
       ],
-      "appendRule": "Registration derives the only admissible application tip from canonicalDatabaseMigrations.length and exact rows, never a literal 27/28/29, a minimum version, the fixture array length, or any caller ceiling. A release at canonical tip 27, the live report candidate at tip 28, and a child-local future tip 29 therefore share one rule; under a later release an older exact prefix is pending, not current, and cannot be recorded until applyMigrations commits and the opener verifies every suffix.",
+      "appendRule": "Registration derives the only admissible application tip from the registry supplied to that process and its exact rows, never a hard-coded version, a minimum version, the fixture array length, or any caller ceiling. Production authority contains historical target 27 followed by gated live suffixes 28 and 29 and admits only exact live tip 29. Child-local checker registries may append synthetic tips 30 and 31 to prove the same derivation rule, but those tips never confer production admission authority.",
       "strictnessRule": "applyMigrations never reads the compatibility WeakMap and never skips reconciliation. Unknown, forged, partial, newer, or mismatched history remains rejected by strict execution; a legitimate pending suffix always runs through the common beforePendingMigration gate before registration. The adapter cannot turn a raw prefix into a canonical application database.",
       "packageBoundary": "Effect safety, not source exclusivity, is the authority. The recorder is safe to reach from any code path because it verifies the complete exact current-tip invariant before changing the WeakMap. As non-authoritative API hygiene, packages/storage/src/index.ts directly re-exports exactly packageNamedExportAllowlist from extensionless ./migration-runner and omits the recorder; export-star, extension, or missing-name forms fail the defense-in-depth surface check. No import/export scanner, identifier-count rule, dynamic-code ban, caller location, or call-order claim is a security boundary.",
       "packageNamedExportAllowlist": [
@@ -1131,7 +1177,7 @@
         "migration-runner-export-star-extension",
         "migration-runner-named-export-missing"
       ],
-      "releaseProbeVersions": [27, 28, 29],
+      "releaseProbeVersions": [27, 28, 29, 30, 31],
       "negativeCases": [
         "literal-tip-27-guard",
         "caller-migration-length-ceiling",
@@ -1164,7 +1210,7 @@
         "named-export-allowlist-mismatch"
       ],
       "broadSuiteCommand": "bun test",
-      "issue234ProofContract": "Add focused migration-runner/database tests plus real production compatibility children for exact tips 27, 28, and 29. At each tip, direct, early, and dynamic-equivalent access must synchronously record a valid database without changing serialized bytes, then runMigrations must rederive the complete fingerprint and ignore a one-slot fixture with zero writes. For each tip create partial, unknown, forged-checksum, newer-version, schema-drift, history-name-drift, real target-27 conversion-provenance-drift, and reindex-overlay-drift authorities. Invoke all three recorder access forms on every invalid database; all 24 calls per tip must reject before WeakMap mutation or fixture SQL with serialized bytes unchanged, and the unrecorded compatibility runner must also reject. At every tip replace action_plans_state_idx with the same type/name/table and cardinality but changed SQL, invoke all three recorder forms, require rejection with byte-identical state, restore the exact tuple, then pass a standalone fixture registry to runMigrations. Strict unrecorded apply must reject with serialized bytes unchanged and no fixture table; success would expose a leaked marker. The self-contained failure-marker mutation catches this exact verifier failure after confirming current version/history, stores the expected canonical fingerprint, and rethrows; after tuple restoration the fixture-registry discriminator must expose its false no-op. After valid recording, independently tamper user_version, exact history, complete sqlite_schema, one real conversion row, and the reindex overlay; runMigrations must reject before fixture SQL with byte-identical state. Prove exact pending predecessors cannot record, suffixes use the common gate, applyMigrations remains strict, and fresh standalone fixtures apply and reopen. The self-contained mutation runtime must first accept valid authority: its exact verifier rejects the same-cardinality tuple substitution while a count-only verifier accepts it; its strong and weak fingerprint variants both accept one valid reindex state, a second valid but fingerprint-distinct overlay state remains accepted by the strong verifier, and only the weak constant fingerprint produces the forbidden false no-op. Exceptions before any precondition never count as mutation kills. Retain verify-after-set coverage. The exact eight-name index export remains defense-in-depth only; no source reachability or dynamic-code scanner is accepted as security evidence. Finally run the complete Bun suite."
+      "issue234ProofContract": "Add focused migration-runner/database tests plus real production compatibility children for exact tips 27, 28, 29, 30, and 31. At each tip, direct, early, and dynamic-equivalent access must synchronously record a valid database without changing serialized bytes, then runMigrations must rederive the complete fingerprint and ignore a one-slot fixture with zero writes. For each tip create partial, unknown, forged-checksum, newer-version, schema-drift, history-name-drift, real target-27 conversion-provenance-drift, and reindex-overlay-drift authorities. Invoke all three recorder access forms on every invalid database; all 24 calls per tip must reject before WeakMap mutation or fixture SQL with serialized bytes unchanged, and the unrecorded compatibility runner must also reject. At every tip replace action_plans_state_idx with the same type/name/table and cardinality but changed SQL, invoke all three recorder forms, require rejection with byte-identical state, restore the exact tuple, then pass a standalone fixture registry to runMigrations. Strict unrecorded apply must reject with serialized bytes unchanged and no fixture table; success would expose a leaked marker. The self-contained failure-marker mutation catches this exact verifier failure after confirming current version/history, stores the expected canonical fingerprint, and rethrows; after tuple restoration the fixture-registry discriminator must expose its false no-op. After valid recording, independently tamper user_version, exact history, complete sqlite_schema, one real conversion row, and the reindex overlay; runMigrations must reject before fixture SQL with byte-identical state. Prove exact pending predecessors cannot record, real suffixes 28 and 29 plus synthetic suffixes 30 and 31 use the common gate, applyMigrations remains strict, and fresh standalone fixtures apply and reopen. The self-contained mutation runtime must first accept valid authority: its exact verifier rejects the same-cardinality tuple substitution while a count-only verifier accepts it; its strong and weak fingerprint variants both accept one valid reindex state, a second valid but fingerprint-distinct overlay state remains accepted by the strong verifier, and only the weak constant fingerprint produces the forbidden false no-op. Exceptions before any precondition never count as mutation kills. Retain verify-after-set coverage. The exact eight-name index export remains defense-in-depth only; no source reachability or dynamic-code scanner is accepted as security evidence. Finally run the complete Bun suite."
     }
   },
   "appendStableProvenance": {
@@ -1198,34 +1244,55 @@
     ],
     "proofSuffixes": [
       {
-        "version": 28,
-        "name": "append-stability-probe-28",
-        "sql": "CREATE TABLE append_stability_probe_28 (id INTEGER PRIMARY KEY) STRICT",
-        "contentHash": "9683801eca4f11c88f59951c65c33c2cee99e1427d3cdd2eafb97215afc7afe3",
+        "version": 30,
+        "name": "append-stability-probe-30",
+        "sql": "CREATE TABLE append_stability_probe_30 (id INTEGER PRIMARY KEY) STRICT",
+        "contentHash": "e4f4319261856ffad83c5302f86af1cced4534d6db9c8235e9951ca44dd43c71",
         "requiresForeignKeysOff": false
       },
       {
-        "version": 29,
-        "name": "append-stability-probe-29",
-        "sql": "CREATE TABLE append_stability_probe_29 (id INTEGER PRIMARY KEY) STRICT",
-        "contentHash": "8ad0f903b865ae9372fa5cdecfc95b24baf4464dfb715e4daad07299708d314f",
+        "version": 31,
+        "name": "append-stability-probe-31",
+        "sql": "CREATE TABLE append_stability_probe_31 (id INTEGER PRIMARY KEY) STRICT",
+        "contentHash": "4c74bf9bbe2f22059d509a5efe35da359a463fb5b343a65f844c4a8c6e444da0",
         "requiresForeignKeysOff": false
       }
     ],
-    "proofSuffixAuthority": "The two fixed checker-only migrations prove generic append mechanics at 27 to 28 and 28 to 29. They are not canonical registry entries, production source, report semantics, placeholders, or authority to consume reserved report slot 28.",
-    "operationRule": "Reopen, doctor, backup serialization, empty restore, and full restore use the same strict accepted-target decoder. They report the live full-registry version/digest separately from the explicit historical target-27 version/digest. A current canonical backup may retain valid target-27 provenance after any suffix append; restore never upgrades a historical backup. A recomputed row containing the live prefix-28 full digest rejects in every operation.",
-    "failureRule": "A corrupt or forged existing conversion row, including a target-27 row replaced by the recomputed prefix-28 full digest, fails in disposable preflight and again inside the locked suffix transaction before persistent suffix effects. A crash before suffix commit leaves the exact predecessor; a crash after commit leaves the complete new canonical prefix with unchanged target-27 conversion bytes. Reopen repeats verification before any later append.",
+    "proofSuffixAuthority": "The two fixed checker-only migrations prove generic future append mechanics at 29 to 30 and 30 to 31 after exercising real report slot 28 and accepted approval-repair slot 29. They are not canonical registry entries, production source, report semantics, approval semantics, placeholders, or authority to consume any earlier slot.",
+    "operationRule": "Reopen, doctor, backup serialization, empty restore, and full restore use the same strict accepted-target decoder. They report the live full-registry version/digest separately from the explicit historical target-27 version/digest. A current canonical backup may retain valid target-27 provenance after any suffix append; restore never upgrades a historical backup. A recomputed row containing the live prefix-29 full digest rejects in every operation.",
+    "failureRule": "A corrupt or forged existing conversion row, including a target-27 row replaced by the recomputed prefix-29 full digest, fails in disposable preflight and again inside the locked suffix transaction before persistent suffix effects. A crash before suffix commit leaves the exact predecessor; a crash after commit leaves the complete new canonical prefix with unchanged target-27 conversion bytes. Reopen repeats verification before any later append.",
     "issue234RegistryContract": "Keep CANONICAL_DATABASE_REGISTRY_SHA256 as the live full-registry identity and add canonicalRegistryDigestAtVersion(targetVersion), which accepts only a safe contiguous canonical prefix and computes targetDigestAlgorithm. Digest computation does not confer conversion-target authority. The converter exports it for tests and resolves rows only against the explicit acceptedHistoricalTargets table; no row verifier compares target_registry_sha256 directly with the full-registry constant or derives accepted targets by enumerating live prefixes.",
     "issue234ConverterContract": "Export verifyCanonicalMigrationPrefixState(input, expectedPrefixVersion). It shares the strict provenance decoder with final verification and operations, requires the exact canonical ledger/schema/reindex state through expectedPrefixVersion, accepts only explicit target 27, and returns bounded live/target identity evidence without writing. convertMigrationHistory resolves acceptedHistoricalTargets[0], freezes targetVersion 27, derives targetMigrations = canonicalDatabaseMigrations.slice(0, targetVersion), executes and ledgers only targetMigrations, sets user_version exactly targetVersion, verifies target 27, and returns without observing or applying the live suffix. A for-of loop over canonicalDatabaseMigrations or a history rewrite from the complete live registry is forbidden.",
     "issue234RunnerContract": "Extend applyMigrations with a beforePendingMigration callback. For each missing migration, applyOne executes BEGIN IMMEDIATE, invokes the callback with the locked database plus exact current prefix and pending definition, and only then may execute migration SQL, create/insert history, or set user_version. Callback rejection rolls back with no suffix effect; the production canonical opener always supplies it.",
     "issue234OpenerContract": "The production opener performs legacy conversion when required and then, outside that conditional, always calls applyMigrations with the complete canonical registry and beforePendingMigration wired to verifyCanonicalMigrationPrefixState. A legacy-only return, an if/else branch that runs applyMigrations only for non-legacy opens, or any direct suffix SQL/history/user_version path is forbidden.",
     "issue234PreflightContract": "historyClassification and disposable scratch preflight validate complete conversion DDL and rows with the same explicit accepted-target decoder whenever infrastructure is present. A provenance-invalid current prefix, including a recomputed full-digest substitution, is not returned as supported-canonical-prefix and cannot reach WAL configuration or suffix application.",
-    "issue234ProofContract": "Run the real production convertMigrationHistory and production opener against a legacy database while a child-local registry appends the exact synthetic 28 and 29 definitions. Prove the converter transaction commits only semantic SQL, ledger rows, user_version, and immutable provenance for 1..27; prove the opener then routes 28 and 29 through applyMigrations and its in-BEGIN beforePendingMigration gate. Extend migration-conversion-provenance, database-preflight, migration-runner, database, doctor, backup-writer, backup-restore parity, and offline-root-replacement tests with both suffix crash boundaries and reopen, later append, unknown target, and the separate exact full-digest substitution that replaces target 27 with digest 28 and recomputes conversion_id and record_sha256. Require scratch-preflight, pre-suffix, reopen, doctor, backup, empty restore, and full restore rejection with zero suffix effects, separate doctor identities, exact production source projection, and exact backup/full-restore target-27 row-byte parity. Test suffixes are local fixtures and never define report semantics.",
+    "issue234ProofContract": "Run the real production convertMigrationHistory and production opener against a legacy database while a child-local registry retains real accepted report slot 28 and exact accepted issue 246 approval-repair slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a, then appends checker-only synthetic slots 30 and 31. Prove the converter transaction commits only semantic SQL, ledger rows, user_version, and immutable provenance for 1..27; prove the opener then routes 28, 29, 30, and 31 through applyMigrations and its in-BEGIN beforePendingMigration gate. Extend migration-conversion-provenance, database-preflight, migration-runner, database, doctor, backup-writer, backup-restore parity, and offline-root-replacement tests with both suffix crash boundaries and reopen, later append, unknown target, and the separate exact full-digest substitution that replaces target 27 with the live full-registry digest 29 and recomputes conversion_id and record_sha256. Require scratch-preflight, pre-suffix, reopen, doctor, backup, empty restore, and full restore rejection with zero suffix effects, separate doctor identities, exact production source projection, and exact backup/full-restore target-27 row-byte parity. Checker-only suffixes 30 and 31 are local fixtures and define neither report nor approval semantics.",
     "implementationSequenceMode": "--implementation-sequence-check",
     "implementationSequenceMutationIds": [
       "converter-live-tip-loop",
       "legacy-opener-skips-suffix-runner"
     ],
+    "implementationRegistryVersionMutationIds": [
+      "live-imported-registry-stale-schema-27",
+      "live-imported-registry-stale-next-28"
+    ],
+    "implementationRegistryVersionProofChildMode": "--implementation-registry-version-assertion-proof-child",
+    "implementationRegistryVersionProofFormat": "agent-mail.database-migration-registry-version-assertion-proof/v1",
+    "implementationRegistryVersionPhraseSpoofId": "unrelated-pre-assertion-version-phrase-spoof",
+    "implementationRegistryVersionPhraseSpoofMode": "--implementation-registry-version-assertion-phrase-spoof",
+    "implementationRegistryVersionTransportMutationPrefix": "--implementation-registry-version-proof-transport-mutation=",
+    "implementationRegistryVersionTransportCounterexampleIds": [
+      "duplicate-format-key-before-expected",
+      "duplicate-actual-key-before-expected",
+      "wrong-proof-record",
+      "extra-proof-record",
+      "missing-proof-record",
+      "mixed-proof-record",
+      "extra-whitespace-proof-record"
+    ],
+    "implementationRegistryVersionGenericFailureId": "unrelated-generic-pre-assertion-failure",
+    "implementationRegistryVersionGenericFailureMode": "--implementation-registry-version-assertion-generic-failure",
+    "implementationRegistryVersionMutationRule": "Every ordinary --implementation-check runs two fresh whole-checker proof children against the same clean accepted tree. One child mocks only the live imported CANONICAL_DATABASE_SCHEMA_VERSION export to stale 27; the other mocks only NEXT_DATABASE_MIGRATION_VERSION to stale 28. The assertion throws a private-tagged typed error with a dedicated code, actual value, and expected value. A narrow catch directly around that exact live assertion converts only the matching private origin into one canonical JSON.stringify proof record plus exactly one newline. The parent accepts only exit zero, byte-empty stderr, and byte-for-byte stdout equality with that sole canonical serialization; it never parses, trims, normalizes, or accepts multiple records. Dedicated whole-parent children must reach and reject wrong duplicate format and actual keys placed before the expected keys, wrong, extra, missing, mixed, and extra-whitespace proof records. Separate children prove that an unrelated generic pre-assertion failure and an unrelated failure containing the former exact success phrase remain non-success; the latter demonstrates that the legacy status-plus-phrase criterion would accept it. Status, stack text, generic messages, helper-only calls, source-text matches, commented calls, dead branches, removed calls, bypassed live imports, unrelated imports, pre-assertion failures, duplicate-key collapse, and noncanonical proof bytes cannot kill either live mutation.",
     "selfMutationCases": [
       "replace historical-prefix target resolution with equality to the current full-registry digest",
       "move strict provenance verification after pending suffix SQL, history INSERT, user_version write, or commit",
@@ -1256,7 +1323,7 @@
       "self-consistent sequence-mismatched schema tuples with every dependent component, conversion, and record hash recomputed",
       "self-consistent invalid overlay grammar or relation with every dependent component, conversion, and record hash recomputed",
       "self-consistent unknown target with conversion id and record hash recomputed",
-      "exact target-27 row changed to the proof-suffix-28 full-registry digest with conversion id and record hash recomputed"
+      "exact target-27 row changed to the live prefix-29 full-registry digest with conversion id and record hash recomputed"
     ],
     "columns": [
       "conversion_id TEXT PRIMARY KEY NOT NULL",
@@ -1348,8 +1415,8 @@
     {
       "id": "LC-FRESH",
       "input": "empty SQLite database",
-      "expected": "canonical 1..27",
-      "writes": "27 semantic migrations plus empty conversion metadata"
+      "expected": "canonical live 1..29 with accepted rows 1..29 and exact issue 246 commit 8b356bb15a9de481460a0d46b54b395a08dad82a provenance at 29; historical conversion target 27 remains an intermediate boundary and checker-only tips 30/31 are not production return states",
+      "writes": "29 semantic migrations plus empty conversion metadata"
     },
     {
       "id": "LC-CREATE-EMPTY-FILE",
@@ -1360,14 +1427,14 @@
     {
       "id": "LC-CANONICAL-UPGRADE",
       "input": "exact canonical prefix below the current registry, with absent provenance or one valid immutable target-27 conversion row",
-      "expected": "apply each missing suffix only after its locked strict provenance gate",
-      "writes": "one transaction per missing semantic migration; no suffix write when current provenance is invalid"
+      "expected": "apply each exact missing production suffix through 28 and 29 only after its locked strict provenance gate, then return only after complete live-tip-29 verification; checker-only tips 30 and 31 are not production suffixes",
+      "writes": "one transaction per missing production semantic migration through live tip 29; no suffix write when current provenance is invalid"
     },
     {
       "id": "LC-LEGACY-UPGRADE",
       "input": "exact supported legacy prefix",
-      "expected": "no-source-write preflight, verified backup, exclusive barrier, locked revalidation, then the real production converter atomically executes and ledgers exactly target 1..27 with target-27 provenance and user_version 27; after it returns, the common opener suffix runner applies any 28-or-later migration only through beforePendingMigration",
-      "writes": "all-or-nothing conversion to target 27, followed by zero or more independently verified suffix transactions"
+      "expected": "no-source-write preflight, verified backup, exclusive barrier, and locked revalidation; the real converter atomically executes and ledgers exactly historical target 1..27 with target-27 provenance and user_version 27, then the common opener runner applies gated production suffixes 28 and 29 through beforePendingMigration and returns only after exact live-tip-29 verification",
+      "writes": "one all-or-nothing conversion transaction to historical target 27 followed by independently gated production suffix transactions 28 and 29"
     },
     {
       "id": "LC-PREFLIGHT-REJECT",
@@ -1378,13 +1445,13 @@
     {
       "id": "LC-REOPEN",
       "input": "exact current canonical ledger with idle or valid active reindex overlay and zero or one immutable target-27 conversion row",
-      "expected": "validated no-op with any row resolved only to the explicit accepted target-27 identity",
+      "expected": "validated no-op only at exact live tip 29 with any conversion row resolved to the explicit accepted target-27 identity; checker-only tips 30 and 31 do not authorize production reopen",
       "writes": "none"
     },
     {
       "id": "LC-LEGACY-FIXTURE-COMPATIBILITY",
       "input": "a standalone legacy fixture sequence receives either a fresh/unrecorded fixture database or the exact Database object recorded by the canonical opener only after complete live-tip verification",
-      "expected": "fresh and standalone fixture histories use unchanged strict applyMigrations semantics; a recorded exact canonical application handle performs a fingerprint-checked no-op at release tip 27, live tip 28, and future tip 29; partial, unknown, forged, newer, or pending authority rejects before recording; post-record user_version, exact history, full sqlite_schema, conversion provenance, or reindex overlay tampering rejects before fixture SQL; the package index exports exactly the frozen named migration-runner surface and the recorder identifier has only its definition, exact database import, and exact post-verification database call",
+      "expected": "fresh and standalone fixture histories use unchanged strict applyMigrations semantics; a recorded exact canonical application handle performs a fingerprint-checked no-op at exact release tips 27, 28, 29, 30, and 31; partial, unknown, forged, newer, or pending authority rejects before recording; post-record user_version, exact history, full sqlite_schema, conversion provenance, or reindex overlay tampering rejects before fixture SQL; the package index export remains a defense-in-depth surface check rather than recorder authority",
       "writes": "fixture SQL only on a strict fresh/standalone fixture path; zero writes and byte-identical serialized database state across every verified compatibility no-op or rejection"
     },
     {
@@ -1401,8 +1468,8 @@
     },
     {
       "id": "LC-NEWER",
-      "input": "user_version 28 or later",
-      "expected": "stable newer-schema rejection",
+      "input": "user_version above production live tip 29, including 30 or later, or any unknown later ledger row",
+      "expected": "stable newer-schema rejection before mutation; child-local proof tips 30 and 31 confer no production admission authority",
       "writes": "none"
     },
     {
@@ -1501,7 +1568,7 @@
     },
     {
       "id": "REQ-ORDER",
-      "text": "Expose one contiguous canonical order from 1 through 27 and derive the next legal slot as 28."
+      "text": "Expose one contiguous accepted canonical order from 1 through 29, retain accepted report slot 28, bind exact issue 246 commit 8b356bb15a9de481460a0d46b54b395a08dad82a provenance at slot 29, and derive the next legal slot as 30."
     },
     {
       "id": "REQ-HISTORY",
@@ -1549,11 +1616,11 @@
     },
     {
       "id": "REQ-CURRENT-TREE",
-      "text": "Enforce the exact 111-path issue 234 mutation union, including all 27 canonical semantic sources, and audit tracked plus untracked execution roots by importing the implemented registry/converter, revalidating immutable semantic bytes and metadata, and rejecting every bypass or unknown path."
+      "text": "Enforce the exact 113-path implementation/rebind mutation union, including all 29 canonical semantic sources, and audit tracked plus untracked execution roots by importing the implemented registry/converter, revalidating accepted semantic bytes plus metadata, and rejecting every bypass or unknown path."
     },
     {
       "id": "REQ-DOWNSTREAM",
-      "text": "Bound issue 234 implementation and reserve report creation at exact slot 28 without creating it."
+      "text": "Retain accepted report creation at exact slot 28 and bind accepted issue 246 approval-creator-provenance-repair to exact slot 29 and immutable commit 8b356bb15a9de481460a0d46b54b395a08dad82a provenance."
     }
   ],
   "decisions": [
@@ -1595,7 +1662,7 @@
     },
     {
       "id": "DEC-ONE-OPENER",
-      "text": "The database opener owns registry application and callers cannot select a version or subset."
+      "text": "The database opener owns registry application and callers cannot select a version or subset. Historical conversion target 27 is an intermediate boundary only: production applies gated suffixes 28 and 29, returns only after exact live tip 29, and rejects versions above 29. Checker-only tips 30 and 31 never authorize a production return state."
     },
     {
       "id": "DEC-VERIFIED-FIXTURE-ADAPTER",
@@ -1611,11 +1678,15 @@
     },
     {
       "id": "DEC-CURRENT-TREE",
-      "text": "Issue 234 acceptance scans all tracked and untracked source roots against an exact 111-path allow/protected/unknown boundary whose 27-path semantic subunion equals canonicalRegistry.migrations[].source; authorized aggregate/lazy export retirement is accepted only when runtime semantic projection, the real registry/converter, and every execution-root bypass check remain exact. Durable-DDL closure uses the frozen package-src production-source predicate, excluding complete test/spec/fixture/support role tokens without exempting those files from semantic-SQL or applyMigrations bypass scans."
+      "text": "The rebound authority scans all tracked and untracked source roots against an exact 113-path allow/protected/unknown boundary whose 29-path semantic subunion equals canonicalRegistry.migrations[].source; authorized aggregate/lazy export retirement and exact accepted append sources are accepted only when runtime semantic projection, the real registry/converter, and every execution-root bypass check remain exact. Durable-DDL closure uses the frozen package-src production-source predicate, excluding complete test/spec/fixture/support role tokens without exempting those files from semantic-SQL or applyMigrations bypass scans."
     },
     {
       "id": "DEC-REPORT-28",
-      "text": "The exact next legal migration and report creation slot is 28."
+      "text": "Accepted report-creation-v1 remains the exact canonical report migration at slot 28 and accepted commit 78edad8196dd1ab622c4c17537f49435c1b14694."
+    },
+    {
+      "id": "DEC-REPAIR-29",
+      "text": "Accepted approval-creator-provenance-repair is exact issue 246 canonical slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a; its source path, source SHA-256, raw SQL SHA-256, migration content hash, mode, dependency, accepted issue, and accepted commit are frozen after independent issue 247 review."
     }
   ],
   "rejectedAlternatives": [
@@ -1632,7 +1703,7 @@
     {
       "id": "ALT-REPORT-12",
       "alternative": "Append report creation at version 12",
-      "reason": "The canonical registry contains 27 accepted semantic migrations; 12 is occupied by identity-only-content."
+      "reason": "Canonical slot 12 is already occupied by identity-only-content; accepted report creation remains exact slot 28."
     },
     {
       "id": "ALT-FILENAME-SORT",
@@ -1659,12 +1730,12 @@
     {
       "id": "PROOF-FRESH-COMPOSITION",
       "kind": "real-sqlite",
-      "postcondition": "all 27 migrations apply; user_version 27; exact history; integrity ok; no foreign-key rows"
+      "postcondition": "all 29 canonical rows apply in order; user_version 29; report creation remains exact slot 28; approval-creator-provenance-repair remains exact slot 29; exact history, integrity ok, and no foreign-key rows"
     },
     {
       "id": "PROOF-HASH-PROJECTION",
       "kind": "source",
-      "postcondition": "all 27 runtime definitions, including the SQL-only reindex semantic, match frozen names, content hashes, modes, and declared versions"
+      "postcondition": "all 29 runtime definitions, including the SQL-only reindex semantic, accepted report migration, and accepted approval-repair append, match frozen names, content hashes, modes, declared versions, and accepted provenance shape"
     },
     {
       "id": "PROOF-REINDEX-OVERLAY",
@@ -1674,12 +1745,12 @@
     {
       "id": "PROOF-PREFLIGHT",
       "kind": "real-filesystem-sqlite",
-      "postcondition": "valid main/WAL state classifies from disposable scratch; sequence-derived full tuple validation rejects every newer/unknown/corrupt/placeholder/direct-SQL case, a target-27 row replaced by recomputed full digest 28, and each added/changed table/index/trigger/view case while leaving the whole focused source tree and main/WAL/SHM presence, bytes, modes, and identities unchanged"
+      "postcondition": "valid main/WAL state classifies from disposable scratch; sequence-derived full tuple validation rejects every newer/unknown/corrupt/placeholder/direct-SQL case, a target-27 row replaced by the recomputed live full-registry digest 29, and each added/changed table/index/trigger/view case while leaving the whole focused source tree and main/WAL/SHM presence, bytes, modes, and identities unchanged"
     },
     {
       "id": "PROOF-PROVENANCE",
       "kind": "real-sqlite",
-      "postcondition": "the real production legacy converter creates the target-27 base from an actual supported legacy history and preserves its active overlay; with child-local synthetic 28/29 appended, conversion still commits exactly ledger/user_version/provenance 1..27 and the production opener then routes 28/29 through the separately verified suffix runner; crash/reopen, doctor, serialized backup, empty restore, and full restore projections share one strict accepted-target decoder and preserve exact DDL plus canonical row bytes/domains/relations/digests; a target-27 row changed to full digest 28 with conversion_id and record_sha256 recomputed rejects in scratch preflight, the pre-suffix transaction gate with zero effects, reopen, doctor, backup, and restore; unknown target remains a separate failure; DDL/row/trigger mutations, self-consistent forged history/schema/overlay/target records, ungated INSERT, UPDATE, and DELETE fail"
+      "postcondition": "the real production legacy converter creates the target-27 base from an actual supported legacy history and preserves its active overlay; the production opener then routes real report slot 28 and accepted approval-repair slot 29 through the separately verified suffix runner before checker-only synthetic 30/31 append proofs; conversion still commits exactly ledger/user_version/provenance 1..27; crash/reopen, doctor, serialized backup, empty restore, and full restore projections share one strict accepted-target decoder and preserve exact DDL plus canonical row bytes/domains/relations/digests; a target-27 row changed to live full digest 29 with conversion_id and record_sha256 recomputed rejects in scratch preflight, the pre-suffix transaction gate with zero effects, reopen, doctor, backup, and restore; unknown target remains a separate failure; DDL/row/trigger mutations, self-consistent forged history/schema/overlay/target records, ungated INSERT, UPDATE, and DELETE fail"
     },
     {
       "id": "PROOF-CONVERSION-MATRIX",
@@ -1699,7 +1770,7 @@
     {
       "id": "PROOF-LEGACY-FIXTURE-COMPATIBILITY",
       "kind": "real-runner-and-broad-suite",
-      "postcondition": "real production children at exact tips 27, 28, and 29 prove direct, early, and dynamic-equivalent recorder calls are zero-write on valid authority and all reject on each partial, unknown, forged-checksum, newer-version, schema-drift, history-name-drift, real conversion-provenance-drift, and reindex-overlay-drift authority before map mutation or fixture SQL with byte-identical state. At each tip the same three paths reject an action_plans_state_idx substitution whose type/name/table and total object count are unchanged but SQL differs; after exact restoration, a standalone fixture registry must take strict unrecorded apply and reject without bytes or a fixture table, so any leaked canonical marker produces a detectable false no-op. A self-contained mutation stores the expected canonical fingerprint only on that verifier failure and rethrows, then must fail this discriminator. After valid recording, independent user_version, exact-history, full-sqlite_schema, real-conversion-provenance, and reindex-overlay tampering rejects before fixture SQL. A self-contained known-working verifier establishes every valid precondition before count-only schema and constant-fingerprint mutations fail; the constant case demonstrates a false no-op across two verifier-valid, fingerprint-distinct reindex states, and precondition exceptions never count as kills. Verify-after-set remains rejected. The exact eight-name package export is checked only as defense-in-depth; no source reachability or capability ban counts as security proof. Strict-runner and pending-suffix mutations reject before effects; fresh and repeated standalone fixtures remain strict; the complete Bun suite passes"
+      "postcondition": "real production children at exact tips 27, 28, 29, 30, and 31 prove direct, early, and dynamic-equivalent recorder calls are zero-write on valid authority and all reject on each partial, unknown, forged-checksum, newer-version, schema-drift, history-name-drift, real conversion-provenance-drift, and reindex-overlay-drift authority before map mutation or fixture SQL with byte-identical state. At each tip the same three paths reject an action_plans_state_idx substitution whose type/name/table and total object count are unchanged but SQL differs; after exact restoration, a standalone fixture registry must take strict unrecorded apply and reject without bytes or a fixture table, so any leaked canonical marker produces a detectable false no-op. A self-contained mutation stores the expected canonical fingerprint only on that verifier failure and rethrows, then must fail this discriminator. After valid recording, independent user_version, exact-history, full-sqlite_schema, real-conversion-provenance, and reindex-overlay tampering rejects before fixture SQL. A self-contained known-working verifier establishes every valid precondition before count-only schema and constant-fingerprint mutations fail; the constant case demonstrates a false no-op across two verifier-valid, fingerprint-distinct reindex states, and precondition exceptions never count as kills. Verify-after-set remains rejected. The exact eight-name package export is checked only as defense-in-depth; no source reachability or capability ban counts as security proof. Strict-runner and real/pending suffix mutations reject before effects; fresh and repeated standalone fixtures remain strict; the complete Bun suite passes"
     },
     {
       "id": "PROOF-DOCTOR",
@@ -1719,12 +1790,12 @@
     {
       "id": "PROOF-CURRENT-TREE",
       "kind": "source-mutation",
-      "postcondition": "the exact 111-path union contains all and only the 27 canonical semantic source paths plus the frozen production/test/execution/corpus/relocation sets; current tracked #234 endpoints have no unknown member; deletions and both rename endpoints precede filesystem inspection; runtime semantic projection and real registry/converter imports match the oracle despite authorized wrapper/export retirement; the accepted 18-file package-src test/fixture naming inventory is classified by the frozen production-source predicate and unchanged selected-export local DDL is accepted without entering any mutation or SQL allowlist; protected #231, unrelated source/test/deletion/rename, and remove/duplicate/change/new-production-DDL/all-27 migration-object/slot-20-sql-constant/import-alias/registry-index/direct-bracket-at-find-destructuring/bypass mutations each reject"
+      "postcondition": "the exact 113-path union contains all and only the 29 canonical semantic source paths plus the frozen production/test/execution/corpus/relocation sets; the accepted report source and exact accepted issue 246 source at commit 8b356bb15a9de481460a0d46b54b395a08dad82a are bound without widening unrelated scope; deletions and both rename endpoints precede filesystem inspection; runtime semantic projection and real registry/converter imports match the oracle despite authorized wrapper/export retirement; the accepted 18-file package-src test/fixture naming inventory is classified by the frozen production-source predicate and unchanged selected-export local DDL is accepted without entering any mutation or SQL allowlist; protected #231, unrelated source/test/deletion/rename, and remove/duplicate/change/new-production-DDL/all-29 migration-object/slot-20-sql-constant/import-alias/registry-index/direct-bracket-at-find-destructuring/bypass mutations each reject"
     },
     {
       "id": "PROOF-REPORT-SLOT",
       "kind": "structural",
-      "postcondition": "exported next version is 28 and no report migration exists"
+      "postcondition": "accepted report-creation-v1 is exact slot 28, accepted approval-creator-provenance-repair is exact issue 246 slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a, and the exported next version is 30; --implementation-check derives exact 29/30 export authority from the oracle, rejects separate helper-level stale 27/28 counterexamples, and runs fresh whole-checker children whose live imported stale-schema-27 and stale-next-28 mutations produce only private-tagged assertion-origin records with exact canonical serialized bytes; duplicate format/actual keys, wrong/extra/missing/mixed/whitespace records, an unrelated generic failure, and an unrelated pre-assertion failure containing the former success phrase must all remain non-success"
     }
   ],
   "coverage": {
@@ -1792,7 +1863,7 @@
       "PROOF-CURRENT-TREE",
       "PROOF-RETIREMENT"
     ],
-    "REQ-DOWNSTREAM": ["DEC-REPORT-28", "PROOF-REPORT-SLOT"]
+    "REQ-DOWNSTREAM": ["DEC-REPORT-28", "DEC-REPAIR-29", "PROOF-REPORT-SLOT"]
   },
   "shields": [
     {
@@ -1905,16 +1976,16 @@
     },
     "semanticSourceScope": {
       "pathsFrom": "canonicalRegistry.migrations[].source",
-      "count": 27,
-      "allowedChanges": "Only remove obsolete aggregate/lazy-schema exports, wrap SEARCH_REINDEX_SCHEMA_SQL as canonical slot 20 without changing its bytes, or relocate initial-backfill-completion into its registrySource; every other accepted name, SQL byte, execution mode, declared version, checksum, and canonical slot remains frozen."
+      "count": 29,
+      "allowedChanges": "Only remove obsolete aggregate/lazy-schema exports, wrap SEARCH_REINDEX_SCHEMA_SQL as canonical slot 20 without changing its bytes, relocate initial-backfill-completion into its registrySource, retain accepted report-creation-v1 exactly at slot 28, or bind exact accepted issue 246 approval-creator-provenance-repair source at slot 29 and commit 8b356bb15a9de481460a0d46b54b395a08dad82a; every accepted name, SQL byte, execution mode, declared version, checksum, canonical slot, and provenance state remains frozen."
     },
     "currentTreeAuthority": {
       "mode": "--implementation-check",
       "scopeMode": "--implementation-scope-check",
-      "scopeModeRule": "The tracked-only scope observation subtracts exactly the five issue 233 database-migration-registry authority artifact paths before evaluating the concurrent issue 234 tracked endpoints. Those artifacts are not added to the 111-path implementation allowlist, and full --implementation-check never subtracts them.",
+      "scopeModeRule": "The tracked-only scope observation subtracts exactly the five issue 233 database-migration-registry authority artifact paths before evaluating registry implementation endpoints. Those artifacts are not added to the 113-path implementation allowlist, and full --implementation-check never subtracts them.",
       "enumeration": "First parse git diff --name-status -z --find-renames HEAD, retaining every deletion and both source and destination endpoints of renames/copies as virtual change records; union git ls-files --others --exclude-standard -z; normalize and enforce protected/allowed/unknown scope before any filesystem inspection. Only then enumerate existing tracked/untracked paths, reject symlinks, and scan every TypeScript file outside exact generated exclusions node_modules/, package dist/, __pycache__/, and *.pyc.",
-      "allowedMutationPaths": "exact 111-path set union of productionPaths, testPaths, executionRootPaths, the 62 accepted compositionCorpus paths, all 27 semanticAllowedPaths equal to canonicalRegistry.migrations[].source, and canonicalRegistry registrySource relocations",
-      "allowedMutationPathCount": 111,
+      "allowedMutationPaths": "exact 113-path set union of productionPaths, testPaths, executionRootPaths, the 62 accepted compositionCorpus paths, all 29 semanticAllowedPaths equal to canonicalRegistry.migrations[].source, and canonicalRegistry registrySource relocations",
+      "allowedMutationPathCount": 113,
       "semanticAllowedPaths": [
         "packages/storage/src/migrations/0001-message-catalog.ts",
         "packages/storage/src/migrations/0001-operational-journal.ts",
@@ -1942,9 +2013,11 @@
         "packages/storage/src/migrations/0008-thread-graph.ts",
         "packages/storage/src/migrations/0009-action-approval-authority.ts",
         "packages/storage/src/migrations/0010-action-plan-restore-quarantine.ts",
-        "packages/storage/src/migrations/0011-seal-key-administration.ts"
+        "packages/storage/src/migrations/0011-seal-key-administration.ts",
+        "packages/storage/src/migrations/0028-report-creation.ts",
+        "packages/storage/src/migrations/0029-approval-creator-provenance-repair.ts"
       ],
-      "semanticByteValidation": "Path authorization permits only issue 234 aggregate/lazy export retirement and the frozen slot-20/backfill relocations. It never authorizes semantic drift: import each canonical semantic export or its one registrySource relocation and require the exact canonical slot, name, declared version, SQL bytes through migrationContentHash, requiresForeignKeysOff mode, and content checksum before scope acceptance. Whole-file wrapper/export bytes may differ only because those named retirements are intentionally required; sourceDrift is the enforced semantic result while acceptedFileDrift remains informational evidence of authorized wrapper/export edits; durable-DDL closure, direct-SQL closure, registry import, and source mutations remain fail closed.",
+      "semanticByteValidation": "Path authorization permits only issue 234 aggregate/lazy export retirement, the frozen slot-20/backfill relocations, accepted report slot 28, and exact accepted issue 246 slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a. It never authorizes semantic drift: import each canonical semantic export or its one registrySource relocation and require the exact canonical slot, name, declared version, raw SQL bytes and SHA-256, migrationContentHash result, requiresForeignKeysOff mode, content checksum, and accepted provenance shape before scope acceptance. Whole-file wrapper/export bytes may differ only because named retirements are intentionally required; accepted slot 29 additionally requires byte equality with acceptedSourceSha256 and raw SQL equality with acceptedSqlSha256 at its accepted commit. sourceDrift is the enforced semantic result while acceptedFileDrift remains informational evidence of authorized wrapper/export edits; durable-DDL closure, direct-SQL closure, registry import, and source mutations remain fail closed.",
       "productionSourceClassification": {
         "productionSourcePattern": "^packages/[^/]+/src/(?:[^/]+/)*[^/]+\\.ts$",
         "nonProductionRoleTokenPattern": "(?:^|[./_-])(?:test|tests|spec|specs|fixture|fixtures|support)(?=$|[./_-])",
@@ -2001,14 +2074,22 @@
       "protectedPrefixes": ["packages/contracts/", ".agents/skills/plan-agent-mail/", ".github/"],
       "unknownPathRule": "Any added, modified, deleted, renamed, or copied tracked endpoint or untracked source/test/script path outside allowedMutationPaths fails. Any protected path or prefix change fails even if another rule would allow it. Scope is enforced against virtual Git change records before lstat, so deletion cannot disappear and rename/copy cannot hide either endpoint. Exact generated dependency/build/cache paths are excluded from source scanning but never become implementation evidence.",
       "registryImport": "Import packages/storage/src/migration-registry.ts and require frozen exports canonicalDatabaseMigrations, CANONICAL_DATABASE_SCHEMA_VERSION, and NEXT_DATABASE_MIGRATION_VERSION to project exactly to the oracle.",
-      "converterImport": "Import packages/storage/src/migration-history-conversion.ts and require callable exports classifyMigrationHistory, convertMigrationHistory, verifyCanonicalMigrationState, verifyCanonicalMigrationPrefixState, canonicalRegistryDigestAtVersion, and installMigrationConversionInfrastructure. The dedicated implementation-sequence mode mocks only the registry export to append exact synthetic 28/29, then runs this real converter and the real runner; source and runtime checks reject a live-tip converter loop or legacy opener suffix bypass.",
+      "converterImport": "Import packages/storage/src/migration-history-conversion.ts and require callable exports classifyMigrationHistory, convertMigrationHistory, verifyCanonicalMigrationState, verifyCanonicalMigrationPrefixState, canonicalRegistryDigestAtVersion, and installMigrationConversionInfrastructure. The dedicated implementation-sequence mode preserves real canonical slots 28/29, mocks only the registry export to append exact synthetic 30/31, then runs this real converter and the real runner; source and runtime checks reject a live-tip converter loop or legacy opener suffix bypass.",
       "postImplementationApplyMigrationPaths": [
-        "packages/storage/src/migration-runner.ts",
+        "packages/cli/src/report-create-command.test.ts",
+        "packages/daemon/test/report-create-composed.test.ts",
+        "packages/daemon/test/report-creation-service.test.ts",
         "packages/storage/src/database.ts",
+        "packages/storage/src/migration-runner.ts",
+        "packages/storage/test/approval-creator-provenance-migration.test.ts",
         "packages/storage/test/helpers/legacy-migration-history-fixtures.ts",
-        "packages/storage/test/migration-runner.test.ts",
+        "packages/storage/test/message-text-materializer.test.ts",
+        "packages/storage/test/migration-history-conversion.test.ts",
         "packages/storage/test/migration-registry.test.ts",
-        "packages/storage/test/migration-history-conversion.test.ts"
+        "packages/storage/test/migration-runner.test.ts",
+        "packages/storage/test/report-creation-backup-restore.test.ts",
+        "packages/storage/test/report-creation-migration.test.ts",
+        "packages/storage/test/report-creation-repository.test.ts"
       ],
       "directSqlAllowedPaths": [
         "packages/storage/src/migration-registry.ts",
@@ -2016,7 +2097,7 @@
         "packages/storage/src/migration-history-conversion.ts",
         "packages/storage/test/helpers/legacy-migration-history-fixtures.ts"
       ],
-      "directSqlDetection": "Resolve named and namespace imports for every one of the 27 frozen semantic-definition source/export pairs and canonicalDatabaseMigrations, including relative module normalization. Use each frozen sourceKind: ordinary migration-object exports expose semantic SQL through .sql, ['sql'], or destructuring, while a sql-constant export such as slot 20 SEARCH_REINDEX_SCHEMA_SQL is itself semantic SQL when imported or reached through any direct assignment alias. Propagate import aliases, direct assignment aliases, destructured sql aliases, and registry element aliases produced by literal indexing, .at(index), or .find(...). Recognize destructuring both from an element alias and directly from canonicalDatabaseMigrations[index], .at(index), or .find(...). Outside directSqlAllowedPaths reject every reached or extracted semantic SQL reference; no hardcoded migration-name subset is authoritative.",
+      "directSqlDetection": "Resolve named and namespace imports for every one of the 29 frozen semantic-definition source/export pairs and canonicalDatabaseMigrations, including relative module normalization. Use each frozen sourceKind: ordinary migration-object exports expose semantic SQL through .sql, ['sql'], or destructuring, while a sql-constant export such as slot 20 SEARCH_REINDEX_SCHEMA_SQL is itself semantic SQL when imported or reached through any direct assignment alias. Propagate import aliases, direct assignment aliases, destructured sql aliases, and registry element aliases produced by literal indexing, .at(index), or .find(...). Recognize destructuring both from an element alias and directly from canonicalDatabaseMigrations[index], .at(index), or .find(...). Outside directSqlAllowedPaths reject every reached or extracted semantic SQL reference; no hardcoded migration-name subset is authoritative.",
       "sourceMutationIds": [
         "remove-semantic-source",
         "duplicate-semantic-source",
@@ -2056,7 +2137,7 @@
     "obligations": [
       {
         "id": "IMP-REGISTRY",
-        "text": "Create and export the exact immutable 1..27 storage registry and derived version 27/28 constants; adopt unledgered SEARCH_REINDEX_SCHEMA_SQL at slot 20 with declaredVersion null; relocate the unchanged daemon-owned initial-backfill-completion definition into storage without changing its semantic identity."
+        "text": "Retain the exact immutable accepted 1..29 storage registry, including accepted issue 246 approval-creator-provenance-repair as exact slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a, and derive current/next versions 29/30 without changing historical target 27; keep SEARCH_REINDEX_SCHEMA_SQL at slot 20 with declaredVersion null and the relocated initial-backfill-completion semantic unchanged."
       },
       {
         "id": "IMP-CONVERTER",
@@ -2088,13 +2169,18 @@
       },
       {
         "id": "IMP-PROOFS",
-        "text": "Run fresh, all-prefix plus every generic reindex-overlay conversion/forgery, no-source-write preflight and whole-tree/sidecar probes, byte-exact provenance and mutation probes, real production converter/opener under child-local synthetic suffixes 28/29, live-tip-loop and legacy-opener-bypass counterexamples, and release-tip 27/live-tip 28/future-tip 29 compatibility children. At every tip prove three valid recorder access forms are zero-write; prove direct, early, and dynamic-equivalent calls reject all eight invalid authority states and the same-cardinality action_plans_state_idx SQL substitution before map mutation or fixture SQL; restore the tuple and require a standalone fixture registry to follow strict unrecorded rejection with unchanged bytes and no table. Kill the mutation that stores the expected canonical fingerprint on verifier failure and rethrows because it produces a false fixture no-op after restoration. Prove five post-record tamper classes reject. Use a self-contained known-working verifier to kill count-only schema and weak constant-fingerprint implementations only after valid preconditions, including a constant-fingerprint false no-op between two verifier-valid but fingerprint-distinct reindex states; kill verify-after-set; retain strict standalone fixtures, exact package export hygiene, the complete Bun suite, both suffix crash boundaries, reopen, doctor, backup, restore, current-tree source mutations, exact source drift, and slot proofs."
+        "text": "Run fresh, all-prefix plus every generic reindex-overlay conversion/forgery, no-source-write preflight and whole-tree/sidecar probes, byte-exact provenance and mutation probes, real production converter/opener through real canonical suffixes 28/29 and child-local synthetic suffixes 30/31, live-tip-loop and legacy-opener-bypass counterexamples, and release-tip 27/report-tip 28/current-tip 29/future-tip 30/31 compatibility children. At every tip prove three valid recorder access forms are zero-write; prove direct, early, and dynamic-equivalent calls reject all eight invalid authority states and the same-cardinality action_plans_state_idx SQL substitution before map mutation or fixture SQL; restore the tuple and require a standalone fixture registry to follow strict unrecorded rejection with unchanged bytes and no table. Kill the mutation that stores the expected canonical fingerprint on verifier failure and rethrows because it produces a false fixture no-op after restoration. Prove five post-record tamper classes reject. Use a self-contained known-working verifier to kill count-only schema and weak constant-fingerprint implementations only after valid preconditions, including a constant-fingerprint false no-op between two verifier-valid but fingerprint-distinct reindex states; kill verify-after-set; retain strict standalone fixtures, exact package export hygiene, the complete Bun suite, both suffix crash boundaries, reopen, doctor, backup, restore, current-tree source mutations, exact source drift, and slot proofs."
       },
       {
-        "id": "IMP-NO-REPORT",
-        "text": "Export slot 28 but do not create or absorb the report migration."
+        "id": "IMP-APPEND-BOUNDARY",
+        "text": "Preserve accepted report slot 28 and accepted issue 246 repair slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a exactly; export next slot 30, reserve checker-only future suffixes 30/31, and never rewrite target-27 conversion provenance."
       }
     ]
+  },
+  "checkerAuthority": {
+    "structuralMutationCount": 109,
+    "sourceMutationCount": 32,
+    "countRule": "structuralMutationCount is the exact mutations.length value returned by --self-test after every mutation independently fails validation; sourceMutationCount is the exact sourceMutationIds.length value returned by --source-self-test after every fresh child rejects its assigned mutation. Neither count may be inferred from prose, combined, or reported from an unexecuted corpus."
   },
   "frozenInputs": [
     {
