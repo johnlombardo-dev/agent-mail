@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  assertHydrationPlanParameterCount,
+  buildHydrationPlanParameters,
+} from "../../../scripts/capacity/benchmark-search";
+import {
   digestOrderedIdentities,
   evaluateSearchCapacity,
   hasForbiddenFullScan,
@@ -55,6 +59,18 @@ function evidence(overrides: Partial<SearchCapacityEvidence> = {}): SearchCapaci
 }
 
 describe("P4-C17 bounded search capacity evaluator", () => {
+  test("binds hydration candidates and both account scopes", () => {
+    const parameters = buildHydrationPlanParameters(identities, 20, "account:capacity");
+
+    expect(parameters).toHaveLength(82);
+    expect(parameters.slice(0, 4)).toEqual([1, identities[0], 0, "2026-01-01T00:00:00.000Z"]);
+    expect(parameters.slice(-2)).toEqual(["account:capacity", "account:capacity"]);
+    expect(() => assertHydrationPlanParameterCount(parameters, 20)).not.toThrow();
+    expect(() => assertHydrationPlanParameterCount(parameters.slice(0, -1), 20)).toThrow(
+      "expected 82 values, received 81",
+    );
+  });
+
   test("passes bounded ordered evidence and recognizes the negative full scan", () => {
     expect(hasForbiddenFullScan(["SCAN messages"])).toBe(true);
     const result = evaluateSearchCapacity(evidence());

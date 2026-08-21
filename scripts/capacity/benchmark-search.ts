@@ -44,6 +44,7 @@ const REPRESENTATIVE_QUERIES = ["atlas", "beacon", '"status update"'] as const;
 
 type PlanRow = Readonly<{ readonly detail: string }>;
 type CountRow = Readonly<{ readonly count: number }>;
+export type HydrationParameter = string | number | null;
 
 type ChildResult = Readonly<{
   readonly status: "ok";
@@ -108,7 +109,7 @@ function candidatePlanSql(text: CompiledSearchQuery, filters: CompiledStructured
 function queryPlan(
   database: Database,
   sql: string,
-  parameters: readonly (string | number | null)[],
+  parameters: readonly HydrationParameter[],
 ): readonly string[] {
   return Object.freeze(
     database
@@ -116,6 +117,45 @@ function queryPlan(
       .all(...parameters)
       .map(({ detail }) => detail),
   );
+}
+
+export function assertHydrationPlanParameterCount(
+  parameters: readonly HydrationParameter[],
+  candidateCount: number,
+): void {
+  if (!Number.isSafeInteger(candidateCount) || candidateCount < 0) {
+    throw new Error(
+      `hydration candidate count must be a non-negative safe integer: ${candidateCount}`,
+    );
+  }
+  const expectedCount = candidateCount * 4 + 2;
+  if (parameters.length !== expectedCount) {
+    throw new Error(
+      `hydration parameter count mismatch: expected ${expectedCount} values, received ${parameters.length}`,
+    );
+  }
+}
+
+export function buildHydrationPlanParameters(
+  expected: readonly string[],
+  candidateCount: number,
+  accountId: string,
+): readonly HydrationParameter[] {
+  if (!Number.isSafeInteger(candidateCount) || candidateCount < expected.length) {
+    throw new Error(
+      `hydration candidate count must cover expected identities: ${candidateCount} for ${expected.length}`,
+    );
+  }
+  const parameters: HydrationParameter[] = [];
+  for (const [index, identity] of expected.entries()) {
+    parameters.push(index + 1, identity, 0, "2026-01-01T00:00:00.000Z");
+  }
+  while (parameters.length < candidateCount * 4) {
+    parameters.push(1, expected[0] ?? "message:" + "0".repeat(64), 0, "2026-01-01T00:00:00.000Z");
+  }
+  parameters.push(accountId, accountId);
+  assertHydrationPlanParameterCount(parameters, candidateCount);
+  return Object.freeze(parameters);
 }
 
 function count(database: Database, sql: string): number {
@@ -339,19 +379,11 @@ async function main(): Promise<void> {
     );
     const expected = referenceIdentities(database, REPRESENTATIVE_QUERIES[0]);
     const hydrationSql = searchSummaryHydrationSql(SEARCH_CAPACITY_TOP_LIMIT);
-    const hydrationParameters: (string | number | null)[] = [];
-    for (const [index, identity] of expected.entries()) {
-      hydrationParameters.push(index + 1, identity, 0, "2026-01-01T00:00:00.000Z");
-    }
-    while (hydrationParameters.length < SEARCH_CAPACITY_TOP_LIMIT * 4) {
-      hydrationParameters.push(
-        1,
-        expected[0] ?? "message:" + "0".repeat(64),
-        0,
-        "2026-01-01T00:00:00.000Z",
-      );
-    }
-    hydrationParameters.push(ACCOUNT_ID);
+    const hydrationParameters = buildHydrationPlanParameters(
+      expected,
+      SEARCH_CAPACITY_TOP_LIMIT,
+      ACCOUNT_ID,
+    );
     const hydrationPlan = queryPlan(database, hydrationSql, hydrationParameters);
     const negativeFullScan = queryPlan(
       database,
