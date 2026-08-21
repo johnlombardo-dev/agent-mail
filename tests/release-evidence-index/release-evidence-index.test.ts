@@ -44,6 +44,11 @@ describe("release qualification evidence index", () => {
       validBeforeMutation: 80,
       positiveCapacityFixture: true,
       replayRejected: true,
+      liveIndexUnchanged: true,
+      liveRecordCount: 1,
+      staleClearRejected: true,
+      corruptLiveRejected: true,
+      doubleApplicationStable: true,
       accepted: true,
     });
   });

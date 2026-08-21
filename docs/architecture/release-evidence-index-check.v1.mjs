@@ -1485,17 +1485,19 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
     ? execFileSync("git", ["rev-parse", "HEAD"], { cwd: validationRoot, encoding: "utf8" }).trim()
     : currentCommit();
   let priorRecords = [];
-  try {
-    const priorIndex = JSON.parse(
-      execFileSync("git", ["show", `HEAD:${indexPath.slice(repositoryRoot.length + 1)}`], {
-        cwd: validationRoot,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }),
-    );
-    priorRecords = Array.isArray(priorIndex.resultRecords) ? priorIndex.resultRecords : [];
-  } catch {
-    priorRecords = [];
+  if (!options.allowEmptyBaseline) {
+    try {
+      const priorIndex = JSON.parse(
+        execFileSync("git", ["show", `HEAD:${indexPath.slice(repositoryRoot.length + 1)}`], {
+          cwd: validationRoot,
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }),
+      );
+      priorRecords = Array.isArray(priorIndex.resultRecords) ? priorIndex.resultRecords : [];
+    } catch {
+      priorRecords = [];
+    }
   }
   assert(
     indexData.resultRecords.length >= priorRecords.length,
@@ -2025,8 +2027,52 @@ export function validateIndex(index, options = {}) {
 }
 
 export function runSelfTest() {
-  const baseline = readJson(indexPath);
-  validateIndex(baseline);
+  const liveIndexBytes = readFileSync(indexPath);
+  const liveIndex = readJson(indexPath);
+  validateIndex(liveIndex);
+  const liveIndexSnapshot = structuredClone(liveIndex);
+  const liveRecordSnapshot = structuredClone(liveIndex.resultRecords);
+  const baseline = structuredClone(liveIndex);
+  const authoritative = authorities();
+  baseline.resultRecords = [];
+  baseline.rows = structuredClone(baselineRows(authoritative));
+  baseline.gates = structuredClone(baselineGates());
+  baseline.promotion = {
+    ...baseline.promotion,
+    ...promotionState(baseline.rows, baseline.gates),
+  };
+  validateIndex(baseline, { mode: "prospective", repositoryRoot, allowEmptyBaseline: true });
+  assert(
+    baseline.gates.find((gate) => gate.id === "capacity")?.status === "unverified",
+    "synthetic baseline retained live capacity promotion",
+  );
+  const clearedLiveIndex = structuredClone(liveIndex);
+  clearedLiveIndex.resultRecords = [];
+  let staleClearRejected = false;
+  try {
+    validateIndex(clearedLiveIndex);
+  } catch {
+    staleClearRejected = true;
+  }
+  assert(staleClearRejected, "clearing live records without rematerializing was accepted");
+  const corruptLiveIndex = structuredClone(liveIndex);
+  corruptLiveIndex.resultRecords[0].bundle.sha256 = "0".repeat(64);
+  let corruptLiveRejected = false;
+  try {
+    validateIndex(corruptLiveIndex);
+  } catch {
+    corruptLiveRejected = true;
+  }
+  assert(corruptLiveRejected, "corrupting a live record without writing was accepted");
+  const removedLiveIndex = structuredClone(liveIndex);
+  removedLiveIndex.resultRecords = [];
+  let removedLiveRejected = false;
+  try {
+    validateIndex(removedLiveIndex);
+  } catch {
+    removedLiveRejected = true;
+  }
+  assert(removedLiveRejected, "removing a live record without writing was accepted");
   let validFixtureRecord;
   let fullFixtureRecord;
   let partialFixtureIndex;
@@ -2562,6 +2608,13 @@ export function runSelfTest() {
     fixture.rows = fixtureProjection.rows;
     fixture.gates = fixtureProjection.gates;
     fixture.promotion = { ...fixture.promotion, rule: baseline.promotion.rule };
+    const twiceApplied = structuredClone(fixture);
+    const twiceProjection = materializeCurrent(twiceApplied);
+    assert(
+      JSON.stringify(twiceProjection.rows) === JSON.stringify(fixture.rows) &&
+        JSON.stringify(twiceProjection.gates) === JSON.stringify(fixture.gates),
+      "result record was applied twice",
+    );
     assert(
       fixture.rows.find((row) => row.id === "F30").evidence.capacity === "locally verified",
       "capacity fixture did not update capacity state",
@@ -3204,11 +3257,28 @@ export function runSelfTest() {
       }
       assert(rejected, "self-test attack was accepted: " + String(name));
     }
+    assert(
+      Buffer.compare(readFileSync(indexPath), liveIndexBytes) === 0 &&
+        JSON.stringify(readJson(indexPath)) === JSON.stringify(liveIndexSnapshot),
+      "live index changed during self-test",
+    );
+    assert(
+      liveIndex.resultRecords.length === liveRecordSnapshot.length &&
+        liveIndex.resultRecords.every(
+          (record, index) => recordDigest(record) === recordDigest(liveRecordSnapshot[index]),
+        ),
+      "live result record history changed during self-test",
+    );
     return {
       attacks: attacks.length + recordAttacks.length,
       validBeforeMutation,
       positiveCapacityFixture: true,
       replayRejected: true,
+      liveIndexUnchanged: true,
+      liveRecordCount: liveRecordSnapshot.length,
+      staleClearRejected: true,
+      corruptLiveRejected: true,
+      doubleApplicationStable: true,
       accepted: true,
     };
   } finally {
