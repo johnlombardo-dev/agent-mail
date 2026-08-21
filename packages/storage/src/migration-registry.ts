@@ -28,6 +28,7 @@ import { actionPlanRestoreQuarantineMigration } from "./migrations/0010-action-p
 import { sealKeyAdministrationMigration } from "./migrations/0011-seal-key-administration";
 import { initialBackfillCompletionMigration } from "./migrations/initial-backfill-completion";
 import { reportCreationMigration } from "./migrations/0028-report-creation";
+import { approvalCreatorProvenanceRepairMigration } from "./migrations/0029-approval-creator-provenance-repair";
 
 const canonical = (version: number, migration: Migration): Migration =>
   Object.freeze({ ...migration, version });
@@ -65,6 +66,7 @@ export const canonicalDatabaseMigrations: readonly Migration[] = Object.freeze([
   canonical(26, actionPlanRestoreQuarantineMigration),
   canonical(27, sealKeyAdministrationMigration),
   canonical(28, reportCreationMigration),
+  canonical(29, approvalCreatorProvenanceRepairMigration),
 ]);
 
 export const CANONICAL_DATABASE_SCHEMA_VERSION = canonicalDatabaseMigrations.length;

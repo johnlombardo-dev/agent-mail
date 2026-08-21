@@ -123,6 +123,14 @@ export const parityMatrixInvocations = Object.freeze({
     command: "bun test packages/daemon/test/admin-parity-issue-164.test.ts",
     artifact: "packages/daemon/test/admin-parity-issue-164.test.ts",
   },
+  "retrieval-sync-cli-real": {
+    command: "bun test packages/daemon/test/cli-composed-parity-issue-243.test.ts",
+    artifact: "packages/daemon/test/cli-composed-parity-issue-243.test.ts",
+  },
+  "action-real-composed": {
+    command: "bun test packages/daemon/test/action-plan-http-real-composition-p6-c07.test.ts",
+    artifact: "packages/daemon/test/action-plan-http-real-composition-p6-c07.test.ts",
+  },
   "outcome-authority": {
     command: "bun test packages/cli/src/command-outcome.test.ts",
     artifact: "packages/cli/src/command-outcome.test.ts",
@@ -208,9 +216,19 @@ const realEvidence: Readonly<Record<string, keyof typeof parityMatrixInvocations
   "sync.pause": "sync-real",
   "sync.resume": "sync-real",
   "sync.stop": "sync-real",
+  "action-plans.create": "action-real-composed",
+  "action-plans.inspect": "action-real-composed",
+  "action-plans.approve": "action-real-composed",
+  "action-plans.cancel-approval": "action-real-composed",
+  "action-plans.commit": "action-real-composed",
 });
 
 const cliEvidence: Readonly<Record<string, keyof typeof parityMatrixInvocations>> = Object.freeze({
+  "messages.search": "retrieval-sync-cli-real",
+  "messages.get": "retrieval-sync-cli-real",
+  "threads.get": "retrieval-sync-cli-real",
+  "messages.raw": "retrieval-sync-cli-real",
+  "attachments.get": "retrieval-sync-cli-real",
   "routing.preview": "routing-cli-real",
   "routing.commit": "routing-cli-real",
   "messages.label": "routing-cli-real",
@@ -220,6 +238,16 @@ const cliEvidence: Readonly<Record<string, keyof typeof parityMatrixInvocations>
   "admin.restore": "admin-cli-real",
   "admin.doctor": "admin-cli-real",
   "admin.reindex": "admin-cli-real",
+  "sync.status": "retrieval-sync-cli-real",
+  "sync.start": "retrieval-sync-cli-real",
+  "sync.pause": "retrieval-sync-cli-real",
+  "sync.resume": "retrieval-sync-cli-real",
+  "sync.stop": "retrieval-sync-cli-real",
+  "action-plans.create": "action-real-composed",
+  "action-plans.inspect": "action-real-composed",
+  "action-plans.approve": "action-real-composed",
+  "action-plans.cancel-approval": "action-real-composed",
+  "action-plans.commit": "action-real-composed",
 });
 
 const knownStreamModes = Object.freeze(["none", "ndjson", "bytes"] as const);

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { applyMigrations } from "../src/migration-runner";
-import { canonicalDatabaseMigrations } from "../src/migration-registry";
+import {
+  CANONICAL_DATABASE_SCHEMA_VERSION,
+  canonicalDatabaseMigrations,
+} from "../src/migration-registry";
 
 describe("report creation migration 28", () => {
   test("creates the strict immutable report graph and bounded rate ledger", () => {
@@ -27,7 +30,20 @@ describe("report creation migration 28", () => {
         )
         .all().length,
     ).toBeGreaterThanOrEqual(15);
-    expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 28 });
+    const reportMigrations = canonicalDatabaseMigrations.filter(
+      (migration) => migration.name === "report-creation-v1",
+    );
+    expect(reportMigrations).toHaveLength(1);
+    const reportMigration = reportMigrations[0];
+    if (reportMigration === undefined) throw new Error("canonical report migration is missing");
+    expect(reportMigration).toMatchObject({ name: "report-creation-v1", version: 28 });
+    expect(canonicalDatabaseMigrations[reportMigration.version - 1]).toMatchObject({
+      name: reportMigration.name,
+      version: 28,
+    });
+    expect(database.query("PRAGMA user_version").get()).toEqual({
+      user_version: CANONICAL_DATABASE_SCHEMA_VERSION,
+    });
     database.close();
   });
 });

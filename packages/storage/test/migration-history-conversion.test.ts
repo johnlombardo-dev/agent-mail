@@ -37,7 +37,7 @@ function reorderedLegacyMigrations() {
 }
 
 describe("migration history conversion authority", () => {
-  test("converts a real reordered legacy database, survives crash/reopen, and gates slot 28", async () => {
+  test("converts a real reordered legacy database, survives crash/reopen, and gates the canonical suffix", async () => {
     const root = await mkdtemp(join(tmpdir(), "agent-mail-migration-conversion-"));
     await chmod(root, 0o700);
     const data = join(root, "data");
@@ -67,7 +67,7 @@ describe("migration history conversion authority", () => {
     await chmod(databasePath, 0o600);
 
     const opened = await openDatabase(databasePath, { legacyBackup: legacyProof });
-    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 28 });
+    expect(opened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 29 });
     expect(() => verifyCanonicalMigrationState(opened.db)).not.toThrow();
     expect(() =>
       opened.db
@@ -78,7 +78,7 @@ describe("migration history conversion authority", () => {
     await opened.close();
 
     const reopened = await openDatabase(databasePath);
-    expect(reopened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 28 });
+    expect(reopened.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 29 });
     await reopened.close();
 
     const doctor = await runDoctorIntegrity({
@@ -103,7 +103,7 @@ describe("migration history conversion authority", () => {
     });
     const restored = await restoreBackup({ backupPath, destination: join(root, "restored") });
     const restoredDatabase = new Database(restored.databasePath, { readonly: true, strict: true });
-    expect(restoredDatabase.query("PRAGMA user_version;").get()).toEqual({ user_version: 28 });
+    expect(restoredDatabase.query("PRAGMA user_version;").get()).toEqual({ user_version: 29 });
     expect(() => verifyCanonicalMigrationState(restoredDatabase)).not.toThrow();
     restoredDatabase.close();
     await rm(root, { recursive: true, force: true });

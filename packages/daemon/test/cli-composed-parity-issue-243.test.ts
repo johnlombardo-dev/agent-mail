@@ -428,13 +428,12 @@ describe("#243 composed CLI parity through the real loopback service", () => {
       stdout: {
         async write(value) {
           partialWrites += 1;
-          return partialWrites === 1
-            ? { kind: "written", bytesAccepted: value.byteLength }
-            : { kind: "failed", errorCode: "EIO", bytesAccepted: 0 };
+          if (value.byteLength < 2) throw new Error("partial-write fixture requires at least two bytes");
+          return { kind: "written", bytesAccepted: value.byteLength - 1 };
         },
       },
     });
-    expect(partialWrites).toBeGreaterThan(1);
+    expect(partialWrites).toBe(1);
     expect(partialReceipt.execution.exitCode).toBe(88);
     expect(partialReceipt.execution.stdoutBytesAccepted).toBeGreaterThan(0);
     const epipe = await executeRawContentCommand({ kind: "raw-message", id: messageId }, { client, correlationId: "epipe" });

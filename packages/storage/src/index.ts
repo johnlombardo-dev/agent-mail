@@ -47,6 +47,7 @@ export * from "./migrations/0008-thread-graph";
 export * from "./migrations/0009-action-approval-authority";
 export * from "./migrations/0010-action-plan-restore-quarantine";
 export * from "./migrations/0011-seal-key-administration";
+export * from "./migrations/0029-approval-creator-provenance-repair";
 export * from "./thread-migration";
 
 export const packageMarker = true;

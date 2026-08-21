@@ -190,15 +190,19 @@ describe("#165 complete public operation parity matrix", () => {
     });
     for (const operation of publicOperationDefinitions) {
       const response = await app.request(routeRequest(operation.key));
-      // Operator-session issuance needs the native loopback authority; keep
-      // that missing authority red instead of claiming a fixture pass.
+      // Operator-session issuance needs the native loopback authority and
+      // intentionally rejects this generic bearer probe.
       expect({ operation: operation.key, status: response.status }).toEqual({
         operation: operation.key,
         status: operation.key === "operator-sessions.create" ? 403 : 200,
       });
     }
     expect(rowFor("messages.search").cells["rest-direct"].status).toBe("pass");
-    expect(rowFor("action-plans.create").cells["rest-direct"].status).toBe("blocked");
+    expect(rowFor("action-plans.create").cells["rest-direct"]).toMatchObject({
+      status: "pass",
+      origin: "real",
+      invocation: "action-real-composed",
+    });
     expect(rowFor("operator-sessions.create").cells["rest-direct"]).toMatchObject({
       status: "pass",
       origin: "real",
@@ -220,10 +224,24 @@ describe("#165 complete public operation parity matrix", () => {
       status: "pass",
       origin: "real",
     });
-    expect(rowFor("action-plans.create").cells["cli-composed"].status).toBe("blocked");
+    expect(rowFor("messages.search").cells["cli-composed"]).toMatchObject({
+      status: "pass",
+      origin: "real",
+      invocation: "retrieval-sync-cli-real",
+    });
+    expect(rowFor("sync.stop").cells["cli-composed"]).toMatchObject({
+      status: "pass",
+      origin: "real",
+      invocation: "retrieval-sync-cli-real",
+    });
+    expect(rowFor("action-plans.create").cells["cli-composed"]).toMatchObject({
+      status: "pass",
+      origin: "real",
+      invocation: "action-real-composed",
+    });
   });
 
-  test("production adapter cells use concrete feature evidence and retain missing seams red", () => {
+  test("production adapter cells use concrete feature evidence for every operation", () => {
     for (const row of operationParityRows) {
       expect(row.applicability["production-adapter"]).toBe("required");
       expect(row.cells["production-adapter"].status).not.toBe("not-applicable");
@@ -233,12 +251,13 @@ describe("#165 complete public operation parity matrix", () => {
       origin: "real",
     });
     expect(rowFor("action-plans.create").cells["production-adapter"]).toMatchObject({
-      status: "blocked",
-      origin: "absent",
+      status: "pass",
+      origin: "real",
+      invocation: "action-real-composed",
     });
   });
 
-  test("builds a structurally complete matrix while retaining blocked cells", () => {
+  test("builds a structurally complete matrix with every required cell passing", () => {
     const matrix = buildParityMatrix({
       operations: publicOperationDefinitions,
       corpus: operationCorpus,
@@ -249,10 +268,16 @@ describe("#165 complete public operation parity matrix", () => {
     });
     expect(matrix.rows).toHaveLength(25);
     expect(matrix.diagnostics).toEqual([]);
-    expect(matrix.complete).toBe(false);
+    expect(matrix.complete).toBe(true);
     expect(matrix.rows.every(({ sharedContract }) => sharedContract.status === "pass")).toBe(true);
-    expect(matrix.rows.some(({ restDirectSurface }) => restDirectSurface.status === "blocked")).toBe(true);
-    expect(matrix.rows.some(({ productionAdapter }) => productionAdapter.status === "blocked")).toBe(true);
+    expect(matrix.rows.every(({ restDirectSurface }) => restDirectSurface.status === "pass")).toBe(true);
+    expect(
+      matrix.rows.every(
+        ({ cliComposedSurface }) =>
+          cliComposedSurface.status === "pass" || cliComposedSurface.status === "not-applicable",
+      ),
+    ).toBe(true);
+    expect(matrix.rows.every(({ productionAdapter }) => productionAdapter.status === "pass")).toBe(true);
   });
 
   test("records every accepted #213/#214 outcome dimension with no unclassified operation", () => {

@@ -132,7 +132,7 @@ describe("report creation backup and restore", () => {
       for (const restored of restores) {
         const restoredDatabase = await openDatabase(restored.databasePath);
         const restoredRepository = new ReportCreationRepository(restoredDatabase.db, accountId);
-        expect(restoredDatabase.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 28 });
+        expect(restoredDatabase.db.query("PRAGMA user_version;").get()).toEqual({ user_version: 29 });
         expect(restoredDatabase.db.query("SELECT COUNT(*) AS count FROM reports;").get()).toEqual({ count: 1 });
         expect(restoredDatabase.db.query("SELECT COUNT(*) AS count FROM report_artifacts;").get()).toEqual({ count: 1 });
         expect(restoredDatabase.db.query("SELECT COUNT(*) AS count FROM report_source_snapshots;").get()).toEqual({ count: 1 });

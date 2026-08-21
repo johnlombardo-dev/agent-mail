@@ -1,298 +1,323 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
+  actionPlanApproveResponseSchema,
+  actionPlanAuthorityCommitResponseSchema,
   actionPlanInspectResponseSchema,
   actionPlanPreviewResponseSchema,
-  type ActionPlanContract,
-  type ActionPlanTarget,
+  type ActionPlanInspectResponse,
 } from "@agent-mail/contracts";
-import { actionPlanCreateRequestSchema } from "@agent-mail/contracts";
-import type { RemoteAttempt, RemoteAttemptResult } from "@agent-mail/core";
-import type { PreconditionObservation } from "../../imap/src/precondition";
+import { createCliClient, type CliClient } from "../../cli/src/client";
+import type { CommandResultV1 } from "../../cli/src/command-outcome";
 import {
-  runMigrations,
-} from "../../storage/src/migration-runner";
+  actionPlanCommandRegistry,
+  runActionPlanCommand,
+  type ActionPresenceBroker,
+  type ActionPresenceChallenge,
+  type ActionPresenceRequest,
+} from "../../cli/src/action-plan-command";
+import { admitHttpRequest, publicOperationRegistry } from "../src/http";
+import type { OperatorPresenceChallenge as DaemonPresenceChallenge } from "../src/operator-presence";
+import { acquirePortLease, releasePortLease, type PortLease } from "../../../port-lease";
 import {
-  actionAttemptDispatchSequence,
-} from "../../storage/src/migrations/0005-action-attempt-dispatch";
-import {
-  actionResultReconciliationMigration,
-} from "../../storage/src/migrations/0007-action-result-reconciliation";
-import { operationalJournalMigration } from "../../storage/src/migrations/0001-operational-journal";
-import {
-  createPendingActionPlan,
-  readPendingActionPlan,
-  type PendingActionPlanProposal,
-} from "../../storage/src/action-plan-repository";
-import { claimPendingActionPlan } from "../../storage/src/action-plan-claim";
-import { readActionPlanResult } from "../../storage/src/action-plan-result";
-import { finalizeActionPlan } from "../../storage/src/action-plan-finalization";
-import {
-  runActionPlanTargetLoop,
-  type ActionPlanTargetLoopOptions,
-} from "../src/action-plan-target-loop";
-import {
-  createActionPlanHandlers,
-  type ActionPlanServices,
-} from "../src/action-plan-handlers";
-import {
-  createHttpApp,
-  publicOperationRegistry,
-  type HttpCredentialResolution,
-} from "../src/http";
+  actionLifecycleAgentSecret,
+  actionLifecycleTargets,
+  createActionLifecycleCompositionFixture,
+  type ActionLifecycleCompositionFixture,
+  type ActionLifecycleMode,
+} from "./action-lifecycle-composition-fixture-p6-c07";
 
-const digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-const createdAt = "2026-08-18T00:00:00.000Z";
-const expiresAt = "2026-08-18T01:00:00.000Z";
-const commitAt = "2026-08-18T00:00:02.000Z";
-const authorizationScope = "mail:action.commit";
+const roots: string[] = [];
+const fixtures: ActionLifecycleCompositionFixture[] = [];
+const loopbackLeaseRoles = ["apiIntegration", "browserPreview"] as const;
 
-const targetOne: ActionPlanTarget = {
-  accountId: "account:http-real",
-  mailboxId: "mailbox:inbox-real",
-  uidValidity: 9,
-  uid: 7,
-  precondition: { modseq: 101 },
-};
-const targetTwo: ActionPlanTarget = {
-  ...targetOne,
-  mailboxId: "mailbox:archive-real",
-  uid: 8,
-};
-const action = { kind: "markSeen" as const };
-
-type Mode = "success" | "partial" | "stale" | "failed" | "uncertain" | "expired";
-type PlanRecord = Readonly<{
-  readonly proposal: PendingActionPlanProposal;
-  readonly mode: Mode;
-}>;
-
-const databases: Database[] = [];
-
-afterEach(() => {
-  for (const database of databases.splice(0)) database.close();
+afterEach(async () => {
+  for (const fixture of fixtures.splice(0)) await fixture.close();
+  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-function openDatabase(): Database {
-  const database = new Database(":memory:");
-  databases.push(database);
-  runMigrations(database, [
-    ...actionAttemptDispatchSequence,
-    { ...operationalJournalMigration, version: 6, name: "test-operational-journal" },
-    actionResultReconciliationMigration,
-  ]);
-  return database;
+async function readRequest(request: IncomingMessage): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request)
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  return Buffer.concat(chunks).toString("utf8");
 }
 
-function authenticate(credential: string): HttpCredentialResolution {
-  const operation = publicOperationRegistry.get(credential);
-  return operation === undefined
-    ? { kind: "invalid" }
-    : { kind: "authenticated", principal: { subject: "real-http-test", scopes: [operation.scope] } };
+async function acquireLoopbackPortLease(): Promise<PortLease> {
+  for (const role of loopbackLeaseRoles) {
+    const lease = await acquirePortLease({ project: "action-lifecycle-composition-242", role });
+    if (lease !== null) return lease;
+  }
+  throw new Error("no leased loopback test port was available");
 }
 
-function request(
-  path: string,
-  method: "GET" | "POST",
-  operationKey: string,
-  body?: unknown,
-): Request {
-  const headers = new Headers({ authorization: `Bearer ${operationKey}` });
-  if (body !== undefined) headers.set("content-type", "application/json");
-  return new Request(`http://localhost${path}`, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+async function withLoopback(
+  fixture: ActionLifecycleCompositionFixture,
+  run: (baseUrl: string) => Promise<void>,
+): Promise<void> {
+  const server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
+    const body = request.method === "GET" ? undefined : await readRequest(request);
+    const webRequest = new Request(`http://127.0.0.1${request.url ?? "/"}`, {
+      method: request.method,
+      headers: Object.fromEntries(
+        Object.entries(request.headers).flatMap(([key, value]) =>
+          typeof value === "string" ? [[key, value]] : [],
+        ),
+      ),
+      ...(body === undefined ? {} : { body }),
+    });
+    const webResponse = await fixture.app.fetch(webRequest);
+    response.writeHead(webResponse.status, Object.fromEntries(webResponse.headers));
+    response.end(Buffer.from(await webResponse.arrayBuffer()));
   });
-}
-
-function publicPlan(proposal: PendingActionPlanProposal): ActionPlanContract {
-  return {
-    state: "pending",
-    planId: proposal.planId,
-    action: proposal.action,
-    targets: proposal.targets,
-    createdAt: proposal.createdAt,
-    expiresAt: proposal.expiresAt,
-  };
-}
-
-function terminalPlan(
-  proposal: PendingActionPlanProposal,
-  state: Exclude<ActionPlanContract["state"], "pending" | "executing">,
-  at: string,
-  remoteAttemptId?: string,
-): ActionPlanContract {
-  const base = {
-    planId: proposal.planId,
-    action: proposal.action,
-    targets: proposal.targets,
-    createdAt: proposal.createdAt,
-    expiresAt: proposal.expiresAt,
-  };
-  switch (state) {
-    case "completed":
-    case "partial":
-      return { ...base, state, completedAt: at };
-    case "failed":
-      return { ...base, state, failedAt: at };
-    case "rejected":
-      return { ...base, state, rejectedAt: at, reason: "all targets were rejected or stale" };
-    case "expired":
-      return { ...base, state, expiredAt: proposal.expiresAt };
-    case "uncertain":
-      if (remoteAttemptId === undefined) throw new Error("uncertain result has no attempt identity");
-      return { ...base, state, remoteAttemptId, missingLocalResultAt: at };
-    default: {
-      const exhaustive: never = state;
-      return exhaustive;
-    }
-  }
-}
-
-function resultFor(
-  attempt: RemoteAttempt,
-  resultAt: string,
-  mode: Exclude<Mode, "expired" | "partial" | "stale">,
-): RemoteAttemptResult {
-  if (mode === "success") {
-    return {
-      kind: "success",
-      planId: attempt.planId,
-      action: attempt.action,
-      target: attempt.target,
-      attemptId: attempt.attemptId,
-      idempotencyKey: attempt.idempotencyKey,
-      startedAt: attempt.startedAt,
-      resultAt,
-      certainty: "definite",
-      postcondition: {
-        kind: "flags",
-        observedAt: resultAt,
-        flags: ["\\Seen"],
-        modseq: attempt.target.precondition.modseq + 1,
-      },
-    };
-  }
-  if (mode === "failed") {
-    return {
-      kind: "failed",
-      planId: attempt.planId,
-      action: attempt.action,
-      target: attempt.target,
-      attemptId: attempt.attemptId,
-      idempotencyKey: attempt.idempotencyKey,
-      startedAt: attempt.startedAt,
-      resultAt,
-      certainty: "definite",
-      failureReason: "server-rejected",
-      detail: "fake remote rejected the frozen action",
-    };
-  }
-  return {
-    kind: "uncertain",
-    planId: attempt.planId,
-    action: attempt.action,
-    target: attempt.target,
-    attemptId: attempt.attemptId,
-    idempotencyKey: attempt.idempotencyKey,
-    startedAt: attempt.startedAt,
-    resultAt,
-    certainty: "uncertain",
-    uncertainReason: "local-result-not-durable",
-    detail: "fake remote result crossed the uncertain boundary",
-  };
-}
-
-function fakeRemoteOptions(
-  mode: Mode,
-  remoteCalls: string[],
-): Pick<ActionPlanTargetLoopOptions, "mutationAdapter" | "readPrecondition" | "uncertainObserver" | "normalizeMutationResult"> {
-  const readPrecondition = async (target: ActionPlanTarget): Promise<PreconditionObservation> => {
-    if (mode === "stale" || (mode === "partial" && target.uid === targetTwo.uid)) {
-      return {
-        kind: "stale",
-        target,
-        observed: { uidValidity: target.uidValidity, uid: target.uid, modseq: target.precondition.modseq + 1 },
-        reason: "newer-modseq",
+  const portLease = await acquireLoopbackPortLease();
+  let listening = false;
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error): void => {
+        server.removeListener("error", onError);
+        reject(error);
       };
-    }
-    return {
-      kind: "satisfied",
-      target,
-      observed: { uidValidity: target.uidValidity, uid: target.uid, modseq: target.precondition.modseq },
-    };
-  };
-  const mutationAdapter = {
-    execute: async ({ attempt }: { readonly attempt: RemoteAttempt }): Promise<unknown> => {
-      remoteCalls.push(attempt.attemptId);
-      return { mode, attemptId: attempt.attemptId };
-    },
-  };
-  return {
-    readPrecondition,
-    mutationAdapter,
-    normalizeMutationResult: ({ attempt, resultAt }) =>
-      resultFor(attempt, resultAt, mode === "uncertain" ? "uncertain" : mode === "failed" ? "failed" : "success"),
-    uncertainObserver: {
-      read: async ({ attempt, resultAt }) => resultFor(attempt, resultAt, "uncertain"),
-    },
-  };
-}
-
-function servicesFor(
-  database: Database,
-  mode: Mode,
-  remoteCalls: string[],
-): ActionPlanServices {
-  const plans = new Map<string, PlanRecord>();
-  const snapshots = new Map<string, Readonly<{ readonly plan: ActionPlanContract; readonly results: readonly RemoteAttemptResult[] }>>();
-  let sequence = 0;
-
-  return {
-    createPlan: (input) => {
-      const requestInput = actionPlanCreateRequestSchema.parse(input);
-      const planId = `plan:real-${mode}-${++sequence}`;
-      const proposal = createPendingActionPlan(database, {
-        plan: {
-          state: "pending",
-          planId,
-          action: requestInput.action,
-          targets: requestInput.targets,
-          createdAt,
-          expiresAt,
-        },
-        digest,
-        authorizationScope,
-        idempotencyKey: `http:${planId}`,
+      server.once("error", onError);
+      server.listen(portLease.port, "127.0.0.1", () => {
+        server.removeListener("error", onError);
+        listening = true;
+        resolve();
       });
-      plans.set(planId, { proposal, mode });
-      return { plan: publicPlan(proposal), digest: proposal.previewDigest };
+    });
+    await run(`http://127.0.0.1:${portLease.port}`);
+  } finally {
+    if (listening) {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error === undefined ? resolve() : reject(error))),
+      );
+    }
+    await releasePortLease({ lease: portLease });
+  }
+}
+
+function client(baseUrl: string, authorization = `Bearer ${actionLifecycleAgentSecret}`): CliClient {
+  return createCliClient({ baseUrl, authorization, registry: actionPlanCommandRegistry });
+}
+
+function valueData(value: CommandResultV1): unknown {
+  if (value.kind !== "value") throw new Error(`CLI command did not return a value: ${value.semanticKind}`);
+  return value.data;
+}
+
+function presenceBroker(fixture: ActionLifecycleCompositionFixture): ActionPresenceBroker {
+  const challenges = new Map<string, DaemonPresenceChallenge>();
+  return {
+    issue: async (request: ActionPresenceRequest): Promise<ActionPresenceChallenge> => {
+      const input: unknown = JSON.parse(new TextDecoder().decode(request.rawBody));
+      const daemonRequest = fixture.operatorPresenceRequest(request.operation, input);
+      const challenge = await fixture.operatorPresence.issueChallenge(daemonRequest);
+      challenges.set(challenge.challengeId, challenge);
+      return {
+        version: "agent-mail-macos-operator-presence-v1",
+        challengeId: challenge.challengeId,
+        challengeCommitment: challenge.commitment,
+        operatorDisplayCode: challenge.displayCode,
+        issuedAt: challenge.issuedAt,
+        expiresAt: challenge.expiresAt,
+        credentialId: challenge.request.credentialId,
+        algorithm: "ES256",
+      };
     },
-    inspectPlan: (input) => {
-      const planId = input.planId;
-      const snapshot = snapshots.get(planId);
-      if (snapshot !== undefined) return snapshot;
-      const proposal = readPendingActionPlan(database, planId);
-      if (proposal === undefined) throw new Error("plan was not found");
-      return { plan: publicPlan(proposal), results: [] };
-    },
-    approvePlan: () => {
-      throw new Error("retired scope-only fixture");
-    },
-    cancelApproval: () => {
-      throw new Error("retired scope-only fixture");
-    },
-    authorityCommitPlan: () => {
-      throw new Error("retired scope-only fixture");
+    sign: async (request: ActionPresenceRequest, challenge: ActionPresenceChallenge) => {
+      const daemonChallenge = challenges.get(challenge.challengeId);
+      if (daemonChallenge === undefined) throw new Error("presence challenge was not retained");
+      const input: unknown = JSON.parse(new TextDecoder().decode(request.rawBody));
+      const daemonRequest = fixture.operatorPresenceRequest(request.operation, input);
+      const assertion = await fixture.operatorPresence.signChallenge(daemonRequest, daemonChallenge);
+      return {
+        version: "agent-mail-macos-operator-presence-v1",
+        challengeId: assertion.challengeId,
+        credentialId: assertion.credentialId,
+        signatureBase64url: assertion.signatureP1363Base64url,
+      };
     },
   };
 }
 
-// Retired scope-only composition fixture. Authority composition is covered by
-// action-authority-http.test.ts and action-approval-authority.test.ts.
-describe.skip("P6-C07 retired scope-only composition", () => {
-  test("is replaced by authority-v1 composition coverage", () => {
-    expect(publicOperationRegistry.get("action-plans.authorize")).toBeUndefined();
+async function createAndApprove(
+  fixture: ActionLifecycleCompositionFixture,
+  baseUrl: string,
+  cli: CliClient,
+): Promise<Readonly<{ readonly preview: ActionPlanInspectResponse; readonly approvalId: string }>> {
+  const operator = client(baseUrl, `Bearer ${fixture.operatorSessionToken}`);
+  const created = await runActionPlanCommand(
+    "create",
+    { action: { kind: "markSeen" }, targets: actionLifecycleTargets },
+    { client: operator, correlationId: "cli:action-lifecycle:create", mode: "json" },
+  );
+  const preview = actionPlanPreviewResponseSchema.parse(valueData(created));
+  const inspected = await runActionPlanCommand(
+    "inspect",
+    { planId: preview.plan.planId },
+    { client: operator, correlationId: "cli:action-lifecycle:inspect", mode: "json" },
+  );
+  const inspect = actionPlanInspectResponseSchema.parse(valueData(inspected));
+  const approved = await runActionPlanCommand(
+    "approve",
+    { planId: preview.plan.planId, planVersion: inspect.planVersion, previewDigest: inspect.previewDigest },
+    {
+      client: operator,
+      correlationId: "cli:action-lifecycle:approve",
+      mode: "human",
+      confirm: async () => "yes",
+      presence: presenceBroker(fixture),
+      displayChallenge: () => undefined,
+      operatorClientForAssertion: (authorization) => client(baseUrl, authorization),
+    },
+  );
+  const approval = actionPlanApproveResponseSchema.parse(valueData(approved)).approval;
+  return { preview: inspect, approvalId: approval.approvalId };
+}
+
+async function createFixture(mode: ActionLifecycleMode): Promise<ActionLifecycleCompositionFixture> {
+  const root = await mkdtemp(join(tmpdir(), "agent-mail-action-lifecycle-p6-c07-"));
+  roots.push(root);
+  const fixture = await createActionLifecycleCompositionFixture(root, mode);
+  fixtures.push(fixture);
+  return fixture;
+}
+
+describe("P6-C07 real action lifecycle composition", () => {
+  test("runs create, inspect, approve, cancel, and commit across real REST and CLI paths", async () => {
+    const fixture = await createFixture("success");
+    await withLoopback(fixture, async (baseUrl) => {
+      const agent = client(baseUrl);
+      const createResponse = await fetch(`${baseUrl}/v1/action-plans`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${fixture.operatorSessionToken}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: { kind: "markSeen" }, targets: actionLifecycleTargets.slice(0, 1) }),
+      });
+      expect(createResponse.status).toBe(200);
+      const restPreview = actionPlanPreviewResponseSchema.parse(await createResponse.json());
+      const inspectResponse = await fetch(`${baseUrl}/v1/action-plans/${encodeURIComponent(restPreview.plan.planId)}`, {
+        headers: { authorization: `Bearer ${fixture.operatorSessionToken}` },
+      });
+      expect(inspectResponse.status).toBe(200);
+      const restInspect = actionPlanInspectResponseSchema.parse(await inspectResponse.json());
+      expect(restInspect.approvalState).toBe("absent");
+
+      const restApprovalBody = { planId: restInspect.plan.planId, planVersion: restInspect.planVersion, previewDigest: restInspect.previewDigest };
+      const restApprovalRequest = fixture.operatorPresenceRequest("approve", restApprovalBody);
+      const restAssertion = await fixture.operatorAssertion(restApprovalRequest);
+      const restApproval = await fetch(`${baseUrl}${restApprovalRequest.path}`, {
+        method: "POST",
+        headers: {
+          authorization: `AgentMail-Operator ${Buffer.from(JSON.stringify({ version: restAssertion.version, challengeId: restAssertion.challengeId, credentialId: restAssertion.credentialId, signatureBase64url: restAssertion.signatureP1363Base64url })).toString("base64url")}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(restApprovalBody),
+      });
+      expect(restApproval.status).toBe(200);
+
+      const cancelled = await createAndApprove(fixture, baseUrl, agent);
+      const cancelResult = await runActionPlanCommand(
+        "cancel",
+        { planId: cancelled.preview.plan.planId, approvalId: cancelled.approvalId, planVersion: cancelled.preview.planVersion, previewDigest: cancelled.preview.previewDigest },
+        {
+          client: agent,
+          correlationId: "cli:action-lifecycle:cancel",
+          mode: "human",
+          confirm: async () => "yes",
+          presence: presenceBroker(fixture),
+          displayChallenge: () => undefined,
+          operatorClientForAssertion: (authorization) => client(baseUrl, authorization),
+        },
+      );
+      expect(cancelResult.semanticKind).toBe("success");
+
+      const committed = await createAndApprove(fixture, baseUrl, agent);
+      const commitResult = await runActionPlanCommand(
+        "commit",
+        { planId: committed.preview.plan.planId, planVersion: committed.preview.planVersion, previewDigest: committed.preview.previewDigest, approvalId: committed.approvalId },
+        { client: agent, correlationId: "cli:action-lifecycle:commit", mode: "json" },
+      );
+      const commit = actionPlanAuthorityCommitResponseSchema.parse(valueData(commitResult));
+      expect(commit.plan.state).toBe("completed");
+      expect(commit.results).toHaveLength(2);
+      expect(fixture.database.query("SELECT terminal_state FROM action_plan_terminal_audit WHERE plan_id = ?;").get(committed.preview.plan.planId)).toEqual({ terminal_state: "completed" });
+    });
+  });
+
+  test("maps failed, partial, uncertain, and replay boundaries through the outcome authority", async () => {
+    for (const mode of ["failed", "partial", "uncertain"] as const) {
+      const fixture = await createFixture(mode);
+      await withLoopback(fixture, async (baseUrl) => {
+        const agent = client(baseUrl);
+        const approved = await createAndApprove(fixture, baseUrl, agent);
+        const result = await runActionPlanCommand(
+          "commit",
+          { planId: approved.preview.plan.planId, planVersion: approved.preview.planVersion, previewDigest: approved.preview.previewDigest, approvalId: approved.approvalId },
+          { client: agent, correlationId: `cli:action-lifecycle:${mode}`, mode: "json" },
+        );
+        expect(result.semanticKind).toBe(mode === "failed" ? "attention" : mode);
+        const inspectResponse = await fetch(`${baseUrl}/v1/action-plans/${encodeURIComponent(approved.preview.plan.planId)}`, { headers: { authorization: `Bearer ${actionLifecycleAgentSecret}` } });
+        expect(inspectResponse.status).toBe(200);
+        const inspect = actionPlanInspectResponseSchema.parse(await inspectResponse.json());
+        expect(inspect.terminalAudit).not.toBe("absent");
+        const replay = await runActionPlanCommand(
+          "commit",
+          { planId: approved.preview.plan.planId, planVersion: approved.preview.planVersion, previewDigest: approved.preview.previewDigest, approvalId: approved.approvalId },
+          { client: agent, correlationId: `cli:action-lifecycle:${mode}:replay`, mode: "json" },
+        );
+        expect(replay.semanticKind).toBe("replay");
+      });
+    }
+  });
+
+  test("rejects static/self approval and rejects oversized requests before service effects", async () => {
+    const fixture = await createFixture("success");
+    const wrongScope = await admitHttpRequest({
+      operation: publicOperationRegistry.get("action-plans.approve")!,
+      request: new Request("http://127.0.0.1/v1/action-plans/plan%3Awrong/approvals", {
+        method: "POST",
+        headers: { authorization: `Bearer ${actionLifecycleAgentSecret}`, "content-type": "application/json" },
+        body: JSON.stringify({ planId: "plan:wrong", planVersion: 1, previewDigest: "0".repeat(64) }),
+      }),
+      authenticate: (secret) => secret === actionLifecycleAgentSecret ? {
+        kind: "authenticated",
+        principal: { subject: "principal:agent", scopes: ["mail:action.commit"] },
+      } : { kind: "invalid" },
+      operatorPresenceAdmission: true,
+    });
+    expect(wrongScope.kind).toBe("rejected");
+    expect(wrongScope.kind === "rejected" ? wrongScope.status : 200).toBe(403);
+
+    await withLoopback(fixture, async (baseUrl) => {
+      const response = await fetch(`${baseUrl}/v1/action-plans`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${actionLifecycleAgentSecret}`, "content-type": "application/json" },
+        body: JSON.stringify({ action: { kind: "markSeen" }, targets: actionLifecycleTargets, padding: "x".repeat(4_096) }),
+      });
+      expect(response.status).toBe(413);
+      expect(fixture.database.query("SELECT COUNT(*) AS count FROM action_plans;").get()).toEqual({ count: 0 });
+    });
+  });
+
+  test("retains terminal audit in durable SQLite across a database reopen", async () => {
+    const fixture = await createFixture("success");
+    await withLoopback(fixture, async (baseUrl) => {
+      const agent = client(baseUrl);
+      const approved = await createAndApprove(fixture, baseUrl, agent);
+      const result = await runActionPlanCommand(
+        "commit",
+        { planId: approved.preview.plan.planId, planVersion: approved.preview.planVersion, previewDigest: approved.preview.previewDigest, approvalId: approved.approvalId },
+        { client: agent, correlationId: "cli:action-lifecycle:durable", mode: "json" },
+      );
+      expect(result.semanticKind).toBe("success");
+      await fixture.close();
+      const reopened = new Database(fixture.databasePath, { strict: true });
+      expect(reopened.query("SELECT terminal_state, executor_instance_id FROM action_plan_terminal_audit WHERE plan_id = ?;").get(approved.preview.plan.planId)).toEqual({ terminal_state: "completed", executor_instance_id: "executor:action-lifecycle-composition" });
+      reopened.close();
+    });
   });
 });

@@ -15,15 +15,15 @@ describe("canonical migration registry", () => {
   test("is the immutable contiguous application authority", () => {
     const database = new Database(":memory:", { strict: true });
     applyMigrations(database, canonicalDatabaseMigrations);
-    expect(CANONICAL_DATABASE_SCHEMA_VERSION).toBe(28);
-    expect(NEXT_DATABASE_MIGRATION_VERSION).toBe(29);
-    expect(NEXT_REPORT_MIGRATION_VERSION).toBe(29);
+    expect(CANONICAL_DATABASE_SCHEMA_VERSION).toBe(29);
+    expect(NEXT_DATABASE_MIGRATION_VERSION).toBe(30);
+    expect(NEXT_REPORT_MIGRATION_VERSION).toBe(30);
     expect(Object.isFrozen(canonicalDatabaseMigrations)).toBe(true);
     expect(canonicalDatabaseMigrations.map((migration) => migration.version)).toEqual(
-      Array.from({ length: 28 }, (_, index) => index + 1),
+      Array.from({ length: 29 }, (_, index) => index + 1),
     );
     expect(canonicalDatabaseMigrations.every((migration) => Object.isFrozen(migration))).toBe(true);
-    expect(canonicalDatabaseMigrations.map(migrationContentHash)).toHaveLength(28);
+    expect(canonicalDatabaseMigrations.map(migrationContentHash)).toHaveLength(29);
     database.close();
   });
 });
