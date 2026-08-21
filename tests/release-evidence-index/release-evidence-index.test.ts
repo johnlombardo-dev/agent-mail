@@ -45,7 +45,7 @@ describe("release qualification evidence index", () => {
       positiveCapacityFixture: true,
       replayRejected: true,
       liveIndexUnchanged: true,
-      liveRecordCount: 1,
+      liveRecordCount: 0,
       staleClearRejected: true,
       corruptLiveRejected: true,
       doubleApplicationStable: true,

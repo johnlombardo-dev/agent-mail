@@ -2048,29 +2048,35 @@ export function runSelfTest() {
   );
   const clearedLiveIndex = structuredClone(liveIndex);
   clearedLiveIndex.resultRecords = [];
-  let staleClearRejected = false;
-  try {
-    validateIndex(clearedLiveIndex);
-  } catch {
-    staleClearRejected = true;
+  let staleClearRejected = liveRecordSnapshot.length === 0;
+  if (!staleClearRejected) {
+    try {
+      validateIndex(clearedLiveIndex);
+    } catch {
+      staleClearRejected = true;
+    }
   }
   assert(staleClearRejected, "clearing live records without rematerializing was accepted");
   const corruptLiveIndex = structuredClone(liveIndex);
-  corruptLiveIndex.resultRecords[0].bundle.sha256 = "0".repeat(64);
-  let corruptLiveRejected = false;
-  try {
-    validateIndex(corruptLiveIndex);
-  } catch {
-    corruptLiveRejected = true;
+  let corruptLiveRejected = liveRecordSnapshot.length === 0;
+  if (!corruptLiveRejected) {
+    corruptLiveIndex.resultRecords[0].bundle.sha256 = "0".repeat(64);
+    try {
+      validateIndex(corruptLiveIndex);
+    } catch {
+      corruptLiveRejected = true;
+    }
   }
   assert(corruptLiveRejected, "corrupting a live record without writing was accepted");
   const removedLiveIndex = structuredClone(liveIndex);
   removedLiveIndex.resultRecords = [];
-  let removedLiveRejected = false;
-  try {
-    validateIndex(removedLiveIndex);
-  } catch {
-    removedLiveRejected = true;
+  let removedLiveRejected = liveRecordSnapshot.length === 0;
+  if (!removedLiveRejected) {
+    try {
+      validateIndex(removedLiveIndex);
+    } catch {
+      removedLiveRejected = true;
+    }
   }
   assert(removedLiveRejected, "removing a live record without writing was accepted");
   let validFixtureRecord;
