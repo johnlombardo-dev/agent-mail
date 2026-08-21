@@ -1,6 +1,6 @@
 # Agent Mail implementation plan
 
-Status: evidence-backed implementation underway. Reconciled on 2026-08-20: the current execution chains are reopened compatibility authority #231 -> report creation #232 -> operation parity #165, and credential-provider #238 -> production connection #239 -> local account administration #240 -> signed/read-only qualification #241. The focused F01-F30 probe is red: 202 pass, 6 fail, and 3 module-load errors on the fingerprint recorded in `docs/planning/EVIDENCE.md`. Daybreak access is approved, but the complete applicable security lane is unverified and release-blocking. #203's consequential authority decision is accepted at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`. Release qualification also remains blocked by #176, #180, #183, and #185 plus live, deployed, delivery, and security-review gates.
+Status: evidence-backed implementation underway. Reconciled on 2026-08-22: compatibility authority #231, report creation #232, and operation parity #165 are closed and delivered through branch head `55e7a66cd72d354271c1713529051ac8441dd95d`. The current credential chain remains credential-provider #238 -> production connection #239 -> local account administration #240 -> signed/read-only qualification #241. #238 has a protected dirty candidate, but release construction is blocked because the valid Developer ID Application identity has no matching Agent Mail CLI/broker/daemon provisioning profiles and the `agent-mail-notary` Keychain profile is absent. The previously recorded focused F01-F30 probe remains red only for its historical fingerprint: 202 pass, 6 fail, and 3 module-load errors as recorded in `docs/planning/EVIDENCE.md`; it has not been rerun against the current head. Daybreak access is approved, but the complete applicable security lane is unverified and release-blocking. #203's consequential authority decision is accepted at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`. Release qualification also remains blocked by #176, #180, #183, and #185 plus live, deployed, delivery, and security-review gates.
 
 ## Evidence baseline
 
@@ -17,7 +17,7 @@ Sibling implementations are evidence, not code bases to merge. This implementati
 
 ## Current implementation inputs
 
-The package snapshot remains dated 2026-08-17. Repository, Hermes, issue, candidate, and credential inputs were rechecked on 2026-08-20 and are recorded in `docs/planning/EVIDENCE.md`.
+The package snapshot remains dated 2026-08-17. Repository, issue, candidate, and credential inputs were rechecked on 2026-08-22; the Hermes allocation remains the 2026-08-20 verified snapshot. Details are recorded in `docs/planning/EVIDENCE.md`.
 
 ### Repository boundary
 
@@ -373,8 +373,8 @@ Promotion rules:
 
 - Implementation and focused runtime evidence exist, but the active candidate is dirty and the mapped F01-F30 probe is red: 202 pass, 6 fail, and 3 module-load errors. The exact target, failures, and current-focused passes are recorded in `docs/planning/EVIDENCE.md`; none of those focused passes alone establishes local or release qualification.
 - The canonical repository, `origin`, default branch `main`, and Hermes slug/range/path metadata are established. Per-delivery branch, commit, PR, CI, and clean-diff evidence remains required.
-- The current report/parity dependency chain is #231 -> #232 -> #165. #231 was reopened after the exact #232 candidate exposed two backup/restore normalized-text compatibility regressions; #230 is closed and is no longer a blocker.
-- The current credential dependency chain is #238 -> #239 -> #240 -> #241. A dirty #238 candidate exists; the Developer ID Application identity and three provisioning profiles are present, but the `agent-mail-notary` Keychain profile is currently missing and signed-installed qualification has not run.
+- The report/parity dependency chain #231 -> #232 -> #165 is closed and delivered through `55e7a66cd72d354271c1713529051ac8441dd95d`; migration/report authority #247/#248 is independently signed at commits `47b4866`/`55e7a66`.
+- The current credential dependency chain is #238 -> #239 -> #240 -> #241. A protected dirty #238 candidate exists. Developer ID Application identity `78AC7E3FF47AF6AAE5FE00CC7F8B61B436BCB117` is valid for Team `ZWG6QHMFJN`, but the installed profiles are unrelated iOS profiles: no profile matches the exact Agent Mail CLI, credential-broker, or daemon bundle identifier. The `agent-mail-notary` Keychain profile is also absent, so #238 remains open and #239-#241 stay held.
 - Live iCloud, live mutation, launchd, Tailscale, target-host restart, and full restore have not been exercised for this implementation.
 - The source audit's security work was partial. Daybreak access is approved, but the complete applicable security lane is unverified; access approval is not security evidence, and release qualification remains blocked until #183 runs.
 - #203's consequential single-user authority decision is accepted at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`. Preserve the accepted authority and principal/profile rules; do not invent a replacement or compatibility path. Remaining release gates stay blocking.
@@ -383,7 +383,7 @@ Promotion rules:
 
 ## iCloud credential authority gates
 
-The accepted #235/#236 intervention adds the following planning rows without rewriting historical F01-F30 or SEC-R rows. The normative authority is the exact #236 oracle at commit 3757dfe85bdd9fbeec014f4c183ebfc9fa80effb, oracle SHA-256 9b685e1293570d8f55f9a11c02b108e0ac5585a3cffdc367762db09f3e687c3c. A dirty #238 implementation and packaging candidate now exists, but it is unaccepted. The Developer ID Application identity and three provisioning profiles are present; the `agent-mail-notary` Keychain profile is currently missing. Therefore signed-installed, live, deployed, security-review, documentation, and delivery evidence remain unverified.
+The accepted #235/#236 intervention adds the following planning rows without rewriting historical F01-F30 or SEC-R rows. The normative authority is the exact #236 oracle at commit 3757dfe85bdd9fbeec014f4c183ebfc9fa80effb, oracle SHA-256 9b685e1293570d8f55f9a11c02b108e0ac5585a3cffdc367762db09f3e687c3c. A dirty #238 implementation and packaging candidate now exists, but it is unaccepted. The Developer ID Application identity is present and valid, but no installed provisioning profile matches the three exact Agent Mail nested bundle identifiers and the `agent-mail-notary` Keychain profile is absent. Therefore signed construction, signed-installed, live, deployed, security-review, documentation, and delivery evidence remain unverified.
 
 ### Accepted #236 artifact set
 

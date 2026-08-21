@@ -1,6 +1,6 @@
 # Agent Mail planning evidence and defect traceability
 
-Status: implementation and qualification are underway. This ledger was reconciled on 2026-08-20 against the canonical GitHub issue endpoint, worktree HEAD `e7c1d503548f759634f9b062647ca07381914569`, and the focused F01-F30 probe recorded below. The current execution chains are reopened compatibility authority #231 -> report creation #232 -> operation parity #165, and credential-provider #238 -> production connection #239 -> local account administration #240 -> signed/read-only qualification #241. Daybreak access is approved, but the complete applicable security lane is unverified and release-blocking. #203's consequential authority decision is accepted at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`. Release qualification also remains blocked by #176, #180, #183, and #185 plus live, deployed, delivery, and security-review gates.
+Status: implementation and qualification are underway. This ledger was reconciled on 2026-08-22 against the canonical GitHub issue endpoint and delivered branch head `55e7a66cd72d354271c1713529051ac8441dd95d`; the older focused F01-F30 probe remains explicitly bound to its recorded `e7c1d503548f759634f9b062647ca07381914569` fingerprint. Compatibility authority #231, report creation #232, and operation parity #165 are closed and delivered. The current execution chain is credential-provider #238 -> production connection #239 -> local account administration #240 -> signed/read-only qualification #241. #238 remains open because no installed profile matches its three exact Agent Mail bundle identifiers and `agent-mail-notary` is absent. Daybreak access is approved, but the complete applicable security lane is unverified and release-blocking. #203's consequential authority decision is accepted at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`. Release qualification also remains blocked by #176, #180, #183, and #185 plus live, deployed, delivery, and security-review gates.
 
 ## Source interpretation
 
@@ -12,7 +12,7 @@ The comparison's architecture findings remain useful. Its early release recommen
 
 | Input | Evidence snapshot | Planning status or limit |
 |---|---|---|
-| Canonical GitHub repository | Rechecked 2026-08-20: `johnlombardo-dev/agent-mail` is non-empty with default branch `main`; this worktree has first-party history and the correct `origin`. | Canonical delivery target. Branch, commit, PR, and CI state still require per-delivery verification. |
+| Canonical GitHub repository | Rechecked 2026-08-22: `johnlombardo-dev/agent-mail` is non-empty with default branch `main`; branch `feature/agent-mail-implementation` is delivered at `55e7a66cd72d354271c1713529051ac8441dd95d`. | Canonical delivery target. PR, CI, merge, and later delivery state still require per-delivery verification. |
 | Prototype GitHub repository | `gh repo view johnlombardo-dev/agent-mail-proto` reports a non-empty `main`. | Former Sol-Luna remote; evidence only, never the delivery target. |
 | Hermes allocation | Rechecked 2026-08-20: `ports show agent-mail --json` reports slug `agent-mail`, range `6110–6119`, display name “Agent Mail,” and base path `/Volumes/Jove/Developer/Projects/agent-mail`. | Range and metadata are current; do not reallocate. |
 | Package registry | Latest stable releases include Bun `1.3.14`, Vite+ `0.2.9`, ImapFlow `1.7.1`, MailParser `3.9.15`, Zod `4.4.3`, Hono `4.13.2`, XState `5.32.5`, and `sanitize-html` `2.17.7`. | Snapshot only; bootstrap and release recheck all direct packages. The prototype's `sanitize-html@2.17.0` is stale. |
@@ -22,17 +22,17 @@ The comparison's architecture findings remain useful. Its early release recommen
 
 This snapshot is deliberately time- and target-bound. Historical issue bodies and comments remain evidence of earlier decisions, but they do not override the canonical issue endpoint or a newer comment. Reconcile again after a dependency changes state or the candidate fingerprint changes.
 
-| Item | Canonical state on 2026-08-20 | Evidence and consequence |
+| Item | Canonical state on 2026-08-22 | Evidence and consequence |
 |---|---|---|
-| Reconciliation snapshot | HEAD `e7c1d503548f759634f9b062647ca07381914569`; tracked diff SHA-256 `f778e58b1a3a496f551f20086834682110e4bb50a9dc616f4b491b8828bf98f4`; relevant untracked source/packaging aggregate SHA-256 `2776a134e7d41f8dc867e76b77fe10f0fd7d7b58eee80b3691b9b14999ec78ae`. | The focused results below apply only to this captured dirty-candidate snapshot. Subsequent bounded #231/#232 edits require a fresh acceptance fingerprint; they do not retroactively change these results. |
+| Reconciliation snapshot | Delivered branch HEAD `55e7a66cd72d354271c1713529051ac8441dd95d`; current protected #238 source/packaging aggregate SHA-256 `b5674154a5ceca2a6ae2be6038de632914bf484708dd9de4047e9005f8d11888`. The historical focused-probe snapshot remains HEAD `e7c1d503548f759634f9b062647ca07381914569`, tracked diff SHA-256 `f778e58b1a3a496f551f20086834682110e4bb50a9dc616f4b491b8828bf98f4`, and untracked aggregate `2776a134e7d41f8dc867e76b77fe10f0fd7d7b58eee80b3691b9b14999ec78ae`. | Delivery claims for the completed report/parity cluster apply to `55e7a66`; focused F01-F30 counts apply only to the older captured candidate. The current dirty #238 candidate is unaccepted and separately fingerprinted. |
 | #230 | closed | Report-creation planning prerequisite is accepted. |
-| #231 | open; reopened at 2026-08-20T03:34:09Z | The exact #232 candidate comparison found two `backup-restore-parity-p2-c19.test.ts` regressions: legacy `canonicalUnit` fixtures omit newly required normalized text. #231 now owns the minimum compatibility authority and proof. |
-| #232 | open; paused on #231 | Report creation cannot be accepted until the reopened compatibility decision and its regression proof land. |
-| #165 | open; blocked on #232 | #230 is no longer a blocker. The live dependency chain is #231 -> #232 -> #165. |
-| #238 | open; unaccepted dirty candidate | Developer ID Application identity `78AC7E3FF47AF6AAE5FE00CC7F8B61B436BCB117` and three provisioning profiles are present. The `agent-mail-notary` Keychain profile is currently missing, and signed-installed qualification remains unverified. |
+| #231 | closed | Compatibility authority and its normalized-text regression proof are accepted. |
+| #232 | closed | Report creation service/CLI is delivered; final report authority #248 is independently signed at `55e7a66`. |
+| #165 | closed | The complete REST/CLI operation parity matrix is delivered at `55e7a66`; its final suite passed 10 tests with 1,579 assertions. |
+| #238 | open; unaccepted dirty candidate | Developer ID Application identity `78AC7E3FF47AF6AAE5FE00CC7F8B61B436BCB117` is valid for Team `ZWG6QHMFJN`. Four installed provisioning profiles were inspected and are unrelated iOS profiles; none matches `dev.johnlombardo.agent-mail.cli`, `dev.johnlombardo.agent-mail.credential-broker`, or `dev.johnlombardo.agent-mail.daemon`. The `agent-mail-notary` Keychain profile is absent. Local non-signing proofs pass, but signed construction and signed-installed qualification remain unverified. |
 | #239, #240, #241 | open | These remain ordered behind #238: production connection/recovery, local account administration, then independent signed/read-only qualification. |
 
-The focused F01-F30 probe on this exact candidate produced 202 passing tests, 6 failing tests, and 3 module-load errors. A focused pass proves only the named seam on this candidate; it is not full local or release qualification.
+The previously recorded focused F01-F30 probe on the exact `e7c1d503548f759634f9b062647ca07381914569` candidate produced 202 passing tests, 6 failing tests, and 3 module-load errors. It has not been rerun against `55e7a66` or the current #238 candidate. A focused pass proves only the named seam on its fingerprint; it is not full local or release qualification.
 
 ## Adopted and rejected prototype lessons
 
@@ -114,7 +114,7 @@ Historical issue-contract inputs remain frozen: #202–#206 and #208 record plan
 
 ## iCloud credential authority gates
 
-The accepted #235/#236 intervention adds the following planning rows without rewriting historical F01-F30 or SEC-R rows. The normative authority is the exact #236 oracle at commit 3757dfe85bdd9fbeec014f4c183ebfc9fa80effb, oracle SHA-256 9b685e1293570d8f55f9a11c02b108e0ac5585a3cffdc367762db09f3e687c3c. A dirty #238 implementation and packaging candidate now exists, but it is unaccepted and outside the focused F01-F30 probe. The Developer ID Application identity and three provisioning profiles are present; the `agent-mail-notary` Keychain profile is currently missing. Therefore signed-installed, live, deployed, security-review, documentation, and delivery evidence remain unverified.
+The accepted #235/#236 intervention adds the following planning rows without rewriting historical F01-F30 or SEC-R rows. The normative authority is the exact #236 oracle at commit 3757dfe85bdd9fbeec014f4c183ebfc9fa80effb, oracle SHA-256 9b685e1293570d8f55f9a11c02b108e0ac5585a3cffdc367762db09f3e687c3c. A dirty #238 implementation and packaging candidate now exists, but it is unaccepted and outside the focused F01-F30 probe. The Developer ID Application identity is present and valid, but no installed provisioning profile matches the three exact Agent Mail nested bundle identifiers and the `agent-mail-notary` Keychain profile is absent. Therefore signed construction, signed-installed, live, deployed, security-review, documentation, and delivery evidence remain unverified.
 
 ### Accepted #236 artifact set
 
