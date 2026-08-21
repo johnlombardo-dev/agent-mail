@@ -16,6 +16,9 @@ import { openDatabase } from "../../packages/storage/src/database";
 export const DEFAULT_SEED = 116_2026;
 export const DEFAULT_COUNT = 250_000;
 export const CORPUS_VERSION = "p4-c16-v1";
+const THREAD_GROUP_SIZE = 32;
+const CAPACITY_ACCOUNT_ID = "account:capacity";
+const CANONICAL_THREAD_ID = /^thread:[0-9a-f]{64}$/u;
 
 const labels = [
   "label:important",
@@ -50,6 +53,12 @@ export type CorpusInventory = Readonly<{
   readonly labelAssignments: number;
   readonly searchDocuments: number;
   readonly ftsRows: number;
+  readonly threadSets: number;
+  readonly threadNodes: number;
+  readonly threadEquivalences: number;
+  readonly threadMemberships: number;
+  readonly threadHandles: number;
+  readonly threadIdentityDigest: string;
   readonly querySelectivities: Readonly<Record<string, number>>;
   readonly queryIdentityDigests: Readonly<Record<string, string>>;
   readonly schemaIndexCounts: Readonly<Record<string, number>>;
@@ -78,6 +87,24 @@ function queryIdentityDigest(database: Database, query: string): string {
     )
     .all(query);
   for (const row of rows) hash.update(`${row.message_id}\n`);
+  return hash.digest("hex");
+}
+
+function threadIdentityDigest(database: Database): string {
+  const hash = createHash("sha256");
+  const rows = database
+    .query<
+      Readonly<{
+        readonly message_id: string;
+        readonly set_id: string;
+        readonly thread_id: string;
+      }>,
+      []
+    >(
+      "SELECT membership.message_id, membership.set_id, thread_set.canonical_thread_id AS thread_id FROM thread_memberships AS membership JOIN thread_sets AS thread_set ON thread_set.account_id = membership.account_id AND thread_set.set_id = membership.set_id ORDER BY membership.message_id;",
+    )
+    .all();
+  for (const row of rows) hash.update(`${row.message_id}\t${row.set_id}\t${row.thread_id}\n`);
   return hash.digest("hex");
 }
 
@@ -115,6 +142,11 @@ export function validateCorpusInventory(database: Database, expected: CorpusInve
     "message_fts",
     "local_labels",
     "local_label_assignments",
+    "thread_sets",
+    "thread_nodes",
+    "thread_equivalences",
+    "thread_memberships",
+    "thread_handles",
   ]) {
     if (database.query("SELECT 1 FROM sqlite_master WHERE name = ? LIMIT 1;").get(table) === null)
       throw new Error(`required schema object missing: ${table}`);
@@ -180,6 +212,81 @@ export function validateCorpusInventory(database: Database, expected: CorpusInve
       expected.labelAssignments
   )
     throw new Error("label inventory mismatch");
+  if (
+    countRows(database, "SELECT COUNT(*) AS count FROM thread_sets;") !== expected.threadSets ||
+    countRows(database, "SELECT COUNT(*) AS count FROM thread_nodes;") !== expected.threadNodes ||
+    countRows(database, "SELECT COUNT(*) AS count FROM thread_equivalences;") !==
+      expected.threadEquivalences ||
+    countRows(database, "SELECT COUNT(*) AS count FROM thread_memberships;") !==
+      expected.threadMemberships ||
+    countRows(database, "SELECT COUNT(*) AS count FROM thread_handles;") !== expected.threadHandles
+  )
+    throw new Error("thread inventory mismatch");
+  if (expected.threadMemberships !== expected.messages)
+    throw new Error("thread membership inventory mismatch");
+  if (
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM thread_memberships WHERE account_id <> 'account:capacity';",
+    ) !== 0
+  )
+    throw new Error("thread membership account invariant failed");
+  if (
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM thread_memberships AS membership WHERE NOT EXISTS (SELECT 1 FROM messages AS message WHERE message.message_id = membership.message_id);",
+    ) !== 0 ||
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM messages AS message WHERE NOT EXISTS (SELECT 1 FROM thread_memberships AS membership WHERE membership.account_id = 'account:capacity' AND membership.message_id = message.message_id);",
+    ) !== 0
+  )
+    throw new Error("thread membership message closure failed");
+  if (
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM thread_memberships AS membership WHERE NOT EXISTS (SELECT 1 FROM thread_sets AS thread_set WHERE thread_set.account_id = membership.account_id AND thread_set.set_id = membership.set_id);",
+    ) !== 0 ||
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM thread_sets AS thread_set WHERE NOT EXISTS (SELECT 1 FROM thread_memberships AS membership WHERE membership.account_id = thread_set.account_id AND membership.set_id = thread_set.set_id);",
+    ) !== 0
+  )
+    throw new Error("thread set closure failed");
+  if (
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM thread_sets AS thread_set WHERE thread_set.member_count <> (SELECT COUNT(*) FROM thread_memberships AS membership WHERE membership.account_id = thread_set.account_id AND membership.set_id = thread_set.set_id) OR thread_set.node_count <> (SELECT COUNT(*) FROM thread_nodes AS node WHERE node.account_id = thread_set.account_id AND node.set_id = thread_set.set_id) OR thread_set.equivalence_count <> (SELECT COUNT(*) FROM thread_equivalences AS equivalence WHERE equivalence.account_id = thread_set.account_id AND equivalence.set_id = thread_set.set_id) OR thread_set.handle_count <> (SELECT COUNT(*) FROM thread_handles AS handle WHERE handle.account_id = thread_set.account_id AND handle.set_id = thread_set.set_id);",
+    ) !== 0
+  )
+    throw new Error("thread set member counter mismatch");
+  if (
+    database
+      .query<Readonly<{ readonly canonical_thread_id: string }>, []>(
+        "SELECT canonical_thread_id FROM thread_sets;",
+      )
+      .all()
+      .some(({ canonical_thread_id }) => !CANONICAL_THREAD_ID.test(canonical_thread_id))
+  )
+    throw new Error("thread canonical identity invariant failed");
+  if (
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM thread_memberships AS membership WHERE NOT EXISTS (SELECT 1 FROM thread_nodes AS node WHERE node.account_id = membership.account_id AND node.set_id = membership.set_id AND node.node_key = membership.member_node_key) OR NOT EXISTS (SELECT 1 FROM thread_equivalences AS equivalence WHERE equivalence.account_id = membership.account_id AND equivalence.set_id = membership.set_id AND equivalence.member_node_key = membership.member_node_key AND equivalence.message_id = membership.message_id);",
+    ) !== 0
+  )
+    throw new Error("thread member node closure failed");
+  if (
+    countRows(
+      database,
+      "SELECT COUNT(*) AS count FROM thread_sets AS thread_set WHERE (SELECT COUNT(*) FROM thread_handles AS handle WHERE handle.account_id = thread_set.account_id AND handle.set_id = thread_set.set_id AND handle.thread_id = thread_set.canonical_thread_id AND handle.canonical_when_created = 1) <> 1;",
+    ) !== 0
+  )
+    throw new Error("thread canonical handle closure failed");
+  if (threadIdentityDigest(database) !== expected.threadIdentityDigest)
+    throw new Error("thread identity inventory mismatch");
+  if (hashLogical(database) !== expected.logicalChecksum)
+    throw new Error("logical checksum mismatch");
   for (const query of representativeQueries) {
     const selectivity = countRows(
       database,
@@ -213,6 +320,18 @@ class Rng {
 
 function messageId(index: number, seed: number): string {
   return `message:${createHash("sha256").update(`${CORPUS_VERSION}:${seed}:${index}`).digest("hex")}`;
+}
+
+function threadSetId(group: number, seed: number): string {
+  return `set:${createHash("sha256").update(`${CORPUS_VERSION}:set:${seed}:${group}`).digest("hex")}`;
+}
+
+function threadId(group: number, seed: number): string {
+  return `thread:${createHash("sha256").update(`${CORPUS_VERSION}:thread:${seed}:${group}`).digest("hex")}`;
+}
+
+function memberNodeKey(id: string): string {
+  return `m:${id.slice("message:".length)}`;
 }
 
 function iso(index: number): string {
@@ -254,6 +373,46 @@ function hashLogical(database: Database): string {
       "labels",
       "SELECT message_id,label,rule_id,rule_version,matched_facts_json,decided_at,provenance_source,provenance_evaluation_id FROM local_label_assignments ORDER BY message_id,label;",
     ],
+    [
+      "thread_generation",
+      "SELECT generation_id,generation FROM thread_generation ORDER BY generation_id;",
+    ],
+    [
+      "thread_header_facts",
+      "SELECT account_id,message_id,content_state,normalizer_version,member_node_key,message_id_node_key,references_json,in_reply_to_json,sent_at,received_at,diagnostics_json,facts_sha256 FROM thread_header_facts ORDER BY account_id,message_id;",
+    ],
+    [
+      "thread_sets",
+      "SELECT account_id,set_id,member_count,node_count,equivalence_count,edge_count,participant_count,participants_truncated,handle_count,canonical_root_node_key,canonical_thread_id,updated_generation FROM thread_sets ORDER BY account_id,set_id;",
+    ],
+    [
+      "thread_nodes",
+      "SELECT account_id,node_key,set_id,class_key,incoming_ancestry_count FROM thread_nodes ORDER BY account_id,node_key;",
+    ],
+    [
+      "thread_equivalences",
+      "SELECT account_id,member_node_key,set_id,message_id_node_key,message_id FROM thread_equivalences ORDER BY account_id,member_node_key;",
+    ],
+    [
+      "thread_edges",
+      "SELECT account_id,source_class_key,target_class_key,set_id,first_message_id,first_field,first_ordinal FROM thread_edges ORDER BY account_id,source_class_key,target_class_key;",
+    ],
+    [
+      "thread_memberships",
+      "SELECT account_id,message_id,set_id,member_node_key,order_state,sent_at,sent_at_missing_rank,received_at,added_generation FROM thread_memberships ORDER BY account_id,message_id;",
+    ],
+    [
+      "thread_participants",
+      "SELECT account_id,set_id,normalized_address,display_name,first_sent_at_missing_rank,first_sent_at,first_message_id,first_role_rank,first_position FROM thread_participants ORDER BY account_id,set_id,normalized_address;",
+    ],
+    [
+      "thread_handles",
+      "SELECT thread_id,account_id,set_id,created_generation,canonical_when_created FROM thread_handles ORDER BY thread_id;",
+    ],
+    [
+      "thread_merges",
+      "SELECT account_id,losing_thread_id,merge_generation,winning_thread_id,bridge_message_id,previous_root_node_key,current_root_node_key FROM thread_merges ORDER BY account_id,losing_thread_id,merge_generation;",
+    ],
   ] as const;
   for (const [name, sql] of tables) {
     hash.update(`${name}\n`);
@@ -279,11 +438,11 @@ export async function generateCorpus(
     db.exec("PRAGMA foreign_keys = ON; PRAGMA synchronous = NORMAL;");
     db.query(
       "INSERT INTO mailbox_checkpoints (account_id,mailbox_id,uid_validity) VALUES (?,?,?);",
-    ).run("account:capacity", mailboxes[0], 1);
+    ).run(CAPACITY_ACCOUNT_ID, mailboxes[0], 1);
     for (const mailbox of mailboxes.slice(1))
       db.query(
         "INSERT INTO mailbox_checkpoints (account_id,mailbox_id,uid_validity) VALUES (?,?,?);",
-      ).run("account:capacity", mailbox, 1);
+      ).run(CAPACITY_ACCOUNT_ID, mailbox, 1);
     for (const label of labels) db.query("INSERT INTO local_labels(label) VALUES (?);").run(label);
     const rng = new Rng(seed);
     const insertMessage = db.query("INSERT INTO messages(message_id) VALUES (?);");
@@ -302,6 +461,44 @@ export async function generateCorpus(
     const insertAssignment = db.query(
       "INSERT INTO local_label_assignments(message_id,label,rule_id,rule_version,matched_facts_json,decided_at,provenance_source,provenance_evaluation_id) VALUES (?,?,?,?,?,?,?,?);",
     );
+    const threadGroups = Math.ceil(corpusCount / THREAD_GROUP_SIZE);
+    const insertThreadSet = db.query(
+      "INSERT INTO thread_sets (account_id,set_id,member_count,node_count,equivalence_count,edge_count,participant_count,participants_truncated,handle_count,canonical_root_node_key,canonical_thread_id,updated_generation) VALUES (?,?,?,?,?,?,?,?,?,?,?,?);",
+    );
+    const insertThreadNode = db.query(
+      "INSERT INTO thread_nodes (account_id,node_key,set_id,class_key,incoming_ancestry_count) VALUES (?,?,?,?,?);",
+    );
+    const insertThreadEquivalence = db.query(
+      "INSERT INTO thread_equivalences (account_id,member_node_key,set_id,message_id_node_key,message_id) VALUES (?,?,?,?,?);",
+    );
+    const insertThreadMembership = db.query(
+      "INSERT INTO thread_memberships (account_id,message_id,set_id,member_node_key,order_state,sent_at,sent_at_missing_rank,received_at,added_generation) VALUES (?,?,?,?,?,?,?,?,?);",
+    );
+    const insertThreadHandle = db.query(
+      "INSERT INTO thread_handles (thread_id,account_id,set_id,created_generation,canonical_when_created) VALUES (?,?,?,?,?);",
+    );
+    for (let group = 0; group < threadGroups; group += 1) {
+      const setId = threadSetId(group, seed);
+      const canonicalThreadId = threadId(group, seed);
+      const firstMessageId = messageId(group * THREAD_GROUP_SIZE, seed);
+      const rootNodeKey = memberNodeKey(firstMessageId);
+      const memberCount = Math.min(THREAD_GROUP_SIZE, corpusCount - group * THREAD_GROUP_SIZE);
+      insertThreadSet.run(
+        CAPACITY_ACCOUNT_ID,
+        setId,
+        memberCount,
+        memberCount,
+        memberCount,
+        0,
+        0,
+        0,
+        1,
+        rootNodeKey,
+        canonicalThreadId,
+        0,
+      );
+      insertThreadHandle.run(canonicalThreadId, CAPACITY_ACCOUNT_ID, setId, 0, 1);
+    }
     db.exec("BEGIN;");
     for (let i = 0; i < corpusCount; i += 1) {
       const id = messageId(i, seed);
@@ -311,6 +508,22 @@ export async function generateCorpus(
       const sender = `${rng.pick(senders)}@example.test`;
       const date = iso(i);
       insertMessage.run(id);
+      const group = Math.floor(i / THREAD_GROUP_SIZE);
+      const setId = threadSetId(group, seed);
+      const nodeKey = memberNodeKey(id);
+      insertThreadNode.run(CAPACITY_ACCOUNT_ID, nodeKey, setId, nodeKey, 0);
+      insertThreadEquivalence.run(CAPACITY_ACCOUNT_ID, nodeKey, setId, null, id);
+      insertThreadMembership.run(
+        CAPACITY_ACCOUNT_ID,
+        id,
+        setId,
+        nodeKey,
+        "parsed",
+        date,
+        0,
+        date,
+        0,
+      );
       insertHeader.run(id, 1, "Subject", "subject", subject, subject.toLowerCase());
       insertAddress.run(id, 1, "from", 1, sender, sender, null, null);
       insertAddress.run(id, 2, "to", 1, "archive@example.test", "archive@example.test", null, null);
@@ -394,6 +607,12 @@ export async function generateCorpus(
       labelAssignments: countRows(db, "SELECT COUNT(*) AS count FROM local_label_assignments;"),
       searchDocuments: countRows(db, "SELECT COUNT(*) AS count FROM message_search_documents;"),
       ftsRows: countRows(db, "SELECT COUNT(*) AS count FROM message_fts;"),
+      threadSets: countRows(db, "SELECT COUNT(*) AS count FROM thread_sets;"),
+      threadNodes: countRows(db, "SELECT COUNT(*) AS count FROM thread_nodes;"),
+      threadEquivalences: countRows(db, "SELECT COUNT(*) AS count FROM thread_equivalences;"),
+      threadMemberships: countRows(db, "SELECT COUNT(*) AS count FROM thread_memberships;"),
+      threadHandles: countRows(db, "SELECT COUNT(*) AS count FROM thread_handles;"),
+      threadIdentityDigest: threadIdentityDigest(db),
       querySelectivities,
       queryIdentityDigests,
       schemaIndexCounts: indexes,

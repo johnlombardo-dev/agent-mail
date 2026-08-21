@@ -24,6 +24,12 @@ const referenceOracle = {
   labelAssignments: 32,
   searchDocuments: 128,
   ftsRows: 128,
+  threadSets: 4,
+  threadNodes: 128,
+  threadEquivalences: 128,
+  threadMemberships: 128,
+  threadHandles: 4,
+  threadIdentityDigest: "8a1100773adc7904f1431bbf410324e354ae2f98a4acd6e368c3c53c63fa3d28",
   querySelectivities: { atlas: 33, beacon: 21, '"status update"': 7 },
   queryIdentityDigests: {
     atlas: "c73e843426c24d5a97623d2ac3e345d797550b193428ca77383bef7dfff2c203",
@@ -167,7 +173,7 @@ describe("P4-C16 deterministic search corpus", () => {
         schemaIndexTotal: oracle.schemaIndexTotal,
       });
       expect(first.inventory.logicalChecksum).toBe(second.inventory.logicalChecksum);
-      expect(first.inventory.logicalChecksum).toBe("71a29ee9cd3a2e012a0417cf6a54411bbfd38b6b8a4795c36d90140d3f885ba6");
+      expect(first.inventory.logicalChecksum).toBe("af328c7861bd7491cc1a77514c5b0ec312697e4a717f146a21955190d0be73fa");
       expect(first.inventory.querySelectivities).toEqual(second.inventory.querySelectivities);
       expect(first.inventory.queryIdentityDigests).toEqual(second.inventory.queryIdentityDigests);
       expect(first.inventory.placements).toBeGreaterThan(first.inventory.messages);
@@ -240,6 +246,206 @@ describe("P4-C16 deterministic search corpus", () => {
       );
     } finally {
       database.close();
+    }
+  });
+
+  test("inventory rejects missing, wrong-account, and missing-set thread closure", async () => {
+    const oracle = await productionIndexOracle("thread-counterexamples");
+    const missing = await fixture(32, "missing-thread-membership");
+    const wrongAccount = await fixture(32, "wrong-thread-account");
+    const missingSet = await fixture(32, "missing-thread-set");
+    const missingDatabase = new Database(missing.path);
+    const wrongAccountDatabase = new Database(wrongAccount.path);
+    const missingSetDatabase = new Database(missingSet.path);
+    try {
+      expect(() => validateAgainstProductionOracle(missingDatabase, missing.inventory, oracle)).not.toThrow();
+      missingDatabase.exec(
+        "DELETE FROM thread_memberships WHERE message_id = (SELECT message_id FROM messages ORDER BY message_id LIMIT 1);",
+      );
+      expect(() => validateAgainstProductionOracle(missingDatabase, missing.inventory, oracle)).toThrow(
+        "thread inventory mismatch",
+      );
+
+      expect(() => validateAgainstProductionOracle(wrongAccountDatabase, wrongAccount.inventory, oracle)).not.toThrow();
+      wrongAccountDatabase.exec(
+        "PRAGMA foreign_keys = OFF; UPDATE thread_memberships SET account_id = 'account:other' WHERE message_id = (SELECT message_id FROM messages ORDER BY message_id LIMIT 1); PRAGMA foreign_keys = ON;",
+      );
+      expect(() => validateAgainstProductionOracle(wrongAccountDatabase, wrongAccount.inventory, oracle)).toThrow(
+        "foreign-key invariant failed",
+      );
+
+      expect(() => validateAgainstProductionOracle(missingSetDatabase, missingSet.inventory, oracle)).not.toThrow();
+      missingSetDatabase.exec(
+        "PRAGMA foreign_keys = OFF; DELETE FROM thread_sets WHERE set_id = (SELECT set_id FROM thread_memberships ORDER BY message_id LIMIT 1); PRAGMA foreign_keys = ON;",
+      );
+      expect(() => validateAgainstProductionOracle(missingSetDatabase, missingSet.inventory, oracle)).toThrow(
+        "foreign-key invariant failed",
+      );
+    } finally {
+      missingDatabase.close();
+      wrongAccountDatabase.close();
+      missingSetDatabase.close();
+    }
+  });
+
+  test("logical checksum covers every thread authority table", async () => {
+    const oracle = await productionIndexOracle("thread-digest-counterexamples");
+    const headerFact = await fixture(32, "digest-header-fact");
+    const edge = await fixture(32, "digest-edge");
+    const participant = await fixture(32, "digest-participant");
+    const merge = await fixture(64, "digest-merge");
+    const headerFactDatabase = new Database(headerFact.path);
+    const edgeDatabase = new Database(edge.path);
+    const participantDatabase = new Database(participant.path);
+    const mergeDatabase = new Database(merge.path);
+    try {
+      expect(() => validateAgainstProductionOracle(headerFactDatabase, headerFact.inventory, oracle)).not.toThrow();
+      const headerTarget = headerFactDatabase
+        .query<Readonly<{ readonly message_id: string; readonly member_node_key: string }>, []>(
+          "SELECT message_id,member_node_key FROM thread_memberships ORDER BY message_id LIMIT 1;",
+        )
+        .get();
+      if (headerTarget === null) throw new Error("missing header-fact target");
+      const factsSha256 = createHash("sha256")
+        .update(
+          JSON.stringify({
+            content_state: "parsed",
+            normalizer_version: "thread-normalizer-v1",
+            member_node_key: headerTarget.member_node_key,
+            message_id_node_key: null,
+            references: [],
+            in_reply_to: [],
+            sent_at: "2020-01-01T00:00:00.000Z",
+            diagnostics: [],
+          }),
+          "utf8",
+        )
+        .digest("hex");
+      headerFactDatabase
+        .query(
+          "INSERT INTO thread_header_facts (account_id,message_id,content_state,normalizer_version,member_node_key,message_id_node_key,references_json,in_reply_to_json,sent_at,received_at,diagnostics_json,facts_sha256) VALUES (?,?,?,?,?,?,?,?,?,?,?,?);",
+        )
+        .run(
+          "account:capacity",
+          headerTarget.message_id,
+          "parsed",
+          "thread-normalizer-v1",
+          headerTarget.member_node_key,
+          null,
+          "[]",
+          "[]",
+          "2020-01-01T00:00:00.000Z",
+          "2020-01-01T00:00:00.000Z",
+          "[]",
+          factsSha256,
+        );
+      expect(() => validateAgainstProductionOracle(headerFactDatabase, headerFact.inventory, oracle)).toThrow(
+        "logical checksum mismatch",
+      );
+
+      expect(() => validateAgainstProductionOracle(edgeDatabase, edge.inventory, oracle)).not.toThrow();
+      const edgeTargets = edgeDatabase
+        .query<
+          Readonly<{ readonly message_id: string; readonly member_node_key: string; readonly set_id: string }>,
+          []
+        >(
+          "SELECT message_id,member_node_key,set_id FROM thread_memberships WHERE set_id = (SELECT set_id FROM thread_memberships GROUP BY set_id ORDER BY set_id LIMIT 1) ORDER BY message_id LIMIT 2;",
+        )
+        .all();
+      if (edgeTargets.length !== 2) throw new Error("missing edge targets");
+      edgeDatabase
+        .query(
+          "INSERT INTO thread_edges (account_id,source_class_key,target_class_key,set_id,first_message_id,first_field,first_ordinal) VALUES (?,?,?,?,?,?,?);",
+        )
+        .run(
+          "account:capacity",
+          edgeTargets[0]!.member_node_key,
+          edgeTargets[1]!.member_node_key,
+          edgeTargets[0]!.set_id,
+          edgeTargets[0]!.message_id,
+          "references",
+          1,
+        );
+      edgeDatabase
+        .query("UPDATE thread_sets SET edge_count = edge_count + 1 WHERE account_id = ? AND set_id = ?;")
+        .run("account:capacity", edgeTargets[0]!.set_id);
+      expect(() => validateAgainstProductionOracle(edgeDatabase, edge.inventory, oracle)).toThrow(
+        "logical checksum mismatch",
+      );
+
+      expect(() => validateAgainstProductionOracle(participantDatabase, participant.inventory, oracle)).not.toThrow();
+      const participantTarget = participantDatabase
+        .query<Readonly<{ readonly message_id: string; readonly set_id: string }>, []>(
+          "SELECT message_id,set_id FROM thread_memberships ORDER BY message_id LIMIT 1;",
+        )
+        .get();
+      if (participantTarget === null) throw new Error("missing participant target");
+      participantDatabase
+        .query(
+          "INSERT INTO thread_participants (account_id,set_id,normalized_address,display_name,first_sent_at_missing_rank,first_sent_at,first_message_id,first_role_rank,first_position) VALUES (?,?,?,?,?,?,?,?,?);",
+        )
+        .run(
+          "account:capacity",
+          participantTarget.set_id,
+          "digest@example.test",
+          "Digest Fixture",
+          0,
+          "2020-01-01T00:00:00.000Z",
+          participantTarget.message_id,
+          0,
+          1,
+        );
+      participantDatabase
+        .query(
+          "UPDATE thread_sets SET participant_count = participant_count + 1 WHERE account_id = ? AND set_id = ?;",
+        )
+        .run("account:capacity", participantTarget.set_id);
+      expect(() => validateAgainstProductionOracle(participantDatabase, participant.inventory, oracle)).toThrow(
+        "logical checksum mismatch",
+      );
+
+      expect(() => validateAgainstProductionOracle(mergeDatabase, merge.inventory, oracle)).not.toThrow();
+      const handles = mergeDatabase
+        .query<Readonly<{ readonly thread_id: string; readonly set_id: string; readonly root: string }>, []>(
+          "SELECT handle.thread_id,handle.set_id,thread_set.canonical_root_node_key AS root FROM thread_handles AS handle JOIN thread_sets AS thread_set ON thread_set.account_id = handle.account_id AND thread_set.set_id = handle.set_id ORDER BY handle.thread_id LIMIT 2;",
+        )
+        .all();
+      const bridgeMessage = mergeDatabase
+        .query<Readonly<{ readonly message_id: string }>, []>(
+          "SELECT message_id FROM messages ORDER BY message_id LIMIT 1;",
+        )
+        .get();
+      if (handles.length !== 2 || bridgeMessage === null)
+        throw new Error("missing merge targets");
+      mergeDatabase
+        .query(
+          "INSERT INTO thread_merges (account_id,losing_thread_id,merge_generation,winning_thread_id,bridge_message_id,previous_root_node_key,current_root_node_key) VALUES (?,?,?,?,?,?,?);",
+        )
+        .run(
+          "account:capacity",
+          handles[0]!.thread_id,
+          1,
+          handles[1]!.thread_id,
+          bridgeMessage.message_id,
+          handles[0]!.root,
+          handles[1]!.root,
+        );
+      expect(() => validateAgainstProductionOracle(mergeDatabase, merge.inventory, oracle)).toThrow(
+        "logical checksum mismatch",
+      );
+
+      expect(() =>
+        validateAgainstProductionOracle(
+          headerFactDatabase,
+          { ...headerFact.inventory, logicalChecksum: "0".repeat(64) },
+          oracle,
+        ),
+      ).toThrow("logical checksum mismatch");
+    } finally {
+      headerFactDatabase.close();
+      edgeDatabase.close();
+      participantDatabase.close();
+      mergeDatabase.close();
     }
   });
 });
