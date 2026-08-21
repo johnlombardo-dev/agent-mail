@@ -38,7 +38,13 @@ describe("release qualification evidence index", () => {
     });
   });
 
-  test("rejects focused completeness mutations", { timeout: 15_000 }, () => {
-    expect(runSelfTest()).toEqual({ attacks: 20, accepted: true });
+  test("rejects focused completeness mutations", { timeout: 90_000 }, () => {
+    expect(runSelfTest()).toEqual({
+      attacks: 80,
+      validBeforeMutation: 80,
+      positiveCapacityFixture: true,
+      replayRejected: true,
+      accepted: true,
+    });
   });
 });
