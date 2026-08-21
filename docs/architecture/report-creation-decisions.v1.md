@@ -1,15 +1,22 @@
 # Report creation decisions v1
 
-> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `c8410a8204222685439ecca252362ac76510c13b767639ab39574ecc6ef83919`.
-> Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.
+> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `e3e5f79f0e3f12acb8a6187e0a00d93222a22ee2c972f1eb8f93acb394fa9a63`.
+> Status: **signed normative issue #248 authority rebind; prior report invariants preserved; no #232 scope widening**.
 > The JSON oracle is the projection source and this file must match the checker exactly.
+> Canonical checker invocation: `node docs/architecture/report-creation-check.v1.mjs --rebind-path=docs/architecture/report-creation-oracle.v1.json --rebind-path=docs/architecture/report-creation-check.v1.mjs --rebind-path=docs/architecture/report-creation-design.v1.md --rebind-path=docs/architecture/report-creation-decisions.v1.md --rebind-path=docs/architecture/report-creation-coverage.v1.md --changed-path=<path> [repeat for the complete #232 diff] --self-test`.
 
-The signed oracle records the following frozen choices. Policy A and canonical migration slot 28 are resolved authority, not implementation options.
+The final issue #248 authority preserves the signed report choices and Policy A, keeps report migration slot 28 exact, and rebinds only current migration authority to signed normative issue #247 at commit 47b4866935bce94fb4a87864731870e13498910a. Accepted unrelated slot 29 is not report authority.
 
-| Authority              | Status                | Choice or slot |
-| ---------------------- | --------------------- | -------------- |
-| AUTH-CAPACITY-POLICY-A | selected-and-frozen   | A              |
-| AUTH-MIGRATION-SLOT-28 | accepted-and-consumed | 28             |
+| Authority              | Status                                          | Choice or slot |
+| ---------------------- | ----------------------------------------------- | -------------- |
+| AUTH-CAPACITY-POLICY-A | selected-and-frozen                             | A              |
+| AUTH-MIGRATION-SLOT-28 | accepted-report-slot-rebound-to-signed-live-tip | 28             |
+
+## Checker self-test authority
+
+Freeze 152 oracle mutations, 9 issue-232 boundary mutations, and 5 issue-248 rebind-boundary mutations: 166 mutation cases plus 3 inventory counterexamples, for exactly 169 executed self-test cases.
+
+The checker must retain exactly 152 oracle mutations, 9 issue-232 boundary mutations, and 5 issue-248 rebind-boundary mutations for an exact 166-case mutation inventory. Every combined mutation ID must be a nonempty unique string across all three arrays. The self-test must additionally execute three frozen inventory-corruption counterexamples: delete one oracle mutation, duplicate one oracle-mutation ID, and collide one issue-232 boundary ID with an oracle-mutation ID. Each counterexample must be rejected, and runSelfTest must return the exact frozen total of 169 executed cases. Renaming, omission, duplication, cross-array collision, or uncounted probes fail closed.
 
 ## D01
 
@@ -117,16 +124,16 @@ Rejected: handler-local length checks, default-only limits, post-JSON admission,
 
 ## D14
 
-Choice: Consume accepted #233 at 2fd5b0eaf993b9f44068bd0f61552fc84479129a / oracle 08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345 and #234 at 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce by appending report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts as canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab, then retaining exact-current-tip safe-recorder compatibility without weakening strict applyMigrations.
+Choice: Retain accepted report-creation-v1 at exact canonical slot 28 and immutable target-27 digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab while rebinding current migration authority to the exact signed normative issue #247 artifacts at commit 47b4866935bce94fb4a87864731870e13498910a, live tip 29, registry identity 70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57, and accepted unrelated issue #246 semantic slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a.
 
-Reason: The accepted registry explicitly reserves report slot 28 and proves the real legacy converter commits only target 1..27 before the protected common opener routes slot 28 through its inside-BEGIN verify-before-suffix hook. Only the fully verified current-tip handle is then fingerprint-recorded for legacy fixture compatibility; runMigrations revalidates that fingerprint and applyMigrations remains strict. Slot 28 evolves the live full-registry digest without rewriting converted target-27 rows; reopen, doctor, backup, empty restore, and full restore share that authority at the accepted head.
+Reason: Final issue #247 preserves every accepted row through report slot 28, keeps legacy conversion at immutable target 27, gates accepted unrelated slot 29 through the same production suffix path, and proves recorder compatibility at tips 27 through 31 while production authority returns only at 29. Rebinding the report oracle removes stale live-tip-28 claims without changing Policy A, report behavior, or issue #232 scope.
 
 Rejected: renumbering any predecessor, substituting the live full digest for historical target 27, changing protected converter/opener/runner bytes, looping conversion over the live registry, skipping the common suffix runner after legacy conversion, applying suffix effects before prefix verification, recording target 27 before current-tip verification, trusting cached compatibility state without a complete fingerprint recheck, weakening strict applyMigrations, a second registry, direct applyMigrations use, caller-selected ceilings, conversion bypass, and any migration path or slot other than the frozen one.
 
 ## D15
 
-Choice: Pin #232 change authority to base 4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce and fail frozen-input drift, protected paths, and unknown paths; retain the accepted remote-placement normalizedText repair and default-5000-millisecond P2-C13 stabilization; add exactly packages/storage/test/search-corpus-p4-c16.test.ts for a registry-derived current-canonical-schema index oracle at slot 28; then add exactly packages/storage/test/backup-restore-parity-p2-c19.test.ts so its typed canonicalUnit explicitly supplies normalizedText from comparisonFixture.plainBody and proves byte-exact projection parity through backup, reopen, and empty-root restore. database.ts and migration-runner.ts remain protected accepted dependencies while index.ts remains an allowed report export surface.
+Choice: Keep the exact accepted #232 mutation boundary and focused report proofs unchanged while rebinding their current-canonical-schema observations from former live tip 28 to exact live tip 29. The search index oracle still proves all 33 index tuples including the three report-slot-28 indexes; backup/restore parity still proves the same normalized-text bytes and report data.
 
-Reason: The production promotion boundary and P2-C13 proof repairs remain correct. The search corpus now opens the complete canonical slot-28 schema, so its pre-slot-28 literal four-index map is stale even though the artifact is structurally valid. Separately, isolated base/candidate comparison proves both accepted P2-C19 cases regress only because its low-level typed canonicalUnit omits the newly required normalizedText field; the fixture already owns the exact plain-body value, while production promotion, report source admission, and legacy materialization retain their strict contracts. Supplying that exact fixture value and comparing its canonical projection bytes across source, reopen, and restore closes the proof gap without inventing a legacy-read rule or changing production behavior, timeout policy, the safe-recorder/opener authority, public contracts, #165, or unrelated code.
+Reason: Accepted unrelated slot 29 repairs one approval trigger and adds no report index or report schema. The registry-derived focused proofs must nevertheless observe current user_version and history tip 29. This is an authority observation update, not production/test scope widening or a report semantic change.
 
 Rejected: updating the literal index map to another hand-maintained map, accepting any count-only schema, deriving expected indexes from the corpus database under test, ignoring extra or omitted indexes, deriving backup fixture normalized text through a fallback, making normalizedText optional, accepting missing report-source projections, weakening projection byte parity, raising the test timeout, editing protected database/WAL/runner/migration/report behavior, warn-only drift, broad package ownership, protected-file exceptions, and unreviewed extra paths.

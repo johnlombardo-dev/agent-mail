@@ -1,17 +1,41 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const EXPECTED_ORACLE_SHA256 = "c8410a8204222685439ecca252362ac76510c13b767639ab39574ecc6ef83919";
+const EXPECTED_ORACLE_SHA256 = "e3e5f79f0e3f12acb8a6187e0a00d93222a22ee2c972f1eb8f93acb394fa9a63";
 const EXPECTED_VIEW_SHA256 = [
-  "c597139f52f2680cfad7dc945e29ebaadc543cd9c99a31d91eb328bc94e20355",
-  "87617987cbe4b1faaadf8d95e73e56bce774cd9d6f7f47125b2dd61910470b98",
-  "eee62e122827d59fe410bc755c753b50946d8b64270a69991169d3bb1fdeb334",
+  "2d818ed2b41778098eff117d70dd819a1df96ed8f8f7283e9a0eb3845c2700f1",
+  "607ec7068a0a479aeb9f7db066d29ed94e831123bc9e626477aa07c64b1f4fc9",
+  "6f8da935bdff44480840a23c5ef4160964fcb9a8db18df9dbd0eda5275218762",
 ];
 const ACCEPTED_HEAD = "bd6ad478cf99f9ea9f3f25981c9d3044fabfef61";
 const IMPLEMENTATION_BASE = "4f79eb54ff1442dcd12d3cf8771861c4ae6e15ce";
+const MIGRATION_AUTHORITY_COMMIT = "47b4866935bce94fb4a87864731870e13498910a";
+const REBIND_PATHS = [
+  "docs/architecture/report-creation-oracle.v1.json",
+  "docs/architecture/report-creation-check.v1.mjs",
+  "docs/architecture/report-creation-design.v1.md",
+  "docs/architecture/report-creation-decisions.v1.md",
+  "docs/architecture/report-creation-coverage.v1.md",
+];
+const REBIND_NEGATIVE_PROBE_IDS = [
+  "zero-rebind-paths",
+  "omitted-rebind-path",
+  "extra-rebind-path",
+  "protected-migration-authority-path",
+  "native-path",
+  "duplicate-rebind-path",
+];
+const CANONICAL_REBIND_INVOCATION = [
+  "node",
+  "docs/architecture/report-creation-check.v1.mjs",
+  ...REBIND_PATHS.map((path) => "--rebind-path=" + path),
+  "--changed-path=<path>",
+  "[repeat for the complete #232 diff]",
+  "--self-test",
+].join(" ");
 const directory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(directory, "../..");
 const oraclePath = join(directory, "report-creation-oracle.v1.json");
@@ -85,16 +109,20 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function readCommitted(path) {
+function readCommittedAt(commit, path, label) {
   try {
-    return execFileSync("git", ["show", ACCEPTED_HEAD + ":" + path], {
+    return execFileSync("git", ["show", commit + ":" + path], {
       cwd: repositoryRoot,
       encoding: "buffer",
       maxBuffer: 64 * 1024 * 1024,
     });
   } catch {
-    fail("cannot read accepted input " + ACCEPTED_HEAD + ":" + path);
+    fail("cannot read " + label + " " + commit + ":" + path);
   }
+}
+
+function readCommitted(path) {
+  return readCommittedAt(ACCEPTED_HEAD, path, "accepted input");
 }
 
 function requireCommit(commit, label) {
@@ -117,6 +145,97 @@ function requireAcceptedAncestor(commit, label) {
   } catch {
     fail(label + " is not an ancestor of accepted head: " + commit);
   }
+}
+
+function requireAcceptedDescendant(commit, label) {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", ACCEPTED_HEAD, commit], {
+      cwd: repositoryRoot,
+      stdio: "ignore",
+    });
+  } catch {
+    fail(label + " does not descend from accepted head: " + commit);
+  }
+}
+
+function validateSignedMigrationAuthority(rebind) {
+  let authority;
+  try {
+    authority = JSON.parse(
+      readCommittedAt(
+        rebind.commit,
+        "docs/architecture/database-migration-registry-oracle.v1.json",
+        "signed migration authority",
+      ).toString("utf8"),
+    );
+  } catch (error) {
+    if (error instanceof SyntaxError) fail("signed migration authority is not valid JSON");
+    throw error;
+  }
+  const acceptedAppend = authority.canonicalRegistry?.migrations?.at(-1);
+  exact(
+    [
+      authority.format,
+      authority.schemaVersion,
+      authority.modelVersion,
+      authority.status,
+      authority.oracle?.normative,
+      authority.oracle?.signable,
+      authority.oracle?.signatureState,
+      authority.oracle?.rebindIssue,
+      authority.oracle?.appendImplementationIssue,
+      authority.oracle?.appendImplementationCommit,
+      authority.canonicalRegistry?.schemaVersion,
+      authority.canonicalRegistry?.identityDigest,
+      authority.canonicalRegistry?.reportMigrationVersion,
+      authority.canonicalRegistry?.nextLegalMigrationVersion,
+      authority.appendStableProvenance?.legacyConversionTargetVersion,
+      authority.appendStableProvenance?.acceptedHistoricalTargets,
+    ],
+    [
+      "agent-mail.database-migration-registry-oracle/v1",
+      1,
+      "1.0.0",
+      "frozen-design",
+      true,
+      true,
+      "signed",
+      247,
+      246,
+      "8b356bb15a9de481460a0d46b54b395a08dad82a",
+      29,
+      "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57",
+      28,
+      30,
+      27,
+      [
+        {
+          targetVersion: 27,
+          targetRegistrySha256: "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+        },
+      ],
+    ],
+    "signed migration authority projection",
+  );
+  exact(
+    acceptedAppend,
+    {
+      version: 29,
+      id: "approval-creator-provenance-repair",
+      name: "approval-creator-provenance-repair",
+      declaredVersion: 29,
+      source: "packages/storage/src/migrations/0029-approval-creator-provenance-repair.ts",
+      export: "approvalCreatorProvenanceRepairMigration",
+      acceptedSourceSha256: "007b6582439f5c9e50ff154ef8ebd9f181708b98f28f458dd153622dfa9925a6",
+      acceptedSqlSha256: "1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc",
+      contentHash: "1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc",
+      requiresForeignKeysOff: false,
+      acceptedIssue: 246,
+      acceptedCommit: "8b356bb15a9de481460a0d46b54b395a08dad82a",
+      dependsOn: ["action-plan-restore-quarantine"],
+    },
+    "signed migration authority accepted slot 29",
+  );
 }
 
 function metadataEntries(metadata) {
@@ -231,6 +350,10 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
       "packages/storage/test/backup-restore-parity-p2-c19.test.ts",
       "cb30d41422d62576356ba561a14d16e47c288bcebfc5f97cc68c8f33e1083dde",
     ],
+    "REPORT-MIGRATION-TIP-PROOF": [
+      "packages/storage/test/report-creation-migration.test.ts",
+      "771ff8de57b502b9289557c2e327b12af98cd5b010ee7b3503349b259858e6b1",
+    ],
     "PROMOTION-ADAPTER": [
       "packages/storage/src/promotion-adapter.ts",
       "f1e588e4316390c495a3b1a6af402982c9a8f30869c224fc7fd03155ed2cd6f2",
@@ -293,23 +416,23 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
     ],
     "MIGRATION-REGISTRY-ORACLE": [
       "docs/architecture/database-migration-registry-oracle.v1.json",
-      "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
+      "bdf6247f1bfe41b48b171b40b923240eb16616026347e78bf10ec66fce894afc",
     ],
     "MIGRATION-REGISTRY-CHECKER": [
       "docs/architecture/database-migration-registry-check.v1.mjs",
-      "bb420394846b1f34ee1dc00c77b5b94f1198f1aa37d24eace3a7513c69f7d5de",
+      "8376de566e4318672ab633ad95e7b5b50bfc168d611d0b7410b9810d6f0fb97f",
     ],
     "MIGRATION-REGISTRY-DESIGN": [
       "docs/architecture/database-migration-registry-design.v1.md",
-      "d88a844683490e20da12ba57a4f99496ee97878e777e00ae407d5e78f8b61609",
+      "dd29de39c0dbba22c9e874c346e9650fe7c4b46c90cc752b29032f5d8222cbad",
     ],
     "MIGRATION-REGISTRY-DECISIONS": [
       "docs/architecture/database-migration-registry-decisions.v1.md",
-      "38feb62fae9dc733ed41dd2c1a0bfe23147e3237c64f081abcf12c0c4d3d2c0e",
+      "b8e4806025d842d743f9150f813b8342248d5bd906b261eccefd6d9ab06c524f",
     ],
     "MIGRATION-REGISTRY-COVERAGE": [
       "docs/architecture/database-migration-registry-coverage.v1.md",
-      "ca2454f35a5f84ae87db783e1fccc7c2d3acb12aa61fafe5bbb5e29696cd03d6",
+      "cd60f7bf398b1a8be8017e181c0c3f485cb35976e04597a38bf0ba515f967c5c",
     ],
     "MIGRATION-REGISTRY": [
       "packages/storage/src/migration-registry.ts",
@@ -333,16 +456,52 @@ function validateFrozenInputs(oracle, { checkSources = false } = {}) {
     ],
   };
   const rows = uniqueRows(oracle.frozenInputs, "id", "frozen inputs");
+  const signedAuthorityIds = new Set([
+    "MIGRATION-REGISTRY-ORACLE",
+    "MIGRATION-REGISTRY-CHECKER",
+    "MIGRATION-REGISTRY-DESIGN",
+    "MIGRATION-REGISTRY-DECISIONS",
+    "MIGRATION-REGISTRY-COVERAGE",
+  ]);
+  const candidateProofIds = new Set(["REPORT-MIGRATION-TIP-PROOF"]);
   requireExactRows(rows, Object.keys(expected), "frozen inputs");
   for (const [id, [path, digest]] of Object.entries(expected)) {
     const row = rows.get(id);
     exact([row.path, row.sha256], [path, digest], "frozen input " + id);
-    if (!/^(?:baseline|implementation-baseline|public-frozen)$/u.test(row.kind)) {
+    if (
+      !/^(?:baseline|implementation-baseline|public-frozen|signed-authority|candidate-proof)$/u.test(
+        row.kind,
+      )
+    ) {
       fail("frozen input " + id + " has invalid kind");
     }
+    if (signedAuthorityIds.has(id) !== (row.kind === "signed-authority")) {
+      fail("frozen input " + id + " has wrong authority kind");
+    }
+    if (candidateProofIds.has(id) !== (row.kind === "candidate-proof")) {
+      fail("frozen input " + id + " has wrong proof kind");
+    }
     if (checkSources) {
-      const observed = sha256(readCommitted(path));
-      if (observed !== digest) fail("accepted input digest drift for " + id + ": " + observed);
+      const observed = sha256(
+        row.kind === "signed-authority"
+          ? readCommittedAt(MIGRATION_AUTHORITY_COMMIT, path, "signed migration authority")
+          : row.kind === "candidate-proof"
+            ? readFileSync(join(repositoryRoot, path))
+            : readCommitted(path),
+      );
+      if (observed !== digest) {
+        fail(
+          (row.kind === "signed-authority"
+            ? "signed authority"
+            : row.kind === "candidate-proof"
+              ? "candidate proof"
+              : "accepted input") +
+            " digest drift for " +
+            id +
+            ": " +
+            observed,
+        );
+      }
     }
   }
 }
@@ -359,9 +518,12 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       oracle.oracle.signable,
       oracle.oracle.signatureState,
       oracle.oracle.issue,
+      oracle.oracle.rebindIssue,
+      oracle.oracle.migrationAuthorityIssue,
+      oracle.oracle.migrationAuthorityCommit,
       oracle.oracle.acceptedHead,
     ],
-    [true, true, "signed", 231, ACCEPTED_HEAD],
+    [true, true, "signed", 231, 248, 247, MIGRATION_AUTHORITY_COMMIT, ACCEPTED_HEAD],
     "oracle authority",
   );
   nonempty(oracle.oracle.description, "oracle description");
@@ -388,8 +550,15 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [
       migrationResolution.status,
       migrationResolution.dependencies,
-      migrationResolution.architectureCommit,
+      migrationResolution.historicalArchitectureCommit,
+      migrationResolution.architectureRebindIssue,
+      migrationResolution.architectureRebindCommit,
+      migrationResolution.architectureRebindState,
       migrationResolution.architectureOracleSha256,
+      migrationResolution.architectureCheckerSha256,
+      migrationResolution.architectureDesignSha256,
+      migrationResolution.architectureDecisionsSha256,
+      migrationResolution.architectureCoverageSha256,
       migrationResolution.implementationCommit,
       migrationResolution.predecessorRegistryIdentitySha256,
       migrationResolution.historicalConversionTargetVersion,
@@ -397,12 +566,22 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       migrationResolution.predecessorSchemaVersion,
       migrationResolution.migrationVersion,
       migrationResolution.migrationPath,
+      migrationResolution.liveRegistryIdentitySha256,
+      migrationResolution.liveSchemaVersion,
+      migrationResolution.nextLegalMigrationVersion,
     ],
     [
-      "accepted-and-consumed",
-      [233, 234],
+      "accepted-report-slot-rebound-to-signed-live-tip",
+      [233, 234, 247],
       "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
-      "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
+      247,
+      MIGRATION_AUTHORITY_COMMIT,
+      "independently-reviewed-signed-normative",
+      "bdf6247f1bfe41b48b171b40b923240eb16616026347e78bf10ec66fce894afc",
+      "8376de566e4318672ab633ad95e7b5b50bfc168d611d0b7410b9810d6f0fb97f",
+      "dd29de39c0dbba22c9e874c346e9650fe7c4b46c90cc752b29032f5d8222cbad",
+      "b8e4806025d842d743f9150f813b8342248d5bd906b261eccefd6d9ab06c524f",
+      "cd60f7bf398b1a8be8017e181c0c3f485cb35976e04597a38bf0ba515f967c5c",
       IMPLEMENTATION_BASE,
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
       27,
@@ -410,15 +589,119 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       27,
       28,
       "packages/storage/src/migrations/0028-report-creation.ts",
+      "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57",
+      29,
+      30,
     ],
     "migration resolution",
   );
   nonempty(migrationResolution.rule, "migration resolution rule");
 
+  const rebind = oracle.registryRebindAuthority;
+  exact(
+    {
+      ...rebind,
+      rule: undefined,
+    },
+    {
+      issue: 247,
+      commit: MIGRATION_AUTHORITY_COMMIT,
+      state: "independently-reviewed-signed-normative",
+      oracleSha256: "bdf6247f1bfe41b48b171b40b923240eb16616026347e78bf10ec66fce894afc",
+      checkerSha256: "8376de566e4318672ab633ad95e7b5b50bfc168d611d0b7410b9810d6f0fb97f",
+      designSha256: "dd29de39c0dbba22c9e874c346e9650fe7c4b46c90cc752b29032f5d8222cbad",
+      decisionsSha256: "b8e4806025d842d743f9150f813b8342248d5bd906b261eccefd6d9ab06c524f",
+      coverageSha256: "cd60f7bf398b1a8be8017e181c0c3f485cb35976e04597a38bf0ba515f967c5c",
+      liveRegistryIdentitySha256:
+        "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57",
+      liveSchemaVersion: 29,
+      reportMigrationVersion: 28,
+      nextLegalMigrationVersion: 30,
+      historicalConversionTargetVersion: 27,
+      historicalConversionTargetSha256:
+        "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
+      acceptedSemanticMigration: {
+        issue: 246,
+        authorityIssue: 247,
+        version: 29,
+        id: "approval-creator-provenance-repair",
+        path: "packages/storage/src/migrations/0029-approval-creator-provenance-repair.ts",
+        sourceSha256: "007b6582439f5c9e50ff154ef8ebd9f181708b98f28f458dd153622dfa9925a6",
+        sqlSha256: "1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc",
+        contentHash: "1f97c8b6eec36447729fca00e48646c8570c27d768bbd3ce0aeae3891b05e1bc",
+        requiresForeignKeysOff: false,
+        acceptedCommit: "8b356bb15a9de481460a0d46b54b395a08dad82a",
+        authorityState: "accepted-commit-bound",
+      },
+      rule: undefined,
+    },
+    "registry rebind authority",
+  );
+  nonempty(rebind.rule, "registry rebind rule");
+  exact(
+    Object.keys(rebind.acceptedSemanticMigration).sort(),
+    [
+      "acceptedCommit",
+      "authorityIssue",
+      "authorityState",
+      "contentHash",
+      "id",
+      "issue",
+      "path",
+      "requiresForeignKeysOff",
+      "sourceSha256",
+      "sqlSha256",
+      "version",
+    ].sort(),
+    "accepted semantic migration provenance fields",
+  );
+
+  exact(
+    { ...oracle.rebindScope, rule: undefined },
+    {
+      issue: 248,
+      allowedFiles: REBIND_PATHS,
+      canonicalInvocation: CANONICAL_REBIND_INVOCATION,
+      negativeProbeIds: REBIND_NEGATIVE_PROBE_IDS,
+      rule: undefined,
+    },
+    "issue 248 rebind scope",
+  );
+  nonempty(oracle.rebindScope.rule, "issue 248 rebind scope rule");
+
+  const selfTest = oracle.selfTestAuthority;
+  exact(
+    {
+      ...selfTest,
+      rule: undefined,
+    },
+    {
+      mutationCount: 152,
+      boundaryMutationCount: 9,
+      rebindBoundaryMutationCount: 5,
+      mutationTotal: 166,
+      inventoryCounterexampleIds: [
+        "self-test-inventory-deletion",
+        "self-test-inventory-duplicate-id",
+        "self-test-inventory-cross-array-duplicate-id",
+      ],
+      inventoryCounterexampleCount: 3,
+      total: 169,
+      rule: undefined,
+    },
+    "self-test authority",
+  );
+  nonempty(selfTest.rule, "self-test authority rule");
+  exact(
+    selfTest.inventoryCounterexampleIds.length,
+    selfTest.inventoryCounterexampleCount,
+    "self-test counterexample count",
+  );
+
   const artifactRows = uniqueRows(oracle.acceptedArtifacts, "issue", "accepted artifacts");
   exactSet(
     [...artifactRows.keys()],
-    [107, 141, 155, 206, 213, 214, 233, 234],
+    [107, 141, 155, 206, 213, 214, 233, 234, 247],
     "accepted issue chain",
   );
   const expectedCommits = new Map([
@@ -430,13 +713,15 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [214, "b9aafae"],
     [233, "2fd5b0eaf993b9f44068bd0f61552fc84479129a"],
     [234, IMPLEMENTATION_BASE],
+    [247, MIGRATION_AUTHORITY_COMMIT],
   ]);
   for (const [issue, commit] of expectedCommits) {
     exact(artifactRows.get(issue).commit, commit, "accepted artifact #" + issue);
     nonempty(artifactRows.get(issue).use, "accepted artifact use #" + issue);
     if (checkSources) {
       requireCommit(commit, "accepted artifact #" + issue);
-      requireAcceptedAncestor(commit, "accepted artifact #" + issue);
+      if (issue === 247) requireAcceptedDescendant(commit, "accepted artifact #247");
+      else requireAcceptedAncestor(commit, "accepted artifact #" + issue);
     }
   }
   exact(
@@ -452,9 +737,75 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     ],
     "#233 authority digests",
   );
+  exact(
+    [
+      artifactRows.get(247).oracleSha256,
+      artifactRows.get(247).checkerSha256,
+      artifactRows.get(247).designSha256,
+      artifactRows.get(247).decisionsSha256,
+      artifactRows.get(247).coverageSha256,
+      artifactRows.get(247).registryIdentitySha256,
+    ],
+    [
+      rebind.oracleSha256,
+      rebind.checkerSha256,
+      rebind.designSha256,
+      rebind.decisionsSha256,
+      rebind.coverageSha256,
+      rebind.liveRegistryIdentitySha256,
+    ],
+    "#247 authority digests",
+  );
+
+  const frozenById = new Map(oracle.frozenInputs.map((row) => [row.id, row]));
+  exact(
+    [
+      frozenById.get("MIGRATION-REGISTRY-ORACLE").sha256,
+      frozenById.get("MIGRATION-REGISTRY-CHECKER").sha256,
+      frozenById.get("MIGRATION-REGISTRY-DESIGN").sha256,
+      frozenById.get("MIGRATION-REGISTRY-DECISIONS").sha256,
+      frozenById.get("MIGRATION-REGISTRY-COVERAGE").sha256,
+    ],
+    [
+      rebind.oracleSha256,
+      rebind.checkerSha256,
+      rebind.designSha256,
+      rebind.decisionsSha256,
+      rebind.coverageSha256,
+    ],
+    "registry rebind frozen artifact hashes",
+  );
+  exact(
+    [
+      migrationResolution.architectureOracleSha256,
+      migrationResolution.architectureCheckerSha256,
+      migrationResolution.architectureDesignSha256,
+      migrationResolution.architectureDecisionsSha256,
+      migrationResolution.architectureCoverageSha256,
+      migrationResolution.liveRegistryIdentitySha256,
+      migrationResolution.liveSchemaVersion,
+      migrationResolution.migrationVersion,
+      migrationResolution.nextLegalMigrationVersion,
+    ],
+    [
+      rebind.oracleSha256,
+      rebind.checkerSha256,
+      rebind.designSha256,
+      rebind.decisionsSha256,
+      rebind.coverageSha256,
+      rebind.liveRegistryIdentitySha256,
+      rebind.liveSchemaVersion,
+      rebind.reportMigrationVersion,
+      rebind.nextLegalMigrationVersion,
+    ],
+    "resolved registry rebind projection",
+  );
 
   if (checkSources) {
     requireCommit(ACCEPTED_HEAD, "accepted head");
+    requireCommit(MIGRATION_AUTHORITY_COMMIT, "signed migration authority");
+    requireAcceptedDescendant(MIGRATION_AUTHORITY_COMMIT, "signed migration authority");
+    validateSignedMigrationAuthority(rebind);
   }
   validateFrozenInputs(oracle, { checkSources });
 
@@ -713,6 +1064,8 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       persistence.predecessorSchemaVersion,
       persistence.predecessorRegistryIdentitySha256,
       persistence.migrationDependencies,
+      persistence.currentSchemaVersion,
+      persistence.currentRegistryIdentitySha256,
       persistence.databaseOnly,
       persistence.transactionMode,
     ],
@@ -725,7 +1078,9 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       "packages/storage/test/migration-registry.test.ts",
       27,
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
-      [233, 234],
+      [233, 234, 247],
+      29,
+      "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57",
       true,
       "BEGIN IMMEDIATE",
     ],
@@ -734,13 +1089,23 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   const prefixEvolution = persistence.prefixEvolutionAuthority;
   exact(
     [
-      prefixEvolution.architectureCommit,
+      prefixEvolution.historicalArchitectureCommit,
+      prefixEvolution.architectureRebindIssue,
+      prefixEvolution.architectureRebindCommit,
+      prefixEvolution.architectureRebindState,
       prefixEvolution.architectureOracleSha256,
+      prefixEvolution.architectureCheckerSha256,
       prefixEvolution.implementationCommit,
       prefixEvolution.predecessorVersion,
       prefixEvolution.historicalTargetVersion,
       prefixEvolution.historicalTargetRegistrySha256,
       prefixEvolution.reportVersion,
+      prefixEvolution.liveVersion,
+      prefixEvolution.liveRegistryIdentitySha256,
+      prefixEvolution.acceptedAppendVersion,
+      prefixEvolution.acceptedAppendCommit,
+      prefixEvolution.acceptedAppendAuthorityState,
+      prefixEvolution.nextLegalMigrationVersion,
       prefixEvolution.registryPath,
       prefixEvolution.converterPath,
       prefixEvolution.conversionCompositionTestPath,
@@ -757,12 +1122,22 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     ],
     [
       "2fd5b0eaf993b9f44068bd0f61552fc84479129a",
-      "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345",
+      247,
+      MIGRATION_AUTHORITY_COMMIT,
+      "independently-reviewed-signed-normative",
+      "bdf6247f1bfe41b48b171b40b923240eb16616026347e78bf10ec66fce894afc",
+      "8376de566e4318672ab633ad95e7b5b50bfc168d611d0b7410b9810d6f0fb97f",
       IMPLEMENTATION_BASE,
       27,
       27,
       "39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab",
       28,
+      29,
+      "70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57",
+      29,
+      "8b356bb15a9de481460a0d46b54b395a08dad82a",
+      "accepted-commit-bound",
+      30,
       "packages/storage/src/migration-registry.ts",
       "packages/storage/src/migration-history-conversion.ts",
       "packages/storage/test/migration-history-conversion.test.ts",
@@ -782,9 +1157,9 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       "applyMigrations",
       "--implementation-compatibility-check",
       [
-        "the real legacy converter commits and verifies only explicit historical target 27, then returns without observing slot 28",
-        "the common production opener routes pending slot 28 through strict applyMigrations and the inside-BEGIN beforePendingMigration prefix verifier",
-        "after the complete live registry reaches exact current tip 28, the opener verifies canonical migration state and database integrity before recorder invocation",
+        "the real legacy converter commits and verifies only explicit historical target 27, then returns without observing slots 28 or 29",
+        "the common production opener routes accepted report slot 28 and accepted unrelated issue #246 slot 29 at commit 8b356bb15a9de481460a0d46b54b395a08dad82a through strict applyMigrations and the inside-BEGIN beforePendingMigration prefix verifier",
+        "after the complete live registry reaches exact current tip 29 and identity 70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57, the opener verifies canonical migration state and database integrity before recorder invocation",
         "recordVerifiedCanonicalApplicationDatabaseForLegacyFixtures synchronously and independently verifies registry-derived current-tip user_version, exact ordered history, complete sqlite_schema tuples, strict immutable conversion rows, and the grammar-valid reindex overlay before changing its module-private WeakMap",
         "runMigrations recomputes and byte-compares the complete recorded fingerprint before a zero-write legacy-fixture compatibility no-op; applyMigrations never reads compatibility state and remains strict",
       ],
@@ -799,22 +1174,34 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   nonempty(prefixEvolution.rule, "prefix evolution rule");
   exact(
     [
-      migrationResolution.architectureCommit,
+      migrationResolution.historicalArchitectureCommit,
+      migrationResolution.architectureRebindCommit,
+      migrationResolution.architectureRebindState,
       migrationResolution.architectureOracleSha256,
+      migrationResolution.architectureCheckerSha256,
       migrationResolution.implementationCommit,
       migrationResolution.predecessorSchemaVersion,
       migrationResolution.historicalConversionTargetVersion,
       migrationResolution.historicalConversionTargetSha256,
       migrationResolution.migrationVersion,
+      migrationResolution.liveSchemaVersion,
+      migrationResolution.liveRegistryIdentitySha256,
+      migrationResolution.nextLegalMigrationVersion,
     ],
     [
-      prefixEvolution.architectureCommit,
+      prefixEvolution.historicalArchitectureCommit,
+      prefixEvolution.architectureRebindCommit,
+      prefixEvolution.architectureRebindState,
       prefixEvolution.architectureOracleSha256,
+      prefixEvolution.architectureCheckerSha256,
       prefixEvolution.implementationCommit,
       prefixEvolution.predecessorVersion,
       prefixEvolution.historicalTargetVersion,
       prefixEvolution.historicalTargetRegistrySha256,
       prefixEvolution.reportVersion,
+      prefixEvolution.liveVersion,
+      prefixEvolution.liveRegistryIdentitySha256,
+      prefixEvolution.nextLegalMigrationVersion,
     ],
     "resolved/persistence migration authority",
   );
@@ -1408,9 +1795,9 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       setup:
         "fresh database, every canonical 1..27 prefix, and a real supported legacy database whose converter must create immutable historical target version 27/digest 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab before any live suffix, plus unknown, forged, newer, and recomputed-live-full-digest-substituted provenance",
       action:
-        "append report-creation-v1 as canonical slot 28, run the signed #233 implementation-sequence and implementation-compatibility proofs, and open through the sole database boundary so the real converter commits only target 1..27 before the protected common opener routes slot 28 through strict applyMigrations and the inside-BEGIN beforePendingMigration prefix hook, verifies exact current-tip canonical state and integrity, then invokes the effect-safe recorder",
+        "retain accepted report-creation-v1 at canonical slot 28, bind accepted unrelated issue #246 approval-creator-provenance-repair at exact slot 29 and commit 8b356bb15a9de481460a0d46b54b395a08dad82a, run final issue #247 normal, self, source, implementation, implementation-sequence, and implementation-compatibility proofs, and open through the sole database boundary so the real converter commits only target 1..27 before the common gated suffix path applies slots 28 and 29",
       expected:
-        "fresh, exact prefixes, and real legacy conversion first reach exact target 27, after which the common gated suffix path reaches schema 28 with the report and rate-ledger schema once; only that exact verified current-tip handle is fingerprint-recorded, runMigrations rederives the fingerprint for a zero-write legacy-fixture no-op, and applyMigrations remains strict and compatibility-unaware; all 1..27 semantic identities and target-27 provenance bytes remain exact while the live full-registry digest advances separately; both suffix crash boundaries, reopen, doctor, backup, empty restore, and full restore agree; converter-live-tip, legacy-opener-bypass, premature-recorder, fingerprint-bypass, and strict-runner-bypass counterexamples reject; unknown, forged, newer, full-digest-substituted, or current-tip-incomplete histories remain untouched and fail before any slot-28 or compatibility effect",
+        "fresh, exact prefixes, and real legacy conversion first reach exact target 27, then gated report slot 28 and accepted unrelated slot 29 reach live schema 29 and registry identity 70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57 exactly once; only that verified current-tip handle is fingerprint-recorded; accepted report behavior and Policy A remain unchanged; target-27 provenance remains exact; slot 29 retains exact accepted commit provenance and never becomes report authority; checker-only suffixes 30/31 confer no production authority; sequence, compatibility, reopen, doctor, backup, empty restore, full restore, stale-tip-28, slot-29-report-confusion, and full-digest-substitution counterexamples reject before effects",
     },
     "migration 28 trace",
   );
@@ -1447,7 +1834,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   );
   exact(
     forbidden.get("FORBID-MIGRATION-AUTHORITY-DRIFT").text,
-    "Any report migration other than report-creation-v1 at packages/storage/src/migrations/0028-report-creation.ts and canonical slot 28 after exact prefix-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; replacing immutable historical target-27 provenance with the new live full-registry digest; converting or ledgering any live suffix inside the legacy converter; placing the suffix runner only in a non-legacy opener branch; slot-28 SQL/history/user_version/commit before the inside-BEGIN prefix verifier; recording compatibility authority at target 27 before gated slot 28 and exact current-tip canonical-state/integrity verification; trusting the WeakMap without independent complete-fingerprint revalidation; allowing applyMigrations to read or bypass through compatibility state; changing protected converter, database opener, migration-runner, or #233 artifact bytes; any predecessor renumbering, semantic edit, alternate registry, caller ceiling, or conversion/reopen/doctor/backup/empty-restore/full-restore bypass.",
+    "Any report migration other than accepted report-creation-v1 at exact slot 28 after immutable target-27 identity 39971e45e0fe51580b0343d05b935a7583e42544b2f96ba6468bd813a11b68ab; treating accepted issue #246 approval-creator-provenance-repair at slot 29 and commit 8b356bb15a9de481460a0d46b54b395a08dad82a as report authority; treating its exact accepted-commit-bound migration provenance as pending, unaccepted, optional, or replaceable; relabeling report-creation-v1 as slot 29, relabeling slot 29 as report creation, or otherwise conflating report and unrelated migration authority; accepting stale live tip 28, stale issue #233 authority hashes, any live identity other than 70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57, or a next legal slot other than 30; replacing historical target provenance with the live digest; applying suffix effects before the in-BEGIN prefix verifier; recording compatibility before exact tip-29 canonical-state and integrity verification; weakening complete-fingerprint revalidation or strict applyMigrations; or bypassing opener, doctor, backup, empty restore, or full restore authority.",
     "migration authority forbidden state",
   );
 
@@ -1605,7 +1992,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     [
       IMPLEMENTATION_BASE,
       ["frozen-input-drift", "protected-path", "unknown-path"],
-      "node docs/architecture/report-creation-check.v1.mjs --changed-path=<path> [repeat for the complete #232 diff] --self-test",
+      CANONICAL_REBIND_INVOCATION,
     ],
     "#232 change policy",
   );
@@ -1680,6 +2067,36 @@ function validateOracle(oracle, { checkSources = false } = {}) {
     ],
     "#232 concurrency/REPLACE/recovery proof paths",
   );
+  const reportMigrationTip = focused.reportMigrationTipAuthority;
+  exact(
+    [
+      reportMigrationTip.issue,
+      reportMigrationTip.testPath,
+      reportMigrationTip.repairedSha256,
+      reportMigrationTip.schemaVersionSource,
+      reportMigrationTip.liveSchemaVersion,
+      reportMigrationTip.reportMigrationName,
+      reportMigrationTip.reportMigrationVersion,
+    ],
+    [
+      249,
+      "packages/storage/test/report-creation-migration.test.ts",
+      "771ff8de57b502b9289557c2e327b12af98cd5b010ee7b3503349b259858e6b1",
+      "CANONICAL_DATABASE_SCHEMA_VERSION",
+      29,
+      "report-creation-v1",
+      28,
+    ],
+    "#249 report migration tip authority",
+  );
+  exact(
+    oracle.frozenInputs.find((row) => row.id === "REPORT-MIGRATION-TIP-PROOF").sha256,
+    reportMigrationTip.repairedSha256,
+    "#249 frozen proof hash",
+  );
+  for (const key of ["rule", "mutationRule"]) {
+    nonempty(reportMigrationTip[key], "#249 report migration tip " + key);
+  }
   const searchCorpus = focused.searchCorpusIndexAuthority;
   exact(
     [
@@ -1696,7 +2113,7 @@ function validateOracle(oracle, { checkSources = false } = {}) {
       "packages/storage/test/search-corpus-p4-c16.test.ts",
       "d9f50b9a75413d4d4fd3d724b7856390bf954abd7e3035020694f4120b42b92b",
       "packages/storage/src/migration-registry.ts",
-      28,
+      29,
       "SELECT name, tbl_name, sql FROM sqlite_schema WHERE type = 'index' AND name NOT LIKE 'sqlite_autoindex_%' ORDER BY name, tbl_name, sql",
       33,
       "8a1da254844604df5d8f9c8b1629de2683227c90b1758f3c137166b870affb24",
@@ -1711,9 +2128,9 @@ function validateOracle(oracle, { checkSources = false } = {}) {
   exact(
     [searchCorpus.derivationRule, searchCorpus.comparisonRule, searchCorpus.mutationRule],
     [
-      "Create a separate empty owner-only file database through the protected production openDatabase path and current canonicalDatabaseMigrations registry, require user_version and exact ordered schema_migrations history to equal the registry-derived current tip 28, require integrity_check ok and zero foreign_key_check rows, then query the complete ordered non-auto sqlite_schema index tuples with indexQuery. Canonical JSON of those exact name/table/SQL tuples must contain 33 rows and hash to canonicalIndexTupleSha256. Never derive expected tuples from either corpus database under test or from a hand-maintained per-table count map.",
+      "Create a separate empty owner-only file database through the production openDatabase path and current canonicalDatabaseMigrations registry, require user_version and exact ordered schema_migrations history to equal live tip 29 and identity 70360bc55dd45b4cc7a851b8f39eed2c77a598dd05f57aa757e3f63a88e27e57, require integrity_check ok and zero foreign_key_check rows, then query the complete ordered non-auto sqlite_schema index tuples with indexQuery. Canonical JSON of those exact name/table/SQL tuples must still contain 33 rows and hash to canonicalIndexTupleSha256 because accepted unrelated slot 29 changes no index. Never derive expected tuples from either corpus database under test or from a hand-maintained per-table count map.",
       "Compare each generated corpus database's complete ordered index tuples byte-for-byte with the independent canonical index oracle; derive schemaIndexCounts and schemaIndexTotal from those oracle tuples and compare the inventory to those derived values before retaining validateCorpusInventory's integrity, foreign-key, required-object, placement, normalized-content, FTS, label, query-selectivity, and query-identity checks.",
-      "The focused test must reject one omitted canonical index, one extra index, and one same-name index recreated with different SQL while retaining the other tuples. The #231 checker must independently reject removal of the search test, stale accepted bytes, schema version 27, stale literal count 4, wrong tuple digest, omission of any slot-28 index name, and any production-scope widening.",
+      "The focused test must reject one omitted canonical index, one extra index, and one same-name index recreated with different SQL while retaining the other tuples. The #231 checker must independently reject removal of the search test, stale accepted bytes, schema versions 27 or 28, stale literal count 4, wrong tuple digest, omission of any slot-28 index name, slot-29/report-slot confusion, and any production-scope widening.",
     ],
     "#232 search corpus index rules",
   );
@@ -1830,6 +2247,12 @@ function validateChangedPaths(issue232, paths) {
   }
 }
 
+function validateRebindPaths(rebindScope, paths) {
+  if (paths.length === 0) fail("#248 rebind paths are required");
+  if (new Set(paths).size !== paths.length) fail("#248 rebind paths contain duplicates");
+  exactSet(paths, rebindScope.allowedFiles, "#248 rebind paths");
+}
+
 function escapeCell(value) {
   return String(value).replaceAll("|", "\\|").replaceAll("\n", " ");
 }
@@ -1842,25 +2265,47 @@ function table(headers, rows) {
   ].join("\n");
 }
 
-function projectionHeader(title, digest) {
+function projectionHeader(title, digest, oracle) {
   return [
     "# " + title,
     "",
     "> Checked projection of `report-creation-oracle.v1.json` at SHA-256 `" + digest + "`.",
-    "> Status: **frozen-design; signed; normative; implementation authority within the checked #232 boundary**.",
+    "> Status: **signed normative issue #248 authority rebind; prior report invariants preserved; no #232 scope widening**.",
     "> The JSON oracle is the projection source and this file must match the checker exactly.",
+    "> Canonical checker invocation: `" + oracle.rebindScope.canonicalInvocation + "`.",
     "",
   ];
 }
 
 function renderDesign(oracle, digest) {
-  const lines = projectionHeader("Report creation design v1", digest);
+  const lines = projectionHeader("Report creation design v1", digest, oracle);
   lines.push(
     "## Boundary",
     "",
     oracle.oracle.description,
     "",
     "Implementation rule: " + oracle.oracle.implementationRule,
+    "",
+    "## Checker self-test authority",
+    "",
+    table(
+      ["Component", "Exact cases"],
+      [
+        ["Oracle mutations", oracle.selfTestAuthority.mutationCount],
+        ["Issue 232 boundary mutations", oracle.selfTestAuthority.boundaryMutationCount],
+        [
+          "Issue 248 rebind-boundary mutations",
+          oracle.selfTestAuthority.rebindBoundaryMutationCount,
+        ],
+        ["Mutation inventory", oracle.selfTestAuthority.mutationTotal],
+        ["Inventory counterexamples", oracle.selfTestAuthority.inventoryCounterexampleCount],
+        ["Executed self-test total", oracle.selfTestAuthority.total],
+      ],
+    ),
+    "",
+    "Counterexamples: " + oracle.selfTestAuthority.inventoryCounterexampleIds.join(", ") + ".",
+    "",
+    oracle.selfTestAuthority.rule,
     "",
     "## Resolved authorities",
     "",
@@ -2087,9 +2532,11 @@ function renderDesign(oracle, digest) {
 }
 
 function renderDecisions(oracle, digest) {
-  const lines = projectionHeader("Report creation decisions v1", digest);
+  const lines = projectionHeader("Report creation decisions v1", digest, oracle);
   lines.push(
-    "The signed oracle records the following frozen choices. Policy A and canonical migration slot 28 are resolved authority, not implementation options.",
+    "The final issue #248 authority preserves the signed report choices and Policy A, keeps report migration slot 28 exact, and rebinds only current migration authority to signed normative issue #247 at commit " +
+      oracle.registryRebindAuthority.commit +
+      ". Accepted unrelated slot 29 is not report authority.",
     "",
     table(
       ["Authority", "Status", "Choice or slot"],
@@ -2099,6 +2546,24 @@ function renderDecisions(oracle, digest) {
         row.choice ?? row.migrationVersion,
       ]),
     ),
+    "",
+    "## Checker self-test authority",
+    "",
+    "Freeze " +
+      oracle.selfTestAuthority.mutationCount +
+      " oracle mutations, " +
+      oracle.selfTestAuthority.boundaryMutationCount +
+      " issue-232 boundary mutations, and " +
+      oracle.selfTestAuthority.rebindBoundaryMutationCount +
+      " issue-248 rebind-boundary mutations: " +
+      oracle.selfTestAuthority.mutationTotal +
+      " mutation cases plus " +
+      oracle.selfTestAuthority.inventoryCounterexampleCount +
+      " inventory counterexamples, for exactly " +
+      oracle.selfTestAuthority.total +
+      " executed self-test cases.",
+    "",
+    oracle.selfTestAuthority.rule,
     "",
   );
   for (const row of oracle.decisions) {
@@ -2117,7 +2582,7 @@ function renderDecisions(oracle, digest) {
 }
 
 function renderCoverage(oracle, digest) {
-  const lines = projectionHeader("Report creation coverage v1", digest);
+  const lines = projectionHeader("Report creation coverage v1", digest, oracle);
   lines.push(
     "## Resolved release authority",
     "",
@@ -2125,6 +2590,39 @@ function renderCoverage(oracle, digest) {
       ["Authority", "Status", "Rule"],
       oracle.resolvedAuthorities.map((row) => [row.id, row.status, row.rule]),
     ),
+    "",
+    "## Issue 248 authority-rebind boundary",
+    "",
+    oracle.rebindScope.rule,
+    "",
+    ...oracle.rebindScope.allowedFiles.map((path) => "- `" + path + "`"),
+    "",
+    "Canonical invocation: `" + oracle.rebindScope.canonicalInvocation + "`.",
+    "",
+    "Required negative probes:",
+    "",
+    ...oracle.rebindScope.negativeProbeIds.map((id) => "- `" + id + "`"),
+    "",
+    "## Checker self-test inventory",
+    "",
+    table(
+      ["Component", "Exact cases"],
+      [
+        ["Oracle mutations", oracle.selfTestAuthority.mutationCount],
+        ["Issue 232 boundary mutations", oracle.selfTestAuthority.boundaryMutationCount],
+        [
+          "Issue 248 rebind-boundary mutations",
+          oracle.selfTestAuthority.rebindBoundaryMutationCount,
+        ],
+        ["Mutation inventory", oracle.selfTestAuthority.mutationTotal],
+        ["Inventory counterexamples", oracle.selfTestAuthority.inventoryCounterexampleCount],
+        ["Executed self-test total", oracle.selfTestAuthority.total],
+      ],
+    ),
+    "",
+    ...oracle.selfTestAuthority.inventoryCounterexampleIds.map((id) => "- `" + id + "`"),
+    "",
+    oracle.selfTestAuthority.rule,
     "",
     "## Requirements",
     "",
@@ -2180,6 +2678,21 @@ function renderCoverage(oracle, digest) {
     "Protected files:",
     "",
     ...oracle.downstream.issue232.protectedFiles.map((path) => "- `" + path + "`"),
+    "",
+    "## Report migration live-tip proof",
+    "",
+    "Issue #" +
+      oracle.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.issue +
+      " proof: `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.testPath +
+      "` at SHA-256 `" +
+      oracle.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.repairedSha256 +
+      "`.",
+    "",
+    oracle.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.rule,
+    "",
+    "Mutation rule: " +
+      oracle.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.mutationRule,
     "",
     "Migration production: `" + oracle.downstream.issue232.migrationFiles.production + "`.",
     "",
@@ -2336,8 +2849,13 @@ function projections(oracle, digest) {
 }
 
 const mutations = [
-  ["authority-status", (value) => (value.status = "repaired-pending-decisions")],
+  ["authority-status", (value) => (value.status = "candidate-rebind")],
   ["authority-signable", (value) => (value.oracle.signable = false)],
+  ["authority-unsigned", (value) => (value.oracle.signatureState = "unsigned")],
+  ["authority-nonnormative", (value) => (value.oracle.normative = false)],
+  ["authority-rebind-issue", (value) => (value.oracle.rebindIssue = 247)],
+  ["rebind-scope-widening", (value) => value.rebindScope.allowedFiles.push("PLAN.md")],
+  ["rebind-scope-missing-view", (value) => value.rebindScope.allowedFiles.pop()],
   ["accepted-head", (value) => (value.oracle.acceptedHead = "0".repeat(40))],
   [
     "accepted-head-stale-pre-ledger",
@@ -2377,6 +2895,17 @@ const mutations = [
   ],
   ["policy-a-resolution", (value) => (value.resolvedAuthorities[0].choice = "B")],
   ["migration-resolution", (value) => (value.resolvedAuthorities[1].migrationVersion = 29)],
+  ["migration-live-tip-stale-28", (value) => (value.resolvedAuthorities[1].liveSchemaVersion = 28)],
+  [
+    "migration-live-identity-stale-prefix-28",
+    (value) =>
+      (value.resolvedAuthorities[1].liveRegistryIdentitySha256 =
+        "fba159fd761ab404acd0bc81718bc394f755c16f843b8538d350e90d1293ea9e"),
+  ],
+  [
+    "migration-next-slot-confused-with-pending-29",
+    (value) => (value.resolvedAuthorities[1].nextLegalMigrationVersion = 29),
+  ],
   [
     "registry-identity",
     (value) => (value.resolvedAuthorities[1].predecessorRegistryIdentitySha256 = "0".repeat(64)),
@@ -2392,6 +2921,57 @@ const mutations = [
     (value) =>
       (value.acceptedArtifacts.find((row) => row.issue === 233).oracleSha256 =
         "503eee3b4c19ca0f455fd33d1673a90b87682a202f6f1dadb718bc3dd01fa456"),
+  ],
+  [
+    "stale-247-oracle-rebound-to-233",
+    (value) =>
+      (value.registryRebindAuthority.oracleSha256 =
+        "08d817c11ba3d1a8f213f9254fdb792f43e9384b1a70471788c59497cb432345"),
+  ],
+  [
+    "stale-247-checker-rebound-to-233",
+    (value) =>
+      (value.registryRebindAuthority.checkerSha256 =
+        "bb420394846b1f34ee1dc00c77b5b94f1198f1aa37d24eace3a7513c69f7d5de"),
+  ],
+  [
+    "stale-247-design-rebound-to-233",
+    (value) =>
+      (value.registryRebindAuthority.designSha256 =
+        "d88a844683490e20da12ba57a4f99496ee97878e777e00ae407d5e78f8b61609"),
+  ],
+  [
+    "stale-247-decisions-rebound-to-233",
+    (value) =>
+      (value.registryRebindAuthority.decisionsSha256 =
+        "38feb62fae9dc733ed41dd2c1a0bfe23147e3237c64f081abcf12c0c4d3d2c0e"),
+  ],
+  [
+    "stale-247-coverage-rebound-to-233",
+    (value) =>
+      (value.registryRebindAuthority.coverageSha256 =
+        "ca2454f35a5f84ae87db783e1fccc7c2d3acb12aa61fafe5bbb5e29696cd03d6"),
+  ],
+  ["rebind-live-tip-stale-28", (value) => (value.registryRebindAuthority.liveSchemaVersion = 28)],
+  [
+    "rebind-report-slot-confused-with-29",
+    (value) => (value.registryRebindAuthority.reportMigrationVersion = 29),
+  ],
+  [
+    "rebind-accepted-slot-confused-with-report-28",
+    (value) => (value.registryRebindAuthority.acceptedSemanticMigration.version = 28),
+  ],
+  [
+    "rebind-accepted-slot-commit-drift",
+    (value) =>
+      (value.registryRebindAuthority.acceptedSemanticMigration.acceptedCommit =
+        "78edad8196dd1ab622c4c17537f49435c1b14694"),
+  ],
+  [
+    "rebind-signed-authority-kind-downgraded",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "MIGRATION-REGISTRY-ORACLE").kind =
+        "public-frozen"),
   ],
   [
     "stale-234-pin",
@@ -2669,6 +3249,40 @@ const mutations = [
         "0".repeat(64)),
   ],
   [
+    "report-migration-tip-stale-pre-249-hash",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.repairedSha256 =
+        "3beaf115d9e8b385e5ea26a9cc403fa6f52f9f7dd9f2799a3db770b74cffbe4c"),
+  ],
+  [
+    "report-migration-tip-stale-live-28",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.liveSchemaVersion = 28),
+  ],
+  [
+    "report-migration-slot-confused-with-29",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.reportMigrationVersion = 29),
+  ],
+  [
+    "report-migration-tip-literal-source",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.schemaVersionSource =
+        "29"),
+  ],
+  [
+    "report-migration-tip-mutation-gap",
+    (value) =>
+      (value.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.mutationRule =
+        ""),
+  ],
+  [
+    "report-migration-tip-proof-kind-downgraded",
+    (value) =>
+      (value.frozenInputs.find((row) => row.id === "REPORT-MIGRATION-TIP-PROOF").kind =
+        "implementation-baseline"),
+  ],
+  [
     "search-corpus-stale-base-pin",
     (value) =>
       (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.acceptedBaseSha256 =
@@ -2677,7 +3291,7 @@ const mutations = [
   [
     "search-corpus-stale-schema-version",
     (value) =>
-      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.canonicalSchemaVersion = 27),
+      (value.downstream.issue232.focusedSuiteAuthority.searchCorpusIndexAuthority.canonicalSchemaVersion = 28),
   ],
   [
     "search-corpus-stale-four-index-count",
@@ -2827,7 +3441,116 @@ const boundaryMutations = [
   ["issue232-missing-frozen-input", "packages/daemon/src/http.ts", "missing"],
 ];
 
+const rebindBoundaryMutations = [
+  ["issue248-omitted-rebind-path", (oracle) => oracle.rebindScope.allowedFiles.slice(0, -1)],
+  ["issue248-extra-rebind-path", (oracle) => [...oracle.rebindScope.allowedFiles, "PLAN.md"]],
+  [
+    "issue248-protected-migration-authority-path",
+    (oracle) => [
+      ...oracle.rebindScope.allowedFiles,
+      "docs/architecture/database-migration-registry-oracle.v1.json",
+    ],
+  ],
+  [
+    "issue248-native-path",
+    (oracle) => [...oracle.rebindScope.allowedFiles, "native/icloud-credential-broker.swift"],
+  ],
+  [
+    "issue248-duplicate-rebind-path",
+    (oracle) => [...oracle.rebindScope.allowedFiles, oracle.rebindScope.allowedFiles[0]],
+  ],
+];
+
+const inventoryCounterexamples = [
+  [
+    "self-test-inventory-deletion",
+    "self-test mutation component counts differs",
+    () => ({
+      oracleMutations: mutations.slice(0, -1),
+      issue232BoundaryMutations: boundaryMutations,
+      issue248RebindBoundaryMutations: rebindBoundaryMutations,
+    }),
+  ],
+  [
+    "self-test-inventory-duplicate-id",
+    "self-test mutation IDs contain duplicate",
+    () => {
+      const candidate = mutations.map((row) => [...row]);
+      candidate[candidate.length - 1][0] = candidate[0][0];
+      return {
+        oracleMutations: candidate,
+        issue232BoundaryMutations: boundaryMutations,
+        issue248RebindBoundaryMutations: rebindBoundaryMutations,
+      };
+    },
+  ],
+  [
+    "self-test-inventory-cross-array-duplicate-id",
+    "self-test mutation IDs contain duplicate",
+    () => {
+      const candidate = boundaryMutations.map((row) => [...row]);
+      candidate[0][0] = mutations[0][0];
+      return {
+        oracleMutations: mutations,
+        issue232BoundaryMutations: candidate,
+        issue248RebindBoundaryMutations: rebindBoundaryMutations,
+      };
+    },
+  ],
+];
+
+function validateSelfTestInventory(
+  authority,
+  {
+    oracleMutations = mutations,
+    issue232BoundaryMutations = boundaryMutations,
+    issue248RebindBoundaryMutations = rebindBoundaryMutations,
+  } = {},
+) {
+  exact(
+    [
+      oracleMutations.length,
+      issue232BoundaryMutations.length,
+      issue248RebindBoundaryMutations.length,
+    ],
+    [
+      authority.mutationCount,
+      authority.boundaryMutationCount,
+      authority.rebindBoundaryMutationCount,
+    ],
+    "self-test mutation component counts",
+  );
+  const mutationRows = [
+    ...oracleMutations,
+    ...issue232BoundaryMutations,
+    ...issue248RebindBoundaryMutations,
+  ];
+  exact(mutationRows.length, authority.mutationTotal, "self-test mutation total");
+  exact(
+    inventoryCounterexamples.length,
+    authority.inventoryCounterexampleCount,
+    "self-test inventory counterexample count",
+  );
+  exact(
+    inventoryCounterexamples.map(([id]) => id),
+    authority.inventoryCounterexampleIds,
+    "self-test inventory counterexample IDs",
+  );
+  const rows = [...mutationRows, ...inventoryCounterexamples];
+  const seen = new Set();
+  for (const [index, row] of rows.entries()) {
+    if (!Array.isArray(row)) fail("self-test mutation row is invalid at index " + index);
+    const id = row[0];
+    nonempty(id, "self-test mutation ID at index " + index);
+    if (seen.has(id)) fail("self-test mutation IDs contain duplicate: " + id);
+    seen.add(id);
+  }
+  exact(rows.length, authority.total, "self-test total");
+  return rows.length;
+}
+
 function runSelfTest(oracle) {
+  const frozenTotal = validateSelfTestInventory(oracle.selfTestAuthority);
   const failures = [];
   for (const [id, mutate] of mutations) {
     const candidate = clone(oracle);
@@ -2838,6 +3561,16 @@ function runSelfTest(oracle) {
     } catch {
       // Expected: each mutation must violate a checked invariant.
     }
+  }
+  const pendingProvenanceCandidate = clone(oracle);
+  pendingProvenanceCandidate.forbiddenStates.find(
+    (row) => row.id === "FORBID-MIGRATION-AUTHORITY-DRIFT",
+  ).text = "Treat pending issue #246 slot 29 as unaccepted provenance.";
+  try {
+    validateOracle(pendingProvenanceCandidate);
+    failures.push("migration-authority-pending-provenance");
+  } catch {
+    // Expected: accepted-commit-bound slot-29 provenance cannot regress to pending/unaccepted.
   }
   for (const [id, path, kind] of boundaryMutations) {
     try {
@@ -2873,8 +3606,47 @@ function runSelfTest(oracle) {
   } catch {
     failures.push("issue232-focused-scope-allowed");
   }
+  try {
+    validateChangedPaths(oracle.downstream.issue232, [
+      oracle.downstream.issue232.focusedSuiteAuthority.reportMigrationTipAuthority.testPath,
+    ]);
+  } catch {
+    failures.push("issue249-existing-test-scope-allowed");
+  }
+  try {
+    validateRebindPaths(oracle.rebindScope, oracle.rebindScope.allowedFiles);
+  } catch {
+    failures.push("issue248-exact-rebind-scope-allowed");
+  }
+  try {
+    validateRebindPaths(oracle.rebindScope, []);
+    failures.push("issue248-zero-rebind-paths");
+  } catch {
+    // Expected: a qualifying invocation cannot omit every #248 rebind path.
+  }
+  for (const [id, makePaths] of rebindBoundaryMutations) {
+    const paths = makePaths(oracle);
+    try {
+      validateRebindPaths(oracle.rebindScope, paths);
+      failures.push(id);
+    } catch {
+      // Expected: omitted, extra, protected, native, and duplicate rebind paths fail closed.
+    }
+  }
+  for (const [id, expectedFailure, makeInventory] of inventoryCounterexamples) {
+    const inventory = makeInventory();
+    try {
+      validateSelfTestInventory(oracle.selfTestAuthority, inventory);
+      failures.push(id);
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.includes(expectedFailure)) {
+        failures.push(id + "-wrong-rejection");
+      }
+    }
+  }
   if (failures.length > 0) fail("mutation self-test survived: " + failures.join(", "));
-  return mutations.length + boundaryMutations.length;
+  exact(frozenTotal, oracle.selfTestAuthority.total, "runSelfTest frozen total");
+  return frozenTotal;
 }
 
 function worktreeDrift(oracle) {
@@ -2911,16 +3683,32 @@ try {
 }
 
 validateOracle(oracle, { checkSources: true });
+const frozenSelfTestTotal = validateSelfTestInventory(oracle.selfTestAuthority);
 
 const changedPaths = process.argv
   .filter((value) => value.startsWith("--changed-path="))
   .map((value) => value.slice("--changed-path=".length));
 if (changedPaths.length > 0) validateChangedPaths(oracle.downstream.issue232, changedPaths);
 
+const rebindPaths = process.argv
+  .filter((value) => value.startsWith("--rebind-path="))
+  .map((value) => value.slice("--rebind-path=".length));
+validateRebindPaths(oracle.rebindScope, rebindPaths);
+
 if (process.argv.includes("--print-views")) {
   const rendered = projections(oracle, oracleDigest);
   await writeStdout(
     rendered.map((value, index) => "===== " + viewPaths[index] + " =====\n" + value).join(""),
+  );
+  process.exit(0);
+}
+
+if (process.argv.includes("--write-views")) {
+  const rendered = projections(oracle, oracleDigest);
+  for (const [index, path] of viewPaths.entries()) writeFileSync(path, rendered[index]);
+  await writeStdout(
+    JSON.stringify({ written: viewPaths.map((path) => path.slice(repositoryRoot.length + 1)) }) +
+      "\n",
   );
   process.exit(0);
 }
@@ -2954,7 +3742,11 @@ for (const [index, path] of viewPaths.entries()) {
   }
 }
 
-const selfTestCount = process.argv.includes("--self-test") ? runSelfTest(oracle) : 0;
+const selfTestRequested = process.argv.includes("--self-test");
+const selfTestCount = selfTestRequested ? runSelfTest(oracle) : 0;
+if (selfTestRequested) {
+  exact(selfTestCount, frozenSelfTestTotal, "runSelfTest result");
+}
 const drift = worktreeDrift(oracle);
 validateWorktreeDrift(oracle.downstream.issue232, drift, changedPaths);
 process.stdout.write(
@@ -2968,6 +3760,8 @@ process.stdout.write(
     traces: oracle.constructiveTraces.length,
     forbiddenStates: oracle.forbiddenStates.length,
     mutations: selfTestCount,
+    mutationInventory: oracle.selfTestAuthority.mutationTotal,
+    inventoryCounterexamples: oracle.selfTestAuthority.inventoryCounterexampleCount,
     worktreeDrift: drift,
   }) + "\n",
 );
