@@ -1,0 +1,1 @@
+{"kind":"resources","subgateId":"cancellation","candidateCommit":"e23bbd18fba6873b3979dd35638b4d29c2f01b73","status":"pass","peak":{"value":0,"unit":"MiB"},"retained":{"value":0,"unit":"MiB"},"limits":{"peak":1,"retained":0}}

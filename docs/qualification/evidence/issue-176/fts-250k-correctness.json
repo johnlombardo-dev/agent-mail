@@ -1,0 +1,1 @@
+{"kind":"correctness","subgateId":"fts-250k","candidateCommit":"e23bbd18fba6873b3979dd35638b4d29c2f01b73","status":"pass","oracle":"issue-176-fts-250k","command":["bun","test","packages/storage/test/search-capacity-p4-c17.test.ts"],"exitCode":0,"observed":"Exact frozen assertions passed."}

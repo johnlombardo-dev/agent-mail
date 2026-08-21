@@ -1,0 +1,1 @@
+{"kind":"correctness","subgateId":"selected-export-slow-sink","candidateCommit":"e23bbd18fba6873b3979dd35638b4d29c2f01b73","status":"pass","oracle":"issue-176-selected-export-slow-sink","command":["bun","test","packages/daemon/test/selected-export-stream-p6-c19.test.ts","packages/cli/src/selected-export-command.test.ts"],"exitCode":0,"observed":"Exact frozen assertions passed."}

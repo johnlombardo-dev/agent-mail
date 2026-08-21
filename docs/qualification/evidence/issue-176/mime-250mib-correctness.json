@@ -1,0 +1,1 @@
+{"kind":"correctness","subgateId":"mime-250mib","candidateCommit":"e23bbd18fba6873b3979dd35638b4d29c2f01b73","status":"pass","oracle":"issue-176-mime-250mib","command":["bun","test","packages/imap/test/mime-capacity-p2-c11.test.ts"],"exitCode":0,"observed":"Exact frozen assertions passed."}

@@ -1,0 +1,1 @@
+{"kind":"correctness","subgateId":"http-stream-admission","candidateCommit":"e23bbd18fba6873b3979dd35638b4d29c2f01b73","status":"pass","oracle":"issue-176-http-stream-admission","command":["bun","test","packages/daemon/test/http-admission-sec-r03.test.ts"],"exitCode":0,"observed":"Exact frozen assertions passed."}

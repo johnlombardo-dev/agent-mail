@@ -1,0 +1,1 @@
+{"kind":"cleanup","subgateId":"fts-250k","candidateCommit":"e23bbd18fba6873b3979dd35638b4d29c2f01b73","status":"pass","leaks":{"openHandles":0,"processes":0,"files":0,"listeners":0},"observation":"Frozen cleanup assertions completed with zero retained resources."}
