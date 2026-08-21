@@ -1,4 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +13,13 @@ function fail(message) {
 
 function assert(condition, message) {
   if (!condition) fail(message);
+}
+
+function comparableFixture(fixture) {
+  if (!fixture || typeof fixture !== "object") return fixture;
+  const value = structuredClone(fixture);
+  if (value.materialized) delete value.materialized.path;
+  return value;
 }
 
 function git(root, args) {
@@ -34,7 +42,8 @@ export function compareReceipts(primary, replay) {
     "replay source bindings diverged",
   );
   assert(
-    canonicalJson(primary.fixture) === canonicalJson(replay.fixture),
+    canonicalJson(comparableFixture(primary.fixture)) ===
+      canonicalJson(comparableFixture(replay.fixture)),
     "replay fixture diverged",
   );
   assert(
@@ -116,8 +125,8 @@ async function selfTest() {
     writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
     git(root, ["add", "manifest.json"]);
     git(root, ["commit", "-qm", "tiny manifest"]);
-    const primaryRoot = join(root, "primary");
-    const replayRoot = join(root, "replay");
+    const primaryRoot = mkdtempSync(join(tmpdir(), "agent-mail-replay-primary-"));
+    const replayRoot = mkdtempSync(join(tmpdir(), "agent-mail-replay-replay-"));
     const primary = await capture({ manifestPath, root, outputRoot: primaryRoot, role: "primary" });
     const replayCheckout = join(root, "replay-checkout");
     git(root, ["clone", "-q", root, replayCheckout]);
@@ -128,6 +137,8 @@ async function selfTest() {
       role: "independent-replay",
     });
     const comparison = compareReceipts(primary, replay);
+    rmSync(primaryRoot, { recursive: true, force: true });
+    rmSync(replayRoot, { recursive: true, force: true });
     console.log(
       JSON.stringify({ format: "agent-mail.executable-receipt/v2", accepted: true, comparison }),
     );

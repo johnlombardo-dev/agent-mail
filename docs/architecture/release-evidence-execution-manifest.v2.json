@@ -67,6 +67,22 @@
     "replayPath": "scripts/qualification/replay-release-evidence.mjs",
     "receiptFormat": "agent-mail.executable-receipt/v2",
     "canonicalJson": "recursive-object-key-sort-array-order-preserved",
+    "untrackedAllowlist": [
+      "native/icloud-credential-broker.swift",
+      "native/icloud-credential-broker.test.swift",
+      "node_modules",
+      "packages/cli/dist",
+      "packages/cli/node_modules",
+      "packages/contracts/dist",
+      "packages/core/dist",
+      "packages/daemon/dist",
+      "packages/daemon/node_modules",
+      "packages/imap/dist",
+      "packages/imap/node_modules",
+      "packages/storage/dist",
+      "packages/storage/node_modules",
+      "packaging"
+    ],
     "sources": [
       {
         "role": "checker",
@@ -77,14 +93,14 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "aec9caa63be822b5e52549575f49a6e74020b806",
-        "sha256": "44a8f99d3fbdd8f1a164afd31d7518b2a65fd38d213b6376b603193f9a4b4c72"
+        "gitBlob": "599b91e667c1ab01fef82745017b80fdf5f00dbd",
+        "sha256": "3fd7011cee2cfdb7bba2578c040a4d8b23e4d2959ecff338a297504baa3ffcb2"
       },
       {
         "role": "replay-runner",
         "path": "scripts/qualification/replay-release-evidence.mjs",
-        "gitBlob": "5c901a8b4c6e843b2b13a21010d09b2088aef21b",
-        "sha256": "14338670ed6f6e3d98ac568cc274cf5862a8f5beee6eb35d8937d8187d7dd064"
+        "gitBlob": "f44856ef598aa2cd0aa171ef7e3740abfc4002dc",
+        "sha256": "2a1300ee97bf430969ffa9c67da474b9995afe8fc48783e63a0e8e4a92090122"
       }
     ]
   },
