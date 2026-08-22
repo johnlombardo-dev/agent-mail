@@ -184,8 +184,8 @@
           "unit": "bytes"
         },
         "peakGrowth": {
-          "source": "kernel:ps",
-          "operator": "<=",
+          "source": "fixture-observation",
+          "operator": "<",
           "limit": 134217728,
           "unit": "bytes"
         }
