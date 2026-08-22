@@ -50,10 +50,16 @@ type ProfileObservation = Readonly<{
     readonly completed: boolean;
   }>;
   readonly memory: Readonly<{
-    readonly baselineRss: number;
-    readonly peakRss: number;
-    readonly preCleanupRss: number;
-    readonly postCleanupRss: number;
+    readonly rssUnit: "bytes";
+    readonly kernelHighWaterSource: "darwin-resource-usage-max-rss" | "linux-proc-vmhwm";
+    readonly baselineRssBytes: number;
+    readonly peakRssBytes: number;
+    readonly preCleanupRssBytes: number;
+    readonly postCleanupRssBytes: number;
+    readonly baselineRuntimeHighWaterRssBytes: number;
+    readonly baselineKernelHighWaterRssBytes: number;
+    readonly runtimeHighWaterRssBytes: number;
+    readonly kernelHighWaterRssBytes: number;
     readonly peakGrowthBytes: number;
     readonly retainedGrowthBytes: number;
     readonly baselineSampleIndex: number;
@@ -62,22 +68,28 @@ type ProfileObservation = Readonly<{
     readonly sampleCount: number;
   }>;
   readonly resources: Readonly<{
-    readonly iterator: Readonly<{
+    readonly generator: Readonly<{
       readonly acquired: boolean;
       readonly closeRequested: boolean;
       readonly closeAwaited: boolean;
       readonly finallyCompleted: boolean;
+      readonly consumerFinallyCompleted: boolean;
+      readonly yieldedCount: number;
+      readonly maximumInFlightNextCalls: number;
+      readonly maximumRetainedMessages: number;
     }>;
     readonly attachmentStreams: Readonly<{
       readonly acquiredCount: number;
+      readonly yieldedCount: number;
       readonly closeRequestedCount: number;
       readonly closeAwaitedCount: number;
       readonly finallyCompletedCount: number;
+      readonly consumerFinallyCompletedCount: number;
+      readonly maximumInFlightNextCalls: number;
+      readonly maximumRetainedChunks: number;
+      readonly maximumRetainedBytes: number;
+      readonly maximumBodyChunk: number;
     }>;
-    readonly maximumInFlightNextCalls: number;
-    readonly maximumRetainedMessages: number;
-    readonly maximumRetainedChunks: number;
-    readonly maximumRetainedBytes: number;
   }>;
   readonly closure: Readonly<{
     readonly referencesDropped: boolean;
@@ -94,12 +106,17 @@ type ProfileRun = Readonly<{
     readonly pid: number;
     readonly exitCode: number;
     readonly identityMatches: boolean;
-    readonly nonexistenceAfterExit: boolean;
+    readonly startIdentity: string;
+    readonly postExitIdentity: "absent" | "same-start-survivor" | "reused-pid";
     readonly ownedSurvivors: number;
     readonly stdout: string;
     readonly stderr: string;
   }>;
 }>;
+
+type ProcessIdentity =
+  | Readonly<{ readonly kind: "present"; readonly startIdentity: string }>
+  | Readonly<{ readonly kind: "absent" }>;
 
 type RecordValue = Readonly<Record<string, unknown>>;
 
@@ -138,6 +155,16 @@ function digestValue(value: unknown, name: string): string {
   return result;
 }
 
+function rssUnitValue(value: unknown): "bytes" {
+  if (value !== "bytes") throw new TypeError("rssUnit must be bytes");
+  return "bytes";
+}
+
+function kernelSourceValue(value: unknown): "darwin-resource-usage-max-rss" | "linux-proc-vmhwm" {
+  if (value === "darwin-resource-usage-max-rss" || value === "linux-proc-vmhwm") return value;
+  throw new TypeError("kernel RSS source is invalid");
+}
+
 function lifecycleValue(value: unknown, name: string): ProfileObservation["resources"]["iterator"] {
   const record = recordValue(value, name);
   return {
@@ -145,6 +172,10 @@ function lifecycleValue(value: unknown, name: string): ProfileObservation["resou
     closeRequested: booleanValue(record.closeRequested, `${name}.closeRequested`),
     closeAwaited: booleanValue(record.closeAwaited, `${name}.closeAwaited`),
     finallyCompleted: booleanValue(record.finallyCompleted, `${name}.finallyCompleted`),
+    consumerFinallyCompleted: booleanValue(
+      record.consumerFinallyCompleted,
+      `${name}.consumerFinallyCompleted`,
+    ),
   };
 }
 
@@ -154,6 +185,7 @@ function parseProfileObservation(value: unknown): ProfileObservation {
   const result = recordValue(root.result, "profile result");
   const memory = recordValue(root.memory, "profile memory");
   const resources = recordValue(root.resources, "profile resources");
+  const generator = recordValue(resources.generator, "corpus generator");
   const attachmentStreams = recordValue(resources.attachmentStreams, "attachment streams");
   const closure = recordValue(root.closure, "profile closure");
   if (root.protocol !== "fm1-306") throw new TypeError("unsupported profile protocol");
@@ -181,10 +213,28 @@ function parseProfileObservation(value: unknown): ProfileObservation {
       completed: booleanValue(result.completed, "completed"),
     },
     memory: {
-      baselineRss: positiveIntegerValue(memory.baselineRss, "baselineRss"),
-      peakRss: positiveIntegerValue(memory.peakRss, "peakRss"),
-      preCleanupRss: positiveIntegerValue(memory.preCleanupRss, "preCleanupRss"),
-      postCleanupRss: positiveIntegerValue(memory.postCleanupRss, "postCleanupRss"),
+      rssUnit: rssUnitValue(memory.rssUnit),
+      kernelHighWaterSource: kernelSourceValue(memory.kernelHighWaterSource),
+      baselineRssBytes: positiveIntegerValue(memory.baselineRssBytes, "baselineRssBytes"),
+      peakRssBytes: positiveIntegerValue(memory.peakRssBytes, "peakRssBytes"),
+      preCleanupRssBytes: positiveIntegerValue(memory.preCleanupRssBytes, "preCleanupRssBytes"),
+      postCleanupRssBytes: positiveIntegerValue(memory.postCleanupRssBytes, "postCleanupRssBytes"),
+      baselineRuntimeHighWaterRssBytes: positiveIntegerValue(
+        memory.baselineRuntimeHighWaterRssBytes,
+        "baselineRuntimeHighWaterRssBytes",
+      ),
+      baselineKernelHighWaterRssBytes: positiveIntegerValue(
+        memory.baselineKernelHighWaterRssBytes,
+        "baselineKernelHighWaterRssBytes",
+      ),
+      runtimeHighWaterRssBytes: positiveIntegerValue(
+        memory.runtimeHighWaterRssBytes,
+        "runtimeHighWaterRssBytes",
+      ),
+      kernelHighWaterRssBytes: positiveIntegerValue(
+        memory.kernelHighWaterRssBytes,
+        "kernelHighWaterRssBytes",
+      ),
       peakGrowthBytes: integerValue(memory.peakGrowthBytes, "peakGrowthBytes"),
       retainedGrowthBytes: integerValue(memory.retainedGrowthBytes, "retainedGrowthBytes"),
       baselineSampleIndex: positiveIntegerValue(memory.baselineSampleIndex, "baselineSampleIndex"),
@@ -199,9 +249,21 @@ function parseProfileObservation(value: unknown): ProfileObservation {
       sampleCount: positiveIntegerValue(memory.sampleCount, "sampleCount"),
     },
     resources: {
-      iterator: lifecycleValue(resources.iterator, "corpus iterator"),
+      generator: {
+        ...lifecycleValue(generator, "corpus generator"),
+        yieldedCount: integerValue(generator.yieldedCount, "generator yieldedCount"),
+        maximumInFlightNextCalls: positiveIntegerValue(
+          generator.maximumInFlightNextCalls,
+          "generator maximumInFlightNextCalls",
+        ),
+        maximumRetainedMessages: positiveIntegerValue(
+          generator.maximumRetainedMessages,
+          "generator maximumRetainedMessages",
+        ),
+      },
       attachmentStreams: {
         acquiredCount: integerValue(attachmentStreams.acquiredCount, "acquiredCount"),
+        yieldedCount: integerValue(attachmentStreams.yieldedCount, "yieldedCount"),
         closeRequestedCount: integerValue(
           attachmentStreams.closeRequestedCount,
           "closeRequestedCount",
@@ -211,23 +273,27 @@ function parseProfileObservation(value: unknown): ProfileObservation {
           attachmentStreams.finallyCompletedCount,
           "finallyCompletedCount",
         ),
+        consumerFinallyCompletedCount: integerValue(
+          attachmentStreams.consumerFinallyCompletedCount,
+          "consumerFinallyCompletedCount",
+        ),
+        maximumInFlightNextCalls: positiveIntegerValue(
+          attachmentStreams.maximumInFlightNextCalls,
+          "maximumInFlightNextCalls",
+        ),
+        maximumRetainedChunks: positiveIntegerValue(
+          attachmentStreams.maximumRetainedChunks,
+          "maximumRetainedChunks",
+        ),
+        maximumRetainedBytes: positiveIntegerValue(
+          attachmentStreams.maximumRetainedBytes,
+          "maximumRetainedBytes",
+        ),
+        maximumBodyChunk: positiveIntegerValue(
+          attachmentStreams.maximumBodyChunk,
+          "maximumBodyChunk",
+        ),
       },
-      maximumInFlightNextCalls: positiveIntegerValue(
-        resources.maximumInFlightNextCalls,
-        "maximumInFlightNextCalls",
-      ),
-      maximumRetainedMessages: positiveIntegerValue(
-        resources.maximumRetainedMessages,
-        "maximumRetainedMessages",
-      ),
-      maximumRetainedChunks: positiveIntegerValue(
-        resources.maximumRetainedChunks,
-        "maximumRetainedChunks",
-      ),
-      maximumRetainedBytes: positiveIntegerValue(
-        resources.maximumRetainedBytes,
-        "maximumRetainedBytes",
-      ),
     },
     closure: {
       referencesDropped: booleanValue(closure.referencesDropped, "referencesDropped"),
@@ -242,14 +308,26 @@ function parseProfileObservation(value: unknown): ProfileObservation {
   };
 }
 
-function processExists(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error: unknown) {
-    if (error instanceof Error && "code" in error && error.code === "ESRCH") return false;
-    throw new Error("unable to determine child process existence");
-  }
+async function readProcessIdentity(pid: number): Promise<ProcessIdentity> {
+  const probe = Bun.spawn(["ps", "-p", String(pid), "-o", "lstart="], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(probe.stdout).text(),
+    new Response(probe.stderr).text(),
+    probe.exited,
+  ]);
+  if (stderr !== "") throw new Error("OS process identity is unavailable");
+  if (exitCode !== 0) return { kind: "absent" };
+  const lines = stdout
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return { kind: "absent" };
+  if (lines.length !== 1) throw new Error("OS process identity returned an ambiguous result");
+  return { kind: "present", startIdentity: lines[0] };
 }
 
 async function runProfile(label: string): Promise<ProfileRun> {
@@ -263,6 +341,9 @@ async function runProfile(label: string): Promise<ProfileRun> {
     },
   );
   const pid = child.pid;
+  const startIdentity = await readProcessIdentity(pid);
+  if (startIdentity.kind === "absent")
+    throw new Error("profile child disappeared before identity binding");
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -275,15 +356,22 @@ async function runProfile(label: string): Promise<ProfileRun> {
   const observation = parseProfileObservation(parsed);
   const identityMatches =
     observation.reportedPid === pid && observation.identityToken === identityToken;
-  const nonexistenceAfterExit = !processExists(pid);
+  const postExitIdentity = await readProcessIdentity(pid);
+  const postExitKind =
+    postExitIdentity.kind === "absent"
+      ? "absent"
+      : postExitIdentity.startIdentity === startIdentity.startIdentity
+        ? "same-start-survivor"
+        : "reused-pid";
   return {
     observation,
     process: {
       pid,
       exitCode,
       identityMatches,
-      nonexistenceAfterExit,
-      ownedSurvivors: nonexistenceAfterExit ? 0 : 1,
+      startIdentity: startIdentity.startIdentity,
+      postExitIdentity: postExitKind,
+      ownedSurvivors: postExitKind === "absent" ? 0 : 1,
       stdout,
       stderr,
     },
@@ -481,7 +569,8 @@ describe("deterministic demo corpus", () => {
         expect(run.process.exitCode).toBe(0);
         expect(run.process.stderr).toBe("");
         expect(run.process.identityMatches).toBe(true);
-        expect(run.process.nonexistenceAfterExit).toBe(true);
+        expect(run.process.startIdentity.length).toBeGreaterThan(0);
+        expect(run.process.postExitIdentity).toBe("absent");
         expect(run.process.ownedSurvivors).toBe(0);
         expect(run.observation.environment.profile).toBe("demo-corpus-250k");
         expect(run.observation.environment.scenarioVersion).toBe(CORPUS_VERSION);
@@ -494,21 +583,35 @@ describe("deterministic demo corpus", () => {
         expect(run.observation.result.completed).toBe(true);
         expect(run.observation.result.maximumStreamChunk).toBeGreaterThan(0);
         expect(run.observation.result.maximumStreamChunk).toBeLessThanOrEqual(64 * 1024);
-        expect(run.observation.memory.baselineRss).toBeGreaterThan(0);
-        expect(run.observation.memory.peakRss).toBeGreaterThanOrEqual(
-          run.observation.memory.baselineRss,
+        expect(run.observation.memory.rssUnit).toBe("bytes");
+        expect(run.observation.memory.kernelHighWaterSource).toBe("darwin-resource-usage-max-rss");
+        expect(run.observation.memory.baselineRssBytes).toBeGreaterThan(0);
+        expect(run.observation.memory.peakRssBytes).toBeGreaterThanOrEqual(
+          run.observation.memory.baselineRssBytes,
         );
-        expect(run.observation.memory.peakRss).toBeGreaterThanOrEqual(
-          run.observation.memory.preCleanupRss,
+        expect(run.observation.memory.peakRssBytes).toBeGreaterThanOrEqual(
+          run.observation.memory.preCleanupRssBytes,
         );
-        expect(run.observation.memory.peakRss).toBeGreaterThanOrEqual(
-          run.observation.memory.postCleanupRss,
+        expect(run.observation.memory.peakRssBytes).toBeGreaterThanOrEqual(
+          run.observation.memory.postCleanupRssBytes,
+        );
+        expect(run.observation.memory.baselineRuntimeHighWaterRssBytes).toBeGreaterThanOrEqual(
+          run.observation.memory.baselineRssBytes,
+        );
+        expect(run.observation.memory.baselineKernelHighWaterRssBytes).toBeGreaterThanOrEqual(
+          run.observation.memory.baselineRssBytes,
+        );
+        expect(run.observation.memory.runtimeHighWaterRssBytes).toBeGreaterThanOrEqual(
+          run.observation.memory.postCleanupRssBytes,
+        );
+        expect(run.observation.memory.kernelHighWaterRssBytes).toBeGreaterThanOrEqual(
+          run.observation.memory.postCleanupRssBytes,
         );
         expect(run.observation.memory.peakGrowthBytes).toBe(
-          run.observation.memory.peakRss - run.observation.memory.baselineRss,
+          run.observation.memory.peakRssBytes - run.observation.memory.baselineRssBytes,
         );
         expect(run.observation.memory.retainedGrowthBytes).toBe(
-          run.observation.memory.postCleanupRss - run.observation.memory.baselineRss,
+          run.observation.memory.postCleanupRssBytes - run.observation.memory.baselineRssBytes,
         );
         expect(run.observation.memory.baselineSampleIndex).toBe(1);
         expect(run.observation.memory.preCleanupSampleIndex).toBeGreaterThan(
@@ -520,11 +623,16 @@ describe("deterministic demo corpus", () => {
         );
         expect(run.observation.memory.postCleanupSampleIndex).toBe(979);
         expect(run.observation.memory.sampleCount).toBe(979);
-        expect(run.observation.resources.iterator.acquired).toBe(true);
-        expect(run.observation.resources.iterator.closeRequested).toBe(true);
-        expect(run.observation.resources.iterator.closeAwaited).toBe(true);
-        expect(run.observation.resources.iterator.finallyCompleted).toBe(true);
+        expect(run.observation.resources.generator.acquired).toBe(true);
+        expect(run.observation.resources.generator.closeRequested).toBe(true);
+        expect(run.observation.resources.generator.closeAwaited).toBe(true);
+        expect(run.observation.resources.generator.finallyCompleted).toBe(true);
+        expect(run.observation.resources.generator.consumerFinallyCompleted).toBe(true);
+        expect(run.observation.resources.generator.yieldedCount).toBe(250_000);
+        expect(run.observation.resources.generator.maximumInFlightNextCalls).toBeGreaterThan(0);
+        expect(run.observation.resources.generator.maximumRetainedMessages).toBeGreaterThan(0);
         expect(run.observation.resources.attachmentStreams.acquiredCount).toBeGreaterThan(0);
+        expect(run.observation.resources.attachmentStreams.yieldedCount).toBeGreaterThan(0);
         expect(run.observation.resources.attachmentStreams.closeRequestedCount).toBe(
           run.observation.resources.attachmentStreams.acquiredCount,
         );
@@ -534,10 +642,19 @@ describe("deterministic demo corpus", () => {
         expect(run.observation.resources.attachmentStreams.finallyCompletedCount).toBe(
           run.observation.resources.attachmentStreams.acquiredCount,
         );
-        expect(run.observation.resources.maximumInFlightNextCalls).toBeGreaterThan(0);
-        expect(run.observation.resources.maximumRetainedMessages).toBeGreaterThan(0);
-        expect(run.observation.resources.maximumRetainedChunks).toBeGreaterThan(0);
-        expect(run.observation.resources.maximumRetainedBytes).toBeGreaterThanOrEqual(
+        expect(run.observation.resources.attachmentStreams.consumerFinallyCompletedCount).toBe(
+          run.observation.resources.attachmentStreams.acquiredCount,
+        );
+        expect(
+          run.observation.resources.attachmentStreams.maximumInFlightNextCalls,
+        ).toBeGreaterThan(0);
+        expect(run.observation.resources.attachmentStreams.maximumRetainedChunks).toBeGreaterThan(
+          0,
+        );
+        expect(
+          run.observation.resources.attachmentStreams.maximumRetainedBytes,
+        ).toBeGreaterThanOrEqual(run.observation.result.maximumStreamChunk);
+        expect(run.observation.resources.attachmentStreams.maximumBodyChunk).toBe(
           run.observation.result.maximumStreamChunk,
         );
         expect(run.observation.closure.referencesDropped).toBe(true);

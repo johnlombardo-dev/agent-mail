@@ -11,6 +11,7 @@ const PROFILE_ID_ENV = "FM1_DEMO_PROFILE_ID";
 const PROFILE_SIZE = 250_000;
 const SAMPLE_INTERVAL = 256;
 const SETTLE_MILLISECONDS = 50;
+const LIFECYCLE_PROBE_KEY = Symbol.for("agent-mail.demo.corpus.lifecycle-probe");
 const scenarioMix = {
   ordinary: 1,
   transactional: 1,
@@ -25,6 +26,20 @@ type ResourceLifecycle = Readonly<{
   readonly closeRequested: boolean;
   readonly closeAwaited: boolean;
   readonly finallyCompleted: boolean;
+  readonly consumerFinallyCompleted: boolean;
+}>;
+
+type LifecycleProbe = Readonly<{
+  readonly generator: Readonly<{
+    readonly acquired: () => void;
+    readonly yielded: () => void;
+    readonly finallyCompleted: () => void;
+  }>;
+  readonly attachment: Readonly<{
+    readonly acquired: () => void;
+    readonly yielded: (byteLength: number) => void;
+    readonly finallyCompleted: () => void;
+  }>;
 }>;
 
 type ProfileObservation = Readonly<{
@@ -48,10 +63,16 @@ type ProfileObservation = Readonly<{
     readonly completed: boolean;
   }>;
   readonly memory: Readonly<{
-    readonly baselineRss: number;
-    readonly peakRss: number;
-    readonly preCleanupRss: number;
-    readonly postCleanupRss: number;
+    readonly rssUnit: "bytes";
+    readonly kernelHighWaterSource: "darwin-resource-usage-max-rss" | "linux-proc-vmhwm";
+    readonly baselineRssBytes: number;
+    readonly peakRssBytes: number;
+    readonly preCleanupRssBytes: number;
+    readonly postCleanupRssBytes: number;
+    readonly baselineRuntimeHighWaterRssBytes: number;
+    readonly baselineKernelHighWaterRssBytes: number;
+    readonly runtimeHighWaterRssBytes: number;
+    readonly kernelHighWaterRssBytes: number;
     readonly peakGrowthBytes: number;
     readonly retainedGrowthBytes: number;
     readonly baselineSampleIndex: number;
@@ -60,17 +81,24 @@ type ProfileObservation = Readonly<{
     readonly sampleCount: number;
   }>;
   readonly resources: Readonly<{
-    readonly iterator: ResourceLifecycle;
+    readonly generator: ResourceLifecycle &
+      Readonly<{
+        readonly yieldedCount: number;
+        readonly maximumInFlightNextCalls: number;
+        readonly maximumRetainedMessages: number;
+      }>;
     readonly attachmentStreams: Readonly<{
       readonly acquiredCount: number;
+      readonly yieldedCount: number;
       readonly closeRequestedCount: number;
       readonly closeAwaitedCount: number;
       readonly finallyCompletedCount: number;
+      readonly consumerFinallyCompletedCount: number;
+      readonly maximumInFlightNextCalls: number;
+      readonly maximumRetainedChunks: number;
+      readonly maximumRetainedBytes: number;
+      readonly maximumBodyChunk: number;
     }>;
-    readonly maximumInFlightNextCalls: number;
-    readonly maximumRetainedMessages: number;
-    readonly maximumRetainedChunks: number;
-    readonly maximumRetainedBytes: number;
   }>;
   readonly closure: Readonly<{
     readonly referencesDropped: boolean;
@@ -144,6 +172,44 @@ async function closeIterator<T>(iterator: AsyncIterator<T>): Promise<void> {
   await iterator.return();
 }
 
+type RssObservation = Readonly<{
+  readonly currentBytes: number;
+  readonly runtimeHighWaterBytes: number;
+  readonly kernelHighWaterBytes: number;
+  readonly kernelSource: "darwin-resource-usage-max-rss" | "linux-proc-vmhwm";
+}>;
+
+async function readRssObservation(): Promise<RssObservation> {
+  if (typeof process.resourceUsage !== "function")
+    throw new Error("runtime RSS high-water API is unavailable");
+  const currentBytes = process.memoryUsage().rss;
+  const runtimeHighWaterBytes = process.resourceUsage().maxRSS;
+  if (!Number.isSafeInteger(runtimeHighWaterBytes) || runtimeHighWaterBytes < 1)
+    throw new Error("runtime RSS high-water value is invalid");
+  if (process.platform === "darwin")
+    return {
+      currentBytes,
+      runtimeHighWaterBytes,
+      kernelHighWaterBytes: runtimeHighWaterBytes,
+      kernelSource: "darwin-resource-usage-max-rss",
+    };
+  if (process.platform === "linux") {
+    const status = await Bun.file("/proc/self/status").text();
+    const match = /^VmHWM:\s+([0-9]+)\s+kB$/mu.exec(status);
+    if (match === null) throw new Error("kernel RSS high-water value is unavailable");
+    const kernelHighWaterBytes = Number(match[1]) * 1024;
+    if (!Number.isSafeInteger(kernelHighWaterBytes) || kernelHighWaterBytes < 1)
+      throw new Error("kernel RSS high-water value is invalid");
+    return {
+      currentBytes,
+      runtimeHighWaterBytes,
+      kernelHighWaterBytes,
+      kernelSource: "linux-proc-vmhwm",
+    };
+  }
+  throw new Error(`kernel RSS high-water source is unavailable on ${process.platform}`);
+}
+
 async function run(): Promise<ProfileObservation> {
   const identityToken = process.env[PROFILE_ID_ENV];
   if (identityToken === undefined || identityToken.length === 0)
@@ -153,41 +219,80 @@ async function run(): Promise<ProfileObservation> {
   let content: Hash | undefined = createHash("sha256");
   let producedCount = 0;
   let maximumStreamChunk = 0;
-  let activeNextCalls = 0;
-  let maximumInFlightNextCalls = 0;
-  let maximumRetainedMessages = 0;
-  let maximumRetainedChunks = 0;
-  let maximumRetainedBytes = 0;
+  let generatorInFlightNextCalls = 0;
+  let maximumGeneratorInFlightNextCalls = 0;
+  let maximumGeneratorRetainedMessages = 0;
+  let attachmentInFlightNextCalls = 0;
+  let maximumAttachmentInFlightNextCalls = 0;
+  let maximumAttachmentRetainedChunks = 0;
+  let maximumAttachmentRetainedBytes = 0;
+  let generatorAcquired = 0;
+  let generatorYielded = 0;
+  let generatorFinallyCompleted = 0;
+  let generatorConsumerFinallyCompleted = false;
   let attachmentStreamsAcquired = 0;
+  let attachmentStreamsYielded = 0;
+  let attachmentStreamsBodyFinallyCompleted = 0;
+  let attachmentStreamsConsumerFinallyCompleted = 0;
+  let attachmentBodyMaximumChunk = 0;
   let attachmentStreamsCloseRequested = 0;
   let attachmentStreamsCloseAwaited = 0;
-  let attachmentStreamsFinallyCompleted = 0;
-  const baselineRss = process.memoryUsage().rss;
-  let peakRss = baselineRss;
+  const baseline = await readRssObservation();
+  let peakRssBytes = baseline.currentBytes;
   let sampleCount = 0;
   const sample = (): number => {
     sampleCount += 1;
-    peakRss = Math.max(peakRss, process.memoryUsage().rss);
+    peakRssBytes = Math.max(peakRssBytes, process.memoryUsage().rss);
     return sampleCount;
   };
   const baselineSampleIndex = sample();
-  let source: AsyncIterable<CorpusMessage> | undefined = streamCorpus({
-    scenarioVersion: CORPUS_VERSION,
-    seed: "profile-250k",
-    size: PROFILE_SIZE,
-    scenarioMix,
-  });
-  let iterator: AsyncIterator<CorpusMessage> | undefined = source[Symbol.asyncIterator]();
-  if (iterator === undefined) throw new Error("profile corpus iterator was not acquired");
-  const iteratorAcquired = true;
+  let source: AsyncIterable<CorpusMessage> | undefined;
+  let iterator: AsyncIterator<CorpusMessage> | undefined;
   let iteratorCloseRequested = false;
   let iteratorCloseAwaited = false;
-  let iteratorFinallyCompleted = false;
+  const probe: LifecycleProbe = {
+    generator: {
+      acquired: () => {
+        generatorAcquired += 1;
+      },
+      yielded: () => {
+        generatorYielded += 1;
+      },
+      finallyCompleted: () => {
+        generatorFinallyCompleted += 1;
+      },
+    },
+    attachment: {
+      acquired: () => {
+        attachmentStreamsAcquired += 1;
+      },
+      yielded: (byteLength) => {
+        attachmentStreamsYielded += 1;
+        attachmentBodyMaximumChunk = Math.max(attachmentBodyMaximumChunk, byteLength);
+      },
+      finallyCompleted: () => {
+        attachmentStreamsBodyFinallyCompleted += 1;
+      },
+    },
+  };
 
-  const updateInFlight = (delta: 1 | -1): void => {
-    activeNextCalls += delta;
-    if (activeNextCalls < 0) throw new Error("profile in-flight resource count became negative");
-    maximumInFlightNextCalls = Math.max(maximumInFlightNextCalls, activeNextCalls);
+  const updateGeneratorInFlight = (delta: 1 | -1): void => {
+    generatorInFlightNextCalls += delta;
+    if (generatorInFlightNextCalls < 0)
+      throw new Error("profile generator in-flight count became negative");
+    maximumGeneratorInFlightNextCalls = Math.max(
+      maximumGeneratorInFlightNextCalls,
+      generatorInFlightNextCalls,
+    );
+  };
+  const updateAttachmentInFlight = (delta: 1 | -1): void => {
+    attachmentInFlightNextCalls += delta;
+    if (attachmentInFlightNextCalls < 0)
+      throw new Error("profile attachment in-flight count became negative");
+    maximumAttachmentInFlightNextCalls = Math.max(
+      maximumAttachmentInFlightNextCalls,
+      attachmentInFlightNextCalls,
+    );
   };
 
   const consumeAttachment = async (
@@ -198,12 +303,11 @@ async function run(): Promise<ProfileObservation> {
     let attachmentIterator: AsyncIterator<Uint8Array> | undefined =
       attachmentSource[Symbol.asyncIterator]();
     if (attachmentIterator === undefined) throw new Error("attachment iterator was not acquired");
-    attachmentStreamsAcquired += 1;
     let byteLength = 0;
     try {
       let step: IteratorResult<Uint8Array> | undefined;
       while (true) {
-        step = await nextWithInFlight(attachmentIterator, updateInFlight);
+        step = await nextWithInFlight(attachmentIterator, updateAttachmentInFlight);
         if (step.done) {
           step = undefined;
           break;
@@ -212,8 +316,8 @@ async function run(): Promise<ProfileObservation> {
         if (chunk.byteLength > STREAM_CHUNK_BYTES)
           throw new Error("profile attachment stream exceeded the bounded chunk size");
         maximumStreamChunk = Math.max(maximumStreamChunk, chunk.byteLength);
-        maximumRetainedChunks = Math.max(maximumRetainedChunks, 1);
-        maximumRetainedBytes = Math.max(maximumRetainedBytes, chunk.byteLength);
+        maximumAttachmentRetainedChunks = Math.max(maximumAttachmentRetainedChunks, 1);
+        maximumAttachmentRetainedBytes = Math.max(maximumAttachmentRetainedBytes, chunk.byteLength);
         byteLength += chunk.byteLength;
         if (hash === undefined || content === undefined)
           throw new Error("profile attachment hash was released before completion");
@@ -232,7 +336,7 @@ async function run(): Promise<ProfileObservation> {
           await closeIterator(attachmentIterator);
           attachmentStreamsCloseAwaited += 1;
         } finally {
-          attachmentStreamsFinallyCompleted += 1;
+          attachmentStreamsConsumerFinallyCompleted += 1;
         }
       }
       attachmentIterator = undefined;
@@ -241,40 +345,53 @@ async function run(): Promise<ProfileObservation> {
     }
   };
 
-  try {
-    let step: IteratorResult<CorpusMessage> | undefined;
-    while (true) {
-      step = await nextWithInFlight(iterator, updateInFlight);
-      if (step.done) {
+  {
+    source = streamCorpus({
+      scenarioVersion: CORPUS_VERSION,
+      seed: "profile-250k",
+      size: PROFILE_SIZE,
+      scenarioMix,
+      [LIFECYCLE_PROBE_KEY]: probe,
+    });
+    iterator = source[Symbol.asyncIterator]();
+    if (iterator === undefined) throw new Error("profile corpus iterator was not acquired");
+    try {
+      let step: IteratorResult<CorpusMessage> | undefined;
+      while (true) {
+        step = await nextWithInFlight(iterator, updateGeneratorInFlight);
+        if (step.done) {
+          step = undefined;
+          break;
+        }
+        const message = step.value;
+        producedCount += 1;
+        maximumGeneratorRetainedMessages = Math.max(maximumGeneratorRetainedMessages, 1);
+        if (logical === undefined || content === undefined)
+          throw new Error("profile hash was released before completion");
+        logical.update(messageProjection(message));
+        content.update(message.rawBytes);
+        for (const part of message.parts) {
+          if (part.kind === "attachment") await consumeAttachment(part);
+        }
         step = undefined;
-        break;
+        if (producedCount % SAMPLE_INTERVAL === 0) sample();
       }
-      const message = step.value;
-      producedCount += 1;
-      maximumRetainedMessages = Math.max(maximumRetainedMessages, 1);
-      maximumRetainedBytes = Math.max(maximumRetainedBytes, message.rawBytes.byteLength);
-      if (logical === undefined || content === undefined)
-        throw new Error("profile hash was released before completion");
-      logical.update(messageProjection(message));
-      content.update(message.rawBytes);
-      for (const part of message.parts) {
-        if (part.kind === "attachment") await consumeAttachment(part);
-      }
-      step = undefined;
-      if (producedCount % SAMPLE_INTERVAL === 0) sample();
-    }
-  } finally {
-    if (iterator !== undefined) {
-      iteratorCloseRequested = true;
-      try {
-        await closeIterator(iterator);
-        iteratorCloseAwaited = true;
-      } finally {
-        iteratorFinallyCompleted = true;
+    } finally {
+      if (iterator !== undefined) {
+        iteratorCloseRequested = true;
+        try {
+          await closeIterator(iterator);
+          iteratorCloseAwaited = true;
+        } finally {
+          iterator = undefined;
+          source = undefined;
+          generatorConsumerFinallyCompleted = true;
+        }
+      } else {
+        source = undefined;
+        generatorConsumerFinallyCompleted = true;
       }
     }
-    iterator = undefined;
-    source = undefined;
   }
 
   const logicalDigest = finishHash(logical);
@@ -282,7 +399,7 @@ async function run(): Promise<ProfileObservation> {
   const contentDigest = finishHash(content);
   content = undefined;
   const preCleanupSampleIndex = sample();
-  const preCleanupRss = process.memoryUsage().rss;
+  const preCleanup = await readRssObservation();
   const fullGcAvailable = typeof Bun.gc === "function";
   if (!fullGcAvailable) throw new Error("full GC is unavailable; profile evidence is blocked");
   source = undefined;
@@ -291,7 +408,12 @@ async function run(): Promise<ProfileObservation> {
   Bun.gc(true);
   await new Promise<void>((resolve) => setTimeout(resolve, SETTLE_MILLISECONDS));
   const postCleanupSampleIndex = sample();
-  const postCleanupRss = process.memoryUsage().rss;
+  const postCleanup = await readRssObservation();
+  if (
+    baseline.kernelSource !== preCleanup.kernelSource ||
+    baseline.kernelSource !== postCleanup.kernelSource
+  )
+    throw new Error("kernel RSS high-water source changed during profile");
   const completed = producedCount === PROFILE_SIZE;
   return {
     protocol: "fm1-306",
@@ -314,34 +436,46 @@ async function run(): Promise<ProfileObservation> {
       completed,
     },
     memory: {
-      baselineRss,
-      peakRss,
-      preCleanupRss,
-      postCleanupRss,
-      peakGrowthBytes: peakRss - baselineRss,
-      retainedGrowthBytes: postCleanupRss - baselineRss,
+      rssUnit: "bytes",
+      kernelHighWaterSource: baseline.kernelSource,
+      baselineRssBytes: baseline.currentBytes,
+      peakRssBytes,
+      preCleanupRssBytes: preCleanup.currentBytes,
+      postCleanupRssBytes: postCleanup.currentBytes,
+      baselineRuntimeHighWaterRssBytes: baseline.runtimeHighWaterBytes,
+      baselineKernelHighWaterRssBytes: baseline.kernelHighWaterBytes,
+      runtimeHighWaterRssBytes: postCleanup.runtimeHighWaterBytes,
+      kernelHighWaterRssBytes: postCleanup.kernelHighWaterBytes,
+      peakGrowthBytes: peakRssBytes - baseline.currentBytes,
+      retainedGrowthBytes: postCleanup.currentBytes - baseline.currentBytes,
       baselineSampleIndex,
       preCleanupSampleIndex,
       postCleanupSampleIndex,
       sampleCount,
     },
     resources: {
-      iterator: {
-        acquired: iteratorAcquired,
+      generator: {
+        acquired: generatorAcquired === 1,
         closeRequested: iteratorCloseRequested,
         closeAwaited: iteratorCloseAwaited,
-        finallyCompleted: iteratorFinallyCompleted,
+        finallyCompleted: generatorFinallyCompleted === 1,
+        consumerFinallyCompleted: generatorConsumerFinallyCompleted,
+        yieldedCount: generatorYielded,
+        maximumInFlightNextCalls: maximumGeneratorInFlightNextCalls,
+        maximumRetainedMessages: maximumGeneratorRetainedMessages,
       },
       attachmentStreams: {
         acquiredCount: attachmentStreamsAcquired,
+        yieldedCount: attachmentStreamsYielded,
         closeRequestedCount: attachmentStreamsCloseRequested,
         closeAwaitedCount: attachmentStreamsCloseAwaited,
-        finallyCompletedCount: attachmentStreamsFinallyCompleted,
+        finallyCompletedCount: attachmentStreamsBodyFinallyCompleted,
+        consumerFinallyCompletedCount: attachmentStreamsConsumerFinallyCompleted,
+        maximumInFlightNextCalls: maximumAttachmentInFlightNextCalls,
+        maximumRetainedChunks: maximumAttachmentRetainedChunks,
+        maximumRetainedBytes: maximumAttachmentRetainedBytes,
+        maximumBodyChunk: attachmentBodyMaximumChunk,
       },
-      maximumInFlightNextCalls,
-      maximumRetainedMessages,
-      maximumRetainedChunks,
-      maximumRetainedBytes,
     },
     closure: {
       referencesDropped: source === undefined && iterator === undefined,

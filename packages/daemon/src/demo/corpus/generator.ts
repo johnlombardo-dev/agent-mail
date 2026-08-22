@@ -52,6 +52,44 @@ function canonical(value: unknown): string {
   throw new TypeError("unsupported canonical value");
 }
 
+type CorpusLifecycleProbe = Readonly<{
+  readonly generator: Readonly<{
+    readonly acquired: () => void;
+    readonly yielded: () => void;
+    readonly finallyCompleted: () => void;
+  }>;
+  readonly attachment: Readonly<{
+    readonly acquired: () => void;
+    readonly yielded: (byteLength: number) => void;
+    readonly finallyCompleted: () => void;
+  }>;
+}>;
+
+const lifecycleProbeKey = Symbol.for("agent-mail.demo.corpus.lifecycle-probe");
+let activeLifecycleProbe: CorpusLifecycleProbe | undefined;
+
+function isLifecycleProbe(value: unknown): value is CorpusLifecycleProbe {
+  if (typeof value !== "object" || value === null) return false;
+  const generator = Reflect.get(value, "generator");
+  const attachment = Reflect.get(value, "attachment");
+  if (typeof generator !== "object" || generator === null) return false;
+  if (typeof attachment !== "object" || attachment === null) return false;
+  return (
+    typeof Reflect.get(generator, "acquired") === "function" &&
+    typeof Reflect.get(generator, "yielded") === "function" &&
+    typeof Reflect.get(generator, "finallyCompleted") === "function" &&
+    typeof Reflect.get(attachment, "acquired") === "function" &&
+    typeof Reflect.get(attachment, "yielded") === "function" &&
+    typeof Reflect.get(attachment, "finallyCompleted") === "function"
+  );
+}
+
+function lifecycleProbeFromInput(input: unknown): CorpusLifecycleProbe | undefined {
+  if (typeof input !== "object" || input === null) return undefined;
+  const probe = Reflect.get(input, lifecycleProbeKey);
+  return isLifecycleProbe(probe) ? probe : undefined;
+}
+
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -131,12 +169,23 @@ function relationshipFor(
 
 function attachmentStream(seed: string, byteLength: number): () => AsyncIterable<Uint8Array> {
   return async function* stream(): AsyncIterable<Uint8Array> {
+    const probe = activeLifecycleProbe;
+    probe?.attachment.acquired();
+    let finalized = false;
     let offset = 0;
-    while (offset < byteLength) {
-      const length = Math.min(STREAM_CHUNK_BYTES, byteLength - offset);
-      const bytes = attachmentChunk(seed, offset, length);
-      offset += length;
-      yield bytes;
+    try {
+      while (offset < byteLength) {
+        const length = Math.min(STREAM_CHUNK_BYTES, byteLength - offset);
+        const bytes = attachmentChunk(seed, offset, length);
+        offset += length;
+        probe?.attachment.yielded(length);
+        yield bytes;
+      }
+    } finally {
+      if (!finalized) {
+        finalized = true;
+        probe?.attachment.finallyCompleted();
+      }
     }
   };
 }
@@ -605,8 +654,19 @@ export async function* streamCorpus(input: unknown): AsyncIterable<CorpusMessage
     createCorpusMailboxId("archive"),
     createCorpusMailboxId("missing-state"),
   ];
-  for (let index = 0; index < options.size; index += 1)
-    yield buildMessage(options, index, mailboxIds[index % mailboxIds.length]);
+  const probe = lifecycleProbeFromInput(input) ?? activeLifecycleProbe;
+  const previousProbe = activeLifecycleProbe;
+  activeLifecycleProbe = probe;
+  probe?.generator.acquired();
+  try {
+    for (let index = 0; index < options.size; index += 1) {
+      probe?.generator.yielded();
+      yield buildMessage(options, index, mailboxIds[index % mailboxIds.length]);
+    }
+  } finally {
+    probe?.generator.finallyCompleted();
+    activeLifecycleProbe = previousProbe;
+  }
 }
 
 export const streamDemoCorpus = streamCorpus;
