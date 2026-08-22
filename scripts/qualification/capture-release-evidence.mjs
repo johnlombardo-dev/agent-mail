@@ -59,10 +59,14 @@ function git(root, args, encoding = "utf8") {
 }
 
 function gitStatus(root) {
+  return gitStatusEntries(root).map((entry) => entry.path);
+}
+
+function gitStatusEntries(root) {
   return execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" })
     .split("\n")
     .filter(Boolean)
-    .map((line) => line.slice(3).trim());
+    .map((line) => ({ code: line.slice(0, 2), path: line.slice(3).trim() }));
 }
 
 function repositorySnapshot(root) {
@@ -80,9 +84,46 @@ function isAllowedUntracked(path, allowlist = []) {
 
 function assertCleanCandidate(root, allowlist = []) {
   const snapshot = repositorySnapshot(root);
-  const forbidden = snapshot.status.filter((path) => !isAllowedUntracked(path, allowlist));
-  assert(forbidden.length === 0, `candidate worktree is dirty: ${forbidden.join(", ")}`);
+  const forbidden = gitStatusEntries(root).filter(
+    (entry) => entry.code !== "??" || !isAllowedUntracked(entry.path, allowlist),
+  );
+  assert(
+    forbidden.length === 0,
+    `candidate worktree is dirty: ${forbidden.map((entry) => `${entry.code} ${entry.path}`).join(", ")}`,
+  );
   return snapshot;
+}
+
+function installFrozenDependencies(checkout, manifest) {
+  const dependencyMode = manifest.runner?.dependencyMode;
+  if (!dependencyMode) return { mode: "none", installed: false };
+  assert(dependencyMode === "bun-frozen-offline", "unsupported dependency mode");
+  assert(
+    existsSync(join(checkout, "package.json")) && existsSync(join(checkout, "bun.lock")),
+    "frozen dependency inputs are missing",
+  );
+  execFileSync("bun", ["install", "--frozen-lockfile", "--offline"], {
+    cwd: checkout,
+    encoding: "utf8",
+    timeout: 180_000,
+    maxBuffer: 32 * 1024 * 1024,
+  });
+  const status = gitStatusEntries(checkout);
+  assert(
+    status.every((entry) => {
+      const normalized = entry.path.replace(/\/+$/u, "");
+      return (
+        entry.code === "??" && (normalized === "node_modules" || normalized.startsWith("packages/"))
+      );
+    }),
+    "dependency install changed committed candidate files",
+  );
+  return {
+    mode: dependencyMode,
+    installed: true,
+    packageManifestSha256: sha256(readFileSync(join(checkout, "package.json"))),
+    lockfileSha256: sha256(readFileSync(join(checkout, "bun.lock"))),
+  };
 }
 
 function regularPath(root, path, label) {
@@ -533,6 +574,11 @@ export async function capture({
   const step = manifest.steps.find((candidate) => candidate.id === stepId) ?? manifest.steps[0];
   assert(step, `unknown manifest step ${stepId}`);
   const stepBindings = stepSourceBindings(step, root, candidateCommit);
+  const runnerBindings = manifest.runner?.sources
+    ? sourceBindings(manifest, root, candidateCommit).filter((source) =>
+        manifest.runner.sources.some((expected) => expected.path === source.path),
+      )
+    : [];
   const destination = resolve(
     outputRoot ?? mkdtempSync(join(tmpdir(), "agent-mail-release-evidence-")),
   );
@@ -550,6 +596,7 @@ export async function capture({
       stdio: "ignore",
     });
     assert(gitStatus(checkout).length === 0, "disposable candidate checkout is dirty");
+    const dependencies = installFrozenDependencies(checkout, manifest);
     const cwd = resolve(checkout, step.cwd);
     for (const source of step.sources)
       committedBlob(checkout, candidateCommit, source.path, `${step.id} source`);
@@ -630,8 +677,10 @@ export async function capture({
       },
       cwd: step.cwd,
       argv: [...step.argv],
+      resolvedArgv: [...argv],
       stdin: { kind: "none" },
       sources: stepBindings,
+      runnerSources: runnerBindings,
       fixture,
       assertions,
       startedAt,
@@ -658,6 +707,7 @@ export async function capture({
         },
         packageManifestSha256: optionalDigest(join(root, "package.json")),
         lockfileSha256: optionalDigest(join(root, "bun.lock")),
+        dependencies,
       },
       process: {
         pid: processResult.pid,
@@ -708,7 +758,9 @@ export async function capture({
       "candidate submodules changed during capture",
     );
     assert(
-      after.status.every((path) => isAllowedUntracked(path, allowedUntracked)),
+      gitStatusEntries(root).every(
+        (entry) => entry.code === "??" && isAllowedUntracked(entry.path, allowedUntracked),
+      ),
       "capture introduced unallowlisted worktree changes",
     );
     return receipt;

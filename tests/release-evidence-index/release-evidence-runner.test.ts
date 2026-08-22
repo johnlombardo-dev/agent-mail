@@ -80,6 +80,8 @@ describe("release evidence executable runner", () => {
         expect(primary.result).toBe("pass");
         expect(replay.result).toBe("pass");
         expect(primary.sources).toHaveLength(1);
+        expect(primary.runnerSources).toHaveLength(0);
+        expect(primary.resolvedArgv).toEqual(["node", "tiny-runner.mjs"]);
         expect(compareReceipts(primary, replay).replayResult).toBe("pass");
       } finally {
         rmSync(replayRoot, { recursive: true, force: true });

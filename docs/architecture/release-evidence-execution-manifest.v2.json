@@ -67,6 +67,7 @@
     "replayPath": "scripts/qualification/replay-release-evidence.mjs",
     "receiptFormat": "agent-mail.executable-receipt/v2",
     "canonicalJson": "recursive-object-key-sort-array-order-preserved",
+    "dependencyMode": "bun-frozen-offline",
     "untrackedAllowlist": [
       "native/icloud-credential-broker.swift",
       "native/icloud-credential-broker.test.swift",
@@ -93,8 +94,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "599b91e667c1ab01fef82745017b80fdf5f00dbd",
-        "sha256": "3fd7011cee2cfdb7bba2578c040a4d8b23e4d2959ecff338a297504baa3ffcb2"
+        "gitBlob": "a3edce91d8a263c99675e0375946795f8acbb66f",
+        "sha256": "1616df269c9c97ed78634ec82d41e65629f57b66d15daf32eb662c54ec2eb35e"
       },
       {
         "role": "replay-runner",
@@ -142,14 +143,14 @@
           "id": "mime-streaming-gate",
           "kind": "source-token",
           "sourcePath": "packages/imap/test/mime-capacity-p2-c11.test.ts",
-          "token": "streaming.gate",
+          "token": "streaming.report.gate",
           "occurrences": 1
         },
         {
           "id": "mime-buffering-counterexample",
           "kind": "source-token",
           "sourcePath": "packages/imap/test/mime-capacity-p2-c11.test.ts",
-          "token": "buffering.gate",
+          "token": "buffering.report.gate",
           "occurrences": 1
         }
       ],
@@ -211,7 +212,7 @@
           "id": "fts-corpus-inventory",
           "kind": "source-token",
           "sourcePath": "scripts/capacity/generate-search-corpus.ts",
-          "token": "CorpusInventory",
+          "token": "export type CorpusInventory",
           "occurrences": 1
         }
       ],
@@ -277,7 +278,7 @@
           "id": "fts-exact-top20",
           "kind": "source-token",
           "sourcePath": "scripts/capacity/benchmark-search.ts",
-          "token": "top20",
+          "token": "export function assertHydrationPlanParameterCount",
           "occurrences": 1
         }
       ],
@@ -330,7 +331,7 @@
           "id": "selected-export-streaming",
           "kind": "source-token",
           "sourcePath": "packages/daemon/test/selected-export-stream-p6-c19.test.ts",
-          "token": "slow sink",
+          "token": "slow blob reader",
           "occurrences": 1
         }
       ],
@@ -434,7 +435,7 @@
           "id": "queue-backpressure-bound",
           "kind": "source-token",
           "sourcePath": "packages/imap/test/raw-download-queue-p3-c07.test.ts",
-          "token": "backpressure",
+          "token": "serializes FIFO jobs",
           "occurrences": 1
         }
       ],
@@ -475,7 +476,7 @@
           "id": "idle-cancellation-cleanup",
           "kind": "source-token",
           "sourcePath": "packages/imap/test/idle-session-p3-c18.test.ts",
-          "token": "cancel",
+          "token": "runs the same lifecycle contract against fake and production-shaped adapters",
           "occurrences": 1
         }
       ],
@@ -531,14 +532,14 @@
           "id": "polling-timer-cleanup",
           "kind": "source-token",
           "sourcePath": "packages/daemon/test/polling-timer-actor-p3-c20.test.ts",
-          "token": "timer",
+          "token": "registers the timer/listener release",
           "occurrences": 1
         },
         {
           "id": "sync-runtime-cleanup",
           "kind": "source-token",
           "sourcePath": "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts",
-          "token": "cleanup",
+          "token": "P3-C24 runtime conformance",
           "occurrences": 1
         }
       ],
