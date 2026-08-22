@@ -380,6 +380,15 @@ const resultRecordSchema = {
     outputRootClosure: true,
   },
   commitModel: "candidate-parent-of-evidence-parent-of-index",
+  dispositionTargetFields: [
+    "targetSequence",
+    "targetRecordDigest",
+    "targetOwnerIssueId",
+    "targetGateId",
+    "targetCandidateCommit",
+    "targetCandidateTree",
+    "targetEvidenceCommit",
+  ],
 };
 let repositoryFilesCache;
 let currentCommitCache;
@@ -1880,8 +1889,22 @@ function validateV2Record(record, baseline, sequence, previousDigest, root, opti
     );
     assert(
       Number.isInteger(record.targetSequence) &&
-        /^[0-9a-f]{64}$/u.test(record.targetRecordDigest ?? ""),
+        record.targetSequence > 0 &&
+        /^[0-9a-f]{64}$/u.test(record.targetRecordDigest ?? "") &&
+        record.targetRecordDigest !== "0".repeat(64),
       `${label} disposition target is incomplete`,
+    );
+    assert(
+      Number.isInteger(record.targetOwnerIssueId) &&
+        typeof record.targetGateId === "string" &&
+        requiredGateIds.includes(record.targetGateId) &&
+        /^[0-9a-f]{40}$/u.test(record.targetCandidateCommit ?? "") &&
+        record.targetCandidateCommit !== "0".repeat(40) &&
+        /^[0-9a-f]{40}$/u.test(record.targetCandidateTree ?? "") &&
+        record.targetCandidateTree !== "0".repeat(40) &&
+        /^[0-9a-f]{40}$/u.test(record.targetEvidenceCommit ?? "") &&
+        record.targetEvidenceCommit !== "0".repeat(40),
+      `${label} disposition target identity is incomplete`,
     );
     assert(
       typeof record.reasonCode === "string" && record.reasonCode.length > 0,
@@ -1892,7 +1915,32 @@ function validateV2Record(record, baseline, sequence, previousDigest, root, opti
       `${label} disposition outcome is invalid`,
     );
     assert(record.reviewArtifact, `${label} disposition review artifact is missing`);
-    v2EvidenceRef(record, record.reviewArtifact, root, `${label} review artifact`);
+    const reviewBytes = v2EvidenceRef(
+      record,
+      record.reviewArtifact,
+      root,
+      `${label} review artifact`,
+    );
+    let review;
+    try {
+      review = JSON.parse(reviewBytes.toString("utf8"));
+    } catch {
+      fail(`${label} review artifact is not JSON`);
+    }
+    assert(
+      review?.kind === "disposition-review" &&
+        review.status === "pass" &&
+        review.ownerIssueId === 184 &&
+        review.gateId === "disposition" &&
+        review.targetSequence === record.targetSequence &&
+        review.targetRecordDigest === record.targetRecordDigest &&
+        review.targetOwnerIssueId === record.targetOwnerIssueId &&
+        review.targetGateId === record.targetGateId &&
+        review.targetCandidateCommit === record.targetCandidateCommit &&
+        review.targetCandidateTree === record.targetCandidateTree &&
+        review.targetEvidenceCommit === record.targetEvidenceCommit,
+      `${label} review artifact provenance is detached`,
+    );
     return ownerRule;
   }
   assert(
@@ -2176,6 +2224,18 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
         record.targetRecordDigest === recordDigest(target),
         `v2 disposition ${record.sequence} target digest is detached`,
       );
+      for (const [dispositionKey, targetKey] of [
+        ["targetOwnerIssueId", "ownerIssueId"],
+        ["targetGateId", "gateId"],
+        ["targetCandidateCommit", "candidateCommit"],
+        ["targetCandidateTree", "candidateTree"],
+        ["targetEvidenceCommit", "evidenceCommit"],
+      ]) {
+        assert(
+          record[dispositionKey] === target[targetKey],
+          `v2 disposition ${record.sequence} ${dispositionKey} diverged`,
+        );
+      }
       for (const key of ["candidateCommit", "candidateTree", "evidenceCommit"]) {
         if (record[key] !== undefined)
           assert(record[key] === target[key], `v2 disposition ${record.sequence} ${key} diverged`);

@@ -2679,7 +2679,16 @@
       "requiredForPromotion": true,
       "outputRootClosure": true
     },
-    "commitModel": "candidate-parent-of-evidence-parent-of-index"
+    "commitModel": "candidate-parent-of-evidence-parent-of-index",
+    "dispositionTargetFields": [
+      "targetSequence",
+      "targetRecordDigest",
+      "targetOwnerIssueId",
+      "targetGateId",
+      "targetCandidateCommit",
+      "targetCandidateTree",
+      "targetEvidenceCommit"
+    ]
   },
   "resultRecords": [],
   "executionManifest": {
