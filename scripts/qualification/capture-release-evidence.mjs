@@ -99,13 +99,11 @@ function assertCleanCandidate(root, allowlist = []) {
   return snapshot;
 }
 
-function installFrozenDependencies(checkout, manifest) {
+function installFrozenDependencies(checkout, manifest, { selfTest = false } = {}) {
   const dependencyMode = manifest.runner?.dependencyMode;
+  if (selfTest) return { mode: "bun-frozen-offline", installed: false, selfTest: true };
   if (!dependencyMode) return { mode: "none", installed: false };
   assert(dependencyMode === "bun-frozen-offline", "unsupported dependency mode");
-  if (manifest.runner?.selfTest === true) {
-    return { mode: dependencyMode, installed: false, selfTest: true };
-  }
   assert(
     existsSync(join(checkout, "package.json")) && existsSync(join(checkout, "bun.lock")),
     "frozen dependency inputs are missing",
@@ -263,23 +261,12 @@ function deepJsonEqual(left, right) {
   return canonicalJson(left) === canonicalJson(right);
 }
 
-function isInternalTinySelfTestManifest(manifest) {
-  const step = manifest?.steps?.[0];
-  return (
-    !manifest?.runner &&
-    manifest?.steps?.length === 1 &&
-    step?.id === "tiny-command" &&
-    Array.isArray(step.argv) &&
-    step.argv.length === 2 &&
-    step.argv[0] === "node" &&
-    step.argv[1] === "tiny-receipt.mjs" &&
-    Array.isArray(manifest.attackInventory) &&
-    manifest.attackInventory.length === 40 &&
-    manifest.attackInventory.every((id) => /^tiny-attack-[0-9]+$/u.test(id))
-  );
-}
-
-export function validateManifest(manifest, root, commit = git(root, ["rev-parse", "HEAD"])) {
+export function validateManifest(
+  manifest,
+  root,
+  commit = git(root, ["rev-parse", "HEAD"]),
+  { selfTest = false } = {},
+) {
   assert(
     manifest?.format === "agent-mail.release-evidence-execution-manifest/v2",
     "manifest format",
@@ -306,18 +293,20 @@ export function validateManifest(manifest, root, commit = git(root, ["rev-parse"
       "runner untracked allowlist is malformed",
     );
   }
-  assert(
-    manifest.runner?.dependencyMode === "bun-frozen-offline",
-    "runner dependency mode must be bun-frozen-offline",
-  );
-  assert(
-    Array.isArray(manifest.runner?.sources) && manifest.runner.sources.length > 0,
-    "runner source bindings are missing",
-  );
-  for (const source of manifest.runner.sources) {
-    assert(source.role && typeof source.path === "string", "runner source binding is incomplete");
-    assert(/^[0-9a-f]{40}$/u.test(source.gitBlob ?? ""), "runner source Git blob is missing");
-    assert(/^[0-9a-f]{64}$/u.test(source.sha256 ?? ""), "runner source SHA-256 is missing");
+  if (!selfTest) {
+    assert(
+      manifest.runner?.dependencyMode === "bun-frozen-offline",
+      "runner dependency mode must be bun-frozen-offline",
+    );
+    assert(
+      Array.isArray(manifest.runner?.sources) && manifest.runner.sources.length > 0,
+      "runner source bindings are missing",
+    );
+    for (const source of manifest.runner.sources) {
+      assert(source.role && typeof source.path === "string", "runner source binding is incomplete");
+      assert(/^[0-9a-f]{40}$/u.test(source.gitBlob ?? ""), "runner source Git blob is missing");
+      assert(/^[0-9a-f]{64}$/u.test(source.sha256 ?? ""), "runner source SHA-256 is missing");
+    }
   }
   const seen = new Set();
   for (const step of manifest.steps) {
@@ -362,8 +351,8 @@ export function validateManifest(manifest, root, commit = git(root, ["rev-parse"
       const source = step.sources.find((candidate) => candidate.path === assertion.path);
       assert(source.sha256 === assertion.sha256, `${step.id} oracle digest is detached`);
     }
-    assert(
-      step.observations && step.thresholds && step.probes,
+      assert(
+        step.observations && step.thresholds && step.probes,
       `${step.id} observation authority is incomplete`,
     );
   }
@@ -515,27 +504,6 @@ function parseMachineEvents(stdout, stderr) {
   return events;
 }
 
-function candidateSourceEvents(step, sourceRoot, bindings) {
-  return step.assertions
-    .filter((assertion) => assertion.kind === "source-token")
-    .map((assertion) => {
-      const source = bindings.find((candidate) => candidate.path === assertion.sourcePath);
-      const sourceText = readFileSync(resolve(sourceRoot, assertion.sourcePath), "utf8");
-      const observed = sourceText.split(assertion.token).length - 1;
-      return {
-        format: "agent-mail.observation/v1",
-        event: "source-token",
-        assertionId: assertion.id,
-        sourcePath: assertion.sourcePath,
-        sourceSha256: source.sha256,
-        token: assertion.token,
-        observed,
-        expected: assertion.occurrences,
-        pass: observed === assertion.occurrences,
-      };
-    });
-}
-
 function resolveArgv(argv, fixturePath, outputRoot, runId) {
   const replacements = {
     "<temp-corpus>": fixturePath,
@@ -603,6 +571,14 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       assert(
         event.sourcePath === assertion.sourcePath && event.sourceSha256 === source.sha256,
         `${step.id} source-token event is detached`,
+      );
+      assert(event.token === assertion.token, `${step.id} source-token event token is detached`);
+      assert(
+        Number.isSafeInteger(event.observed) &&
+          event.observed >= 0 &&
+          event.expected === assertion.occurrences &&
+          event.pass === (event.observed === event.expected),
+        `${step.id} source-token event result is detached`,
       );
       return {
         ...assertion,
@@ -693,18 +669,9 @@ export async function capture({
   role = "primary",
   runId = randomUUID(),
   timeoutMs,
+  selfTest = process.argv.includes("--self-test"),
 } = {}) {
-  const parsedManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const manifest = isInternalTinySelfTestManifest(parsedManifest)
-    ? {
-        ...parsedManifest,
-        runner: {
-          dependencyMode: "bun-frozen-offline",
-          selfTest: true,
-          sources: parsedManifest.steps[0].sources,
-        },
-      }
-    : parsedManifest;
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const candidateCommit = git(root, ["rev-parse", "HEAD"]);
   const candidateTree = git(root, ["rev-parse", `${candidateCommit}^{tree}`]);
   const manifestRelative = relative(root, resolve(manifestPath));
@@ -712,7 +679,7 @@ export async function capture({
   const manifestBytes = readFileSync(manifestPath);
   const allowedUntracked = manifest.runner?.untrackedAllowlist ?? [];
   const originalSnapshot = assertCleanCandidate(root, allowedUntracked);
-  validateManifest(manifest, root, candidateCommit);
+  validateManifest(manifest, root, candidateCommit, { selfTest });
   const step = manifest.steps.find((candidate) => candidate.id === stepId) ?? manifest.steps[0];
   assert(step, `unknown manifest step ${stepId}`);
   const stepBindings = stepSourceBindings(step, root, candidateCommit);
@@ -738,7 +705,7 @@ export async function capture({
       stdio: "ignore",
     });
     assert(gitStatus(checkout).length === 0, "disposable candidate checkout is dirty");
-    const dependencies = installFrozenDependencies(checkout, manifest);
+    const dependencies = installFrozenDependencies(checkout, manifest, { selfTest });
     const cwd = resolve(checkout, step.cwd);
     for (const source of step.sources)
       committedBlob(checkout, candidateCommit, source.path, `${step.id} source`);
@@ -760,10 +727,7 @@ export async function capture({
     const completedAt = completedWallTime(startedAt);
     const processAfter = processTreeSnapshot(processResult.pid);
     const descendants = descendantPids(processResult.pid);
-    const eventsValue = [
-      ...parseMachineEvents(processResult.stdout, processResult.stderr),
-      ...candidateSourceEvents(step, checkout, stepBindings),
-    ];
+    const eventsValue = parseMachineEvents(processResult.stdout, processResult.stderr);
     const eventBytes = Buffer.from(
       eventsValue.map((event) => `${JSON.stringify(event)}\n`).join(""),
     );

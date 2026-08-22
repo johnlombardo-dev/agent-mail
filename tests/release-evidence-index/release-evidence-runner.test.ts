@@ -10,18 +10,28 @@ function git(root: string, args: string[]) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-function disposableManifest(root: string, oracleValue: unknown = "pass") {
+function disposableManifest(
+  root: string,
+  oracleValue: unknown = "pass",
+  sourceEvent: "valid" | "missing" | "retyped" = "valid",
+) {
   const sourcePath = "tiny-runner.mjs";
   const oraclePath = "oracle.json";
   const oracleBytes = Buffer.from(`${JSON.stringify({ value: oracleValue })}\n`);
   writeFileSync(join(root, oraclePath), oracleBytes);
   const oracleSha256 = sha256(oracleBytes);
   const oracleLiteral = JSON.stringify(oracleValue);
+  const sourceEventLine =
+    sourceEvent === "missing"
+      ? ""
+      : `process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'source-token',assertionId:'source-token',sourcePath,sourceSha256,token:'${sourceEvent === "retyped" ? "wrongToken" : "sourceToken"}',observed:1,expected:1,pass:true}) + '\\n');\n`;
   const sourceBytes = Buffer.from(
-    `process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'oracle',path:'${oraclePath}',sha256:'${oracleSha256}',pointer:'/value',value:${oracleLiteral}}) + '\\n');\nconst sourceToken = true;\n`,
+    `import { createHash } from 'node:crypto';\nimport { readFileSync } from 'node:fs';\nconst sourceToken = true;\nconst sourcePath = '${sourcePath}';\nconst sourceSha256 = createHash('sha256').update(readFileSync(sourcePath)).digest('hex');\n${sourceEventLine}process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'oracle',path:'${oraclePath}',sha256:'${oracleSha256}',pointer:'/value',value:${oracleLiteral}}) + '\\n');\n`,
   );
   writeFileSync(join(root, sourcePath), sourceBytes);
-  git(root, ["add", sourcePath, oraclePath]);
+  writeFileSync(join(root, "package.json"), readFileSync("package.json"));
+  writeFileSync(join(root, "bun.lock"), readFileSync("bun.lock"));
+  git(root, ["add", sourcePath, oraclePath, "package.json", "bun.lock"]);
   git(root, ["commit", "-qm", "candidate source"]);
   const commit = git(root, ["rev-parse", "HEAD"]);
   const blob = git(root, ["rev-parse", `HEAD:${sourcePath}`]);
@@ -63,7 +73,6 @@ function disposableManifest(root: string, oracleValue: unknown = "pass") {
     ],
     runner: {
       dependencyMode: "bun-frozen-offline",
-      selfTest: true,
       sources: [{ role: "runner", path: sourcePath, gitBlob: blob, sha256: sha256(sourceBytes) }],
     },
   };
@@ -75,13 +84,20 @@ function disposableManifest(root: string, oracleValue: unknown = "pass") {
   return { manifest, manifestPath, commit };
 }
 
-function disposableRepo(oracleValue: unknown = "pass") {
+function disposableRepo(
+  oracleValue: unknown = "pass",
+  sourceEvent: "valid" | "missing" | "retyped" = "valid",
+) {
   const root = mkdtempSync(join(tmpdir(), "agent-mail-runner-test-"));
   git(root, ["init", "-q"]);
   git(root, ["config", "user.email", "runner-test@example.invalid"]);
   git(root, ["config", "user.name", "runner test"]);
-  const fixture = disposableManifest(root, oracleValue);
+  const fixture = disposableManifest(root, oracleValue, sourceEvent);
   return { root, ...fixture };
+}
+
+function testCapture(options: Parameters<typeof capture>[0]) {
+  return capture({ ...options, selfTest: true });
 }
 
 describe("release evidence executable runner", () => {
@@ -89,11 +105,11 @@ describe("release evidence executable runner", () => {
     const fixture = disposableRepo();
     const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-output-"));
     try {
-      const primary = await capture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output });
+      const primary = await testCapture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output });
       const replayRoot = mkdtempSync(join(tmpdir(), "agent-mail-runner-replay-"));
       try {
         git(fixture.root, ["clone", "-q", "--no-hardlinks", fixture.root, replayRoot]);
-        const replay = await capture({
+        const replay = await testCapture({
           root: replayRoot,
           manifestPath: join(replayRoot, "manifest.json"),
           outputRoot: mkdtempSync(join(tmpdir(), "agent-mail-runner-replay-output-")),
@@ -119,7 +135,7 @@ describe("release evidence executable runner", () => {
     try {
       writeFileSync(join(fixture.root, "tiny-runner.mjs"), "process.exit(0);\n");
       await expect(
-        capture({ root: fixture.root, manifestPath: fixture.manifestPath }),
+        testCapture({ root: fixture.root, manifestPath: fixture.manifestPath }),
       ).rejects.toThrow(/worktree is dirty/u);
       rmSync(fixture.root, { recursive: true, force: true });
       const placeholder = disposableRepo();
@@ -128,7 +144,7 @@ describe("release evidence executable runner", () => {
       git(placeholder.root, ["add", "manifest.json"]);
       git(placeholder.root, ["commit", "-qm", "placeholder attack"]);
       await expect(
-        capture({ root: placeholder.root, manifestPath: placeholder.manifestPath }),
+        testCapture({ root: placeholder.root, manifestPath: placeholder.manifestPath }),
       ).rejects.toThrow(/placeholder/u);
       rmSync(placeholder.root, { recursive: true, force: true });
     } finally {
@@ -156,7 +172,7 @@ describe("release evidence executable runner", () => {
       mkdirSync(join(fixture.root, "safe-entry"), { recursive: true });
       writeFileSync(join(fixture.root, "safe-entry", "evil.txt"), "untrusted\n");
       await expect(
-        capture({ root: fixture.root, manifestPath: fixture.manifestPath }),
+        testCapture({ root: fixture.root, manifestPath: fixture.manifestPath }),
       ).rejects.toThrow(/worktree is dirty/u);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
@@ -174,7 +190,7 @@ describe("release evidence executable runner", () => {
       const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-trailing-output-"));
       try {
         await expect(
-          capture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
+          testCapture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
         ).resolves.toMatchObject({ result: "pass" });
       } finally {
         rmSync(output, { recursive: true, force: true });
@@ -206,12 +222,49 @@ describe("release evidence executable runner", () => {
     }
   });
 
+  test("does not let a manifest selfTest flag bypass runner authority", () => {
+    const fixture = disposableRepo();
+    try {
+      const forged = structuredClone(fixture.manifest);
+      forged.runner = { selfTest: true };
+      expect(() => validateManifest(forged, fixture.root)).toThrow(/dependency mode/u);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a source-token assertion when the candidate emits no event", async () => {
+    const fixture = disposableRepo("pass", "missing");
+    const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-missing-event-"));
+    try {
+      await expect(
+        testCapture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
+      ).rejects.toThrow(/source-token event count is not exactly one/u);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects a same-ID source-token event with retyped content", async () => {
+    const fixture = disposableRepo("pass", "retyped");
+    const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-retyped-event-"));
+    try {
+      await expect(
+        testCapture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
+      ).rejects.toThrow(/source-token event token is detached/u);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
   test("uses canonical deep equality for structured oracle objects and arrays", async () => {
     const fixture = disposableRepo({ list: [1, { a: true, b: ["x", 2] }] });
     const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-object-output-"));
     try {
       await expect(
-        capture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
+        testCapture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
       ).resolves.toMatchObject({ result: "pass" });
     } finally {
       rmSync(output, { recursive: true, force: true });
