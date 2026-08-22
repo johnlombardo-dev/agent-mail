@@ -490,14 +490,7 @@
           "unit": "requests"
         }
       },
-      "probes": [
-        "processTreeRss",
-        "fileDescriptors",
-        "listeners",
-        "HermesLease",
-        "tempRoot",
-        "streamCompletion"
-      ],
+      "probes": ["processTreeRss", "fileDescriptors", "listeners", "tempRoot", "streamCompletion"],
       "timeoutMs": 600000
     },
     {
@@ -673,14 +666,7 @@
           "unit": "iterations"
         }
       },
-      "probes": [
-        "processTreeRss",
-        "fileDescriptors",
-        "listeners",
-        "HermesLease",
-        "tempRoot",
-        "childActors"
-      ],
+      "probes": ["processTreeRss", "fileDescriptors", "listeners", "tempRoot", "childActors"],
       "timeoutMs": 600000
     }
   ]
