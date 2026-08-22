@@ -95,14 +95,14 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "8cb36d9eaad08cdb8cc4863bf8f42f36002a9461",
-        "sha256": "03ceaabecde8bde52702f6893289506e33fe3b8c2e6ff53e4f8744c538d5ce62"
+        "gitBlob": "baec86c1168dfc669eec42ccd7e254715b876d74",
+        "sha256": "f531393ce5f7cf4689200d9d14477af1be4e9ea7cf7ffeff8c3ebf3d7ae50570"
       },
       {
         "role": "replay-runner",
         "path": "scripts/qualification/replay-release-evidence.mjs",
-        "gitBlob": "bac74c709ed822fe25c4ff534823f4c1f30eeadc",
-        "sha256": "4b01dcc158cb2184b0d4ea1e46bc1093104c19d6703f55c27ebf516123d4e6de"
+        "gitBlob": "c9384fc497fffe19d3b797a417ab13d5a64a0eca",
+        "sha256": "f2befa3e81400fb83037090bcd61f644a8e0b8ab46e4e7bcdf7986b7fdd9fd69"
       }
     ]
   },
