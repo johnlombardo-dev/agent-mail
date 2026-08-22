@@ -89,8 +89,8 @@
       {
         "role": "checker",
         "path": "docs/architecture/release-evidence-index-check.v1.mjs",
-        "gitBlob": "85f5af68f0db39907f42de7123ef7d0867c8c86c",
-        "sha256": "83ece6241d69d6dc17c34671f8904819a026873eecf9b9296bf31fa535b8b27e"
+        "gitBlob": "6b031869f0f1b2f06f379b7e48073cfb9c4e07ae",
+        "sha256": "ef41cd3c4ab915b8a66c5fb011a9de1413108eccc04a42d7c6f917517a733db7"
       },
       {
         "role": "capture-runner",
