@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 import {
-  CORPUS_VERSION,
   MAX_MATERIALIZED_SIZE,
   STREAM_CHUNK_BYTES,
   createCorpusDigest,
@@ -52,42 +51,113 @@ function canonical(value: unknown): string {
   throw new TypeError("unsupported canonical value");
 }
 
-type CorpusLifecycleProbe = Readonly<{
+export type CorpusRunCompletionReceipt = Readonly<{
+  readonly protocol: "agent-mail-demo-corpus-run.v1";
   readonly generator: Readonly<{
-    readonly acquired: () => void;
-    readonly yielded: () => void;
-    readonly finallyCompleted: () => void;
+    readonly acquiredCount: number;
+    readonly yieldedCount: number;
+    readonly finallyCompletedCount: number;
   }>;
-  readonly attachment: Readonly<{
-    readonly acquired: () => void;
-    readonly yielded: (byteLength: number) => void;
-    readonly finallyCompleted: () => void;
+  readonly attachmentStreams: Readonly<{
+    readonly acquiredCount: number;
+    readonly yieldedCount: number;
+    readonly finallyCompletedCount: number;
+    readonly maximumYieldedChunkBytes: number;
   }>;
 }>;
 
-const lifecycleProbeKey = Symbol.for("agent-mail.demo.corpus.lifecycle-probe");
-let activeLifecycleProbe: CorpusLifecycleProbe | undefined;
+export type ObservedCorpusRun = Readonly<{
+  readonly stream: AsyncIterable<CorpusMessage>;
+  readonly completion: Promise<CorpusRunCompletionReceipt>;
+}>;
 
-function isLifecycleProbe(value: unknown): value is CorpusLifecycleProbe {
-  if (typeof value !== "object" || value === null) return false;
-  const generator = Reflect.get(value, "generator");
-  const attachment = Reflect.get(value, "attachment");
-  if (typeof generator !== "object" || generator === null) return false;
-  if (typeof attachment !== "object" || attachment === null) return false;
-  return (
-    typeof Reflect.get(generator, "acquired") === "function" &&
-    typeof Reflect.get(generator, "yielded") === "function" &&
-    typeof Reflect.get(generator, "finallyCompleted") === "function" &&
-    typeof Reflect.get(attachment, "acquired") === "function" &&
-    typeof Reflect.get(attachment, "yielded") === "function" &&
-    typeof Reflect.get(attachment, "finallyCompleted") === "function"
+type CorpusRunObserver = Readonly<{
+  readonly generatorAcquired: () => void;
+  readonly generatorYielded: () => void;
+  readonly generatorFinallyCompleted: () => void;
+  readonly attachmentAcquired: () => void;
+  readonly attachmentYielded: (byteLength: number) => void;
+  readonly attachmentFinallyCompleted: () => void;
+  readonly completion: Promise<CorpusRunCompletionReceipt>;
+}>;
+
+function createCorpusRunObserver(): CorpusRunObserver {
+  let generatorAcquiredCount = 0;
+  let generatorYieldedCount = 0;
+  let generatorFinallyCompletedCount = 0;
+  let attachmentAcquiredCount = 0;
+  let attachmentYieldedCount = 0;
+  let attachmentFinallyCompletedCount = 0;
+  let activeAttachmentStreams = 0;
+  let maximumYieldedChunkBytes = 0;
+  let receiptCreated = false;
+  let resolveCompletion: ((receipt: CorpusRunCompletionReceipt) => void) | undefined;
+  const completion = Object.freeze(
+    new Promise<CorpusRunCompletionReceipt>((resolve) => {
+      resolveCompletion = resolve;
+    }),
   );
-}
-
-function lifecycleProbeFromInput(input: unknown): CorpusLifecycleProbe | undefined {
-  if (typeof input !== "object" || input === null) return undefined;
-  const probe = Reflect.get(input, lifecycleProbeKey);
-  return isLifecycleProbe(probe) ? probe : undefined;
+  const completeIfFinalized = (): void => {
+    if (receiptCreated || generatorFinallyCompletedCount !== 1 || activeAttachmentStreams !== 0)
+      return;
+    if (resolveCompletion === undefined)
+      throw new Error("observed corpus completion promise is unavailable");
+    receiptCreated = true;
+    resolveCompletion(
+      Object.freeze({
+        protocol: "agent-mail-demo-corpus-run.v1",
+        generator: Object.freeze({
+          acquiredCount: generatorAcquiredCount,
+          yieldedCount: generatorYieldedCount,
+          finallyCompletedCount: generatorFinallyCompletedCount,
+        }),
+        attachmentStreams: Object.freeze({
+          acquiredCount: attachmentAcquiredCount,
+          yieldedCount: attachmentYieldedCount,
+          finallyCompletedCount: attachmentFinallyCompletedCount,
+          maximumYieldedChunkBytes,
+        }),
+      }),
+    );
+  };
+  return Object.freeze({
+    generatorAcquired: () => {
+      if (generatorAcquiredCount !== 0 || generatorFinallyCompletedCount !== 0)
+        throw new Error("observed corpus generator can only be acquired once");
+      generatorAcquiredCount = 1;
+    },
+    generatorYielded: () => {
+      if (generatorAcquiredCount !== 1 || generatorFinallyCompletedCount !== 0)
+        throw new Error("observed corpus generator yielded outside its active lifecycle");
+      generatorYieldedCount += 1;
+    },
+    generatorFinallyCompleted: () => {
+      if (generatorAcquiredCount !== 1 || generatorFinallyCompletedCount !== 0)
+        throw new Error("observed corpus generator finalization is inconsistent");
+      generatorFinallyCompletedCount = 1;
+      completeIfFinalized();
+    },
+    attachmentAcquired: () => {
+      if (generatorAcquiredCount !== 1 || generatorFinallyCompletedCount !== 0)
+        throw new Error("observed attachment stream opened outside its corpus run");
+      attachmentAcquiredCount += 1;
+      activeAttachmentStreams += 1;
+    },
+    attachmentYielded: (byteLength) => {
+      if (activeAttachmentStreams < 1)
+        throw new Error("observed attachment yielded without an active stream");
+      attachmentYieldedCount += 1;
+      maximumYieldedChunkBytes = Math.max(maximumYieldedChunkBytes, byteLength);
+    },
+    attachmentFinallyCompleted: () => {
+      if (activeAttachmentStreams < 1)
+        throw new Error("observed attachment finalization is inconsistent");
+      attachmentFinallyCompletedCount += 1;
+      activeAttachmentStreams -= 1;
+      completeIfFinalized();
+    },
+    completion,
+  });
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -167,10 +237,13 @@ function relationshipFor(
   return Object.freeze({ kind: "reply", inReplyTo, references });
 }
 
-function attachmentStream(seed: string, byteLength: number): () => AsyncIterable<Uint8Array> {
+function attachmentStream(
+  seed: string,
+  byteLength: number,
+  observer?: CorpusRunObserver,
+): () => AsyncIterable<Uint8Array> {
   return async function* stream(): AsyncIterable<Uint8Array> {
-    const probe = activeLifecycleProbe;
-    probe?.attachment.acquired();
+    observer?.attachmentAcquired();
     let finalized = false;
     let offset = 0;
     try {
@@ -178,13 +251,13 @@ function attachmentStream(seed: string, byteLength: number): () => AsyncIterable
         const length = Math.min(STREAM_CHUNK_BYTES, byteLength - offset);
         const bytes = attachmentChunk(seed, offset, length);
         offset += length;
-        probe?.attachment.yielded(length);
+        observer?.attachmentYielded(length);
         yield bytes;
       }
     } finally {
       if (!finalized) {
         finalized = true;
-        probe?.attachment.finallyCompleted();
+        observer?.attachmentFinallyCompleted();
       }
     }
   };
@@ -205,9 +278,14 @@ function attachmentDigest(seed: string, byteLength: number): CorpusDigest {
   return parseCorpusDigest(hash.digest("hex"));
 }
 
-function buildAttachment(seed: string, large: boolean, hostileName: boolean): CorpusBodyPart {
+function buildAttachment(
+  seed: string,
+  large: boolean,
+  hostileName: boolean,
+  observer?: CorpusRunObserver,
+): CorpusBodyPart {
   const byteLength = large ? 8 * 1024 * 1024 : 41;
-  const stream = attachmentStream(seed, byteLength);
+  const stream = attachmentStream(seed, byteLength, observer);
   return Object.freeze({
     kind: "attachment",
     filename: hostileName ? "..\\\u001b]8;;https://evil.example\u0007invoice.pdf" : "invoice.pdf",
@@ -223,6 +301,7 @@ function buildMessage(
   options: CorpusOptions,
   index: number,
   mailboxId: ReturnType<typeof createCorpusMailboxId>,
+  observer?: CorpusRunObserver,
 ): CorpusMessage {
   const category = categoryFor(options, index);
   const coverage = coverageFor(index);
@@ -272,6 +351,7 @@ function buildMessage(
         `${options.seed}\0${index}`,
         has("large-streaming-attachment"),
         has("hostile-filename"),
+        observer,
       ),
     );
   const headers: Record<string, string> = {
@@ -647,26 +727,37 @@ export function buildCorpus(input: unknown): DemoCorpus {
 export const generateCorpus = buildCorpus;
 export const generateDemoCorpus = buildCorpus;
 
-export async function* streamCorpus(input: unknown): AsyncIterable<CorpusMessage> {
+async function* createCorpusStream(
+  input: unknown,
+  observer?: CorpusRunObserver,
+): AsyncIterable<CorpusMessage> {
   const options = parseCorpusOptions(input);
   const mailboxIds = [
     createCorpusMailboxId("inbox"),
     createCorpusMailboxId("archive"),
     createCorpusMailboxId("missing-state"),
   ];
-  const probe = lifecycleProbeFromInput(input) ?? activeLifecycleProbe;
-  const previousProbe = activeLifecycleProbe;
-  activeLifecycleProbe = probe;
-  probe?.generator.acquired();
+  observer?.generatorAcquired();
   try {
     for (let index = 0; index < options.size; index += 1) {
-      probe?.generator.yielded();
-      yield buildMessage(options, index, mailboxIds[index % mailboxIds.length]);
+      observer?.generatorYielded();
+      yield buildMessage(options, index, mailboxIds[index % mailboxIds.length], observer);
     }
   } finally {
-    probe?.generator.finallyCompleted();
-    activeLifecycleProbe = previousProbe;
+    observer?.generatorFinallyCompleted();
   }
+}
+
+export function streamCorpus(input: unknown): AsyncIterable<CorpusMessage> {
+  return createCorpusStream(input);
+}
+
+export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
+  const observer = createCorpusRunObserver();
+  return Object.freeze({
+    stream: createCorpusStream(input, observer),
+    completion: observer.completion,
+  });
 }
 
 export const streamDemoCorpus = streamCorpus;
