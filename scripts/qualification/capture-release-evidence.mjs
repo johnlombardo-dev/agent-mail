@@ -13,7 +13,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(scriptPath), "../..");
@@ -395,6 +395,15 @@ export function validateManifest(
           `${step.id} stream fixture size is invalid`,
         );
       }
+      if (step.fixture.kind === "generated-file" && step.fixture.generationStepId !== undefined) {
+        assert(
+          typeof step.fixture.generationStepId === "string" &&
+            step.fixture.generationStepId.length > 0 &&
+            step.fixture.generationStepId !== step.id &&
+            seen.has(step.fixture.generationStepId),
+          `${step.id} generation receipt source is invalid`,
+        );
+      }
     }
     const helperPath = "scripts/capacity/source-token-event.ts";
     const importsSourceTokenHelper = step.sources.some((source) => {
@@ -435,6 +444,28 @@ function optionalDigest(path) {
   }
 }
 
+function ownerRelativePath(root, path, label) {
+  const rootPath = resolve(root);
+  const absolutePath = resolve(path);
+  const relativePath = relative(rootPath, absolutePath);
+  assert(
+    relativePath.length > 0 &&
+      !relativePath.startsWith("..") &&
+      !isAbsolute(relativePath) &&
+      !relativePath.includes("\\") &&
+      relativePath.split("/").every((part) => part && part !== "." && part !== ".."),
+    `${label} path escaped owner root`,
+  );
+  return relativePath;
+}
+
+function fileDigest(path, label) {
+  const stat = lstatSync(path);
+  assert(stat.isFile() && !stat.isSymbolicLink(), `${label} is not a regular non-symlink file`);
+  const bytes = readFileSync(path);
+  return { bytes: bytes.length, sha256: sha256(bytes) };
+}
+
 function outputRef(root, outputRoot, runId, filename, bytes) {
   const path = join(outputRoot, runId, filename);
   mkdirSync(dirname(path), { recursive: true });
@@ -443,15 +474,7 @@ function outputRef(root, outputRoot, runId, filename, bytes) {
 }
 
 function retainedFileRef(root, outputRoot, path, expectedBytes, expectedSha256, label) {
-  const relativePath = relative(outputRoot, path);
-  assert(
-    relativePath.length > 0 &&
-      !relativePath.startsWith("..") &&
-      !relativePath.includes("\\0") &&
-      !isAbsolute(relativePath) &&
-      !relativePath.includes("\\"),
-    `${label} path escaped owner root`,
-  );
+  const relativePath = ownerRelativePath(root, path, label);
   const stat = lstatSync(path);
   assert(stat.isFile() && !stat.isSymbolicLink(), `${label} is not a regular non-symlink file`);
   const bytes = readFileSync(path);
@@ -461,25 +484,123 @@ function retainedFileRef(root, outputRoot, path, expectedBytes, expectedSha256, 
   return { path: relativePath, sha256: digest, bytes: bytes.length };
 }
 
-async function finalizeFixture(fixture, outputRoot, fixturePath) {
+function assertAbsent(path, label) {
+  let stat;
+  try {
+    stat = lstatSync(path);
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  fail(`${label} already exists before execution (${stat.isSymbolicLink() ? "symlink" : "path"})`);
+}
+
+async function validateGeneratedSearchArtifact(path, checkout, expectedInventory) {
+  const physical = fileDigest(path, "search artifact");
+  const inventoryPath = `${path}.inventory.json`;
+  const inventoryStat = lstatSync(inventoryPath);
+  assert(
+    inventoryStat.isFile() && !inventoryStat.isSymbolicLink(),
+    "search inventory is not a regular non-symlink file",
+  );
+  const inventoryBytes = readFileSync(inventoryPath);
+  const inventory = JSON.parse(inventoryBytes.toString("utf8"));
+  assert(inventory.messages === 250000, "search inventory row count drifted");
+  assert(inventory.bytes === physical.bytes, "search inventory byte count drifted");
+  assert(
+    typeof inventory.logicalChecksum === "string" &&
+      /^[0-9a-f]{64}$/u.test(inventory.logicalChecksum),
+    "search logical checksum is missing",
+  );
+  if (expectedInventory !== undefined)
+    assert(
+      canonicalJson(inventory) === canonicalJson(expectedInventory),
+      "search inventory drifted",
+    );
+  const sqlite = await import("bun:sqlite");
+  const database = new sqlite.Database(path, { readonly: true });
+  try {
+    const generator = await import(
+      pathToFileURL(join(checkout, "scripts/capacity/generate-search-corpus.ts")).href
+    );
+    generator.validateCorpusInventory(database, inventory);
+  } finally {
+    database.close();
+  }
+  const after = fileDigest(path, "search artifact");
+  assert(
+    after.sha256 === physical.sha256 && after.bytes === physical.bytes,
+    "search artifact changed during validation",
+  );
+  return {
+    physicalSha256: physical.sha256,
+    bytes: physical.bytes,
+    inventorySha256: sha256(inventoryBytes),
+    logicalChecksum: inventory.logicalChecksum,
+    inventory,
+  };
+}
+
+function generationReceipt(receiptPath, outputRoot, fixture, candidateCommit) {
+  assert(receiptPath, `${fixture.id} requires a prior generation receipt`);
+  const receiptBytes = readFileSync(receiptPath);
+  const receipt = JSON.parse(receiptBytes.toString("utf8"));
+  assert(receipt.format === receiptFormat, "generation receipt format is invalid");
+  assert(receipt.result === "pass", "generation receipt is not passing");
+  assert(
+    receipt.manifestStepId === fixture.generationStepId,
+    "generation receipt step is detached",
+  );
+  assert(receipt.candidate?.commit === candidateCommit, "generation receipt candidate is stale");
+  const generated = receipt.fixture?.materialized;
+  assert(
+    generated?.owner === "generator" && generated.presentAfterRun === true,
+    "generation receipt fixture is invalid",
+  );
+  assert(
+    /^[0-9a-f]{64}$/u.test(generated.sha256 ?? ""),
+    "generation receipt artifact digest is missing",
+  );
+  assert(
+    Number.isSafeInteger(generated.bytes) && generated.bytes > 0,
+    "generation receipt artifact bytes are invalid",
+  );
+  const sourcePath = resolve(outputRoot, generated.path);
+  ownerRelativePath(outputRoot, sourcePath, "generation artifact");
+  const actual = fileDigest(sourcePath, "generation artifact");
+  assert(
+    actual.sha256 === generated.sha256 && actual.bytes === generated.bytes,
+    "generation artifact drifted",
+  );
+  const receiptAbsolute = resolve(receiptPath);
+  const receiptDigest = sha256(receiptBytes);
+  return {
+    receiptPath: receiptAbsolute,
+    receiptSha256: receiptDigest,
+    artifactPath: sourcePath,
+    artifactRelativePath: ownerRelativePath(outputRoot, sourcePath, "generation artifact"),
+    artifactSha256: actual.sha256,
+    artifactBytes: actual.bytes,
+  };
+}
+
+async function finalizeFixture(fixture, outputRoot, fixturePath, checkout, integrityBefore) {
   if (!fixture?.materialized) return fixture;
   if (fixture.materialized.owner === "generator") {
-    const stat = lstatSync(fixturePath);
-    assert(
-      stat.isFile() && !stat.isSymbolicLink(),
-      "generator fixture is not a regular non-symlink file",
-    );
-    const bytes = readFileSync(fixturePath);
-    const digest = sha256(bytes);
-    if (fixture.rowCount === 250000)
-      await validateGeneratedSearchArtifact(fixturePath, bytes, digest);
+    ownerRelativePath(outputRoot, fixturePath, "generator fixture");
+    const physical = fileDigest(fixturePath, "generator fixture");
+    const integrity =
+      fixture.rowCount === 250000
+        ? await validateGeneratedSearchArtifact(fixturePath, checkout)
+        : undefined;
     return {
       ...fixture,
       materialized: {
         ...fixture.materialized,
         presentAfterRun: true,
-        sha256: digest,
-        bytes: bytes.length,
+        sha256: physical.sha256,
+        bytes: physical.bytes,
+        integrity,
       },
     };
   }
@@ -491,35 +612,21 @@ async function finalizeFixture(fixture, outputRoot, fixturePath) {
     fixture.materialized.sha256,
     "fixture",
   );
-  return { ...fixture, materialized };
-}
-
-async function validateGeneratedSearchArtifact(path, bytes, digest) {
-  const inventoryPath = `${path}.inventory.json`;
-  const inventoryStat = lstatSync(inventoryPath);
-  assert(
-    inventoryStat.isFile() && !inventoryStat.isSymbolicLink(),
-    "search inventory is not a regular non-symlink file",
-  );
-  const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-  assert(inventory.messages === 250000, "search inventory row count drifted");
-  assert(inventory.bytes === bytes.length, "search inventory byte count drifted");
-  assert(
-    typeof inventory.logicalChecksum === "string" &&
-      /^[0-9a-f]{64}$/u.test(inventory.logicalChecksum),
-    "search logical checksum is missing",
-  );
-  const sqlite = await import("bun:sqlite");
-  const database = new sqlite.Database(path, { readonly: true });
-  try {
-    const integrity = database.query("PRAGMA integrity_check").get();
-    assert(integrity?.integrity_check === "ok", "search SQLite integrity check failed");
-    const foreignKeys = database.query("PRAGMA foreign_key_check").all();
-    assert(foreignKeys.length === 0, "search SQLite foreign-key check failed");
-  } finally {
-    database.close();
+  if (integrityBefore !== undefined) {
+    const integrityAfter = await validateGeneratedSearchArtifact(
+      fixturePath,
+      checkout,
+      integrityBefore.inventory,
+    );
+    assert(
+      integrityAfter.physicalSha256 === integrityBefore.physicalSha256 &&
+        integrityAfter.bytes === integrityBefore.bytes &&
+        integrityAfter.logicalChecksum === integrityBefore.logicalChecksum,
+      "fixture changed during measurement",
+    );
+    materialized.integrity = { before: integrityBefore, after: integrityAfter, unchanged: true };
   }
-  assert(sha256(readFileSync(path)) === digest, "search artifact changed during validation");
+  return { ...fixture, materialized };
 }
 
 function now() {
@@ -672,11 +779,39 @@ function fixtureBytes(fixture) {
   return null;
 }
 
-function materializeFixture(fixture, destination, runId) {
+function materializeFixture(fixture, destination, runId, priorGeneration) {
   const bytes = fixtureBytes(fixture);
   if (!fixture) return null;
   const path = join(destination, runId, "fixtures", `${fixture.id ?? "fixture"}.bin`);
   if (fixture.kind === "generated-file") {
+    if (fixture.generationStepId) {
+      assert(priorGeneration, `${fixture.id} requires a prior generation receipt`);
+      mkdirSync(dirname(path), { recursive: true });
+      cpSync(priorGeneration.artifactPath, path);
+      const copied = fileDigest(path, "measurement fixture");
+      assert(
+        copied.sha256 === priorGeneration.artifactSha256 &&
+          copied.bytes === priorGeneration.artifactBytes,
+        "measurement fixture does not match generation artifact",
+      );
+      return {
+        ...fixture,
+        generationReceipt: {
+          receiptPath: priorGeneration.receiptPath,
+          receiptSha256: priorGeneration.receiptSha256,
+          artifactPath: priorGeneration.artifactRelativePath,
+          artifactSha256: priorGeneration.artifactSha256,
+          artifactBytes: priorGeneration.artifactBytes,
+        },
+        materialized: {
+          path: relative(destination, path),
+          owner: "prior-generator",
+          presentBeforeRun: true,
+          sha256: copied.sha256,
+          bytes: copied.bytes,
+        },
+      };
+    }
     return {
       ...fixture,
       materialized: {
@@ -819,6 +954,8 @@ export async function capture({
   stepId,
   root = repositoryRoot,
   outputRoot,
+  generationReceiptPath,
+  generationOutputRoot,
   role = "primary",
   runId = randomUUID(),
   timeoutMs,
@@ -862,14 +999,28 @@ export async function capture({
     const cwd = resolve(checkout, step.cwd);
     for (const source of step.sources)
       committedBlob(checkout, candidateCommit, source.path, `${step.id} source`);
-    const fixture = materializeFixture(step.fixture, destination, runId);
+    const priorGeneration = step.fixture?.generationStepId
+      ? generationReceipt(
+          generationReceiptPath,
+          generationOutputRoot ?? dirname(resolve(generationReceiptPath ?? destination)),
+          step.fixture,
+          candidateCommit,
+        )
+      : undefined;
+    const fixture = materializeFixture(step.fixture, destination, runId, priorGeneration);
     const fixturePath = fixture?.materialized?.path
       ? resolve(destination, fixture.materialized.path)
       : join(executionRoot, "generated-fixture");
+    if (fixture?.materialized?.owner === "generator")
+      assertAbsent(fixturePath, "generator fixture");
     if (fixture?.materialized?.presentBeforeRun && !existsSync(fixturePath))
       fail("runner fixture was not materialized");
     const argv = resolveArgv(step.argv, fixturePath, destination, runId);
     const beforeRun = repositorySnapshot(checkout);
+    const integrityBefore =
+      fixture?.materialized?.owner === "prior-generator" && fixture.rowCount === 250000
+        ? await validateGeneratedSearchArtifact(fixturePath, checkout)
+        : undefined;
     const startedAt = now();
     const processBefore = processTreeSnapshot(null);
     const processResult = await runProcess(
@@ -907,7 +1058,13 @@ export async function capture({
     );
     const durationNs = processResult.completed - processResult.started;
     const assertions = evaluateAssertions(step, checkout, processResult, eventsValue);
-    const retainedFixture = await finalizeFixture(fixture, destination, fixturePath);
+    const retainedFixture = await finalizeFixture(
+      fixture,
+      destination,
+      fixturePath,
+      checkout,
+      integrityBefore,
+    );
     const result =
       processResult.timedOut || processResult.exitCode === null
         ? "blocked"
@@ -1065,6 +1222,10 @@ async function main() {
     stepId: args.step,
     root: args.root ? resolve(args.root) : repositoryRoot,
     outputRoot: args.outputRoot ? resolve(args.outputRoot) : undefined,
+    generationReceiptPath: args.generationReceipt ? resolve(args.generationReceipt) : undefined,
+    generationOutputRoot: args.generationOutputRoot
+      ? resolve(args.generationOutputRoot)
+      : undefined,
     role: args.role ?? "primary",
     runId: args.runId,
     timeoutMs: args.timeoutMs ? Number(args.timeoutMs) : undefined,

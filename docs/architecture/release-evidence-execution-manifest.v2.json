@@ -82,8 +82,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "1b704d86f553d22eb89ccd8386f5390fa1f700da",
-        "sha256": "1af59ee9e7455bf16c9765f29178434fc2e065e1b71b4637783af916756dd8e0"
+        "gitBlob": "7e1c296d2c7cb91f6eb66604727ff4da789b4199",
+        "sha256": "5a4ff309f9eb5bc0317ebe4f202994411e7ec092e8fe9465a095097c0e3f2ee2"
       },
       {
         "role": "replay-runner",
@@ -270,6 +270,7 @@
       "fixture": {
         "kind": "generated-file",
         "id": "issue-176-fts-250k",
+        "generationStepId": "fts-generate-250k",
         "rowCount": 250000,
         "recipe": "generated-corpus-from-prior-step"
       },
