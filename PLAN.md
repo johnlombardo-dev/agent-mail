@@ -1,6 +1,8 @@
 # Agent Mail implementation plan
 
-Status: evidence-backed implementation underway. Reconciled on 2026-08-22: compatibility authority #231, report creation #232, and operation parity #165 are closed and delivered through branch head `55e7a66cd72d354271c1713529051ac8441dd95d`. The current credential chain remains credential-provider #238 -> production connection #239 -> local account administration #240 -> signed/read-only qualification #241. #238 has a protected dirty candidate, but release construction is blocked because the valid Developer ID Application identity has no matching Agent Mail CLI/broker/daemon provisioning profiles and the `agent-mail-notary` Keychain profile is absent. The previously recorded focused F01-F30 probe remains red only for its historical fingerprint: 202 pass, 6 fail, and 3 module-load errors as recorded in `docs/planning/EVIDENCE.md`; it has not been rerun against the current head. Daybreak access is approved, but the complete applicable security lane is unverified and release-blocking. #203's consequential authority decision is accepted at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`. Release qualification also remains blocked by #176, #180, #183, and #185 plus live, deployed, delivery, and security-review gates.
+Status: Feedback Milestone 1 (FM1) is the active user objective. This 2026-08-23 authority freezes #221's source/local path at committed baseline `6c46f55c58c8f4846bcf3c2c937ce75f16b20811`: after closed #159, #162, and #165, execute #299 -> #300 -> #301 -> #302, then stop for an exact-commit user walkthrough and recorded feedback disposition before #303 or any held broader work resumes. #176, #180, #183, #185, #216, #217, and #297 are held at that checkpoint. FM1 is synthetic/local product feedback, not #221 completion or live-provider, signed-installed, security, deployed, documentation, delivery, or release evidence.
+
+The existing evidence-backed implementation remains underway. Reconciled on 2026-08-22: compatibility authority #231, report creation #232, and operation parity #165 are closed and delivered through branch head `55e7a66cd72d354271c1713529051ac8441dd95d`. The current credential chain remains credential-provider #238 -> production connection #239 -> local account administration #240 -> signed/read-only qualification #241. #238 has a protected dirty candidate, but release construction is blocked because the valid Developer ID Application identity has no matching Agent Mail CLI/broker/daemon provisioning profiles and the `agent-mail-notary` Keychain profile is absent. The previously recorded focused F01-F30 probe remains red only for its historical fingerprint: 202 pass, 6 fail, and 3 module-load errors as recorded in `docs/planning/EVIDENCE.md`; it has not been rerun against the current head. Daybreak access is approved, but the complete applicable security lane is unverified and release-blocking. #203's consequential authority decision is accepted at oracle SHA-256 `8e2f7d7259c6f3b3f9bf152c234594f0565c3cbf933f4394acad092232bdd8d7`; #204 provenance is recorded at commit `9d1f777`. Release qualification also remains blocked by #176, #180, #183, and #185 plus live, deployed, delivery, and security-review gates.
 
 ## Evidence baseline
 
@@ -17,7 +19,7 @@ Sibling implementations are evidence, not code bases to merge. This implementati
 
 ## Current implementation inputs
 
-The package snapshot remains dated 2026-08-17. Repository, issue, candidate, and credential inputs were rechecked on 2026-08-22; the Hermes allocation remains the 2026-08-20 verified snapshot. Details are recorded in `docs/planning/EVIDENCE.md`.
+The package snapshot remains dated 2026-08-17. Repository, candidate, and credential inputs were rechecked on 2026-08-22; the Hermes allocation remains the 2026-08-20 verified snapshot. FM1 issue state and the committed source baseline were rechecked on 2026-08-23. Details are recorded in `docs/planning/EVIDENCE.md`.
 
 ### Repository boundary
 
@@ -61,9 +63,42 @@ Use the existing Hermes slug `agent-mail` and permanent range `6110–6119`; do 
 | `6116` | Opt-in live-read daemon. |
 | `6117` | Opt-in disposable-mailbox mutation daemon. |
 | `6118` | launchd and Tailscale deployment-acceptance origin. |
-| `6119` | Reserved for a future project-owned server role. |
+| `6119` | Isolated #221 demo daemon; loopback-only and bound to the marked demo root. |
 
 No project listener may bind outside this range. Independent test workers must use a range-aware lease helper and release their lease during cleanup.
+
+### Feedback Milestone 1 order and checkpoint
+
+Live issue state was rechecked on 2026-08-23 against baseline `6c46f55c58c8f4846bcf3c2c937ce75f16b20811`. Closed means only the canonical issue was closed; each row retains its own evidence limits.
+
+| Order | Milestone or issue | Frozen state | Required outcome or hold |
+|---|---|---|---|
+| 0 | #159 core CLI, #162 agent skill, #165 REST/CLI parity | closed | The public command, agent, and parity prerequisites are available for reuse; their closure does not implement the demo. |
+| 1 | #298 synchronized planning authority | open at the 2026-08-23 freeze; this pack is its commit target | Commit the FM1 order, `6119` role, canonical composition seams, ownership, checkpoint, and evidence boundary before implementation dispatch. |
+| 2 | #299 deterministic corpus | open; held on #298 | Produce versioned generated content and inventory only under its bounded corpus ownership. |
+| 3 | #300 stateful IMAP and fault protocol | open; held on #298 and #299 | Run installed ImapFlow and the reusable adapter contract against a loopback server on `6111`; tests lease `6112–6114`. |
+| 4 | #301 isolated profile, canonical daemon composition, and lifecycle | open; held on #298 and #300 | Add `demoDaemon: 6119`, compose the canonical daemon process, and prove one explicit supervisor and cleanup barrier without touching production state. |
+| 5 | #302 local CLI command family and source walkthrough | open; held on #298 and #301 | Deliver `agent-mail demo` start/resume, status, stop, reset, and remove through the canonical argv dispatcher; freeze its exact accepted source commit. |
+| FM1 stop | User walkthrough and feedback disposition | required; not yet reached | After #302 and before #303 or any held broader issue starts or resumes, walk the exact #302 commit, record user feedback and its disposition in #221, and revise authority first if feedback changes the contract. Silence or an unrecorded walkthrough is not acceptance. |
+| Post-FM1 | #303 installed demo qualification and #221 completion | open; held through the FM1 stop | Qualify packaging, isolation, composed behavior, and documentation only after feedback is dispositioned. This closes #221 only when every child and retained proof passes. |
+| Broader hold | #176, #180, #183, #185, #216, #217, #297 | open; explicitly held through the FM1 stop | Resume only after the recorded FM1 disposition and then only when each issue's original dependencies and mutation boundaries are satisfied. Demo evidence cannot close any of these gates. |
+
+The FM1 stop is a hard dispatch barrier. Work already completed before this reprioritization keeps its exact evidence, but no new dispatch or resumption of a held issue may cross the barrier early.
+
+### FM1 canonical seams and mutation ownership
+
+| Seam | Frozen path or authority | Sole mutation owner | Reuse and protection rule |
+|---|---|---|---|
+| Coordination | #221 issue state, child order, checkpoint record, and bounded handoffs | #221 coordinator | Own sequencing and reconciliation only; do not use coordination ownership to mutate a child's source or absorb #176/#180/#183/#185/#216/#217/#297. |
+| Synthetic corpus | `packages/daemon/src/demo/corpus/**` and focused corpus tests | #299 | Generate all content from version, seed, size, and scenario mix. No live import, checked-in copied mailbox, provider, process, CLI, packaging, or product-contract mutation. |
+| Stateful synthetic IMAP | `packages/daemon/src/demo/imap/**`, focused IMAP tests, and demo adapter-contract fixtures | #300 | Reuse installed ImapFlow shapes and the production adapter contract. Do not change production adapters, the sync statechart, package manifests, or public contracts. |
+| Port role and daemon process | `ports.ts` plus focused tests for `demoDaemon: 6119`; `packages/daemon/src/process-entrypoint.ts`; #301's demo profile, lifecycle, and composition roots | #301 | `process-entrypoint.ts` is the one daemon process entrypoint for normal, demo, and packaged launches. Demo supplies a validated isolated profile, root, loopback IMAP endpoint, and port to that same composition; it cannot fork use cases, handlers, storage, workflow, or cleanup. |
+| CLI argv and local command metadata | `packages/cli/src/argv-dispatcher.ts`, `packages/cli/src/local-command-registry.ts`, `packages/cli/src/demo-command.ts`, and focused tests | #302 | `argv-dispatcher.ts` is the one CLI process/argv entrypoint. The local registry may describe `demo` only and must reuse the accepted command-outcome, semantic-exit, human/structured output, and signal policy. Existing API-backed commands continue to derive from `packages/cli/src/command-registry.ts`. |
+| Installed demo runtime assets | `packaging/demo-runtime-assets.v1.json`, `qualification/demo/**`, `tests/demo-qualification/**`, and `docs/demo.md` | #303 | The manifest is the only demo runtime-asset inventory and records every non-code asset loaded by the canonical entrypoints. #299–#302 own assets only inside their source scopes; #303 owns inventory and installed-artifact proof, not production code, package manifests, the lockfile, #238 credential packaging, #215 setup/Homebrew, or #217 root README. A needed change to a protected packaging consumer requires an explicit non-overlapping #221 handoff before #303 proceeds. |
+
+`agent-mail demo` is local orchestration, not a public REST operation. It must be absent from `@agent-mail/contracts` operation definitions, daemon `publicOperationDefinitions`, Hono routes, OpenAPI, bearer scopes, and the API-derived CLI command registry. Once the isolated daemon is ready, search, show, report, route, export, and confirmed synthetic action flows use the existing CLI, shared contracts, normal HTTP handlers, storage, and workflows against loopback `6119`; no demo-only product operation or service implementation is permitted.
+
+All generated messages remain untrusted. Demo mode rejects non-loopback IMAP and API endpoints, never resolves a production credential, never inspects the normal root or service, and never falls back to live configuration. Its proofs are classified as synthetic/local or installed-demo evidence only.
 
 ## Scope
 
@@ -90,6 +125,7 @@ Success means an operator can install, diagnose, back up, restore, and use the s
 | Mutate remote state | Action coordinator, internal executor, IMAP adapter | Frozen plans and per-target attempts/results | Mark or move through IMAP | Preview/commit API and CLI | Stale, partial, uncertain effect, reconciliation, resume | Least authority; explicit confirmation; no expunge |
 | Report and export | Report/export use cases and storage | Sanitized report metadata and audit/export history | Stream files or rendered text | API, CLI, report server | Correct attribution, selected query, slow sink | Prompt injection, HTML, identity provenance, memory |
 | Diagnose, back up, restore, and install | Operations and storage administration | Complete backup manifest and installed configuration | Filesystem, launchd, Tailscale | CLI and operator README | Full restore, exact uninstall, exact config verification | Private paths; no unrelated mutation |
+| Evaluate without credentials | Demo lifecycle supervisor around canonical daemon and CLI processes | Exact marked demo root, corpus inventory, database, blobs, tokens, logs, lifecycle identity | Loopback synthetic IMAP on `6111` and daemon on `6119` only | Local `agent-mail demo`; existing CLI/API/skill after readiness; no REST demo operation | Faulted acquisition, concurrent control, crash, port collision, one awaited idempotent cleanup, exact reset/remove ownership | Generated hostile mail remains untrusted; no provider/credential lookup, non-loopback network, production-root access, or evidence promotion |
 
 ## Planning-shield applicability
 
@@ -158,6 +194,7 @@ Historical coordination is inherited from #208: Stage 0 held action CLI/live mut
 | Search and export | Rank lightweight FTS candidates before final-page hydration. Query selected exports by selected identities and stream with backpressure. | Both prototypes met the narrow FTS target; audit findings F23 and F30 exposed public-boundary costs. | Whole-archive serialization followed by filtering or unbounded CLI buffering. |
 | Backup and operations | Backup database plus blobs with a hashed manifest; verify by restoring into an empty directory. Operations commands define and check exact postconditions. | Audit findings F07 and F24-F26. | SQLite-only copies, command-list snapshots, global Tailscale resets, or success without checking resulting state. |
 | Reports and trust | Bearer authentication remains required for API operations. Any identity-only report surface must verify trusted proxy provenance and owner identity; content is sanitized and carries no client JavaScript. | Comparison found Sol's provenance boundary clearer and Sol-Luna's report trust more implicit. | Trusting spoofable headers or serving stored email HTML. |
+| Credential-free demo | Use a local-only `agent-mail demo` supervisor around one canonical daemon process and CLI argv path, with generated untrusted mail, loopback IMAP on `6111`, isolated daemon on `6119`, and one exact runtime-asset manifest. Ordinary product work continues through the existing REST/CLI/skill surfaces. | #221's product contract and #298's adjacent counterexample require production-path reuse before live credentials while preventing synthetic evidence from becoming release evidence. | A public REST/OpenAPI demo operation, demo-only daemon/use cases, second argv/output policy, live mailbox clone/import, or opportunistic package-graph edits. |
 | Complexity | Split modules by one owned protocol or capability and review any production file that grows beyond roughly 500 lines for missing boundaries. | Sol-Luna had 26% more production code concentrated in several 1,000-1,900-line files; Sol was easier to trace. | A line-count gate that encourages arbitrary fragmentation, or unbounded coordinator modules. |
 
 ### Target packages
@@ -298,6 +335,26 @@ Exit evidence:
 - Selected export work is proportional to selected IDs on a 250,000-message archive and preserves correctly attributed, non-duplicated action history.
 - Malicious Markdown, remote images, raw email HTML, prompt-injection text, spoofed proxy headers, and sensitive logging probes pass.
 
+### Feedback Milestone 1: credential-free source/local demo
+
+Entry: #159, #162, and #165 are closed, and #298's synchronized planning authority is committed.
+
+Work:
+
+- Execute the non-overlapping #299 -> #300 -> #301 -> #302 chain. Keep #221 as coordinator, not a source owner.
+- Generate the versioned corpus, serve the production-shaped loopback IMAP protocol, compose the isolated lifecycle through the one daemon process entrypoint on `6119`, and expose the local `agent-mail demo` family through the one CLI argv dispatcher.
+- Reuse the real storage, workflow, HTTP handlers, shared contracts, API-backed CLI commands, output policy, and agent skill. Do not add a public REST/OpenAPI/bearer demo operation or a demo-only daemon implementation.
+- Preserve the normal root, configuration, service, credentials, Keychain, provider paths, unrelated processes, and non-demo Hermes roles byte-for-byte or state-for-state as applicable.
+
+FM1 checkpoint evidence:
+
+- The exact #302 source commit reaches a diagnosable ready state with generated mail, loopback IMAP on `6111`, and the isolated canonical daemon on `6119`; the normal CLI completes representative search, narrow retrieval, and cited report flows through existing product paths.
+- Determinism, untrusted-content handling, unread preservation, local-only network and credential denial, explicit lifecycle state, idempotent cleanup, and production-sentinel preservation pass on the frozen commit.
+- Stop after #302, give the user the source/local walkthrough, and record feedback plus disposition in #221. This checkpoint is required before #303 or any new/resumed #176, #180, #183, #185, #216, #217, or #297 work.
+- The checkpoint is synthetic/local product evidence only. It does not close #221, #303, the broader held issues, or any live-provider, signed-installed, complete security, deployed, documentation, delivery, or release gate.
+
+Post-checkpoint: #303 may run the installed demo qualification only after feedback is dispositioned. Each broader held issue may then resume only under its original dependencies and scope; the checkpoint does not waive them.
+
 ### Phase 7: Diagnostics, installation, and deployed recovery
 
 Entry: public workflows pass locally.
@@ -340,6 +397,7 @@ The implementation must maintain executable matrices for:
 - duplicated paths: existing versus future routing, API versus CLI, storage versus route, and actor versus API;
 - production boundaries: fake and installed-adapter shapes, optional fields, normal completion, errors, cancellation, cleanup, backpressure, and ordering;
 - scale and operations: FTS, MIME RSS, sparse UID, selected export, slow stdout/network, whole-response timeouts, bounded journals, doctor diagnosis, full restore, uninstall, and exact network configuration.
+- FM1 demo: deterministic corpus/inventory, installed-adapter IMAP behavior, acquisition/fault/cancellation cleanup, canonical daemon/argv reuse, absence from public REST/OpenAPI authority, loopback/network and credential denial, production-sentinel preservation, and exact installed runtime assets.
 
 Each matrix row names the owning invariant, fixture or environment, failure injection if applicable, observable outcome, evidence path, and current status.
 
@@ -351,6 +409,7 @@ Each matrix row names the owning invariant, fixture or environment, failure inje
 | Isolated | Unit, property, migration, parser, schema, and adapter-contract tests. | Cross-component persistence/effect outcomes. |
 | Composed | Promotion plus routing; IMAP effect plus durable result; runtime API plus XState; backup plus full restore; all four parity matrices. | Live vendor behavior or deployed configuration. |
 | Capacity | 250k FTS, 250 MiB MIME, sparse UID, selected export, slow stdout/network, whole-response timeout semantics, bounded journals. | Correctness outside measured cases. |
+| Synthetic demo | Exact-version corpus, installed-adapter loopback IMAP, canonical process/CLI composition, lifecycle cleanup, local isolation, network/credential denial, and installed-asset proof on a frozen candidate. | Live-provider, signed-installed, complete security, deployed, documentation, delivery, or release readiness. |
 | Live read | Opt-in iCloud discovery/download/search with unread state preserved. | Remote mutation safety. |
 | Live mutation | Explicit disposable mailbox, exact confirmed preview, stale/partial/reconcile cases, no expunge. | General security or deployment correctness. |
 | Security | With the required ChatGPT cybersecurity access, complete the applicable security lane across authn/authz, secrets, reports/proxy provenance, local privilege, logging, injection, dependencies, untrusted content, and declared trust boundaries. | Operational installation or risks outside the declared review scope. |
@@ -371,6 +430,8 @@ Promotion rules:
 
 ## Explicit gaps and deferred work
 
+- FM1 is specified but not implemented at baseline `6c46f55c58c8f4846bcf3c2c937ce75f16b20811`. `ports.ts` has no `demoDaemon` role, `6119` is still described as reserved outside this planning pack, neither canonical process entrypoint exists, and `packaging/demo-runtime-assets.v1.json` is absent. #301, #302, #303, and later #217 own those implementation, packaging-proof, and root-documentation closures; this planning commit is not their passing evidence.
+- #176, #180, #183, #185, #216, #217, and #297 are held until the exact #302 commit is walked through with the user and feedback is recorded and dispositioned in #221. #303 is also post-feedback. The hold changes dispatch order only; it does not erase prior evidence, close dependencies, or weaken any original proof.
 - Implementation and focused runtime evidence exist, but the active candidate is dirty and the mapped F01-F30 probe is red: 202 pass, 6 fail, and 3 module-load errors. The exact target, failures, and current-focused passes are recorded in `docs/planning/EVIDENCE.md`; none of those focused passes alone establishes local or release qualification.
 - The canonical repository, `origin`, default branch `main`, and Hermes slug/range/path metadata are established. Per-delivery branch, commit, PR, CI, and clean-diff evidence remains required.
 - The report/parity dependency chain #231 -> #232 -> #165 is closed and delivered through `55e7a66cd72d354271c1713529051ac8441dd95d`; migration/report authority #247/#248 is independently signed at commits `47b4866`/`55e7a66`.
