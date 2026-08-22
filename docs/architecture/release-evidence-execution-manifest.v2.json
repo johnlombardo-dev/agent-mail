@@ -91,8 +91,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "a3147a977ab1e46af86bcbafee2ef4f4e7be04f9",
-        "sha256": "6fef3e5fc170a986eee2087b4d863ad7532848833bdfcbbd77265f02f5bac8d6"
+        "gitBlob": "8af9f62053040b2ae12243a7d76b164a92494396",
+        "sha256": "e4dda2d83ffd23bf8920b005c6bb026664a624ce5e524127c1cfe1590181a0fd"
       },
       {
         "role": "replay-runner",
@@ -173,8 +173,18 @@
         "counterexample"
       ],
       "thresholds": {
-        "bytes": { "operator": "===", "limit": 262144000, "unit": "bytes" },
-        "peakGrowth": { "operator": "<=", "limit": 134217728, "unit": "bytes" }
+        "bytes": {
+          "source": "fixture-observation",
+          "operator": "===",
+          "limit": 262144000,
+          "unit": "bytes"
+        },
+        "peakGrowth": {
+          "source": "kernel:ps",
+          "operator": "<=",
+          "limit": 134217728,
+          "unit": "bytes"
+        }
       },
       "probes": ["processTreeRss", "fileDescriptors", "listeners", "tempRoot", "streamCompletion"],
       "timeoutMs": 300000
@@ -241,7 +251,14 @@
         "integrity",
         "cleanup"
       ],
-      "thresholds": { "rowCount": { "operator": "===", "limit": 250000, "unit": "rows" } },
+      "thresholds": {
+        "rowCount": {
+          "source": "fixture-inventory",
+          "operator": "===",
+          "limit": 250000,
+          "unit": "rows"
+        }
+      },
       "probes": [
         "processTreeRss",
         "fileDescriptors",
@@ -308,8 +325,18 @@
       ],
       "observations": ["orderedTop20", "p95", "queryPlan", "attribution", "cleanup"],
       "thresholds": {
-        "rowCount": { "operator": "===", "limit": 250000, "unit": "rows" },
-        "p95": { "operator": "<", "limit": 250, "unit": "milliseconds" }
+        "rowCount": {
+          "source": "fixture-inventory",
+          "operator": "===",
+          "limit": 250000,
+          "unit": "rows"
+        },
+        "p95": {
+          "source": "benchmark-observation",
+          "operator": "<",
+          "limit": 250,
+          "unit": "milliseconds"
+        }
       },
       "probes": ["processTreeRss", "fileDescriptors", "tempRoot", "queryPlan", "sqliteClose"],
       "timeoutMs": 600000
@@ -366,7 +393,14 @@
         }
       ],
       "observations": ["exportCount", "backpressure", "stall", "cancellation", "cleanup"],
-      "thresholds": { "exportCount": { "operator": ">=", "limit": 1, "unit": "exports" } },
+      "thresholds": {
+        "exportCount": {
+          "source": "stream-observation",
+          "operator": ">=",
+          "limit": 1,
+          "unit": "exports"
+        }
+      },
       "probes": [
         "processTreeRss",
         "fileDescriptors",
@@ -424,7 +458,14 @@
         }
       ],
       "observations": ["requestCount", "admission", "streamCompletion", "cleanup"],
-      "thresholds": { "requestCount": { "operator": ">=", "limit": 1, "unit": "requests" } },
+      "thresholds": {
+        "requestCount": {
+          "source": "stream-observation",
+          "operator": ">=",
+          "limit": 1,
+          "unit": "requests"
+        }
+      },
       "probes": [
         "processTreeRss",
         "fileDescriptors",
@@ -476,7 +517,14 @@
         }
       ],
       "observations": ["itemCount", "queueSlots", "backpressure", "cleanup"],
-      "thresholds": { "itemCount": { "operator": ">=", "limit": 1, "unit": "items" } },
+      "thresholds": {
+        "itemCount": {
+          "source": "queue-observation",
+          "operator": ">=",
+          "limit": 1,
+          "unit": "items"
+        }
+      },
       "probes": ["processTreeRss", "fileDescriptors", "tempRoot", "queueCompletion"],
       "timeoutMs": 600000
     },
@@ -517,7 +565,14 @@
         }
       ],
       "observations": ["sessionCount", "cancellation", "cleanup", "zeroListeners"],
-      "thresholds": { "sessionCount": { "operator": ">=", "limit": 1, "unit": "sessions" } },
+      "thresholds": {
+        "sessionCount": {
+          "source": "session-observation",
+          "operator": ">=",
+          "limit": 1,
+          "unit": "sessions"
+        }
+      },
       "probes": ["processTreeRss", "fileDescriptors", "listeners", "tempRoot", "streamCompletion"],
       "timeoutMs": 600000
     },
@@ -586,7 +641,14 @@
         }
       ],
       "observations": ["iterationCount", "timers", "subscriptions", "children", "cleanup"],
-      "thresholds": { "iterationCount": { "operator": ">=", "limit": 1, "unit": "iterations" } },
+      "thresholds": {
+        "iterationCount": {
+          "source": "lifecycle-observation",
+          "operator": ">=",
+          "limit": 1,
+          "unit": "iterations"
+        }
+      },
       "probes": [
         "processTreeRss",
         "fileDescriptors",

@@ -385,9 +385,53 @@ export function validateManifest(
       assert(source.sha256 === assertion.sha256, `${step.id} oracle digest is detached`);
     }
     assert(
-      step.observations && step.thresholds && step.probes,
+      step.observations && step.thresholds && Array.isArray(step.probes),
       `${step.id} observation authority is incomplete`,
     );
+    const allowedProbes = new Set([
+      "processTreeRss",
+      "fileDescriptors",
+      "sockets",
+      "listeners",
+      "HermesLease",
+      "streams",
+      "tempRoot",
+      "streamCompletion",
+      "sqliteIntegrity",
+      "sqliteForeignKeys",
+      "queryPlan",
+      "sqliteClose",
+      "queueCompletion",
+      "childActors",
+      "process",
+    ]);
+    for (const probe of step.probes)
+      assert(
+        typeof probe === "string" && allowedProbes.has(probe),
+        `${step.id} probe is not allowlisted`,
+      );
+    for (const [metric, threshold] of Object.entries(step.thresholds)) {
+      if (metric === "timeoutMs") continue;
+      const probeThreshold = {
+        processRssBytes: ["kernel:ps", "bytes"],
+        fileDescriptors: ["kernel:lsof", "descriptors"],
+        sockets: ["kernel:lsof", "sockets"],
+        listeners: ["kernel:lsof", "listeners"],
+      }[metric];
+      assert(
+        threshold &&
+          typeof threshold.source === "string" &&
+          threshold.source.length > 0 &&
+          ["<", "<=", "===", ">=", ">"].includes(threshold.operator) &&
+          typeof threshold.unit === "string" &&
+          threshold.unit.length > 0 &&
+          Number.isFinite(threshold.limit) &&
+          threshold.limit >= 0 &&
+          (!probeThreshold ||
+            (threshold.source === probeThreshold[0] && threshold.unit === probeThreshold[1])),
+        `${step.id} threshold ${metric} source/operator/unit is incomplete`,
+      );
+    }
     if (step.fixture !== undefined) {
       assert(
         step.fixture &&
@@ -732,12 +776,6 @@ function now() {
   return new Date().toISOString();
 }
 
-function completedWallTime(startedAt) {
-  const started = Date.parse(startedAt);
-  const completed = Date.now();
-  return new Date(Math.max(completed, started + 1)).toISOString();
-}
-
 function runProcess(argv, cwd, timeoutMs) {
   return new Promise((resolveResult) => {
     const started = process.hrtime.bigint();
@@ -747,6 +785,9 @@ function runProcess(argv, cwd, timeoutMs) {
       stdio: ["ignore", "pipe", "pipe"],
     });
     const spawnedAt = processTreeSnapshot(child.pid);
+    const treeSamples = [spawnedAt];
+    const resourceAtSpawn = kernelResourceSnapshot(spawnedAt.pids ?? [child.pid]);
+    const sampler = setInterval(() => treeSamples.push(processTreeSnapshot(child.pid)), 25);
     const stdout = [];
     const stderr = [];
     child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
@@ -760,6 +801,10 @@ function runProcess(argv, cwd, timeoutMs) {
     }, timeoutMs);
     child.on("close", (exitCode, signal) => {
       clearTimeout(timer);
+      clearInterval(sampler);
+      const completedTree = processTreeSnapshot(child.pid);
+      treeSamples.push(completedTree);
+      const observedTrees = treeSamples.filter((sample) => sample.observed);
       resolveResult({
         pid: child.pid,
         processGroup: -child.pid,
@@ -771,10 +816,21 @@ function runProcess(argv, cwd, timeoutMs) {
         started,
         completed: process.hrtime.bigint(),
         spawnedAt,
+        tree: {
+          observed: observedTrees.some((sample) => sample.rootPresent),
+          samples: treeSamples,
+          completed: completedTree,
+          peakRssBytes: observedTrees.reduce(
+            (peak, sample) => Math.max(peak, sample.rssBytes ?? 0),
+            0,
+          ),
+        },
+        resources: resourceAtSpawn,
       });
     });
     child.on("error", (error) => {
       clearTimeout(timer);
+      clearInterval(sampler);
       resolveResult({
         pid: child.pid ?? null,
         processGroup: child.pid ? -child.pid : null,
@@ -786,21 +842,36 @@ function runProcess(argv, cwd, timeoutMs) {
         started,
         completed: process.hrtime.bigint(),
         spawnedAt,
+        tree: {
+          observed: false,
+          samples: treeSamples,
+          completed: processTreeSnapshot(child.pid),
+          peakRssBytes: null,
+        },
+        resources: resourceAtSpawn,
       });
     });
   });
 }
 
 function processTreeSnapshot(pid) {
-  if (!pid) return { observed: true, rootPid: null, descendants: [], rssBytes: 0 };
+  if (!pid)
+    return {
+      observed: false,
+      rootPid: null,
+      rootPresent: false,
+      descendants: [],
+      rssBytes: null,
+      pids: [],
+    };
   try {
-    const rows = execFileSync("ps", ["-axo", "pid=,ppid=,rss="], { encoding: "utf8" })
+    const rows = execFileSync("ps", ["-axo", "pid=,ppid=,pgid=,rss="], { encoding: "utf8" })
       .trim()
       .split("\n")
       .filter(Boolean)
       .map((line) => {
-        const [pidValue, ppidValue, rssValue] = line.trim().split(/\s+/u).map(Number);
-        return { pid: pidValue, ppid: ppidValue, rssBytes: rssValue * 1024 };
+        const [pidValue, ppidValue, pgidValue, rssValue] = line.trim().split(/\s+/u).map(Number);
+        return { pid: pidValue, ppid: ppidValue, pgid: pgidValue, rssBytes: rssValue * 1024 };
       });
     const descendants = [];
     const pending = [pid];
@@ -812,19 +883,139 @@ function processTreeSnapshot(pid) {
       }
     }
     const root = rows.find((row) => row.pid === pid);
+    const groupRows = rows.filter((row) => row.pgid === pid && row.pid !== pid);
+    for (const row of groupRows)
+      if (!descendants.some((candidate) => candidate.pid === row.pid)) descendants.push(row);
     return {
       observed: true,
       rootPid: pid,
+      rootPresent: root !== undefined,
       descendants: descendants.map(({ pid: childPid, rssBytes }) => ({ pid: childPid, rssBytes })),
       rssBytes: (root?.rssBytes ?? 0) + descendants.reduce((sum, row) => sum + row.rssBytes, 0),
+      pids: [root?.pid, ...descendants.map((row) => row.pid)].filter(Boolean),
     };
   } catch {
-    return { observed: false, rootPid: pid, descendants: [], rssBytes: null };
+    return {
+      observed: false,
+      rootPid: pid,
+      rootPresent: false,
+      descendants: [],
+      rssBytes: null,
+      pids: [],
+    };
   }
 }
 
-function descendantPids(pid) {
-  return processTreeSnapshot(pid).descendants.map((entry) => entry.pid);
+function kernelResourceSnapshot(pids) {
+  const uniquePids = [...new Set(pids.filter((pid) => Number.isInteger(pid) && pid > 0))];
+  if (uniquePids.length === 0)
+    return {
+      observed: false,
+      reason: "no kernel process ids",
+      pids: [],
+      fileDescriptors: null,
+      sockets: null,
+      listeners: null,
+      hermesPorts: [],
+    };
+  try {
+    const output = execFileSync("lsof", ["-nP", "-a", "-p", uniquePids.join(",")], {
+      encoding: "utf8",
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const lines = output
+      .split("\n")
+      .slice(1)
+      .filter((line) => line.trim().length > 0);
+    let sockets = 0;
+    let listeners = 0;
+    const hermesPorts = new Set();
+    for (const line of lines) {
+      const columns = line.trim().split(/\s+/u);
+      const type = columns[4];
+      if (!["IPv4", "IPv6", "unix"].includes(type)) continue;
+      sockets += 1;
+      if (line.includes("(LISTEN)")) {
+        listeners += 1;
+        for (const match of line.matchAll(/:(611\d)\b/gu)) hermesPorts.add(Number(match[1]));
+      }
+    }
+    return {
+      observed: true,
+      pids: uniquePids,
+      fileDescriptors: lines.length,
+      sockets,
+      listeners,
+      hermesPorts: [...hermesPorts].sort((left, right) => left - right),
+    };
+  } catch (error) {
+    return {
+      observed: false,
+      reason: String(error),
+      pids: uniquePids,
+      fileDescriptors: null,
+      sockets: null,
+      listeners: null,
+      hermesPorts: [],
+    };
+  }
+}
+
+function thresholdSatisfied(value, threshold) {
+  if (!Number.isFinite(value)) return false;
+  if (threshold.operator === "<") return value < threshold.limit;
+  if (threshold.operator === "<=") return value <= threshold.limit;
+  if (threshold.operator === "===") return value === threshold.limit;
+  if (threshold.operator === ">=") return value >= threshold.limit;
+  if (threshold.operator === ">") return value > threshold.limit;
+  return false;
+}
+
+function kernelThresholdsSatisfied(step, processResult) {
+  const observed = {
+    processRssBytes: processResult.tree.peakRssBytes,
+    fileDescriptors: processResult.resources.fileDescriptors,
+    sockets: processResult.resources.sockets,
+    listeners: processResult.resources.listeners,
+  };
+  return Object.entries(observed).every(([metric, value]) => {
+    const threshold = step.thresholds[metric];
+    return threshold === undefined || thresholdSatisfied(value, threshold);
+  });
+}
+
+function createCleanupBarrier(executionRoot, processResult) {
+  let promise;
+  let invocations = 0;
+  return async function cleanup(reason) {
+    if (!promise) {
+      invocations += 1;
+      promise = (async () => {
+        const currentProcessResult =
+          typeof processResult === "function" ? processResult() : processResult;
+        if (currentProcessResult?.processGroup) {
+          try {
+            process.kill(currentProcessResult.processGroup, "SIGTERM");
+          } catch {}
+        }
+        await new Promise((resolveResult) => setTimeout(resolveResult, 25));
+        const descendantsBeforeRemoval = currentProcessResult?.pid
+          ? processTreeSnapshot(currentProcessResult.pid).descendants
+          : [];
+        rmSync(executionRoot, { recursive: true, force: true });
+        return {
+          attempted: true,
+          completed: true,
+          barrier: "awaited-idempotent",
+          reason,
+          invocations,
+          descendantsBeforeRemoval,
+          executionRootRemoved: !existsSync(executionRoot),
+        };
+      })();
+    }
+    return promise;
+  };
 }
 
 function parseMachineEvents(stdout, stderr) {
@@ -1147,8 +1338,22 @@ function selfTestManifest(root) {
         ],
         assertions: [{ id: "tiny-exit-zero", kind: "exitCode", expected: 0 }],
         observations: ["stdout", "stderr", "exitCode", "durationNs"],
-        thresholds: { timeoutMs: 5000 },
-        probes: ["process", "streams", "tempRoot"],
+        thresholds: {
+          timeoutMs: 5000,
+          processRssBytes: {
+            source: "kernel:ps",
+            operator: "<=",
+            limit: 1073741824,
+            unit: "bytes",
+          },
+          fileDescriptors: {
+            source: "kernel:lsof",
+            operator: "<=",
+            limit: 512,
+            unit: "descriptors",
+          },
+        },
+        probes: ["processTreeRss", "fileDescriptors", "streams", "tempRoot"],
         fixture: { kind: "generated-stream", id: "tiny-fixture", recipe: "stdout:tiny-pass" },
       },
     ],
@@ -1194,6 +1399,8 @@ export async function capture({
   mkdirSync(destination, { recursive: true });
   const executionRoot = mkdtempSync(join(tmpdir(), "agent-mail-release-candidate-"));
   let checkout = join(executionRoot, "checkout");
+  let processResult;
+  const cleanupBarrier = createCleanupBarrier(executionRoot, () => processResult);
   try {
     execFileSync("git", ["clone", "-q", "--no-hardlinks", root, checkout], { stdio: "ignore" });
     execFileSync("git", ["checkout", "-q", "--detach", candidateCommit], {
@@ -1228,15 +1435,11 @@ export async function capture({
         ? await validateGeneratedSearchArtifact(fixturePath, checkout)
         : undefined;
     const startedAt = now();
-    const processBefore = processTreeSnapshot(null);
-    const processResult = await runProcess(
-      argv,
-      cwd,
-      timeoutMs ?? step.thresholds.timeoutMs ?? 300_000,
-    );
-    const completedAt = completedWallTime(startedAt);
-    const processAfter = processTreeSnapshot(processResult.pid);
-    const descendants = descendantPids(processResult.pid);
+    const captureStartedNs = process.hrtime.bigint();
+    const processBefore = processTreeSnapshot(process.pid);
+    processResult = await runProcess(argv, cwd, timeoutMs ?? step.thresholds.timeoutMs ?? 300_000);
+    const processAfter = processResult.tree.completed;
+    const descendants = processAfter.descendants;
     const eventsValue = parseMachineEvents(processResult.stdout, processResult.stderr);
     const eventBytes = Buffer.from(
       eventsValue.map((event) => `${JSON.stringify(event)}\n`).join(""),
@@ -1264,10 +1467,21 @@ export async function capture({
     );
     const durationNs = processResult.completed - processResult.started;
     const assertions = evaluateAssertions(step, checkout, processResult, eventsValue);
+    const probeUnavailable =
+      (step.probes.includes("processTreeRss") && !processResult.tree.observed) ||
+      (["fileDescriptors", "sockets", "listeners", "HermesLease"].some((probe) =>
+        step.probes.includes(probe),
+      ) &&
+        (!processResult.resources.observed ||
+          (step.probes.includes("HermesLease") &&
+            processResult.resources.hermesPorts.length === 0)));
+    const kernelThresholdsPass = kernelThresholdsSatisfied(step, processResult);
     const result =
-      processResult.timedOut || processResult.exitCode === null
+      probeUnavailable || processResult.timedOut || processResult.exitCode === null
         ? "blocked"
-        : processResult.exitCode === 0 && assertions.every((assertion) => assertion.pass)
+        : processResult.exitCode === 0 &&
+            assertions.every((assertion) => assertion.pass) &&
+            kernelThresholdsPass
           ? "pass"
           : "fail";
     if (fixture?.materialized?.owner === "generator" && result === "pass") {
@@ -1314,12 +1528,40 @@ export async function capture({
     if (generatedStaging)
       assert(generatedStaging.removed, "generated staging artifact was not cleaned");
     const cleanup = {
-      attempted: true,
-      completed: true,
-      descendants: [],
-      checkoutRemoved: true,
+      ...(await cleanupBarrier("completed")),
       generatedStaging,
     };
+    const captureCompletedNs = process.hrtime.bigint();
+    const completedAt = new Date(Math.max(Date.now(), Date.parse(startedAt) + 1)).toISOString();
+    const intervals = [
+      {
+        id: "setup",
+        startedNs: captureStartedNs,
+        completedNs: processResult.started,
+      },
+      {
+        id: "execution",
+        startedNs: processResult.started,
+        completedNs: processResult.completed,
+      },
+      {
+        id: "retention-and-cleanup",
+        startedNs: processResult.completed,
+        completedNs: captureCompletedNs,
+      },
+    ].map((interval) => ({
+      ...interval,
+      durationNs: interval.completedNs - interval.startedNs,
+    }));
+    assert(
+      intervals.every((interval) => interval.startedNs < interval.completedNs) &&
+        intervals.every(
+          (interval, index) =>
+            index === 0 || intervals[index - 1].completedNs <= interval.startedNs,
+        ),
+      "capture intervals are not sequential",
+    );
+    const aggregateDurationNs = intervals.reduce((sum, interval) => sum + interval.durationNs, 0n);
     const receipt = {
       format: receiptFormat,
       runId,
@@ -1348,9 +1590,16 @@ export async function capture({
       startedAt,
       completedAt,
       monotonic: {
-        startedNs: processResult.started.toString(10),
-        completedNs: processResult.completed.toString(10),
+        startedNs: captureStartedNs.toString(10),
+        completedNs: captureCompletedNs.toString(10),
         durationNs: durationNs.toString(10),
+        intervals: intervals.map((interval) => ({
+          id: interval.id,
+          startedNs: interval.startedNs.toString(10),
+          completedNs: interval.completedNs.toString(10),
+          durationNs: interval.durationNs.toString(10),
+        })),
+        aggregateDurationNs: aggregateDurationNs.toString(10),
       },
       environment: {
         os: process.platform,
@@ -1381,12 +1630,15 @@ export async function capture({
       streams: { stdout, stderr, events },
       probes: {
         process: {
-          observed: processAfter.observed,
+          observed: processResult.tree.observed,
           pid: processResult.pid,
           descendants: processAfter.descendants,
-          rssBytes: processAfter.rssBytes,
+          rssBytes: processResult.tree.peakRssBytes,
+          peakRssBytes: processResult.tree.peakRssBytes,
+          samples: processResult.tree.samples,
           spawned: processResult.spawnedAt,
         },
+        resources: processResult.resources,
         before: processBefore,
         streams: {
           observed: true,
@@ -1394,7 +1646,7 @@ export async function capture({
           stderr: stderr.bytes,
           events: events.bytes,
         },
-        tempRoot: { path: executionRoot, removed: true },
+        tempRoot: { path: executionRoot, removed: cleanup.executionRootRemoved },
         cleanup,
       },
       result,
@@ -1427,11 +1679,8 @@ export async function capture({
     );
     return receipt;
   } finally {
-    try {
-      rmSync(executionRoot, { recursive: true, force: true });
-    } finally {
-      if (existsSync(executionRoot)) fail("runner temporary checkout was not removed");
-    }
+    await cleanupBarrier("finally");
+    if (existsSync(executionRoot)) fail("runner temporary checkout was not removed");
   }
 }
 

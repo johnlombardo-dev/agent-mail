@@ -135,6 +135,15 @@ describe("release evidence executable runner", () => {
         expect(primary.sources).toHaveLength(2);
         expect(primary.runnerSources).toHaveLength(1);
         expect(primary.argv).toEqual(["node", "tiny-runner.mjs"]);
+        expect(primary.probes.process.observed).toBe(true);
+        expect(primary.probes.resources.observed).toBe(true);
+        expect(primary.probes.cleanup.barrier).toBe("awaited-idempotent");
+        expect(primary.probes.cleanup.invocations).toBe(1);
+        expect(primary.monotonic.intervals.map((interval: { id: string }) => interval.id)).toEqual([
+          "setup",
+          "execution",
+          "retention-and-cleanup",
+        ]);
         expect(compareReceipts(primary, replay).replayResult).toBe("pass");
       } finally {
         rmSync(replayRoot, { recursive: true, force: true });
@@ -172,6 +181,28 @@ describe("release evidence executable runner", () => {
     try {
       fixture.manifest.steps[0].assertions.push({ ...fixture.manifest.steps[0].assertions[0] });
       expect(() => validateManifest(fixture.manifest, fixture.root)).toThrow(/assertion id repeats/u);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects unavailable probe names and detached kernel thresholds", () => {
+    const fixture = disposableRepo();
+    try {
+      const unknownProbe = structuredClone(fixture.manifest);
+      unknownProbe.steps[0].probes.push("synthetic-zero");
+      expect(() => validateManifest(unknownProbe, fixture.root)).toThrow(/probe is not allowlisted/u);
+
+      const detachedThreshold = structuredClone(fixture.manifest);
+      detachedThreshold.steps[0].thresholds.processRssBytes = {
+        source: "claimed-runtime",
+        operator: "<=",
+        limit: 1,
+        unit: "MiB",
+      };
+      expect(() => validateManifest(detachedThreshold, fixture.root)).toThrow(
+        /threshold processRssBytes source\/operator\/unit is incomplete/u,
+      );
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
