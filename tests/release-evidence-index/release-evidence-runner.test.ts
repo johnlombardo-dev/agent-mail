@@ -13,7 +13,7 @@ function git(root: string, args: string[]) {
 function disposableManifest(
   root: string,
   oracleValue: unknown = "pass",
-  sourceEvent: "valid" | "missing" | "retyped" = "valid",
+  sourceEvent: "valid" | "missing" | "retyped" | "wrong-format" = "valid",
 ) {
   const sourcePath = "tiny-runner.mjs";
   const oraclePath = "oracle.json";
@@ -24,7 +24,7 @@ function disposableManifest(
   const sourceEventLine =
     sourceEvent === "missing"
       ? ""
-      : `process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'source-token',assertionId:'source-token',sourcePath,sourceSha256,token:'${sourceEvent === "retyped" ? "wrongToken" : "sourceToken"}',observed:1,expected:1,pass:true}) + '\\n');\n`;
+      : `process.stdout.write(JSON.stringify({format:'${sourceEvent === "wrong-format" ? "wrong-format" : "agent-mail.observation/v1"}',event:'source-token',assertionId:'source-token',sourcePath,sourceSha256,token:'${sourceEvent === "retyped" ? "wrongToken" : "sourceToken"}',observed:1,expected:1,pass:true}) + '\\n');\n`;
   const sourceBytes = Buffer.from(
     `import { createHash } from 'node:crypto';\nimport { readFileSync } from 'node:fs';\nconst sourceToken = true;\nconst sourcePath = '${sourcePath}';\nconst sourceSha256 = createHash('sha256').update(readFileSync(sourcePath)).digest('hex');\n${sourceEventLine}process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'oracle',path:'${oraclePath}',sha256:'${oracleSha256}',pointer:'/value',value:${oracleLiteral}}) + '\\n');\n`,
   );
@@ -86,7 +86,7 @@ function disposableManifest(
 
 function disposableRepo(
   oracleValue: unknown = "pass",
-  sourceEvent: "valid" | "missing" | "retyped" = "valid",
+  sourceEvent: "valid" | "missing" | "retyped" | "wrong-format" = "valid",
 ) {
   const root = mkdtempSync(join(tmpdir(), "agent-mail-runner-test-"));
   git(root, ["init", "-q"]);
@@ -257,6 +257,37 @@ describe("release evidence executable runner", () => {
       rmSync(output, { recursive: true, force: true });
       rmSync(fixture.root, { recursive: true, force: true });
     }
+  });
+
+  test("rejects a source-token event with the wrong observation envelope", async () => {
+    const fixture = disposableRepo("pass", "wrong-format");
+    const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-wrong-format-"));
+    try {
+      await expect(
+        testCapture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
+      ).rejects.toThrow(/source-token event format is invalid/u);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("requires and binds the shared source-token helper", () => {
+    const manifestPath = "docs/architecture/release-evidence-execution-manifest.v2.json";
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const step = manifest.steps.find(
+      (candidate: { id: string }) => candidate.id === "fts-generate-250k",
+    );
+    const helperPath = "scripts/capacity/source-token-event.ts";
+    step.sources = step.sources.filter((source: { path: string }) => source.path !== helperPath);
+    expect(() => validateManifest(manifest, ".")).toThrow(/helper binding is missing/u);
+
+    const drifted = JSON.parse(readFileSync(manifestPath, "utf8"));
+    const helper = drifted.steps
+      .find((candidate: { id: string }) => candidate.id === "fts-generate-250k")
+      .sources.find((source: { path: string }) => source.path === helperPath);
+    helper.sha256 = "0".repeat(64);
+    expect(() => validateManifest(drifted, ".")).toThrow(/source scripts\/capacity\/source-token-event.ts SHA-256 drifted/u);
   });
 
   test("uses canonical deep equality for structured oracle objects and arrays", async () => {

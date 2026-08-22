@@ -2681,7 +2681,7 @@
     "format": "agent-mail.release-evidence-execution-manifest/v2",
     "ownerIssueId": 176,
     "replayRequired": true,
-    "sha256": "04fb6220e7d5570e8c20263f7a82ce3ca5988bf47e8f7f0b961b2dce753f639e"
+    "sha256": "128b232495ec2d3d93c7ece026e8f12c69054c47d31474eece966a088e17d10f"
   },
   "legacyV1Projection": {
     "status": "inactive",

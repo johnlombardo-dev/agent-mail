@@ -172,6 +172,18 @@ function committedBlob(root, commit, path, label) {
   return { bytes, gitBlob: match[2], sha256: sha256(bytes) };
 }
 
+function committedText(root, commit, path, label) {
+  try {
+    return execFileSync("git", ["show", `${commit}:${path}`], {
+      cwd: root,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+    });
+  } catch {
+    fail(`${label} is not committed`);
+  }
+}
+
 function sourceBindings(manifest, root, commit) {
   const all = [];
   for (const step of manifest.steps) {
@@ -355,6 +367,23 @@ export function validateManifest(
       step.observations && step.thresholds && step.probes,
       `${step.id} observation authority is incomplete`,
     );
+    const helperPath = "scripts/capacity/source-token-event.ts";
+    const importsSourceTokenHelper = step.sources.some((source) => {
+      if (source.path === helperPath) return false;
+      try {
+        return committedText(root, commit, source.path, `${step.id} source`).includes(
+          "source-token-event",
+        );
+      } catch {
+        return false;
+      }
+    });
+    if (importsSourceTokenHelper) {
+      assert(
+        step.sources.some((source) => source.path === helperPath),
+        `${step.id} source-token helper binding is missing`,
+      );
+    }
   }
   const bindings = sourceBindings(manifest, root, commit);
   assert(bindings.length > 0, "manifest has no source bindings");
@@ -567,6 +596,10 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       );
       assert(matching.length === 1, `${step.id} source-token event count is not exactly one`);
       const event = matching[0];
+      assert(
+        event.format === "agent-mail.observation/v1",
+        `${step.id} source-token event format is invalid`,
+      );
       const source = step.sources.find((candidate) => candidate.path === assertion.sourcePath);
       assert(
         event.sourcePath === assertion.sourcePath && event.sourceSha256 === source.sha256,

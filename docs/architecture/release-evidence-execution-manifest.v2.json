@@ -82,8 +82,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "49e8bca4ed66532d9114a941b277cde900d863d6",
-        "sha256": "3faeedeff9d37d589269eb3d562003f3ad80557ec38f8ae05f13be95560ee71d"
+        "gitBlob": "3e72776aad075de64cc025d2ea9447ec69f59f82",
+        "sha256": "968c61d309fdcea5792a60979be0879a9d85661c571df2c59ef60b2d2fc43304"
       },
       {
         "role": "replay-runner",
@@ -176,6 +176,12 @@
           "sha256": "18a25837970e296f5c3fba40a080cc475db0673de12fba61e797b41a7b1b12ee"
         },
         {
+          "role": "source-token-helper",
+          "path": "scripts/capacity/source-token-event.ts",
+          "gitBlob": "a78be0049384b4c9611552f609ccd1ab0c7dbfa6",
+          "sha256": "51b7fc28a196c0167d04c90e11b0d580761a513846e8df46bb55210a0eefc818"
+        },
+        {
           "role": "package-manifest",
           "path": "package.json",
           "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
@@ -243,6 +249,12 @@
           "sha256": "79827d07460aa8b6e737e8194c98a519dffa55d727860f846921b4c3dbcb890e"
         },
         {
+          "role": "source-token-helper",
+          "path": "scripts/capacity/source-token-event.ts",
+          "gitBlob": "a78be0049384b4c9611552f609ccd1ab0c7dbfa6",
+          "sha256": "51b7fc28a196c0167d04c90e11b0d580761a513846e8df46bb55210a0eefc818"
+        },
+        {
           "role": "package-manifest",
           "path": "package.json",
           "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
@@ -297,6 +309,12 @@
           "sha256": "ae99f3f3f8b4b5fa27ed7dca66e5528d8f7d94c3f8ddc1b4b030b63bb69d2f63"
         },
         {
+          "role": "source-token-helper",
+          "path": "scripts/capacity/source-token-event.ts",
+          "gitBlob": "a78be0049384b4c9611552f609ccd1ab0c7dbfa6",
+          "sha256": "51b7fc28a196c0167d04c90e11b0d580761a513846e8df46bb55210a0eefc818"
+        },
+        {
           "role": "cli-test",
           "path": "packages/cli/src/selected-export-command.test.ts",
           "gitBlob": "93cfd18863d36c8b94cc319eaa3c6ba1705aaaba",
@@ -347,6 +365,12 @@
           "path": "packages/daemon/test/http-admission-sec-r03.test.ts",
           "gitBlob": "5e12c69561a83596910c0a4ebbbc73202dffbcb1",
           "sha256": "edaee0c03927d3720271afde91860f32dcebcc847f8ca3c5dde78f335ad3c9a3"
+        },
+        {
+          "role": "source-token-helper",
+          "path": "scripts/capacity/source-token-event.ts",
+          "gitBlob": "a78be0049384b4c9611552f609ccd1ab0c7dbfa6",
+          "sha256": "51b7fc28a196c0167d04c90e11b0d580761a513846e8df46bb55210a0eefc818"
         },
         {
           "role": "package-manifest",
@@ -492,10 +516,22 @@
           "sha256": "814b6b69aaec376bf0aaf9117b9afccb941516f01b48d6ac100a76a61ee85dd5"
         },
         {
+          "role": "source-token-helper",
+          "path": "scripts/capacity/source-token-event.ts",
+          "gitBlob": "a78be0049384b4c9611552f609ccd1ab0c7dbfa6",
+          "sha256": "51b7fc28a196c0167d04c90e11b0d580761a513846e8df46bb55210a0eefc818"
+        },
+        {
           "role": "conformance-test",
           "path": "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts",
           "gitBlob": "49e8f3b3311d7e51899108e1e1ec4f3fbebe9f82",
           "sha256": "5c439c8c61071567baa042003cfc6b15b2b0050c2c5f9eb524064bc84681b423"
+        },
+        {
+          "role": "source-token-helper",
+          "path": "scripts/capacity/source-token-event.ts",
+          "gitBlob": "a78be0049384b4c9611552f609ccd1ab0c7dbfa6",
+          "sha256": "51b7fc28a196c0167d04c90e11b0d580761a513846e8df46bb55210a0eefc818"
         },
         {
           "role": "package-manifest",
