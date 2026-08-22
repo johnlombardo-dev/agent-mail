@@ -287,7 +287,7 @@ describe("release evidence executable runner", () => {
       .find((candidate: { id: string }) => candidate.id === "fts-generate-250k")
       .sources.find((source: { path: string }) => source.path === helperPath);
     helper.sha256 = "0".repeat(64);
-    expect(() => validateManifest(drifted, ".")).toThrow(/source scripts\/capacity\/source-token-event.ts SHA-256 drifted/u);
+    expect(() => validateManifest(drifted, ".")).toThrow(/source scripts\/capacity\/source-token-event.ts binding is inconsistent/u);
   });
 
   test("uses canonical deep equality for structured oracle objects and arrays", async () => {
