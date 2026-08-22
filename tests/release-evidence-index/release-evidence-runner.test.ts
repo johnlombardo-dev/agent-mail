@@ -18,10 +18,12 @@ import {
   capture,
   cleanGeneratedStaging,
   generationReceipt,
+  observationThresholdValues,
   processTreeSnapshot,
   retainGeneratedArtifact,
   runProcess,
   sha256,
+  thresholdMetricRegistry,
   validateManifest,
 } from "../../scripts/qualification/capture-release-evidence.mjs";
 import {
@@ -310,6 +312,65 @@ describe("release evidence executable runner", () => {
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
+  });
+
+  test("derives MIME fixture thresholds from retained observations", () => {
+    const step = {
+      id: "mime-250mib",
+      thresholds: {
+        bytes: { source: "fixture-observation", operator: "===", limit: 262144000, unit: "bytes" },
+        peakGrowth: { source: "fixture-observation", operator: "<", limit: 134217728, unit: "bytes" },
+      },
+      assertions: [
+        {
+          id: "mime-fixture-observation",
+          kind: "fixture-observation",
+          expectedBytes: 262144000,
+        },
+      ],
+    };
+    const base = {
+      id: "mime-fixture-observation",
+      observed: {
+        producedBytes: 262144000,
+        consumedBytes: 262144000,
+        producedSha256: "a".repeat(64),
+        consumedSha256: "a".repeat(64),
+        producedChunks: 1,
+        consumedChunks: 1,
+        producerCompleted: true,
+        consumerCompleted: true,
+        peakRssGrowthBytes: 1,
+        pass: true,
+      },
+    };
+    expect(observationThresholdValues(step, [base])).toEqual({ bytes: 262144000, peakGrowth: 1 });
+    const attacks = [
+      { producedBytes: 262143999 },
+      { consumedBytes: 262143999 },
+      { consumedSha256: "b".repeat(64) },
+      { producerCompleted: false },
+      { consumerCompleted: false },
+      { peakRssGrowthBytes: 134217728 },
+      { peakRssGrowthBytes: 134217729 },
+      { peakRssGrowthBytes: -1 },
+      { peakRssGrowthBytes: 1.5 },
+      { pass: false },
+    ];
+    for (const patch of attacks) {
+      expect(() =>
+        observationThresholdValues(step, [
+          { ...base, observed: { ...base.observed, ...patch } },
+        ]),
+      ).toThrow();
+    }
+    expect(() =>
+      observationThresholdValues(
+        { ...step, thresholds: { ...step.thresholds, unknown: step.thresholds.peakGrowth } },
+        [base],
+      ),
+    ).toThrow();
+    expect(thresholdMetricRegistry.peakGrowth.operator).toBe("<");
   });
 
   test("rejects an evil descendant beneath an exact untracked allowlist entry", async () => {

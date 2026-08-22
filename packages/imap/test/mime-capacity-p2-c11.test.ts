@@ -33,6 +33,7 @@ const fixtureObservationSchema = z
     consumedSha256: z.string().regex(/^[a-f0-9]{64}$/u),
     consumedChunks: z.number().int().positive(),
     consumerCompleted: z.boolean(),
+    peakRssGrowthBytes: z.number().int().nonnegative(),
     expectedBytes: z.literal(FIXTURE_BYTES),
     bytesEqual: z.boolean(),
     sha256Equal: z.boolean(),
@@ -51,6 +52,9 @@ function derivedFixtureObservation(observation: FixtureObservation): FixtureObse
   const pass =
     observation.producerCompleted &&
     observation.consumerCompleted &&
+    Number.isSafeInteger(observation.peakRssGrowthBytes) &&
+    observation.peakRssGrowthBytes >= 0 &&
+    observation.peakRssGrowthBytes < RSS_GROWTH_THRESHOLD_BYTES &&
     bytesEqual &&
     sha256Equal &&
     exactBytes &&
@@ -253,6 +257,24 @@ describe("P2-C11 MIME capacity qualification", () => {
     ).toBe(false);
     expect(derivedFixtureObservation(withPatch({ producerCompleted: false })).pass).toBe(false);
     expect(derivedFixtureObservation(withPatch({ consumerCompleted: false })).pass).toBe(false);
+    expect(
+      derivedFixtureObservation(
+        withPatch({ peakRssGrowthBytes: RSS_GROWTH_THRESHOLD_BYTES }),
+      ).pass,
+    ).toBe(false);
+    expect(
+      derivedFixtureObservation(
+        withPatch({ peakRssGrowthBytes: RSS_GROWTH_THRESHOLD_BYTES + 1 }),
+      ).pass,
+    ).toBe(false);
+    expect(
+      derivedFixtureObservation(withPatch({ peakRssGrowthBytes: -1 })).pass,
+    ).toBe(false);
+    expect(
+      derivedFixtureObservation(
+        withPatch({ peakRssGrowthBytes: 1.5 as unknown as number }),
+      ).pass,
+    ).toBe(false);
     expect(() =>
       fixtureObservationSchema.parse({ ...baseline, format: "agent-mail.observation/v1" }),
     ).toThrow();

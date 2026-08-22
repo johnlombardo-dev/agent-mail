@@ -3,7 +3,10 @@ import { execFileSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateManifest as validateExecutionManifest } from "../../scripts/qualification/capture-release-evidence.mjs";
+import {
+  observationThresholdValues,
+  validateManifest as validateExecutionManifest,
+} from "../../scripts/qualification/capture-release-evidence.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(here, "../..");
@@ -3134,6 +3137,7 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
         "consumedBytes",
         "producedChunks",
         "consumedChunks",
+        "peakRssGrowthBytes",
         "expectedBytes",
       ])
         assert(
@@ -3159,7 +3163,8 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
         sha256Equal &&
         exactBytes &&
         event.producedChunks > 0 &&
-        event.consumedChunks > 0;
+        event.consumedChunks > 0 &&
+        event.peakRssGrowthBytes < 128 * 1024 * 1024;
       assert(
         event.expectedBytes === expected.expectedBytes &&
           event.bytesEqual === bytesEqual &&
@@ -3196,6 +3201,7 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
       );
     }
   }
+  observationThresholdValues(step, receipt.assertions, label);
 }
 
 export function validateExecutableReceipt(receipt, manifest, step, options = {}) {
@@ -3952,6 +3958,7 @@ function runComposedV2Fixture(baselineIndex) {
             producedChunks: 1,
             consumedChunks: 1,
             expectedBytes: bytes,
+            peakRssGrowthBytes: 1,
             producerCompleted: true,
             consumerCompleted: true,
             bytesEqual: true,

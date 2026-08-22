@@ -24,6 +24,67 @@ const manifestDefaultPath = join(
 );
 const receiptFormat = "agent-mail.executable-receipt/v2";
 
+// Every non-timeout threshold must name one of these observable metrics.  The
+// registry is deliberately small: kernel metrics come from the process/resource
+// probes, while MIME capacity metrics come from the retained fixture observation.
+export const thresholdMetricRegistry = Object.freeze({
+  processRssBytes: Object.freeze({ kind: "kernel", source: "kernel:ps", unit: "bytes" }),
+  fileDescriptors: Object.freeze({ kind: "kernel", source: "kernel:lsof", unit: "descriptors" }),
+  sockets: Object.freeze({ kind: "kernel", source: "kernel:lsof", unit: "sockets" }),
+  listeners: Object.freeze({ kind: "kernel", source: "kernel:lsof", unit: "listeners" }),
+  rowCount: Object.freeze({
+    kind: "retained-observation",
+    source: "fixture-inventory",
+    unit: "rows",
+  }),
+  p95: Object.freeze({
+    kind: "retained-observation",
+    source: "benchmark-observation",
+    unit: "milliseconds",
+  }),
+  exportCount: Object.freeze({
+    kind: "retained-observation",
+    source: "stream-observation",
+    unit: "exports",
+  }),
+  requestCount: Object.freeze({
+    kind: "retained-observation",
+    source: "stream-observation",
+    unit: "requests",
+  }),
+  itemCount: Object.freeze({
+    kind: "retained-observation",
+    source: "queue-observation",
+    unit: "items",
+  }),
+  sessionCount: Object.freeze({
+    kind: "retained-observation",
+    source: "session-observation",
+    unit: "sessions",
+  }),
+  iterationCount: Object.freeze({
+    kind: "retained-observation",
+    source: "lifecycle-observation",
+    unit: "iterations",
+  }),
+  bytes: Object.freeze({
+    kind: "fixture-observation",
+    stepId: "mime-250mib",
+    source: "fixture-observation",
+    unit: "bytes",
+    field: "producedBytes",
+    operator: "===",
+  }),
+  peakGrowth: Object.freeze({
+    kind: "fixture-observation",
+    stepId: "mime-250mib",
+    source: "fixture-observation",
+    unit: "bytes",
+    field: "peakRssGrowthBytes",
+    operator: "<",
+  }),
+});
+
 export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -413,14 +474,10 @@ export function validateManifest(
       );
     for (const [metric, threshold] of Object.entries(step.thresholds)) {
       if (metric === "timeoutMs") continue;
-      const probeThreshold = {
-        processRssBytes: ["kernel:ps", "bytes"],
-        fileDescriptors: ["kernel:lsof", "descriptors"],
-        sockets: ["kernel:lsof", "sockets"],
-        listeners: ["kernel:lsof", "listeners"],
-      }[metric];
+      const metricSpec = thresholdMetricRegistry[metric];
       assert(
         threshold &&
+          metricSpec &&
           typeof threshold.source === "string" &&
           threshold.source.length > 0 &&
           ["<", "<=", "===", ">=", ">"].includes(threshold.operator) &&
@@ -428,8 +485,10 @@ export function validateManifest(
           threshold.unit.length > 0 &&
           Number.isFinite(threshold.limit) &&
           threshold.limit >= 0 &&
-          (!probeThreshold ||
-            (threshold.source === probeThreshold[0] && threshold.unit === probeThreshold[1])),
+          threshold.source === metricSpec.source &&
+          threshold.unit === metricSpec.unit &&
+          (!metricSpec.stepId || metricSpec.stepId === step.id) &&
+          (!metricSpec.operator || metricSpec.operator === threshold.operator),
         `${step.id} threshold ${metric} source/operator/unit is incomplete`,
       );
     }
@@ -1165,6 +1224,70 @@ function thresholdSatisfied(value, threshold) {
   return false;
 }
 
+function fixtureObservationDerived(event, expectedBytes) {
+  const bytesEqual = event.producedBytes === event.consumedBytes;
+  const sha256Equal = event.producedSha256 === event.consumedSha256;
+  const exactBytes = event.producedBytes === expectedBytes && event.consumedBytes === expectedBytes;
+  const validGrowth =
+    Number.isSafeInteger(event.peakRssGrowthBytes) && event.peakRssGrowthBytes >= 0;
+  const pass =
+    event.producerCompleted === true &&
+    event.consumerCompleted === true &&
+    bytesEqual &&
+    sha256Equal &&
+    exactBytes &&
+    event.producedChunks > 0 &&
+    event.consumedChunks > 0 &&
+    validGrowth &&
+    event.peakRssGrowthBytes < 128 * 1024 * 1024;
+  return { bytesEqual, sha256Equal, exactBytes, pass };
+}
+
+export function observationThresholdValues(step, assertions, label = step.id) {
+  const fixtureThresholds = Object.entries(step.thresholds ?? {}).filter(
+    ([, threshold]) => threshold?.source === "fixture-observation",
+  );
+  if (fixtureThresholds.length === 0) return {};
+  const expectedAssertion = step.assertions.find(
+    (assertion) => assertion.kind === "fixture-observation",
+  );
+  assert(expectedAssertion, `${label} fixture observation assertion is missing`);
+  const receiptAssertion = assertions.find((assertion) => assertion.id === expectedAssertion.id);
+  const event = receiptAssertion?.observed;
+  assert(event && typeof event === "object", `${label} fixture observation is missing`);
+  const expectedBytes = expectedAssertion.expectedBytes;
+  const derived = fixtureObservationDerived(event, expectedBytes);
+  assert(
+    typeof event.pass === "boolean" && event.pass === derived.pass,
+    `${label} fixture observation pass is inconsistent`,
+  );
+  const values = {};
+  for (const [metric, threshold] of fixtureThresholds) {
+    const spec = thresholdMetricRegistry[metric];
+    assert(
+      spec?.kind === "fixture-observation" && spec.field,
+      `${label} threshold ${metric} is not an observed metric`,
+    );
+    const value = event[spec.field];
+    assert(
+      Number.isSafeInteger(value) && value >= 0,
+      `${label} observation metric ${metric} is missing or malformed`,
+    );
+    values[metric] = value;
+    assert(thresholdSatisfied(value, threshold), `${label} observation threshold ${metric} failed`);
+  }
+  return values;
+}
+
+function observationThresholdsSatisfied(step, assertions) {
+  try {
+    observationThresholdValues(step, assertions);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function kernelThresholdsSatisfied(step, processResult) {
   const observed = {
     processRssBytes: processResult.tree.peakRssBytes,
@@ -1397,6 +1520,7 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
         "consumedBytes",
         "producedChunks",
         "consumedChunks",
+        "peakRssGrowthBytes",
         "expectedBytes",
       ])
         assert(
@@ -1425,14 +1549,8 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       const exactBytes =
         event.producedBytes === assertion.expectedBytes &&
         event.consumedBytes === assertion.expectedBytes;
-      const pass =
-        event.producerCompleted &&
-        event.consumerCompleted &&
-        bytesEqual &&
-        sha256Equal &&
-        exactBytes &&
-        event.producedChunks > 0 &&
-        event.consumedChunks > 0;
+      const derived = fixtureObservationDerived(event, assertion.expectedBytes);
+      const pass = derived.pass;
       assert(
         event.expectedBytes === assertion.expectedBytes &&
           event.bytesEqual === bytesEqual &&
@@ -1670,6 +1788,7 @@ export async function capture({
           (step.probes.includes("HermesLease") &&
             processResult.resources.hermesPorts.length === 0)));
     const kernelThresholdsPass = kernelThresholdsSatisfied(step, processResult);
+    const observationThresholdsPass = observationThresholdsSatisfied(step, assertions);
     const result =
       probeUnavailable ||
       processResult.timedOut ||
@@ -1678,7 +1797,8 @@ export async function capture({
         ? "blocked"
         : processResult.exitCode === 0 &&
             assertions.every((assertion) => assertion.pass) &&
-            kernelThresholdsPass
+            kernelThresholdsPass &&
+            observationThresholdsPass
           ? "pass"
           : "fail";
     if (fixture?.materialized?.owner === "generator" && result === "pass") {

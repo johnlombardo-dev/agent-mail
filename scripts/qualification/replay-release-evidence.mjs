@@ -19,7 +19,13 @@ import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { capture, canonicalJson, sha256 } from "./capture-release-evidence.mjs";
+import {
+  capture,
+  canonicalJson,
+  observationThresholdValues,
+  sha256,
+  thresholdMetricRegistry,
+} from "./capture-release-evidence.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -35,6 +41,18 @@ function comparableFixture(fixture) {
   if (!fixture || typeof fixture !== "object") return fixture;
   const value = structuredClone(fixture);
   if (value.materialized) delete value.materialized.path;
+  // Peak RSS growth is a measurement of this run, not fixture identity. Keep
+  // bytes/digests comparable while validating each receipt independently.
+  if (value.observation) delete value.observation.peakRssGrowthBytes;
+  return value;
+}
+
+function comparableAssertions(assertions) {
+  const value = structuredClone(assertions);
+  for (const assertion of value) {
+    if (assertion?.observed && typeof assertion.observed === "object")
+      delete assertion.observed.peakRssGrowthBytes;
+  }
   return value;
 }
 
@@ -165,12 +183,16 @@ function validateIndependentRuntime(receipt, label, step) {
     listeners: receipt.probes.resources?.listeners,
   };
   for (const [metric, threshold] of Object.entries(thresholds)) {
-    if (metric === "timeoutMs") continue;
+    if (metric === "timeoutMs" || threshold?.source === "fixture-observation") continue;
+    const metricSpec = thresholdMetricRegistry[metric];
+    assert(metricSpec, `${label} unknown threshold metric`);
+    if (metricSpec.kind !== "kernel") continue;
     assert(
       threshold && thresholdSatisfied(values[metric], threshold),
       `${label} ${metric} threshold failed`,
     );
   }
+  observationThresholdValues(step, receipt.assertions, label);
   const probes = new Set(step.probes);
   if (probes.has("streams")) {
     assert(receipt.probes?.streams?.observed === true, `${label} stream probe is unavailable`);
@@ -583,7 +605,8 @@ export function compareReceipts(primary, replay, options = {}) {
     "replay fixture diverged",
   );
   assert(
-    canonicalJson(primary.assertions) === canonicalJson(replay.assertions),
+    canonicalJson(comparableAssertions(primary.assertions)) ===
+      canonicalJson(comparableAssertions(replay.assertions)),
     "replay assertions diverged",
   );
   assertDistinctRegularArtifacts(primary, replay, options);

@@ -188,6 +188,7 @@ if (mode === "streaming") {
       consumedSha256,
       consumedChunks: consumedSourceChunkCount,
       consumerCompleted,
+      peakRssGrowthBytes,
       expectedBytes: FIXTURE_BYTES,
       bytesEqual,
       sha256Equal,
@@ -195,6 +196,7 @@ if (mode === "streaming") {
       pass:
         producerCompleted &&
         consumerCompleted &&
+        peakRssGrowthBytes < RSS_GROWTH_THRESHOLD_BYTES &&
         bytesEqual &&
         sha256Equal &&
         exactBytes &&
