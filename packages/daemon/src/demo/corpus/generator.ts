@@ -51,8 +51,7 @@ function canonical(value: unknown): string {
   throw new TypeError("unsupported canonical value");
 }
 
-export type CorpusRunCompletionReceipt = Readonly<{
-  readonly protocol: "agent-mail-demo-corpus-run.v1";
+type CorpusRunLifecycleCounts = Readonly<{
   readonly generator: Readonly<{
     readonly acquiredCount: number;
     readonly yieldedCount: number;
@@ -66,99 +65,65 @@ export type CorpusRunCompletionReceipt = Readonly<{
   }>;
 }>;
 
+export type CorpusRunFailurePhase =
+  | "options-parse"
+  | "generator-acquire"
+  | "generator-yield"
+  | "consumer-throw"
+  | "attachment-open"
+  | "attachment-read";
+
+export type CorpusRunFailure = Readonly<{
+  readonly name: string;
+  readonly message: string;
+}>;
+
+export type CorpusRunCompletionReceipt =
+  | (CorpusRunLifecycleCounts &
+      Readonly<{
+        readonly protocol: "agent-mail-demo-corpus-run.v2";
+        readonly kind: "completed";
+      }>)
+  | (CorpusRunLifecycleCounts &
+      Readonly<{
+        readonly protocol: "agent-mail-demo-corpus-run.v2";
+        readonly kind: "cancelled-before-start";
+      }>)
+  | (CorpusRunLifecycleCounts &
+      Readonly<{
+        readonly protocol: "agent-mail-demo-corpus-run.v2";
+        readonly kind: "cancelled-after-start";
+      }>)
+  | (CorpusRunLifecycleCounts &
+      Readonly<{
+        readonly protocol: "agent-mail-demo-corpus-run.v2";
+        readonly kind: "failed";
+        readonly phase: CorpusRunFailurePhase;
+        readonly error: CorpusRunFailure;
+      }>);
+
+export type ObservedCorpusStream = Readonly<{
+  readonly next: () => Promise<IteratorResult<CorpusMessage>>;
+  readonly return: (value?: unknown) => Promise<IteratorResult<CorpusMessage>>;
+  readonly throw: (error?: unknown) => Promise<IteratorResult<CorpusMessage>>;
+  readonly [Symbol.asyncIterator]: () => ObservedCorpusStream;
+}>;
+
 export type ObservedCorpusRun = Readonly<{
-  readonly stream: AsyncIterable<CorpusMessage>;
+  readonly stream: ObservedCorpusStream;
   readonly completion: Promise<CorpusRunCompletionReceipt>;
 }>;
 
-type CorpusRunObserver = Readonly<{
-  readonly generatorAcquired: () => void;
-  readonly generatorYielded: () => void;
-  readonly generatorFinallyCompleted: () => void;
-  readonly attachmentAcquired: () => void;
-  readonly attachmentYielded: (byteLength: number) => void;
-  readonly attachmentFinallyCompleted: () => void;
-  readonly completion: Promise<CorpusRunCompletionReceipt>;
+type CorpusRunAttachmentAuthority = Readonly<{
+  readonly createStream: (seed: string, byteLength: number) => AsyncIterable<Uint8Array>;
 }>;
 
-function createCorpusRunObserver(): CorpusRunObserver {
-  let generatorAcquiredCount = 0;
-  let generatorYieldedCount = 0;
-  let generatorFinallyCompletedCount = 0;
-  let attachmentAcquiredCount = 0;
-  let attachmentYieldedCount = 0;
-  let attachmentFinallyCompletedCount = 0;
-  let activeAttachmentStreams = 0;
-  let maximumYieldedChunkBytes = 0;
-  let receiptCreated = false;
-  let resolveCompletion: ((receipt: CorpusRunCompletionReceipt) => void) | undefined;
-  const completion = Object.freeze(
-    new Promise<CorpusRunCompletionReceipt>((resolve) => {
-      resolveCompletion = resolve;
-    }),
-  );
-  const completeIfFinalized = (): void => {
-    if (receiptCreated || generatorFinallyCompletedCount !== 1 || activeAttachmentStreams !== 0)
-      return;
-    if (resolveCompletion === undefined)
-      throw new Error("observed corpus completion promise is unavailable");
-    receiptCreated = true;
-    resolveCompletion(
-      Object.freeze({
-        protocol: "agent-mail-demo-corpus-run.v1",
-        generator: Object.freeze({
-          acquiredCount: generatorAcquiredCount,
-          yieldedCount: generatorYieldedCount,
-          finallyCompletedCount: generatorFinallyCompletedCount,
-        }),
-        attachmentStreams: Object.freeze({
-          acquiredCount: attachmentAcquiredCount,
-          yieldedCount: attachmentYieldedCount,
-          finallyCompletedCount: attachmentFinallyCompletedCount,
-          maximumYieldedChunkBytes,
-        }),
-      }),
-    );
-  };
-  return Object.freeze({
-    generatorAcquired: () => {
-      if (generatorAcquiredCount !== 0 || generatorFinallyCompletedCount !== 0)
-        throw new Error("observed corpus generator can only be acquired once");
-      generatorAcquiredCount = 1;
-    },
-    generatorYielded: () => {
-      if (generatorAcquiredCount !== 1 || generatorFinallyCompletedCount !== 0)
-        throw new Error("observed corpus generator yielded outside its active lifecycle");
-      generatorYieldedCount += 1;
-    },
-    generatorFinallyCompleted: () => {
-      if (generatorAcquiredCount !== 1 || generatorFinallyCompletedCount !== 0)
-        throw new Error("observed corpus generator finalization is inconsistent");
-      generatorFinallyCompletedCount = 1;
-      completeIfFinalized();
-    },
-    attachmentAcquired: () => {
-      if (generatorAcquiredCount !== 1 || generatorFinallyCompletedCount !== 0)
-        throw new Error("observed attachment stream opened outside its corpus run");
-      attachmentAcquiredCount += 1;
-      activeAttachmentStreams += 1;
-    },
-    attachmentYielded: (byteLength) => {
-      if (activeAttachmentStreams < 1)
-        throw new Error("observed attachment yielded without an active stream");
-      attachmentYieldedCount += 1;
-      maximumYieldedChunkBytes = Math.max(maximumYieldedChunkBytes, byteLength);
-    },
-    attachmentFinallyCompleted: () => {
-      if (activeAttachmentStreams < 1)
-        throw new Error("observed attachment finalization is inconsistent");
-      attachmentFinallyCompletedCount += 1;
-      activeAttachmentStreams -= 1;
-      completeIfFinalized();
-    },
-    completion,
-  });
-}
+type ObservedCorpusAttachmentStream = Readonly<{
+  readonly next: () => Promise<IteratorResult<Uint8Array>>;
+  readonly return: (value?: unknown) => Promise<IteratorResult<Uint8Array>>;
+  readonly throw: (error?: unknown) => Promise<IteratorResult<Uint8Array>>;
+  readonly [Symbol.asyncIterator]: () => ObservedCorpusAttachmentStream;
+}>;
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -241,28 +206,14 @@ function relationshipFor(
   return Object.freeze({ kind: "reply", inReplyTo, references });
 }
 
-function attachmentStream(
-  seed: string,
-  byteLength: number,
-  observer?: CorpusRunObserver,
-): () => AsyncIterable<Uint8Array> {
+function attachmentStream(seed: string, byteLength: number): () => AsyncIterable<Uint8Array> {
   return async function* stream(): AsyncIterable<Uint8Array> {
-    observer?.attachmentAcquired();
-    let finalized = false;
     let offset = 0;
-    try {
-      while (offset < byteLength) {
-        const length = Math.min(STREAM_CHUNK_BYTES, byteLength - offset);
-        const bytes = attachmentChunk(seed, offset, length);
-        offset += length;
-        observer?.attachmentYielded(length);
-        yield bytes;
-      }
-    } finally {
-      if (!finalized) {
-        finalized = true;
-        observer?.attachmentFinallyCompleted();
-      }
+    while (offset < byteLength) {
+      const length = Math.min(STREAM_CHUNK_BYTES, byteLength - offset);
+      const bytes = attachmentChunk(seed, offset, length);
+      offset += length;
+      yield bytes;
     }
   };
 }
@@ -286,10 +237,13 @@ function buildAttachment(
   seed: string,
   large: boolean,
   hostileName: boolean,
-  observer?: CorpusRunObserver,
+  attachmentAuthority?: CorpusRunAttachmentAuthority,
 ): CorpusBodyPart {
   const byteLength = large ? 8 * 1024 * 1024 : 41;
-  const stream = attachmentStream(seed, byteLength, observer);
+  const stream =
+    attachmentAuthority === undefined
+      ? attachmentStream(seed, byteLength)
+      : () => attachmentAuthority.createStream(seed, byteLength);
   return Object.freeze({
     kind: "attachment",
     filename: hostileName ? "..\\\u001b]8;;https://evil.example\u0007invoice.pdf" : "invoice.pdf",
@@ -305,7 +259,7 @@ function buildMessage(
   options: CorpusOptions,
   index: number,
   mailboxId: ReturnType<typeof createCorpusMailboxId>,
-  observer?: CorpusRunObserver,
+  attachmentAuthority?: CorpusRunAttachmentAuthority,
 ): CorpusMessage {
   const category = categoryFor(options, index);
   const coverage = coverageFor(index);
@@ -353,7 +307,7 @@ function buildMessage(
         `${options.seed}\0${index}`,
         has("large-streaming-attachment"),
         has("hostile-filename"),
-        observer,
+        attachmentAuthority,
       ),
     );
   const headers: Record<string, string> = {
@@ -743,24 +697,15 @@ export function buildCorpus(input: unknown): DemoCorpus {
 export const generateCorpus = buildCorpus;
 export const generateDemoCorpus = buildCorpus;
 
-async function* createCorpusStream(
-  input: unknown,
-  observer?: CorpusRunObserver,
-): AsyncIterable<CorpusMessage> {
+async function* createCorpusStream(input: unknown): AsyncIterable<CorpusMessage> {
   const options = parseCorpusOptions(input);
   const mailboxIds = [
     createCorpusMailboxId("inbox"),
     createCorpusMailboxId("archive"),
     createCorpusMailboxId("missing-state"),
   ];
-  observer?.generatorAcquired();
-  try {
-    for (let index = 0; index < options.size; index += 1) {
-      observer?.generatorYielded();
-      yield buildMessage(options, index, mailboxIds[index % mailboxIds.length], observer);
-    }
-  } finally {
-    observer?.generatorFinallyCompleted();
+  for (let index = 0; index < options.size; index += 1) {
+    yield buildMessage(options, index, mailboxIds[index % mailboxIds.length]);
   }
 }
 
@@ -768,11 +713,337 @@ export function streamCorpus(input: unknown): AsyncIterable<CorpusMessage> {
   return createCorpusStream(input);
 }
 
+type CorpusRunTerminalIntent =
+  | Readonly<{ readonly kind: "completed" }>
+  | Readonly<{ readonly kind: "cancelled-before-start" }>
+  | Readonly<{ readonly kind: "cancelled-after-start" }>
+  | Readonly<{
+      readonly kind: "failed";
+      readonly phase: CorpusRunFailurePhase;
+      readonly error: CorpusRunFailure;
+    }>;
+
+type EnqueueOperation = <T>(operation: () => T | Promise<T>) => Promise<T>;
+
+function operationQueue(): EnqueueOperation {
+  let tail: Promise<unknown> = Promise.resolve();
+  return <T>(operation: () => T | Promise<T>): Promise<T> => {
+    const result = tail.then(operation, operation);
+    tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  };
+}
+
+function failureRecord(error: unknown): CorpusRunFailure {
+  let name = "NonError";
+  let message =
+    typeof error === "string" && error.length > 0 ? error : "observed corpus operation failed";
+  if ((typeof error === "object" && error !== null) || typeof error === "function") {
+    name = "Error";
+    try {
+      const suppliedName = Reflect.get(error, "name");
+      const suppliedMessage = Reflect.get(error, "message");
+      if (typeof suppliedName === "string" && suppliedName.length > 0) name = suppliedName;
+      if (typeof suppliedMessage === "string" && suppliedMessage.length > 0)
+        message = suppliedMessage;
+    } catch {
+      // Thrown values and their metadata are untrusted; keep the stable fallback.
+    }
+  }
+  return Object.freeze({ name, message });
+}
+
 export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
-  const observer = createCorpusRunObserver();
+  let parsedOptions: CorpusOptions | undefined;
+  let mailboxIds: readonly ReturnType<typeof createCorpusMailboxId>[] | undefined;
+  let nextMessageIndex = 0;
+  let generatorAcquiredCount = 0;
+  let generatorYieldedCount = 0;
+  let generatorFinallyCompletedCount = 0;
+  let attachmentAcquiredCount = 0;
+  let attachmentYieldedCount = 0;
+  let attachmentFinallyCompletedCount = 0;
+  let maximumYieldedChunkBytes = 0;
+  let terminalIntent: CorpusRunTerminalIntent | undefined;
+  let terminalReceipt: CorpusRunCompletionReceipt | undefined;
+  let resolveCompletion: ((receipt: CorpusRunCompletionReceipt) => void) | undefined;
+  const activeAttachmentFinalizers = new Set<() => void>();
+  const completion = Object.freeze(
+    new Promise<CorpusRunCompletionReceipt>((resolve) => {
+      resolveCompletion = resolve;
+    }),
+  );
+
+  const lifecycleCounts = (): CorpusRunLifecycleCounts =>
+    Object.freeze({
+      generator: Object.freeze({
+        acquiredCount: generatorAcquiredCount,
+        yieldedCount: generatorYieldedCount,
+        finallyCompletedCount: generatorFinallyCompletedCount,
+      }),
+      attachmentStreams: Object.freeze({
+        acquiredCount: attachmentAcquiredCount,
+        yieldedCount: attachmentYieldedCount,
+        finallyCompletedCount: attachmentFinallyCompletedCount,
+        maximumYieldedChunkBytes,
+      }),
+    });
+
+  const settleIfReady = (): void => {
+    if (
+      terminalIntent === undefined ||
+      terminalReceipt !== undefined ||
+      activeAttachmentFinalizers.size !== 0
+    )
+      return;
+    if (resolveCompletion === undefined)
+      throw new Error("observed corpus completion promise is unavailable");
+    const counts = lifecycleCounts();
+    switch (terminalIntent.kind) {
+      case "completed":
+        terminalReceipt = Object.freeze({
+          protocol: "agent-mail-demo-corpus-run.v2",
+          kind: terminalIntent.kind,
+          ...counts,
+        });
+        break;
+      case "cancelled-before-start":
+        terminalReceipt = Object.freeze({
+          protocol: "agent-mail-demo-corpus-run.v2",
+          kind: terminalIntent.kind,
+          ...counts,
+        });
+        break;
+      case "cancelled-after-start":
+        terminalReceipt = Object.freeze({
+          protocol: "agent-mail-demo-corpus-run.v2",
+          kind: terminalIntent.kind,
+          ...counts,
+        });
+        break;
+      case "failed":
+        terminalReceipt = Object.freeze({
+          protocol: "agent-mail-demo-corpus-run.v2",
+          kind: terminalIntent.kind,
+          phase: terminalIntent.phase,
+          error: terminalIntent.error,
+          ...counts,
+        });
+        break;
+      default: {
+        const _exhaustive: never = terminalIntent;
+        throw new Error(`unhandled corpus terminal intent ${String(_exhaustive)}`);
+      }
+    }
+    resolveCompletion(terminalReceipt);
+  };
+
+  const finalizeGenerator = (): void => {
+    if (generatorAcquiredCount === 1 && generatorFinallyCompletedCount === 0)
+      generatorFinallyCompletedCount = 1;
+  };
+
+  const selectTerminal = (intent: CorpusRunTerminalIntent): void => {
+    if (terminalIntent !== undefined) return;
+    terminalIntent = intent;
+    finalizeGenerator();
+    for (const finalize of activeAttachmentFinalizers) finalize();
+    settleIfReady();
+  };
+
+  const attachmentAuthority: CorpusRunAttachmentAuthority = Object.freeze({
+    createStream: (seed, byteLength) => {
+      let state: "before-start" | "active" | "terminal" = "before-start";
+      let offset = 0;
+      const enqueue = operationQueue();
+      const finalize = (): void => {
+        if (state !== "active") {
+          state = "terminal";
+          return;
+        }
+        state = "terminal";
+        if (activeAttachmentFinalizers.delete(finalize)) attachmentFinallyCompletedCount += 1;
+        settleIfReady();
+      };
+      const acquire = (): void => {
+        if (
+          terminalIntent !== undefined ||
+          generatorAcquiredCount !== 1 ||
+          generatorFinallyCompletedCount !== 0
+        )
+          throw new Error("observed attachment stream opened outside its active corpus run");
+        state = "active";
+        attachmentAcquiredCount += 1;
+        activeAttachmentFinalizers.add(finalize);
+      };
+      let stream: ObservedCorpusAttachmentStream;
+      const iterator = {
+        [Symbol.asyncIterator]: (): ObservedCorpusAttachmentStream => stream,
+        next: () =>
+          enqueue(async (): Promise<IteratorResult<Uint8Array>> => {
+            if (state === "terminal") return { done: true, value: undefined };
+            if (state === "before-start") {
+              try {
+                acquire();
+              } catch (error: unknown) {
+                state = "terminal";
+                selectTerminal({
+                  kind: "failed",
+                  phase: "attachment-open",
+                  error: failureRecord(error),
+                });
+                throw error;
+              }
+            }
+            if (offset >= byteLength) {
+              finalize();
+              return { done: true, value: undefined };
+            }
+            try {
+              const length = Math.min(STREAM_CHUNK_BYTES, byteLength - offset);
+              const bytes = attachmentChunk(seed, offset, length);
+              offset += length;
+              attachmentYieldedCount += 1;
+              maximumYieldedChunkBytes = Math.max(maximumYieldedChunkBytes, length);
+              return { done: false, value: bytes };
+            } catch (error: unknown) {
+              finalize();
+              selectTerminal({
+                kind: "failed",
+                phase: "attachment-read",
+                error: failureRecord(error),
+              });
+              throw error;
+            }
+          }),
+        return: (_value?: unknown) =>
+          enqueue(async (): Promise<IteratorResult<Uint8Array>> => {
+            if (state === "terminal") return { done: true, value: undefined };
+            const acquired = state === "active";
+            finalize();
+            if (terminalIntent === undefined)
+              selectTerminal(
+                generatorAcquiredCount === 0
+                  ? { kind: "cancelled-before-start" }
+                  : { kind: "cancelled-after-start" },
+              );
+            if (acquired) await completion;
+            return { done: true, value: undefined };
+          }),
+        throw: (error?: unknown) =>
+          enqueue(async (): Promise<IteratorResult<Uint8Array>> => {
+            const rejection = error ?? new Error("observed attachment stream throw");
+            if (state !== "terminal") {
+              const phase = state === "before-start" ? "attachment-open" : "attachment-read";
+              finalize();
+              selectTerminal({ kind: "failed", phase, error: failureRecord(rejection) });
+              await completion;
+            }
+            throw rejection;
+          }),
+      } satisfies ObservedCorpusAttachmentStream;
+      stream = Object.freeze(iterator);
+      return stream;
+    },
+  });
+
+  const acquireGenerator = (): void => {
+    let options: CorpusOptions;
+    try {
+      options = parseCorpusOptions(input);
+    } catch (error: unknown) {
+      selectTerminal({ kind: "failed", phase: "options-parse", error: failureRecord(error) });
+      throw error;
+    }
+    try {
+      const acquiredMailboxIds = Object.freeze([
+        createCorpusMailboxId("inbox"),
+        createCorpusMailboxId("archive"),
+        createCorpusMailboxId("missing-state"),
+      ]);
+      parsedOptions = options;
+      mailboxIds = acquiredMailboxIds;
+      generatorAcquiredCount = 1;
+    } catch (error: unknown) {
+      selectTerminal({ kind: "failed", phase: "generator-acquire", error: failureRecord(error) });
+      throw error;
+    }
+  };
+
+  const enqueue = operationQueue();
+  let stream: ObservedCorpusStream;
+  const iterator = {
+    [Symbol.asyncIterator]: (): ObservedCorpusStream => stream,
+    next: (): Promise<IteratorResult<CorpusMessage>> =>
+      enqueue(async (): Promise<IteratorResult<CorpusMessage>> => {
+        if (terminalIntent !== undefined) return { done: true, value: undefined };
+        if (generatorAcquiredCount === 0) acquireGenerator();
+        if (parsedOptions === undefined || mailboxIds === undefined) {
+          const error = new Error("observed corpus generator acquisition is incomplete");
+          selectTerminal({
+            kind: "failed",
+            phase: "generator-acquire",
+            error: failureRecord(error),
+          });
+          throw error;
+        }
+        if (nextMessageIndex >= parsedOptions.size) {
+          selectTerminal(
+            activeAttachmentFinalizers.size === 0
+              ? { kind: "completed" }
+              : { kind: "cancelled-after-start" },
+          );
+          await completion;
+          return { done: true, value: undefined };
+        }
+        try {
+          const message = buildMessage(
+            parsedOptions,
+            nextMessageIndex,
+            mailboxIds[nextMessageIndex % mailboxIds.length],
+            attachmentAuthority,
+          );
+          nextMessageIndex += 1;
+          generatorYieldedCount += 1;
+          return { done: false, value: message };
+        } catch (error: unknown) {
+          selectTerminal({ kind: "failed", phase: "generator-yield", error: failureRecord(error) });
+          await completion;
+          throw error;
+        }
+      }),
+    return: (_value?: unknown): Promise<IteratorResult<CorpusMessage>> =>
+      enqueue(async (): Promise<IteratorResult<CorpusMessage>> => {
+        if (terminalIntent === undefined)
+          selectTerminal(
+            generatorAcquiredCount === 0
+              ? { kind: "cancelled-before-start" }
+              : { kind: "cancelled-after-start" },
+          );
+        await completion;
+        return { done: true, value: undefined };
+      }),
+    throw: (error?: unknown): Promise<IteratorResult<CorpusMessage>> =>
+      enqueue(async (): Promise<IteratorResult<CorpusMessage>> => {
+        const rejection = error ?? new Error("observed corpus stream throw");
+        if (terminalIntent === undefined) {
+          selectTerminal({
+            kind: "failed",
+            phase: "consumer-throw",
+            error: failureRecord(rejection),
+          });
+          await completion;
+        }
+        throw rejection;
+      }),
+  } satisfies ObservedCorpusStream;
+  stream = Object.freeze(iterator);
   return Object.freeze({
-    stream: createCorpusStream(input, observer),
-    completion: observer.completion,
+    stream,
+    completion,
   });
 }
 

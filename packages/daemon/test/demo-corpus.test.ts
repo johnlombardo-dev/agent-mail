@@ -18,6 +18,7 @@ import {
   parseCorpusOptions,
   requiredCoverageCases,
   streamCorpus,
+  type CorpusBodyPart,
   type CorpusRunCompletionReceipt,
   type ObservedCorpusRun,
 } from "../src/demo/corpus/index.ts";
@@ -42,6 +43,10 @@ function options(seed: string, size = DEFAULT_REFERENCE_SIZE) {
 
 type NativeRssUnit = "bytes" | "kibibytes";
 type KernelHighWaterSource = "darwin-resource-usage-max-rss" | "linux-proc-vmhwm";
+type CompletedCorpusRunReceipt = Extract<
+  CorpusRunCompletionReceipt,
+  { readonly kind: "completed" }
+>;
 type ParsedHighWater = Readonly<{
   readonly source: string;
   readonly nativeUnit: NativeRssUnit;
@@ -94,7 +99,7 @@ type ProfileObservation = Readonly<{
       Readonly<{ readonly source: KernelHighWaterSource }>;
   }>;
   readonly resources: Readonly<{
-    readonly lifecycleReceipt: CorpusRunCompletionReceipt;
+    readonly lifecycleReceipt: CompletedCorpusRunReceipt;
     readonly consumer: Readonly<{
       readonly generator: Readonly<{
         readonly closeRequestedCount: number;
@@ -241,14 +246,16 @@ function parseHighWater(value: unknown, name: string): ParsedHighWater {
   };
 }
 
-function parseLifecycleReceipt(value: unknown): CorpusRunCompletionReceipt {
+function parseLifecycleReceipt(value: unknown): CompletedCorpusRunReceipt {
   const root = exactRecord(value, "lifecycle receipt", [
     "protocol",
+    "kind",
     "generator",
     "attachmentStreams",
   ]);
-  if (root.protocol !== "agent-mail-demo-corpus-run.v1")
+  if (root.protocol !== "agent-mail-demo-corpus-run.v2")
     throw new TypeError("lifecycle receipt protocol is invalid");
+  if (root.kind !== "completed") throw new TypeError("lifecycle receipt terminal kind is invalid");
   const generator = exactRecord(root.generator, "lifecycle generator", [
     "acquiredCount",
     "yieldedCount",
@@ -261,7 +268,8 @@ function parseLifecycleReceipt(value: unknown): CorpusRunCompletionReceipt {
     "maximumYieldedChunkBytes",
   ]);
   return Object.freeze({
-    protocol: "agent-mail-demo-corpus-run.v1",
+    protocol: "agent-mail-demo-corpus-run.v2",
+    kind: "completed",
     generator: Object.freeze({
       acquiredCount: positiveInteger(generator.acquiredCount, "generator acquiredCount"),
       yieldedCount: positiveInteger(generator.yieldedCount, "generator yieldedCount"),
@@ -722,7 +730,8 @@ function validProfileFixture(): RecordValue {
     },
     resources: {
       lifecycleReceipt: {
-        protocol: "agent-mail-demo-corpus-run.v1",
+        protocol: "agent-mail-demo-corpus-run.v2",
+        kind: "completed",
         generator: { acquiredCount: 1, yieldedCount: 250_000, finallyCompletedCount: 1 },
         attachmentStreams: {
           acquiredCount: 3,
@@ -768,16 +777,41 @@ async function consumeObservedRun(run: ObservedCorpusRun): Promise<CorpusRunComp
       }
     }
   }
-  return run.completion;
+  return terminalReceipt(run.completion);
 }
 
-async function completionState(
+async function terminalReceipt(
   completion: Promise<CorpusRunCompletionReceipt>,
-): Promise<"pending" | "resolved"> {
-  return Promise.race([
-    completion.then<"resolved">(() => "resolved"),
-    new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 0)),
-  ]);
+): Promise<CorpusRunCompletionReceipt> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      completion,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error("observed corpus completion did not settle")),
+          1_000,
+        );
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
+async function firstObservedAttachment(run: ObservedCorpusRun): Promise<
+  Readonly<{
+    readonly generator: ReturnType<ObservedCorpusRun["stream"][typeof Symbol.asyncIterator]>;
+    readonly attachment: Extract<CorpusBodyPart, { readonly kind: "attachment" }>;
+  }>
+> {
+  const generator = run.stream[Symbol.asyncIterator]();
+  while (true) {
+    const step = await generator.next();
+    if (step.done) throw new Error("observed attachment fixture is unavailable");
+    const attachment = step.value.parts.find((part) => part.kind === "attachment");
+    if (attachment?.kind === "attachment") return Object.freeze({ generator, attachment });
+  }
 }
 
 describe("deterministic demo corpus", () => {
@@ -1149,6 +1183,8 @@ describe("deterministic demo corpus", () => {
       consumeObservedRun(second),
     ]);
     expect(injectedCallbacks).toBe(0);
+    expect(firstReceipt.kind).toBe("completed");
+    expect(secondReceipt.kind).toBe("completed");
     expect(firstReceipt.generator.yieldedCount).toBe(10);
     expect(secondReceipt.generator.yieldedCount).toBe(24);
     expect(firstReceipt.attachmentStreams.acquiredCount).not.toBe(
@@ -1159,32 +1195,219 @@ describe("deterministic demo corpus", () => {
     expect(Object.isFrozen(firstReceipt.attachmentStreams)).toBe(true);
   });
 
-  test("withholds completion until actual generator and attachment finalizers run", async () => {
-    const generatorRun = createObservedCorpusRun(options("omitted-generator-finalizer", 2));
-    const generatorIterator = generatorRun.stream[Symbol.asyncIterator]();
-    await generatorIterator.next();
-    expect(await completionState(generatorRun.completion)).toBe("pending");
-    await generatorIterator.return?.();
-    expect((await generatorRun.completion).generator.finallyCompletedCount).toBe(1);
+  test("settles every before-start path and the adjacent concurrent terminal attack", async () => {
+    let boundaryReads = 0;
+    const unreadInput = new Proxy(options("return-before-start", 24), {
+      get: (target, property, receiver) => {
+        boundaryReads += 1;
+        return Reflect.get(target, property, receiver);
+      },
+      ownKeys: (target) => {
+        boundaryReads += 1;
+        return Reflect.ownKeys(target);
+      },
+    });
+    const adjacentRun = createObservedCorpusRun(unreadInput);
+    const adjacentIterator = adjacentRun.stream[Symbol.asyncIterator]();
+    const lateError = new Error("late concurrent throw");
+    const results = await Promise.allSettled([
+      adjacentIterator.return(),
+      adjacentIterator.next(),
+      adjacentIterator.throw(lateError),
+    ]);
+    expect(results[0]).toEqual({ status: "fulfilled", value: { done: true, value: undefined } });
+    expect(results[1]).toEqual({ status: "fulfilled", value: { done: true, value: undefined } });
+    expect(results[2]).toEqual({ status: "rejected", reason: lateError });
+    expect(boundaryReads).toBe(0);
+    const adjacentReceipt = await terminalReceipt(adjacentRun.completion);
+    expect(adjacentReceipt.kind).toBe("cancelled-before-start");
+    expect(adjacentReceipt.generator).toEqual({
+      acquiredCount: 0,
+      yieldedCount: 0,
+      finallyCompletedCount: 0,
+    });
+    expect(adjacentReceipt.attachmentStreams).toEqual({
+      acquiredCount: 0,
+      yieldedCount: 0,
+      finallyCompletedCount: 0,
+      maximumYieldedChunkBytes: 0,
+    });
+    await expect(adjacentIterator.return()).resolves.toEqual({ done: true, value: undefined });
+    await expect(adjacentIterator.throw(lateError)).rejects.toBe(lateError);
+    expect(await terminalReceipt(adjacentRun.completion)).toBe(adjacentReceipt);
 
-    const attachmentRun = createObservedCorpusRun(options("omitted-attachment-finalizer", 24));
-    const corpusIterator = attachmentRun.stream[Symbol.asyncIterator]();
-    let attachmentIterator: AsyncIterator<Uint8Array> | undefined;
-    while (true) {
-      const step = await corpusIterator.next();
-      if (step.done) break;
-      const attachment = step.value.parts.find((part) => part.kind === "attachment");
-      if (attachment?.kind === "attachment" && attachmentIterator === undefined) {
-        attachmentIterator = attachment.openStream()[Symbol.asyncIterator]();
-        await attachmentIterator.next();
-      }
+    const throwRun = createObservedCorpusRun(options("throw-before-start", 2));
+    const throwIterator = throwRun.stream[Symbol.asyncIterator]();
+    const thrown = new Error("consumer failed before start");
+    await expect(throwIterator.throw(thrown)).rejects.toBe(thrown);
+    const throwReceipt = await terminalReceipt(throwRun.completion);
+    expect(throwReceipt.kind).toBe("failed");
+    if (throwReceipt.kind !== "failed") throw new Error("throw receipt did not fail");
+    expect(throwReceipt.phase).toBe("consumer-throw");
+    expect(throwReceipt.error).toEqual({ name: "Error", message: thrown.message });
+    expect(throwReceipt.generator.finallyCompletedCount).toBe(0);
+
+    const invalidRun = createObservedCorpusRun({});
+    await expect(invalidRun.stream.next()).rejects.toBeInstanceOf(CorpusOptionsError);
+    const invalidReceipt = await terminalReceipt(invalidRun.completion);
+    expect(invalidReceipt.kind).toBe("failed");
+    if (invalidReceipt.kind !== "failed") throw new Error("invalid receipt did not fail");
+    expect(invalidReceipt.phase).toBe("options-parse");
+    expect(invalidReceipt.generator).toEqual({
+      acquiredCount: 0,
+      yieldedCount: 0,
+      finallyCompletedCount: 0,
+    });
+  });
+
+  test("settles acquisition failure without finalizing an unacquired generator", async () => {
+    const run = createObservedCorpusRun(options("acquisition-failure", 2));
+    const originalFreeze = Object.freeze;
+    let freezeCalls = 0;
+    const injectedFailure = new Error("injected generator acquisition failure");
+    const replaced = Reflect.set(Object, "freeze", (value: object) => {
+      freezeCalls += 1;
+      if (freezeCalls === 3) throw injectedFailure;
+      return originalFreeze(value);
+    });
+    if (!replaced) throw new Error("Object.freeze acquisition fault could not be installed");
+    try {
+      await expect(run.stream.next()).rejects.toBe(injectedFailure);
+    } finally {
+      if (!Reflect.set(Object, "freeze", originalFreeze))
+        throw new Error("Object.freeze acquisition fault could not be restored");
     }
-    expect(attachmentIterator).toBeDefined();
-    expect(await completionState(attachmentRun.completion)).toBe("pending");
-    await attachmentIterator?.return?.();
-    const receipt = await attachmentRun.completion;
-    expect(receipt.attachmentStreams.acquiredCount).toBe(1);
-    expect(receipt.attachmentStreams.finallyCompletedCount).toBe(1);
+    const receipt = await terminalReceipt(run.completion);
+    expect(receipt.kind).toBe("failed");
+    if (receipt.kind !== "failed") throw new Error("acquisition receipt did not fail");
+    expect(receipt.phase).toBe("generator-acquire");
+    expect(receipt.generator).toEqual({
+      acquiredCount: 0,
+      yieldedCount: 0,
+      finallyCompletedCount: 0,
+    });
+  });
+
+  test("settles return, throw, consumer error, and concurrent terminals after acquisition", async () => {
+    const returnRun = createObservedCorpusRun(options("return-after-start", 2));
+    const returnIterator = returnRun.stream[Symbol.asyncIterator]();
+    expect((await returnIterator.next()).done).toBe(false);
+    await returnIterator.return();
+    const returnReceipt = await terminalReceipt(returnRun.completion);
+    expect(returnReceipt.kind).toBe("cancelled-after-start");
+    expect(returnReceipt.generator).toEqual({
+      acquiredCount: 1,
+      yieldedCount: 1,
+      finallyCompletedCount: 1,
+    });
+
+    const throwRun = createObservedCorpusRun(options("throw-after-start", 2));
+    const throwIterator = throwRun.stream[Symbol.asyncIterator]();
+    expect((await throwIterator.next()).done).toBe(false);
+    const thrown = new Error("consumer throw after yield");
+    await expect(throwIterator.throw(thrown)).rejects.toBe(thrown);
+    const throwReceipt = await terminalReceipt(throwRun.completion);
+    expect(throwReceipt.kind).toBe("failed");
+    if (throwReceipt.kind !== "failed") throw new Error("post-yield throw did not fail");
+    expect(throwReceipt.phase).toBe("consumer-throw");
+    expect(throwReceipt.generator.finallyCompletedCount).toBe(1);
+
+    const consumerRun = createObservedCorpusRun(options("consumer-error", 2));
+    const consumerError = new Error("consumer body failed");
+    try {
+      for await (const _message of consumerRun.stream) throw consumerError;
+    } catch (error: unknown) {
+      expect(error).toBe(consumerError);
+    }
+    const consumerReceipt = await terminalReceipt(consumerRun.completion);
+    expect(consumerReceipt.kind).toBe("cancelled-after-start");
+    expect(consumerReceipt.generator.finallyCompletedCount).toBe(1);
+
+    const concurrentRun = createObservedCorpusRun(options("concurrent-after-start", 2));
+    const concurrentIterator = concurrentRun.stream[Symbol.asyncIterator]();
+    await concurrentIterator.next();
+    const concurrentError = new Error("late terminal error");
+    const [returned, rejected] = await Promise.allSettled([
+      concurrentIterator.return(),
+      concurrentIterator.throw(concurrentError),
+    ]);
+    expect(returned.status).toBe("fulfilled");
+    expect(rejected).toEqual({ status: "rejected", reason: concurrentError });
+    const concurrentReceipt = await terminalReceipt(concurrentRun.completion);
+    expect(concurrentReceipt.kind).toBe("cancelled-after-start");
+    expect(await terminalReceipt(concurrentRun.completion)).toBe(concurrentReceipt);
+  });
+
+  test("settles attachment open, read, cancel, and forced-finalization paths", async () => {
+    const unopenedCancelRun = createObservedCorpusRun(options("attachment-unopened-cancel", 24));
+    const unopenedCancelFixture = await firstObservedAttachment(unopenedCancelRun);
+    const unopenedCancelIterator =
+      unopenedCancelFixture.attachment.openStream()[Symbol.asyncIterator]();
+    await unopenedCancelIterator.return?.();
+    const unopenedCancelReceipt = await terminalReceipt(unopenedCancelRun.completion);
+    expect(unopenedCancelReceipt.kind).toBe("cancelled-after-start");
+    expect(unopenedCancelReceipt.attachmentStreams.acquiredCount).toBe(0);
+    expect(unopenedCancelReceipt.attachmentStreams.finallyCompletedCount).toBe(0);
+
+    const openRun = createObservedCorpusRun(options("attachment-open-error", 24));
+    const openFixture = await firstObservedAttachment(openRun);
+    const openIterator = openFixture.attachment.openStream()[Symbol.asyncIterator]();
+    const openError = new Error("attachment open failed");
+    await expect(openIterator.throw?.(openError)).rejects.toBe(openError);
+    const openReceipt = await terminalReceipt(openRun.completion);
+    expect(openReceipt.kind).toBe("failed");
+    if (openReceipt.kind !== "failed") throw new Error("attachment open did not fail");
+    expect(openReceipt.phase).toBe("attachment-open");
+    expect(openReceipt.attachmentStreams.acquiredCount).toBe(0);
+    expect(openReceipt.attachmentStreams.finallyCompletedCount).toBe(0);
+
+    const readRun = createObservedCorpusRun(options("attachment-read-error", 24));
+    const readFixture = await firstObservedAttachment(readRun);
+    const readIterator = readFixture.attachment.openStream()[Symbol.asyncIterator]();
+    const firstChunk = await readIterator.next();
+    expect(firstChunk.done).toBe(false);
+    if (!firstChunk.done) expect(firstChunk.value.byteLength).toBeLessThanOrEqual(STREAM_CHUNK_BYTES);
+    const readError = new Error("attachment read failed");
+    await expect(readIterator.throw?.(readError)).rejects.toBe(readError);
+    const readReceipt = await terminalReceipt(readRun.completion);
+    expect(readReceipt.kind).toBe("failed");
+    if (readReceipt.kind !== "failed") throw new Error("attachment read did not fail");
+    expect(readReceipt.phase).toBe("attachment-read");
+    expect(readReceipt.attachmentStreams.acquiredCount).toBe(1);
+    expect(readReceipt.attachmentStreams.finallyCompletedCount).toBe(1);
+
+    const cancelRun = createObservedCorpusRun(options("attachment-cancel", 24));
+    const cancelFixture = await firstObservedAttachment(cancelRun);
+    const cancelIterator = cancelFixture.attachment.openStream()[Symbol.asyncIterator]();
+    await cancelIterator.next();
+    await cancelIterator.return?.();
+    const cancelReceipt = await terminalReceipt(cancelRun.completion);
+    expect(cancelReceipt.kind).toBe("cancelled-after-start");
+    expect(cancelReceipt.attachmentStreams.acquiredCount).toBe(1);
+    expect(cancelReceipt.attachmentStreams.finallyCompletedCount).toBe(1);
+
+    const forcedRun = createObservedCorpusRun(options("attachment-forced-finalization", 24));
+    const forcedFixture = await firstObservedAttachment(forcedRun);
+    const forcedIterator = forcedFixture.attachment.openStream()[Symbol.asyncIterator]();
+    await forcedIterator.next();
+    await forcedFixture.generator.return();
+    const forcedReceipt = await terminalReceipt(forcedRun.completion);
+    expect(forcedReceipt.kind).toBe("cancelled-after-start");
+    expect(forcedReceipt.attachmentStreams.acquiredCount).toBe(1);
+    expect(forcedReceipt.attachmentStreams.finallyCompletedCount).toBe(1);
+    expect(await forcedIterator.next()).toEqual({ done: true, value: undefined });
+
+    const exhaustedRun = createObservedCorpusRun(options("attachment-outlives-generator", 24));
+    const exhaustedFixture = await firstObservedAttachment(exhaustedRun);
+    const exhaustedIterator = exhaustedFixture.attachment.openStream()[Symbol.asyncIterator]();
+    await exhaustedIterator.next();
+    while (!(await exhaustedFixture.generator.next()).done) {
+      // Generator exhaustion owns terminal selection and active attachment cleanup.
+    }
+    const exhaustedReceipt = await terminalReceipt(exhaustedRun.completion);
+    expect(exhaustedReceipt.kind).toBe("cancelled-after-start");
+    expect(exhaustedReceipt.attachmentStreams.acquiredCount).toBe(1);
+    expect(exhaustedReceipt.attachmentStreams.finallyCompletedCount).toBe(1);
   });
 
   test("rejects every receipt-domain and authority attack", () => {
@@ -1235,6 +1458,24 @@ describe("deterministic demo corpus", () => {
         result: { ...hardcodedResult, producedCount: 249_999, completed: true },
       }),
     ).toThrow(/completion count|lifecycle/);
+    const nonterminal = validProfileFixture();
+    const nonterminalResources = recordValue(
+      nonterminal.resources,
+      "nonterminal fixture resources",
+    );
+    const nonterminalReceipt = recordValue(
+      nonterminalResources.lifecycleReceipt,
+      "nonterminal lifecycle receipt",
+    );
+    expect(() =>
+      parseProfileObservation({
+        ...nonterminal,
+        resources: {
+          ...nonterminalResources,
+          lifecycleReceipt: { ...nonterminalReceipt, kind: "cancelled-after-start" },
+        },
+      }),
+    ).toThrow(/terminal kind/);
     const inconsistent = validProfileFixture();
     const inconsistentMemory = recordValue(inconsistent.memory, "inconsistent fixture memory");
     const sampled = recordValue(

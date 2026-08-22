@@ -24,6 +24,10 @@ const scenarioMix = {
 
 type NativeRssUnit = "bytes" | "kibibytes";
 type KernelHighWaterSource = "darwin-resource-usage-max-rss" | "linux-proc-vmhwm";
+type CompletedCorpusRunReceipt = Extract<
+  CorpusRunCompletionReceipt,
+  { readonly kind: "completed" }
+>;
 
 type HighWaterObservation = Readonly<{
   readonly nativeValue: number;
@@ -96,7 +100,7 @@ type ProfileObservation = Readonly<{
     }>;
   }>;
   readonly resources: Readonly<{
-    readonly lifecycleReceipt: CorpusRunCompletionReceipt;
+    readonly lifecycleReceipt: CompletedCorpusRunReceipt;
     readonly consumer: Readonly<{
       readonly generator: Readonly<{
         readonly closeRequestedCount: number;
@@ -384,7 +388,10 @@ async function run(): Promise<ProfileObservation> {
     }
   }
 
-  const lifecycleReceipt = await completion;
+  const terminalReceipt = await completion;
+  if (terminalReceipt.kind !== "completed")
+    throw new Error(`profile corpus run terminated as ${terminalReceipt.kind}`);
+  const lifecycleReceipt = terminalReceipt;
   const logicalDigest = finishHash(logical);
   logical = undefined;
   const contentDigest = finishHash(content);
