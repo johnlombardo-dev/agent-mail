@@ -63,11 +63,12 @@ function gitStatus(root) {
 }
 
 function gitStatusEntries(root) {
-  return execFileSync("git", ["status", "--short", "--untracked-files=all"], {
+  return execFileSync("git", ["status", "--short", "--untracked-files=all", "-z"], {
     cwd: root,
     encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
   })
-    .split("\n")
+    .split("\0")
     .filter(Boolean)
     .map((line) => ({ code: line.slice(0, 2), path: line.slice(3).trim() }));
 }
@@ -113,21 +114,28 @@ function installFrozenDependencies(checkout, manifest) {
     maxBuffer: 32 * 1024 * 1024,
   });
   const status = gitStatusEntries(checkout);
+  const dependencyDrift = status.filter((entry) => {
+    const normalized = entry.path.replace(/\/+$/u, "");
+    return !(
+      entry.code === "??" &&
+      (normalized === "node_modules" ||
+        normalized.startsWith("node_modules/") ||
+        normalized === "packages/cli/node_modules" ||
+        normalized.startsWith("packages/cli/node_modules/") ||
+        normalized === "packages/daemon/node_modules" ||
+        normalized.startsWith("packages/daemon/node_modules/") ||
+        normalized === "packages/imap/node_modules" ||
+        normalized.startsWith("packages/imap/node_modules/") ||
+        normalized === "packages/storage/node_modules" ||
+        normalized.startsWith("packages/storage/node_modules/"))
+    );
+  });
   assert(
-    status.every((entry) => {
-      const normalized = entry.path.replace(/\/+$/u, "");
-      return (
-        entry.code === "??" &&
-        [
-          "node_modules",
-          "packages/cli/node_modules",
-          "packages/daemon/node_modules",
-          "packages/imap/node_modules",
-          "packages/storage/node_modules",
-        ].includes(normalized)
-      );
-    }),
-    "dependency install changed committed candidate files",
+    dependencyDrift.length === 0,
+    `dependency install changed committed candidate files: ${dependencyDrift
+      .slice(0, 3)
+      .map((entry) => `${entry.code} ${entry.path}`)
+      .join(", ")}`,
   );
   return {
     mode: dependencyMode,
