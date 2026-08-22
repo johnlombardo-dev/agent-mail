@@ -306,8 +306,41 @@ const regexKeywordAllowlist = Object.freeze([
   "yield",
 ]);
 
+const regexControlHeaderKeywords = Object.freeze(["if", "while", "for", "with", "switch", "catch"]);
+const objectBracePreviousValues = Object.freeze(["=", "(", "[", ",", ":", "?", "return", "yield"]);
+
+function delimiterFrame(character, previous) {
+  if (character === "(") {
+    return {
+      open: character,
+      kind:
+        previous?.kind === "identifier" && regexControlHeaderKeywords.includes(previous.value)
+          ? "control-header"
+          : "parenthesis",
+    };
+  }
+  if (character === "{") {
+    return {
+      open: character,
+      kind:
+        previous?.value === "=>" ||
+        previous?.value === ")" ||
+        previous?.value === "else" ||
+        previous?.value === "do" ||
+        previous?.value === "try" ||
+        previous?.value === "finally" ||
+        !previous ||
+        !objectBracePreviousValues.includes(previous.value)
+          ? "block"
+          : "object",
+    };
+  }
+  return { open: character, kind: character };
+}
+
 function regexLiteralAllowed(previous) {
   if (!previous) return true;
+  if (previous.regexAfterClose === true) return true;
   if (previous.kind === "identifier") return regexKeywordAllowlist.includes(previous.value);
   if (["number", "literal", "regex"].includes(previous.kind)) return false;
   return ![")", "]", "}"].includes(previous.value);
@@ -361,7 +394,7 @@ function skipRegexLiteral(source, start) {
 
 function skipTemplateInterpolation(source, start) {
   let cursor = start;
-  const delimiters = ["{"];
+  const delimiters = [delimiterFrame("{", null)];
   let previous = null;
   const identifier = /[A-Za-z_$][A-Za-z0-9_$]*/y;
   const integer = /(?:0|[1-9](?:_?[0-9])*)/y;
@@ -381,7 +414,7 @@ function skipTemplateInterpolation(source, start) {
     } else if (character === "`") {
       cursor = skipTemplateLiteral(source, cursor);
       previous = { kind: "literal", value: "<template>" };
-    } else if (character === "/" && regexLiteralAllowed(previous)) {
+    } else if (character === "/" && source[cursor + 1] !== "=" && regexLiteralAllowed(previous)) {
       cursor = skipRegexLiteral(source, cursor);
       previous = { kind: "regex", value: "<regex>" };
     } else {
@@ -400,12 +433,22 @@ function skipTemplateInterpolation(source, start) {
         continue;
       }
       if (character === "{" || character === "[" || character === "(") {
-        delimiters.push(character);
+        delimiters.push(delimiterFrame(character, previous));
       } else if (character === "}" || character === "]" || character === ")") {
         const expected = character === "}" ? "{" : character === "]" ? "[" : "(";
-        assert(delimiters.at(-1) === expected, "numeric source template delimiter mismatch");
+        const frame = delimiters.at(-1);
+        assert(frame?.open === expected, "numeric source template delimiter mismatch");
         delimiters.pop();
         if (delimiters.length === 0) return cursor + 1;
+        previous = {
+          kind: "punctuation",
+          value: character,
+          regexAfterClose:
+            (character === ")" && frame.kind === "control-header") ||
+            (character === "}" && frame.kind === "block"),
+        };
+        cursor += 1;
+        continue;
       }
       previous = { kind: "punctuation", value: character };
       cursor += 1;
@@ -463,7 +506,7 @@ function sourceTokens(source) {
       previous = { kind: "literal", value: "<template>" };
       continue;
     }
-    if (character === "/" && regexLiteralAllowed(previous)) {
+    if (character === "/" && source[cursor + 1] !== "=" && regexLiteralAllowed(previous)) {
       const start = cursor;
       cursor = skipRegexLiteral(source, cursor);
       const token = { value: "<regex>", start, end: cursor, depth: delimiters.length };
@@ -500,15 +543,26 @@ function sourceTokens(source) {
       continue;
     }
     const depth = delimiters.length;
+    let closedFrame;
     if (character === "}" || character === "]" || character === ")") {
       const expected = character === "}" ? "{" : character === "]" ? "[" : "(";
-      assert(delimiters.at(-1) === expected, "numeric source delimiter mismatch");
+      closedFrame = delimiters.at(-1);
+      assert(closedFrame?.open === expected, "numeric source delimiter mismatch");
       delimiters.pop();
     }
+    const openerPrevious = previous;
     const token = { value: character, start: cursor, end: cursor + 1, depth };
     tokens.push(token);
-    previous = { kind: "punctuation", value: character };
-    if (character === "{" || character === "[" || character === "(") delimiters.push(character);
+    previous = {
+      kind: "punctuation",
+      value: character,
+      regexAfterClose:
+        (character === ")" && closedFrame?.kind === "control-header") ||
+        (character === "}" && closedFrame?.kind === "block"),
+    };
+    if (character === "{" || character === "[" || character === "(") {
+      delimiters.push(delimiterFrame(character, openerPrevious));
+    }
     cursor += 1;
   }
   assert(delimiters.length === 0, "numeric source delimiter is unterminated");
@@ -556,6 +610,19 @@ function numericSourceDeclarations(source) {
     declarations.push(declaration);
   }
   return declarations;
+}
+
+function validateCommittedTypeScriptSyntax(source, label) {
+  const transpilerConstructor = globalThis.Bun?.Transpiler;
+  assert(
+    typeof transpilerConstructor === "function",
+    `${label} TypeScript syntax parser is unavailable`,
+  );
+  try {
+    new transpilerConstructor({ loader: "ts" }).transformSync(source);
+  } catch {
+    fail(`${label} TypeScript syntax is invalid`);
+  }
 }
 
 function validateNumericSourceConstants(step, root, commit) {
@@ -635,6 +702,7 @@ function validateNumericSourceConstants(step, root, commit) {
       `${step.id} numeric source constant threshold binding is detached`,
     );
     const source = committedText(root, commit, constant.sourcePath, `${step.id} numeric source`);
+    validateCommittedTypeScriptSyntax(source, `${step.id} numeric source`);
     const declarations = numericSourceDeclarations(source).filter(
       (declaration) => declaration.name === constant.exportName,
     );

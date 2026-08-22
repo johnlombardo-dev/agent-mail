@@ -565,6 +565,28 @@ describe("release evidence executable runner", () => {
       ["regex invalid flags", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/z;\n"],
       ["regex incompatible flags", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/uv;\n"],
       ["unterminated regex", "/export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
+      ["if body regex", "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["while body regex", "while (false) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["for body regex", "for (;;) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["with body regex", "function f(value) { with (value) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g; }\n"],
+      ["switch condition regex", "switch (value) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["catch body regex", "try {} catch (error) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["do body regex", "do /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g; while (false);\n"],
+      ["else body regex", "if (false) {} else /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["block close regex", "{} /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["ternary regex", "const value = condition ? /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g : other;\n"],
+      ["arrow regex", "const value = () => /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["division chain", "const ratio = 512 / MEBIBYTE / 2;\n"],
+      ["divide assign", "let value = 1; value /= 2;\n"],
+      ["malformed control regex", "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
+      [
+        "wrong export with regex decoy",
+        "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 + MEBIBYTE;\n",
+      ],
+      [
+        "export alias with regex decoy",
+        "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\nexport { RSS_GROWTH_THRESHOLD_BYTES };\n",
+      ],
       ["delimiter mismatch", "const value = (];\n"],
       ["delimiter underflow", "const value = );\n"],
       ["delimiter unclosed", "const value = ({\n"],
@@ -584,6 +606,19 @@ describe("release evidence executable runner", () => {
       expect(() => validateManifest(candidate, fixture.root, committed.commit), name).toThrow();
     }
 
+    const malformedTypeScript = commitAuthoritySource(
+      "export const RSS_GROWTH_THRESHOLD_BYTES = (128 * MEBIBYTE;\n",
+    );
+    const malformedTypeScriptCandidate = structuredClone(base);
+    const malformedTypeScriptSource = malformedTypeScriptCandidate.steps[0].sources.find(
+      (entry: { path: string }) => entry.path === fixture.sourcePath,
+    );
+    malformedTypeScriptSource.gitBlob = malformedTypeScript.gitBlob;
+    malformedTypeScriptSource.sha256 = malformedTypeScript.sha256;
+    expect(() => validateManifest(malformedTypeScriptCandidate, fixture.root, malformedTypeScript.commit)).toThrow(
+      /TypeScript syntax is invalid/u,
+    );
+
     const division = commitAuthoritySource(
       "const ratio = 128 / MEBIBYTE;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
     );
@@ -594,6 +629,17 @@ describe("release evidence executable runner", () => {
     divisionSource.gitBlob = division.gitBlob;
     divisionSource.sha256 = division.sha256;
     expect(() => validateManifest(divisionCandidate, fixture.root, division.commit)).not.toThrow();
+
+    const controlRegexDecoy = commitAuthoritySource(
+      "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
+    );
+    const controlRegexDecoyCandidate = structuredClone(base);
+    const controlRegexDecoySource = controlRegexDecoyCandidate.steps[0].sources.find(
+      (entry: { path: string }) => entry.path === fixture.sourcePath,
+    );
+    controlRegexDecoySource.gitBlob = controlRegexDecoy.gitBlob;
+    controlRegexDecoySource.sha256 = controlRegexDecoy.sha256;
+    expect(() => validateManifest(controlRegexDecoyCandidate, fixture.root, controlRegexDecoy.commit)).not.toThrow();
 
     const coordinated = commitAuthoritySource(
       "export const RSS_GROWTH_THRESHOLD_BYTES = 1024 * MEBIBYTE;\n",
