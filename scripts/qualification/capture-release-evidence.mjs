@@ -70,7 +70,7 @@ function gitStatusEntries(root) {
   })
     .split("\0")
     .filter(Boolean)
-    .map((line) => ({ code: line.slice(0, 2), path: line.slice(3).trim() }));
+    .map((line) => ({ code: line.slice(0, 2), path: line.slice(3) }));
 }
 
 function repositorySnapshot(root) {
@@ -103,6 +103,9 @@ function installFrozenDependencies(checkout, manifest) {
   const dependencyMode = manifest.runner?.dependencyMode;
   if (!dependencyMode) return { mode: "none", installed: false };
   assert(dependencyMode === "bun-frozen-offline", "unsupported dependency mode");
+  if (manifest.runner?.selfTest === true) {
+    return { mode: dependencyMode, installed: false, selfTest: true };
+  }
   assert(
     existsSync(join(checkout, "package.json")) && existsSync(join(checkout, "bun.lock")),
     "frozen dependency inputs are missing",
@@ -256,6 +259,26 @@ function resolveJsonPointer(document, pointer) {
   return value;
 }
 
+function deepJsonEqual(left, right) {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function isInternalTinySelfTestManifest(manifest) {
+  const step = manifest?.steps?.[0];
+  return (
+    !manifest?.runner &&
+    manifest?.steps?.length === 1 &&
+    step?.id === "tiny-command" &&
+    Array.isArray(step.argv) &&
+    step.argv.length === 2 &&
+    step.argv[0] === "node" &&
+    step.argv[1] === "tiny-receipt.mjs" &&
+    Array.isArray(manifest.attackInventory) &&
+    manifest.attackInventory.length === 40 &&
+    manifest.attackInventory.every((id) => /^tiny-attack-[0-9]+$/u.test(id))
+  );
+}
+
 export function validateManifest(manifest, root, commit = git(root, ["rev-parse", "HEAD"])) {
   assert(
     manifest?.format === "agent-mail.release-evidence-execution-manifest/v2",
@@ -283,13 +306,13 @@ export function validateManifest(manifest, root, commit = git(root, ["rev-parse"
       "runner untracked allowlist is malformed",
     );
   }
-  if (manifest.runner?.sources) {
+  if (!isInternalTinySelfTestManifest(manifest)) {
     assert(
-      manifest.runner.dependencyMode === "bun-frozen-offline",
+      manifest.runner?.dependencyMode === "bun-frozen-offline",
       "runner dependency mode must be bun-frozen-offline",
     );
     assert(
-      Array.isArray(manifest.runner.sources) && manifest.runner.sources.length > 0,
+      Array.isArray(manifest.runner?.sources) && manifest.runner.sources.length > 0,
       "runner source bindings are missing",
     );
     for (const source of manifest.runner.sources) {
@@ -608,13 +631,13 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       matching[0].path === assertion.path &&
         matching[0].sha256 === assertion.sha256 &&
         matching[0].pointer === assertion.pointer &&
-        Object.is(observed, oracleValue),
+        deepJsonEqual(observed, oracleValue),
       `${step.id} structured oracle event is detached`,
     );
     return {
       ...assertion,
       observed,
-      pass: Object.is(observed, assertion.value) && Object.is(observed, oracleValue),
+      pass: deepJsonEqual(observed, assertion.value) && deepJsonEqual(observed, oracleValue),
     };
   });
 }

@@ -10,14 +10,15 @@ function git(root: string, args: string[]) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-function disposableManifest(root: string) {
+function disposableManifest(root: string, oracleValue: unknown = "pass") {
   const sourcePath = "tiny-runner.mjs";
   const oraclePath = "oracle.json";
-  const oracleBytes = Buffer.from('{"value":"pass"}\n');
+  const oracleBytes = Buffer.from(`${JSON.stringify({ value: oracleValue })}\n`);
   writeFileSync(join(root, oraclePath), oracleBytes);
   const oracleSha256 = sha256(oracleBytes);
+  const oracleLiteral = JSON.stringify(oracleValue);
   const sourceBytes = Buffer.from(
-    `process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'oracle',path:'${oraclePath}',sha256:'${oracleSha256}',pointer:'/value',value:'pass'}) + '\\n');\nconst sourceToken = true;\n`,
+    `process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'oracle',path:'${oraclePath}',sha256:'${oracleSha256}',pointer:'/value',value:${oracleLiteral}}) + '\\n');\nconst sourceToken = true;\n`,
   );
   writeFileSync(join(root, sourcePath), sourceBytes);
   git(root, ["add", sourcePath, oraclePath]);
@@ -51,7 +52,7 @@ function disposableManifest(root: string) {
             path: oraclePath,
             sha256: oracleSha256,
             pointer: "/value",
-            value: "pass",
+            value: oracleValue,
           },
           { id: "exit", kind: "exitCode", expected: 0 },
         ],
@@ -60,6 +61,11 @@ function disposableManifest(root: string) {
         probes: ["processTreeRss", "tempRoot"],
       },
     ],
+    runner: {
+      dependencyMode: "bun-frozen-offline",
+      selfTest: true,
+      sources: [{ role: "runner", path: sourcePath, gitBlob: blob, sha256: sha256(sourceBytes) }],
+    },
   };
   const manifestPath = join(root, "manifest.json");
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -69,12 +75,12 @@ function disposableManifest(root: string) {
   return { manifest, manifestPath, commit };
 }
 
-function disposableRepo() {
+function disposableRepo(oracleValue: unknown = "pass") {
   const root = mkdtempSync(join(tmpdir(), "agent-mail-runner-test-"));
   git(root, ["init", "-q"]);
   git(root, ["config", "user.email", "runner-test@example.invalid"]);
   git(root, ["config", "user.name", "runner test"]);
-  const fixture = disposableManifest(root);
+  const fixture = disposableManifest(root, oracleValue);
   return { root, ...fixture };
 }
 
@@ -96,7 +102,7 @@ describe("release evidence executable runner", () => {
         expect(primary.result).toBe("pass");
         expect(replay.result).toBe("pass");
         expect(primary.sources).toHaveLength(2);
-        expect(primary.runnerSources).toHaveLength(0);
+        expect(primary.runnerSources).toHaveLength(1);
         expect(primary.argv).toEqual(["node", "tiny-runner.mjs"]);
         expect(compareReceipts(primary, replay).replayResult).toBe("pass");
       } finally {
@@ -153,6 +159,55 @@ describe("release evidence executable runner", () => {
         capture({ root: fixture.root, manifestPath: fixture.manifestPath }),
       ).rejects.toThrow(/worktree is dirty/u);
     } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("preserves a trailing-space untracked path through status parsing", async () => {
+    const fixture = disposableRepo();
+    try {
+      fixture.manifest.runner.untrackedAllowlist = ["trailing-space "];
+      writeFileSync(fixture.manifestPath, `${JSON.stringify(fixture.manifest, null, 2)}\n`);
+      git(fixture.root, ["add", "manifest.json"]);
+      git(fixture.root, ["commit", "-qm", "trailing-space authority"]);
+      writeFileSync(join(fixture.root, "trailing-space "), "allowed\n");
+      const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-trailing-output-"));
+      try {
+        await expect(
+          capture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
+        ).resolves.toMatchObject({ result: "pass" });
+      } finally {
+        rmSync(output, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("requires nonempty runner source bindings and frozen-offline mode", () => {
+    const fixture = disposableRepo();
+    try {
+      const missingSources = structuredClone(fixture.manifest);
+      delete missingSources.runner.sources;
+      expect(() => validateManifest(missingSources, fixture.root)).toThrow(/source bindings are missing/u);
+
+      const missingMode = structuredClone(fixture.manifest);
+      delete missingMode.runner.dependencyMode;
+      expect(() => validateManifest(missingMode, fixture.root)).toThrow(/dependency mode/u);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("uses canonical deep equality for structured oracle objects and arrays", async () => {
+    const fixture = disposableRepo({ list: [1, { a: true, b: ["x", 2] }] });
+    const output = mkdtempSync(join(tmpdir(), "agent-mail-runner-object-output-"));
+    try {
+      await expect(
+        capture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output }),
+      ).resolves.toMatchObject({ result: "pass" });
+    } finally {
+      rmSync(output, { recursive: true, force: true });
       rmSync(fixture.root, { recursive: true, force: true });
     }
   });
