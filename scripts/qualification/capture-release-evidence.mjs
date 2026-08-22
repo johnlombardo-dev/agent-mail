@@ -190,7 +190,15 @@ function sourceBindings(manifest, root, commit) {
     for (const source of step.sources ?? []) all.push(source);
   }
   for (const source of manifest.runner?.sources ?? []) all.push(source);
-  const unique = new Map(all.map((source) => [source.path, source]));
+  const unique = new Map();
+  for (const source of all) {
+    const previous = unique.get(source.path);
+    assert(
+      !previous || (previous.gitBlob === source.gitBlob && previous.sha256 === source.sha256),
+      `source ${source.path} binding is inconsistent`,
+    );
+    unique.set(source.path, source);
+  }
   return [...unique.values()].map((source) => {
     const actual = committedBlob(root, commit, source.path, `source ${source.path}`);
     assert(source.gitBlob === actual.gitBlob, `source ${source.path} Git blob drifted`);
