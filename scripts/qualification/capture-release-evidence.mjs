@@ -6,6 +6,7 @@ import {
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
   rmSync,
   statSync,
@@ -499,6 +500,66 @@ function optionalDigest(path) {
   } catch {
     return null;
   }
+}
+
+function filesystemIdentity(path, label, canonical = false) {
+  const stat = lstatSync(path);
+  assert(
+    stat.isDirectory() || (stat.isFile() && !stat.isSymbolicLink()),
+    `${label} is not a regular path`,
+  );
+  return {
+    path: canonical ? realpathSync(path) : path,
+    dev: stat.dev,
+    ino: stat.ino,
+    birthtimeMs: stat.birthtimeMs,
+    ctimeMs: stat.ctimeMs,
+    mtimeMs: stat.mtimeMs,
+  };
+}
+
+function provenanceArtifact(outputRoot, ref, label, capturedAt) {
+  const path = resolve(outputRoot, ref.path);
+  const identity = filesystemIdentity(path, label);
+  const bytes = readFileSync(path);
+  const digest = sha256(bytes);
+  assert(
+    bytes.length === ref.bytes && digest === ref.sha256,
+    `${label} changed during provenance capture`,
+  );
+  return {
+    path: ref.path,
+    dev: identity.dev,
+    ino: identity.ino,
+    bytes: bytes.length,
+    sha256: digest,
+    capturedAt,
+    birthtimeMs: identity.birthtimeMs,
+    ctimeMs: identity.ctimeMs,
+    mtimeMs: identity.mtimeMs,
+  };
+}
+
+function receiptCore(receipt) {
+  const core = structuredClone(receipt);
+  delete core.provenance;
+  return core;
+}
+
+function provenanceObservations(receipt) {
+  return {
+    process: receipt.process,
+    processProbe: receipt.probes.process,
+    resources: receipt.probes.resources,
+    termination: receipt.probes.cleanup.termination,
+    cleanup: receipt.probes.cleanup,
+    streams: receipt.probes.streams,
+    monotonic: receipt.monotonic,
+    startedAt: receipt.startedAt,
+    completedAt: receipt.completedAt,
+    result: receipt.result,
+    observedOutcome: receipt.observedOutcome,
+  };
 }
 
 function ownerRelativePath(root, path, label) {
@@ -1663,6 +1724,8 @@ export async function capture({
       : undefined;
     if (generatedStaging)
       assert(generatedStaging.removed, "generated staging artifact was not cleaned");
+    const outputRootIdentity = filesystemIdentity(destination, "capture output root", true);
+    const tempRootIdentity = filesystemIdentity(executionRoot, "capture temporary root", true);
     const cleanup = {
       ...(await cleanupBarrier("completed")),
       generatedStaging,
@@ -1798,6 +1861,67 @@ export async function capture({
           stderr.sha256,
         ],
       },
+    };
+    const envelopeArtifacts = {
+      stdout: provenanceArtifact(destination, stdout, "stdout stream", completedAt),
+      stderr: provenanceArtifact(destination, stderr, "stderr stream", completedAt),
+      events: provenanceArtifact(destination, events, "event stream", completedAt),
+      ...(retainedFixture?.materialized?.path
+        ? {
+            fixture: provenanceArtifact(
+              destination,
+              retainedFixture.materialized,
+              "materialized fixture",
+              completedAt,
+            ),
+          }
+        : {}),
+    };
+    const observations = provenanceObservations(receipt);
+    const envelope = {
+      format: "agent-mail.capture-provenance/v1",
+      runId,
+      role,
+      receiptSha256: sha256(canonicalJson(receiptCore(receipt))),
+      authority: {
+        candidate: receipt.candidate,
+        manifestStepId: receipt.manifestStepId,
+        cwd: receipt.cwd,
+        argv: receipt.argv,
+        sources: receipt.sources,
+        runnerSources: receipt.runnerSources,
+        fixture: receipt.fixture,
+        assertions: receipt.assertions,
+        probes: step.probes,
+        thresholds: step.thresholds,
+      },
+      roots: {
+        output: outputRootIdentity,
+        temporary: { ...tempRootIdentity, removed: cleanup.executionRootRemoved },
+      },
+      artifacts: envelopeArtifacts,
+      observations,
+      observationsSha256: sha256(canonicalJson(observations)),
+    };
+    const envelopeBytes = Buffer.from(json(envelope));
+    const envelopePath = join(destination, runId, `${step.id}.provenance.json`);
+    mkdirSync(dirname(envelopePath), { recursive: true });
+    writeFileSync(envelopePath, envelopeBytes, { mode: 0o600 });
+    const envelopeRef = retainedFileRef(
+      destination,
+      destination,
+      envelopePath,
+      envelopeBytes.length,
+      sha256(envelopeBytes),
+      "capture provenance envelope",
+    );
+    receipt.provenance = {
+      format: envelope.format,
+      path: envelopeRef.path,
+      sha256: envelopeRef.sha256,
+      bytes: envelopeRef.bytes,
+      receiptSha256: envelope.receiptSha256,
+      observationsSha256: envelope.observationsSha256,
     };
     const after = repositorySnapshot(root);
     assert(

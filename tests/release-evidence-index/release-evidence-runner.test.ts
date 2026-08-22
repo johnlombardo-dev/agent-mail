@@ -141,6 +141,9 @@ describe("release evidence executable runner", () => {
         expect(primary.probes.process.observed).toBe(true);
         expect(typeof primary.probes.resources.observed).toBe("boolean");
         expect(primary.probes.cleanup.barrier).toBe("awaited-idempotent");
+        expect(primary.provenance.format).toBe("agent-mail.capture-provenance/v1");
+        expect(primary.provenance.receiptSha256).toMatch(/^[0-9a-f]{64}$/u);
+        expect(existsSync(join(output, primary.provenance.path))).toBe(true);
         expect(primary.probes.cleanup.invocations).toBe(1);
         expect(primary.monotonic.intervals.map((interval: { id: string }) => interval.id)).toEqual([
           "setup",
@@ -162,6 +165,9 @@ describe("release evidence executable runner", () => {
           (value: typeof replay) =>
             (value.streams.stdout.path = primary.streams.stdout.path),
           (value: typeof replay) => (value.probes.cleanup.termination.survivorsAfterKill = [1234]),
+          (value: typeof replay) => (value.provenance.sha256 = "0".repeat(64)),
+          (value: typeof replay) =>
+            (value.provenance.path = `${primary.runId}/${primary.manifestStepId}.provenance.json`),
         ];
         for (const mutate of attacks) {
           const forged = structuredClone(replay);

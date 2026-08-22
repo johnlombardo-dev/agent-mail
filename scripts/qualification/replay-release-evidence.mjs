@@ -237,6 +237,156 @@ function assertDistinctRegularArtifacts(primary, replay, options) {
   }
 }
 
+function provenanceObservations(receipt) {
+  return {
+    process: receipt.process,
+    processProbe: receipt.probes.process,
+    resources: receipt.probes.resources,
+    termination: receipt.probes.cleanup.termination,
+    cleanup: receipt.probes.cleanup,
+    streams: receipt.probes.streams,
+    monotonic: receipt.monotonic,
+    startedAt: receipt.startedAt,
+    completedAt: receipt.completedAt,
+    result: receipt.result,
+    observedOutcome: receipt.observedOutcome,
+  };
+}
+
+function validateProvenanceEnvelope(root, receipt, step, label) {
+  const outputRoot = canonicalOutputRoot(root, label);
+  const provenance = receipt.provenance;
+  assert(
+    provenance?.format === "agent-mail.capture-provenance/v1",
+    `${label} envelope reference is missing`,
+  );
+  assert(
+    typeof provenance.path === "string" && provenance.path.split("/")[0] === receipt.runId,
+    `${label} envelope path is not run-bound`,
+  );
+  assert(
+    provenance.path === `${receipt.runId}/${receipt.manifestStepId}.provenance.json`,
+    `${label} envelope path is not canonical`,
+  );
+  assert(
+    !isAbsolute(provenance.path) && !provenance.path.includes("\\"),
+    `${label} envelope path is unsafe`,
+  );
+  assert(
+    provenance.path.split("/").every((part) => part && part !== "." && part !== ".."),
+    `${label} envelope path traverses`,
+  );
+  const envelopePath = resolve(outputRoot, provenance.path);
+  assert(
+    relative(outputRoot, envelopePath) === provenance.path,
+    `${label} envelope escaped output root`,
+  );
+  const envelopeStat = lstatSync(envelopePath);
+  assert(
+    envelopeStat.isFile() && !envelopeStat.isSymbolicLink(),
+    `${label} envelope is not regular`,
+  );
+  const envelopeRealPath = realpathSync(envelopePath);
+  assert(
+    relative(outputRoot, envelopeRealPath) === provenance.path,
+    `${label} envelope resolves outside output root`,
+  );
+  const envelopeBytes = readFileSync(envelopePath);
+  assert(envelopeBytes.length === provenance.bytes, `${label} envelope byte count drifted`);
+  assert(sha256(envelopeBytes) === provenance.sha256, `${label} envelope digest drifted`);
+  const envelope = JSON.parse(envelopeBytes.toString("utf8"));
+  assert(envelope.format === provenance.format, `${label} envelope format drifted`);
+  assert(
+    envelope.runId === receipt.runId && envelope.role === receipt.role,
+    `${label} envelope identity drifted`,
+  );
+  const core = structuredClone(receipt);
+  delete core.provenance;
+  const receiptDigest = sha256(canonicalJson(core));
+  assert(
+    envelope.receiptSha256 === receiptDigest && provenance.receiptSha256 === receiptDigest,
+    `${label} receipt digest is detached`,
+  );
+  const observations = provenanceObservations(receipt);
+  assert(
+    canonicalJson(envelope.observations) === canonicalJson(observations),
+    `${label} observations drifted`,
+  );
+  const observationsDigest = sha256(canonicalJson(observations));
+  assert(
+    envelope.observationsSha256 === observationsDigest &&
+      provenance.observationsSha256 === observationsDigest,
+    `${label} observation digest is detached`,
+  );
+  const expectedAuthority = {
+    candidate: receipt.candidate,
+    manifestStepId: receipt.manifestStepId,
+    cwd: receipt.cwd,
+    argv: receipt.argv,
+    sources: receipt.sources,
+    runnerSources: receipt.runnerSources,
+    fixture: receipt.fixture,
+    assertions: receipt.assertions,
+    probes: step.probes,
+    thresholds: step.thresholds,
+  };
+  assert(
+    canonicalJson(envelope.authority) === canonicalJson(expectedAuthority),
+    `${label} manifest authority drifted`,
+  );
+  assert(envelope.roots?.output?.path === outputRoot, `${label} output root identity drifted`);
+  assert(
+    envelope.roots.output.dev === lstatSync(outputRoot).dev &&
+      envelope.roots.output.ino === lstatSync(outputRoot).ino,
+    `${label} output root inode drifted`,
+  );
+  assert(envelope.roots?.temporary?.removed === true, `${label} temporary root was not removed`);
+  assert(
+    typeof envelope.roots.temporary.path === "string" &&
+      Number.isSafeInteger(envelope.roots.temporary.dev) &&
+      Number.isSafeInteger(envelope.roots.temporary.ino),
+    `${label} temporary root identity is missing`,
+  );
+  const artifactRefs = {
+    stdout: receipt.streams.stdout,
+    stderr: receipt.streams.stderr,
+    events: receipt.streams.events,
+    ...(receipt.fixture?.materialized?.path ? { fixture: receipt.fixture.materialized } : {}),
+  };
+  const identities = new Set([`${envelopeStat.dev}:${envelopeStat.ino}`]);
+  for (const [key, ref] of Object.entries(artifactRefs)) {
+    const artifact = envelope.artifacts?.[key];
+    assert(artifact, `${label} ${key} provenance is missing`);
+    assert(
+      artifact.path === ref.path && artifact.bytes === ref.bytes && artifact.sha256 === ref.sha256,
+      `${label} ${key} provenance reference drifted`,
+    );
+    assert(
+      artifact.capturedAt === receipt.completedAt && !Number.isNaN(Date.parse(artifact.capturedAt)),
+      `${label} ${key} capture timestamp is invalid`,
+    );
+    const path = resolve(outputRoot, ref.path);
+    const stat = lstatSync(path);
+    assert(stat.isFile() && !stat.isSymbolicLink(), `${label} ${key} is not regular`);
+    const bytes = readFileSync(path);
+    assert(
+      bytes.length === ref.bytes && sha256(bytes) === ref.sha256,
+      `${label} ${key} bytes drifted`,
+    );
+    assert(artifact.dev === stat.dev && artifact.ino === stat.ino, `${label} ${key} inode drifted`);
+    assert(
+      artifact.birthtimeMs === stat.birthtimeMs &&
+        artifact.ctimeMs === stat.ctimeMs &&
+        artifact.mtimeMs === stat.mtimeMs,
+      `${label} ${key} filesystem timestamps drifted`,
+    );
+    const identity = `${stat.dev}:${stat.ino}`;
+    assert(!identities.has(identity), `${label} ${key} reuses the envelope inode`);
+    identities.add(identity);
+  }
+  return { identity: `${envelopeStat.dev}:${envelopeStat.ino}`, path: envelopePath };
+}
+
 export function compareReceipts(primary, replay, options = {}) {
   assertManifestStep(options.step);
   assert(
@@ -282,6 +432,22 @@ export function compareReceipts(primary, replay, options = {}) {
   assert(primary.runId !== replay.runId, "replay reused the primary run ID");
   const primaryPids = validateIndependentRuntime(primary, "primary receipt", options.step);
   const replayPids = validateIndependentRuntime(replay, "replay receipt", options.step);
+  const primaryEnvelope = validateProvenanceEnvelope(
+    options.primaryOutputRoot,
+    primary,
+    options.step,
+    "primary",
+  );
+  const replayEnvelope = validateProvenanceEnvelope(
+    options.replayOutputRoot,
+    replay,
+    options.step,
+    "replay",
+  );
+  assert(
+    primaryEnvelope.identity !== replayEnvelope.identity,
+    "replay reused the primary provenance envelope",
+  );
   assert(
     primary.process?.pid !== replay.process?.pid &&
       primary.process?.processGroup !== replay.process?.processGroup,
@@ -432,6 +598,20 @@ async function selfTest() {
       ["artifact missing", (value) => (value.streams.stderr.path = `${value.runId}/missing`)],
       ["artifact traversal", (value) => (value.streams.events.path = "../events.jsonl")],
       ["resource PID retyping", (value) => (value.probes.resources.pids = [1234])],
+      [
+        "provenance receipt digest drift",
+        (value) => (value.provenance.receiptSha256 = "0".repeat(64)),
+      ],
+      [
+        "provenance path reuse",
+        (value) =>
+          (value.provenance.path = `${primary.runId}/${primary.manifestStepId}.provenance.json`),
+      ],
+      ["provenance digest drift", (value) => (value.provenance.sha256 = "0".repeat(64))],
+      [
+        "provenance observation drift",
+        (value) => (value.provenance.observationsSha256 = "0".repeat(64)),
+      ],
     ];
     let authorityRejected = 0;
     for (const invalidOptions of [
@@ -458,6 +638,37 @@ async function selfTest() {
       aliasRejected = true;
     }
     assert(aliasRejected, "aliased output roots were accepted");
+    const replayEnvelopePath = join(replayRoot, replay.provenance.path);
+    const replayEnvelopeBytes = readFileSync(replayEnvelopePath);
+    rmSync(replayEnvelopePath);
+    let missingEnvelopeRejected = false;
+    try {
+      compareReceipts(primary, replay, {
+        primaryOutputRoot: primaryRoot,
+        replayOutputRoot: replayRoot,
+        step: manifest.steps[0],
+        runnerSources: manifest.runner?.sources ?? [],
+      });
+    } catch {
+      missingEnvelopeRejected = true;
+    }
+    assert(missingEnvelopeRejected, "missing provenance envelope was accepted");
+    writeFileSync(replayEnvelopePath, replayEnvelopeBytes);
+    const primaryEnvelopeBytes = readFileSync(join(primaryRoot, primary.provenance.path));
+    writeFileSync(replayEnvelopePath, primaryEnvelopeBytes);
+    let substitutedEnvelopeRejected = false;
+    try {
+      compareReceipts(primary, replay, {
+        primaryOutputRoot: primaryRoot,
+        replayOutputRoot: replayRoot,
+        step: manifest.steps[0],
+        runnerSources: manifest.runner?.sources ?? [],
+      });
+    } catch {
+      substitutedEnvelopeRejected = true;
+    }
+    assert(substitutedEnvelopeRejected, "substituted provenance envelope was accepted");
+    writeFileSync(replayEnvelopePath, replayEnvelopeBytes);
     const replayRunDirectory = join(replayRoot, replay.runId);
     const symlinkPath = join(replayRunDirectory, "symlink");
     symlinkSync(join(primaryRoot, primary.streams.stdout.path), symlinkPath);
@@ -519,7 +730,7 @@ async function selfTest() {
       JSON.stringify({
         format: "agent-mail.executable-receipt/v2",
         accepted: true,
-        attacks: rejected + authorityRejected + 2,
+        attacks: rejected + authorityRejected + 4,
         comparison,
       }),
     );
