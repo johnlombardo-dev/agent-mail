@@ -389,7 +389,7 @@ export function validateManifest(
           step.fixture.id.split("/").every((part) => part && part !== "." && part !== ".."),
         `${step.id} fixture id is unsafe`,
       );
-      if (step.fixture.kind === "generated-stream") {
+      if (step.fixture.kind === "generated-stream" && step.fixture.minimumBytes !== undefined) {
         assert(
           Number.isSafeInteger(step.fixture.minimumBytes) && step.fixture.minimumBytes >= 0,
           `${step.id} stream fixture size is invalid`,
