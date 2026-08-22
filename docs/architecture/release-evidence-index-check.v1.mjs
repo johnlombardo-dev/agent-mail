@@ -2105,6 +2105,279 @@ function assertReceiptPath(ref, label) {
   );
 }
 
+function receiptSafeCount(value, label) {
+  assert(Number.isSafeInteger(value) && value >= 0, `${label} must be a safe nonnegative integer`);
+}
+
+function receiptNs(value, label) {
+  assert(/^\d+$/u.test(value ?? ""), `${label} must be an unsigned integer`);
+  return BigInt(value);
+}
+
+function validateReceiptIntervals(receipt, label) {
+  const monotonic = receipt.monotonic;
+  assert(Array.isArray(monotonic?.intervals), `${label} monotonic intervals are missing`);
+  const expectedIds = ["setup", "execution", "retention-and-cleanup"];
+  assert(
+    monotonic.intervals.length === expectedIds.length &&
+      monotonic.intervals.every((interval, index) => interval?.id === expectedIds[index]),
+    `${label} monotonic interval inventory is invalid`,
+  );
+  const intervals = monotonic.intervals.map((interval, index) => {
+    const startedNs = receiptNs(interval.startedNs, `${label} ${expectedIds[index]} start`);
+    const completedNs = receiptNs(
+      interval.completedNs,
+      `${label} ${expectedIds[index]} completion`,
+    );
+    const durationNs = receiptNs(interval.durationNs, `${label} ${expectedIds[index]} duration`);
+    assert(completedNs > startedNs, `${label} ${expectedIds[index]} interval is empty`);
+    assert(
+      completedNs - startedNs === durationNs,
+      `${label} ${expectedIds[index]} duration equation is invalid`,
+    );
+    return { startedNs, completedNs, durationNs };
+  });
+  for (let index = 1; index < intervals.length; index += 1)
+    assert(
+      intervals[index - 1].completedNs <= intervals[index].startedNs,
+      `${label} monotonic intervals overlap`,
+    );
+  const startedNs = receiptNs(monotonic.startedNs, `${label} monotonic start`);
+  const completedNs = receiptNs(monotonic.completedNs, `${label} monotonic completion`);
+  const durationNs = receiptNs(monotonic.durationNs, `${label} process duration`);
+  const aggregateDurationNs = receiptNs(
+    monotonic.aggregateDurationNs,
+    `${label} aggregate duration`,
+  );
+  const intervalSum = intervals.reduce((sum, interval) => sum + interval.durationNs, 0n);
+  assert(startedNs === intervals[0].startedNs, `${label} monotonic start is detached`);
+  assert(completedNs === intervals.at(-1).completedNs, `${label} monotonic completion is detached`);
+  assert(completedNs - startedNs === aggregateDurationNs, `${label} aggregate span is invalid`);
+  assert(intervalSum === aggregateDurationNs, `${label} aggregate duration is invalid`);
+  assert(durationNs === intervals[1].durationNs, `${label} execution duration is detached`);
+}
+
+function validateReceiptResources(receipt, step, label) {
+  const resources = receipt.probes?.resources;
+  assert(resources && typeof resources === "object", `${label} resource probe is missing`);
+  assert(typeof resources.observed === "boolean", `${label} resource availability is invalid`);
+  assert(
+    Array.isArray(resources.samples) && resources.samples.length >= 2,
+    `${label} resource samples are incomplete`,
+  );
+  const resourceKeys = ["fileDescriptors", "sockets", "listeners"];
+  const observedSamples = [];
+  const samplePids = new Set();
+  for (const [index, sample] of resources.samples.entries()) {
+    assert(sample && typeof sample === "object", `${label} resource sample ${index} is invalid`);
+    assert(
+      typeof sample.observed === "boolean",
+      `${label} resource sample ${index} availability is invalid`,
+    );
+    assert(Array.isArray(sample.pids), `${label} resource sample ${index} PIDs are missing`);
+    const pids = new Set();
+    for (const pid of sample.pids) {
+      assert(
+        Number.isSafeInteger(pid) && pid > 1 && !pids.has(pid),
+        `${label} resource sample ${index} PID is invalid`,
+      );
+      pids.add(pid);
+      samplePids.add(pid);
+    }
+    for (const key of resourceKeys) {
+      if (sample.observed)
+        receiptSafeCount(sample[key], `${label} resource sample ${index} ${key}`);
+      else assert(sample[key] === null, `${label} unavailable ${key} sample is forged`);
+    }
+    assert(
+      Array.isArray(sample.hermesPorts),
+      `${label} resource sample ${index} Hermes ports are invalid`,
+    );
+    assert(
+      new Set(sample.hermesPorts).size === sample.hermesPorts.length &&
+        sample.hermesPorts.every(
+          (port) => Number.isSafeInteger(port) && port >= 6110 && port <= 6119,
+        ),
+      `${label} resource sample ${index} Hermes ports are invalid`,
+    );
+    if (sample.observed) observedSamples.push(sample);
+  }
+  assert(
+    resources.observed === observedSamples.length > 0,
+    `${label} resource availability is detached`,
+  );
+  assert(
+    JSON.stringify([...samplePids].sort((left, right) => left - right)) ===
+      JSON.stringify([...new Set(resources.pids)].sort((left, right) => left - right)),
+    `${label} resource PID inventory is detached`,
+  );
+  for (const key of resourceKeys) {
+    const values = observedSamples.map((sample) => sample[key]);
+    const expectedMaximum = values.length > 0 ? Math.max(...values) : null;
+    assert(resources[key] === expectedMaximum, `${label} resource ${key} summary is detached`);
+  }
+  const hermesPorts = [...new Set(observedSamples.flatMap((sample) => sample.hermesPorts))].sort(
+    (left, right) => left - right,
+  );
+  assert(
+    JSON.stringify(resources.hermesPorts) === JSON.stringify(hermesPorts),
+    `${label} Hermes summary is detached`,
+  );
+  const declaredProbes = new Set(step.probes ?? []);
+  const requiredResourceProbe = ["fileDescriptors", "sockets", "listeners"].find((probe) =>
+    declaredProbes.has(probe),
+  );
+  if (requiredResourceProbe) {
+    assert(resources.observed, `${label} ${requiredResourceProbe} probe is unavailable`);
+    assert(
+      resources.samples.length === receipt.probes.process.samples.length,
+      `${label} resource sampling is incomplete`,
+    );
+    const threshold = step.thresholds?.[requiredResourceProbe];
+    if (threshold) {
+      assert(
+        evaluateThreshold(resources[requiredResourceProbe], threshold.operator, threshold.limit),
+        `${label} ${requiredResourceProbe} threshold failed`,
+      );
+    }
+  }
+  if (declaredProbes.has("HermesLease")) {
+    assert(
+      resources.observed && resources.hermesPorts.length > 0,
+      `${label} Hermes probe is unavailable`,
+    );
+  }
+}
+
+function validateReceiptProcess(receipt, step, label) {
+  const process = receipt.probes?.process;
+  assert(process && typeof process === "object", `${label} process probe is missing`);
+  assert(typeof process.observed === "boolean", `${label} process availability is invalid`);
+  assert(
+    Array.isArray(process.samples) && process.samples.length >= 2,
+    `${label} process samples are incomplete`,
+  );
+  const observedRss = [];
+  for (const [index, sample] of process.samples.entries()) {
+    assert(sample && typeof sample === "object", `${label} process sample ${index} is invalid`);
+    assert(
+      typeof sample.rootPresent === "boolean",
+      `${label} process sample ${index} root state is invalid`,
+    );
+    if (sample.rootPresent) {
+      assert(sample.rssStatus === "observed", `${label} observed RSS status is invalid`);
+      assert(
+        Number.isSafeInteger(sample.rssBytes) && sample.rssBytes >= 0,
+        `${label} observed RSS is invalid`,
+      );
+      observedRss.push(sample.rssBytes);
+    } else {
+      assert(
+        sample.rssStatus === "notApplicable" && sample.rssBytes === null,
+        `${label} exited RSS is forged`,
+      );
+    }
+    assert(Array.isArray(sample.pids), `${label} process sample ${index} PIDs are missing`);
+    assert(
+      Array.isArray(sample.processGroups),
+      `${label} process sample ${index} process groups are missing`,
+    );
+  }
+  assert(
+    process.observed === process.samples.some((sample) => sample.rootPresent),
+    `${label} process availability is detached`,
+  );
+  const terminal = process.samples.at(-1);
+  assert(!terminal.rootPresent, `${label} process terminal sample still has a root`);
+  assert(
+    JSON.stringify(process.descendants) === JSON.stringify(terminal.descendants),
+    `${label} terminal descendants are detached`,
+  );
+  if (process.rssStatus === "observed") {
+    assert(
+      Number.isSafeInteger(process.peakRssBytes) && process.peakRssBytes >= 0,
+      `${label} peak RSS is invalid`,
+    );
+    assert(process.rssBytes === process.peakRssBytes, `${label} RSS summary is detached`);
+    assert(process.peakRssBytes === Math.max(...observedRss), `${label} peak RSS is forged`);
+  } else {
+    assert(
+      process.rssStatus === "notApplicable" &&
+        process.rssBytes === null &&
+        process.peakRssBytes === null,
+      `${label} RSS status is invalid`,
+    );
+  }
+  if (new Set(step.probes ?? []).has("processTreeRss")) {
+    assert(
+      process.observed && process.rssStatus === "observed",
+      `${label} processTreeRss probe is unavailable`,
+    );
+    const threshold = step.thresholds?.processRssBytes;
+    if (threshold)
+      assert(
+        evaluateThreshold(process.peakRssBytes, threshold.operator, threshold.limit),
+        `${label} process RSS threshold failed`,
+      );
+  }
+}
+
+function validateReceiptCleanup(receipt, label) {
+  const cleanup = receipt.probes?.cleanup;
+  assert(cleanup && typeof cleanup === "object", `${label} cleanup probe is missing`);
+  assert(
+    cleanup.barrier === "awaited-idempotent" && cleanup.invocations === 1,
+    `${label} cleanup barrier is invalid`,
+  );
+  assert(cleanup.executionRootRemoved === true, `${label} execution root was not removed`);
+  assert(
+    Array.isArray(cleanup.survivorsAfterKill) && cleanup.survivorsAfterKill.length === 0,
+    `${label} cleanup survivors are present`,
+  );
+  assert(
+    Array.isArray(cleanup.descendantsBeforeRemoval) &&
+      cleanup.descendantsBeforeRemoval.length === 0,
+    `${label} cleanup descendants are present`,
+  );
+  const termination = cleanup.termination;
+  assert(termination && typeof termination === "object", `${label} termination receipt is missing`);
+  assert(
+    termination.sigtermSent === true && typeof termination.sigkillSent === "boolean",
+    `${label} termination signals are invalid`,
+  );
+  assert(
+    Array.isArray(termination.survivorsBeforeKill),
+    `${label} termination pre-kill survivors are invalid`,
+  );
+  assert(
+    Array.isArray(termination.survivorsAfterKill) && termination.survivorsAfterKill.length === 0,
+    `${label} terminal survivors are present`,
+  );
+  assert(termination.completed === true, `${label} termination completion is forged`);
+  assert(
+    JSON.stringify(cleanup.survivorsAfterKill) === JSON.stringify(termination.survivorsAfterKill),
+    `${label} cleanup termination binding is detached`,
+  );
+}
+
+function validateReceiptRuntimeEvidence(receipt, step, label) {
+  validateReceiptIntervals(receipt, label);
+  validateReceiptProcess(receipt, step, label);
+  validateReceiptResources(receipt, step, label);
+  const declaredProbes = new Set(step.probes ?? []);
+  if (declaredProbes.has("streams") || declaredProbes.has("streamCompletion")) {
+    assert(receipt.probes?.streams?.observed === true, `${label} stream probe is unavailable`);
+    for (const key of ["stdout", "stderr", "events"])
+      assert(
+        receipt.probes.streams[key] === receipt.streams[key].bytes,
+        `${label} stream probe ${key} is detached`,
+      );
+  }
+  if (declaredProbes.has("tempRoot"))
+    assert(receipt.probes?.tempRoot?.removed === true, `${label} temp root was not removed`);
+  validateReceiptCleanup(receipt, label);
+}
+
 export function validateExecutableReceipt(receipt, manifest, step, options = {}) {
   const label = `receipt ${receipt?.runId ?? "unknown"}`;
   assert(receipt?.format === "agent-mail.executable-receipt/v2", `${label} format is invalid`);
@@ -2196,6 +2469,7 @@ export function validateExecutableReceipt(receipt, manifest, step, options = {})
     receipt.observedOutcome?.status === receipt.result,
     `${label} observed outcome is detached`,
   );
+  validateReceiptRuntimeEvidence(receipt, step, label);
   assert(
     Array.isArray(receipt.assertions) && receipt.assertions.length === step.assertions.length,
     `${label} assertion receipt is incomplete`,
@@ -2290,6 +2564,15 @@ function runV2ExecutionSelfTest() {
     argv: receipt.argv,
     sources: receipt.sources,
     assertions: receipt.assertions.map(({ id, kind, expected }) => ({ id, kind, expected })),
+    probes: ["processTreeRss", "streams", "tempRoot"],
+    thresholds: {
+      processRssBytes: {
+        source: "kernel:ps",
+        operator: "<=",
+        limit: 1073741824,
+        unit: "bytes",
+      },
+    },
   };
   validateExecutableReceipt(receipt, null, step, { skipGit: true });
   const attacks = [
@@ -2386,6 +2669,103 @@ function runV2ExecutionSelfTest() {
       () => {
         const value = structuredClone(receipt);
         value.candidate.tree = "0".repeat(40);
+        return value;
+      },
+    ],
+    [
+      "receipt cleanup survivors",
+      () => {
+        const value = structuredClone(receipt);
+        value.probes.cleanup.survivorsAfterKill = [1234];
+        return value;
+      },
+    ],
+    [
+      "receipt resource sample",
+      () => {
+        const value = structuredClone(receipt);
+        const sample = value.probes.resources.samples.find((candidate) => candidate.observed);
+        sample.fileDescriptors = Number.MAX_SAFE_INTEGER;
+        return value;
+      },
+    ],
+    [
+      "receipt resource summary",
+      () => {
+        const value = structuredClone(receipt);
+        value.probes.resources.fileDescriptors += 1;
+        return value;
+      },
+    ],
+    [
+      "receipt RSS status",
+      () => {
+        const value = structuredClone(receipt);
+        value.probes.process.rssStatus = "notApplicable";
+        return value;
+      },
+    ],
+    [
+      "receipt RSS value",
+      () => {
+        const value = structuredClone(receipt);
+        value.probes.process.peakRssBytes = 0;
+        return value;
+      },
+    ],
+    [
+      "receipt interval duration",
+      () => {
+        const value = structuredClone(receipt);
+        value.monotonic.intervals[1].durationNs = "1";
+        return value;
+      },
+    ],
+    [
+      "receipt aggregate duration",
+      () => {
+        const value = structuredClone(receipt);
+        value.monotonic.aggregateDurationNs = "1";
+        return value;
+      },
+    ],
+    [
+      "receipt termination survivors",
+      () => {
+        const value = structuredClone(receipt);
+        value.probes.cleanup.termination.survivorsAfterKill = [1234];
+        return value;
+      },
+    ],
+    [
+      "receipt termination completion",
+      () => {
+        const value = structuredClone(receipt);
+        value.probes.cleanup.termination.completed = false;
+        return value;
+      },
+    ],
+    [
+      "receipt cleanup omission",
+      () => {
+        const value = structuredClone(receipt);
+        delete value.probes.cleanup;
+        return value;
+      },
+    ],
+    [
+      "receipt process samples omission",
+      () => {
+        const value = structuredClone(receipt);
+        delete value.probes.process.samples;
+        return value;
+      },
+    ],
+    [
+      "receipt resource samples omission",
+      () => {
+        const value = structuredClone(receipt);
+        delete value.probes.resources.samples;
         return value;
       },
     ],
