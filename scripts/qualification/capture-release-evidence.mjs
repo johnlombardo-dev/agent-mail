@@ -87,6 +87,19 @@ export const thresholdMetricRegistry = Object.freeze({
   }),
 });
 
+export const numericSourceConstantRegistry = Object.freeze({
+  "mime-rss-growth-threshold": Object.freeze({
+    sourcePath: "packages/imap/test/mime-capacity-p2-c11.ts",
+    exportName: "RSS_GROWTH_THRESHOLD_BYTES",
+    expression: "128 * MEBIBYTE",
+    value: 134217728,
+    fixtureAssertionId: "mime-fixture-observation",
+    fixtureAssertionField: "expectedPeakGrowthBytes",
+    thresholdMetric: "peakGrowth",
+    thresholdField: "limit",
+  }),
+});
+
 export function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -245,6 +258,101 @@ function committedText(root, commit, path, label) {
     });
   } catch {
     fail(`${label} is not committed`);
+  }
+}
+
+const numericSourceExpressionPattern = /^(?:0|[1-9](?:_?[0-9])*)(?:\s*[*/]\s*[A-Z][A-Z0-9_]*)?$/u;
+const numericSourceDeclarationPattern =
+  /^\s*export\s+const\s+([A-Z][A-Z0-9_]*)\s*=\s*([^;\n]+)\s*;\s*$/gmu;
+
+function validateNumericSourceConstants(step, root, commit) {
+  const fixtureAssertions = step.assertions.filter(
+    (assertion) => assertion.kind === "fixture-observation",
+  );
+  const constants = step.numericSourceConstants;
+  if (fixtureAssertions.length === 0) {
+    assert(constants === undefined, `${step.id} numeric source constants are unbound`);
+    return;
+  }
+  assert(
+    Array.isArray(constants) && constants.length === fixtureAssertions.length,
+    `${step.id} numeric source constants are incomplete`,
+  );
+  const ids = new Set();
+  for (const constant of constants) {
+    assert(
+      constant &&
+        typeof constant.id === "string" &&
+        constant.id.length > 0 &&
+        !ids.has(constant.id),
+      `${step.id} numeric source constant ID repeats`,
+    );
+    ids.add(constant.id);
+    const registered = numericSourceConstantRegistry[constant.id];
+    assert(registered, `${step.id} numeric source constant is not registered`);
+    for (const field of [
+      "sourcePath",
+      "exportName",
+      "expression",
+      "value",
+      "fixtureAssertionId",
+      "fixtureAssertionField",
+      "thresholdMetric",
+      "thresholdField",
+    ])
+      assert(
+        constant[field] === registered[field],
+        `${step.id} numeric source constant authority drifted`,
+      );
+    assert(
+      typeof constant.sourcePath === "string" &&
+        step.sources.some((source) => source.path === constant.sourcePath),
+      `${step.id} numeric source constant path is not source-bound`,
+    );
+    assert(
+      typeof constant.exportName === "string" && /^[A-Z][A-Z0-9_]*$/u.test(constant.exportName),
+      `${step.id} numeric source constant export is invalid`,
+    );
+    assert(
+      Number.isSafeInteger(constant.value) && constant.value > 0,
+      `${step.id} numeric source constant value is invalid`,
+    );
+    assert(
+      typeof constant.expression === "string" &&
+        numericSourceExpressionPattern.test(constant.expression),
+      `${step.id} numeric source constant expression is invalid`,
+    );
+    assert(
+      typeof constant.fixtureAssertionId === "string" &&
+        constant.fixtureAssertionField === "expectedPeakGrowthBytes" &&
+        constant.thresholdMetric === "peakGrowth" &&
+        constant.thresholdField === "limit",
+      `${step.id} numeric source constant authority is invalid`,
+    );
+    const fixtureAssertion = fixtureAssertions.find(
+      (assertion) => assertion.id === constant.fixtureAssertionId,
+    );
+    assert(
+      fixtureAssertion && fixtureAssertion.expectedPeakGrowthBytes === constant.value,
+      `${step.id} numeric source constant fixture binding is detached`,
+    );
+    const threshold = step.thresholds[constant.thresholdMetric];
+    assert(
+      threshold && threshold[constant.thresholdField] === constant.value,
+      `${step.id} numeric source constant threshold binding is detached`,
+    );
+    const source = committedText(root, commit, constant.sourcePath, `${step.id} numeric source`);
+    const declarations = [...source.matchAll(numericSourceDeclarationPattern)].filter(
+      (match) => match[1] === constant.exportName,
+    );
+    assert(
+      declarations.length === 1,
+      `${step.id} numeric source constant declaration is missing or ambiguous`,
+    );
+    assert(
+      declarations[0][2].trim() === constant.expression,
+      `${step.id} numeric source constant declaration drifted`,
+    );
   }
 }
 
@@ -499,6 +607,7 @@ export function validateManifest(
         `${step.id} threshold ${metric} source/operator/unit is incomplete`,
       );
     }
+    validateNumericSourceConstants(step, root, commit);
     for (const [metric, threshold] of Object.entries(step.thresholds)) {
       if (metric === "timeoutMs" || threshold?.source !== "fixture-observation") continue;
       const metricSpec = thresholdMetricRegistry[metric];

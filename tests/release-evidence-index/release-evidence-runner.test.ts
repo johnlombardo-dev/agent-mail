@@ -121,6 +121,58 @@ function disposableRepo(
   return { root, ...fixture };
 }
 
+function numericSourceFixture() {
+  const fixture = disposableRepo();
+  const sourcePath = "packages/imap/test/mime-capacity-p2-c11.ts";
+  const sourceBytes = Buffer.from(
+    "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
+  );
+  mkdirSync(join(fixture.root, "packages/imap/test"), { recursive: true });
+  writeFileSync(join(fixture.root, sourcePath), sourceBytes);
+  git(fixture.root, ["add", sourcePath]);
+  git(fixture.root, ["commit", "-qm", "numeric source authority"]);
+  const sourceBlob = git(fixture.root, ["rev-parse", `HEAD:${sourcePath}`]);
+  const step = fixture.manifest.steps[0];
+  step.id = "mime-250mib";
+  step.sources.push({
+    role: "mime-threshold-authority",
+    path: sourcePath,
+    gitBlob: sourceBlob,
+    sha256: sha256(sourceBytes),
+  });
+  step.assertions.push({
+    id: "mime-fixture-observation",
+    kind: "fixture-observation",
+    sourcePath,
+    fixtureId: "issue-176-mime-250mib",
+    expectedBytes: 262144000,
+    expectedPeakGrowthBytes: 134217728,
+  });
+  step.thresholds = {
+    peakGrowth: { source: "fixture-observation", operator: "<", limit: 134217728, unit: "bytes" },
+    timeoutMs: 5_000,
+  };
+  step.numericSourceConstants = [
+    {
+      id: "mime-rss-growth-threshold",
+      sourcePath,
+      exportName: "RSS_GROWTH_THRESHOLD_BYTES",
+      expression: "128 * MEBIBYTE",
+      value: 134217728,
+      fixtureAssertionId: "mime-fixture-observation",
+      fixtureAssertionField: "expectedPeakGrowthBytes",
+      thresholdMetric: "peakGrowth",
+      thresholdField: "limit",
+    },
+  ];
+  writeFileSync(fixture.manifestPath, `${JSON.stringify(fixture.manifest, null, 2)}\n`);
+  git(fixture.root, ["add", "manifest.json"]);
+  git(fixture.root, ["commit", "-qm", "numeric source manifest authority"]);
+  const commit = git(fixture.root, ["rev-parse", "HEAD"]);
+  validateManifest(fixture.manifest, fixture.root, commit);
+  return { ...fixture, commit, sourcePath };
+}
+
 function testCapture(options: Parameters<typeof capture>[0]) {
   return capture({ ...options, selfTest: true });
 }
@@ -447,6 +499,78 @@ describe("release evidence executable runner", () => {
       mutate(candidate);
       expect(() => validateManifest(candidate, ".")).toThrow();
     }
+  });
+
+  test("source-binds MIME growth authority to committed numeric declaration", () => {
+    const fixture = numericSourceFixture();
+    const base = structuredClone(fixture.manifest);
+    const authority = (candidate: typeof base) => candidate.steps[0].numericSourceConstants[0];
+    const metadataAttacks = [
+      ["missing authority metadata", (candidate: typeof base) => delete candidate.steps[0].numericSourceConstants],
+      ["unbound authority source", (candidate: typeof base) => candidate.steps[0].sources.pop()],
+      ["wrong authority path", (candidate: typeof base) => (authority(candidate).sourcePath = "other.ts")],
+      ["wrong authority export", (candidate: typeof base) => (authority(candidate).exportName = "OTHER")],
+      ["wrong authority expression", (candidate: typeof base) => (authority(candidate).expression = "1024 * MEBIBYTE")],
+      ["wrong authority value", (candidate: typeof base) => (authority(candidate).value = 1024 * 1024 * 1024)],
+      ["wrong authority assertion field", (candidate: typeof base) => (authority(candidate).fixtureAssertionField = "expectedBytes")],
+      ["wrong authority threshold", (candidate: typeof base) => (authority(candidate).thresholdMetric = "bytes")],
+      ["wrong source SHA", (candidate: typeof base) => (candidate.steps[0].sources[2].sha256 = "0".repeat(64))],
+      ["wrong source blob", (candidate: typeof base) => (candidate.steps[0].sources[2].gitBlob = "0".repeat(40))],
+    ] as const;
+    for (const [name, mutate] of metadataAttacks) {
+      const candidate = structuredClone(base);
+      mutate(candidate);
+      expect(() => validateManifest(candidate, fixture.root, fixture.commit), name).toThrow();
+    }
+
+    const commitAuthoritySource = (source: string) => {
+      writeFileSync(join(fixture.root, fixture.sourcePath), source);
+      git(fixture.root, ["add", fixture.sourcePath]);
+      git(fixture.root, ["commit", "-qm", "mutate numeric source authority"]);
+      return {
+        commit: git(fixture.root, ["rev-parse", "HEAD"]),
+        gitBlob: git(fixture.root, ["rev-parse", `HEAD:${fixture.sourcePath}`]),
+        sha256: sha256(Buffer.from(source)),
+      };
+    };
+    const committedAttacks = [
+      ["missing export", "export const OTHER_THRESHOLD = 128 * MEBIBYTE;\n"],
+      ["wrong committed value", "export const RSS_GROWTH_THRESHOLD_BYTES = 1024 * MEBIBYTE;\n"],
+      [
+        "ambiguous export",
+        "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
+      ],
+    ] as const;
+    for (const [name, source] of committedAttacks) {
+      const committed = commitAuthoritySource(source);
+      const candidate = structuredClone(base);
+      const sourceBinding = candidate.steps[0].sources.find(
+        (entry: { path: string }) => entry.path === fixture.sourcePath,
+      );
+      sourceBinding.gitBlob = committed.gitBlob;
+      sourceBinding.sha256 = committed.sha256;
+      expect(() => validateManifest(candidate, fixture.root, committed.commit), name).toThrow();
+    }
+
+    const coordinated = commitAuthoritySource(
+      "export const RSS_GROWTH_THRESHOLD_BYTES = 1024 * MEBIBYTE;\n",
+    );
+    const coordinatedCandidate = structuredClone(base);
+    const coordinatedAuthority = coordinatedCandidate.steps[0].numericSourceConstants[0];
+    coordinatedAuthority.expression = "1024 * MEBIBYTE";
+    coordinatedAuthority.value = 1024 * 1024 * 1024;
+    coordinatedAuthority.fixtureAssertionField = "expectedPeakGrowthBytes";
+    coordinatedCandidate.steps[0].assertions[3].expectedPeakGrowthBytes = 1024 * 1024 * 1024;
+    coordinatedCandidate.steps[0].thresholds.peakGrowth.limit = 1024 * 1024 * 1024;
+    const coordinatedSource = coordinatedCandidate.steps[0].sources.find(
+      (entry: { path: string }) => entry.path === fixture.sourcePath,
+    );
+    coordinatedSource.gitBlob = coordinated.gitBlob;
+    coordinatedSource.sha256 = coordinated.sha256;
+    expect(() => validateManifest(coordinatedCandidate, fixture.root, coordinated.commit)).toThrow(
+      /authority drifted/u,
+    );
+    rmSync(fixture.root, { recursive: true, force: true });
   });
 
   test("rejects an evil descendant beneath an exact untracked allowlist entry", async () => {

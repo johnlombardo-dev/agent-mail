@@ -121,6 +121,12 @@
           "sha256": "ec150d058696d57929e59c7b7ec546c862e30080db0e38c23dc1d715aeaf64bf"
         },
         {
+          "role": "mime-threshold-authority",
+          "path": "packages/imap/test/mime-capacity-p2-c11.ts",
+          "gitBlob": "83a7e2f902e3cd05c7d5075491ac62728e1ff8bc",
+          "sha256": "da7315808d2510c9f17841e61f53a95174c23d1f3c9a68fcdfe0b7ff3a07417a"
+        },
+        {
           "role": "fixture-observation-helper",
           "path": "packages/imap/test/helpers/mime-capacity-p2-c11-child.ts",
           "gitBlob": "062e2f9ce6d4ea7139a61572f92b2af6422b3107",
@@ -168,6 +174,19 @@
           "fixtureId": "issue-176-mime-250mib",
           "expectedBytes": 262144000,
           "expectedPeakGrowthBytes": 134217728
+        }
+      ],
+      "numericSourceConstants": [
+        {
+          "id": "mime-rss-growth-threshold",
+          "sourcePath": "packages/imap/test/mime-capacity-p2-c11.ts",
+          "exportName": "RSS_GROWTH_THRESHOLD_BYTES",
+          "expression": "128 * MEBIBYTE",
+          "value": 134217728,
+          "fixtureAssertionId": "mime-fixture-observation",
+          "fixtureAssertionField": "expectedPeakGrowthBytes",
+          "thresholdMetric": "peakGrowth",
+          "thresholdField": "limit"
         }
       ],
       "observations": [
