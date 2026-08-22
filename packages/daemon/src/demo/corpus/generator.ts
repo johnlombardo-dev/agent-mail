@@ -73,9 +73,18 @@ export type CorpusRunFailurePhase =
   | "attachment-open"
   | "attachment-read";
 
+export type CorpusRunFailureCode =
+  | "options-rejected"
+  | "generator-acquisition-failed"
+  | "generator-yield-failed"
+  | "consumer-threw"
+  | "attachment-open-failed"
+  | "attachment-read-failed";
+
 export type CorpusRunFailure = Readonly<{
-  readonly name: string;
-  readonly message: string;
+  readonly protocol: "agent-mail-demo-corpus-failure.v1";
+  readonly code: CorpusRunFailureCode;
+  readonly message: "observed corpus operation failed";
 }>;
 
 export type CorpusRunCompletionReceipt =
@@ -737,23 +746,33 @@ function operationQueue(): EnqueueOperation {
   };
 }
 
-function failureRecord(error: unknown): CorpusRunFailure {
-  let name = "NonError";
-  let message =
-    typeof error === "string" && error.length > 0 ? error : "observed corpus operation failed";
-  if ((typeof error === "object" && error !== null) || typeof error === "function") {
-    name = "Error";
-    try {
-      const suppliedName = Reflect.get(error, "name");
-      const suppliedMessage = Reflect.get(error, "message");
-      if (typeof suppliedName === "string" && suppliedName.length > 0) name = suppliedName;
-      if (typeof suppliedMessage === "string" && suppliedMessage.length > 0)
-        message = suppliedMessage;
-    } catch {
-      // Thrown values and their metadata are untrusted; keep the stable fallback.
+function failureCodeForPhase(phase: CorpusRunFailurePhase): CorpusRunFailureCode {
+  switch (phase) {
+    case "options-parse":
+      return "options-rejected";
+    case "generator-acquire":
+      return "generator-acquisition-failed";
+    case "generator-yield":
+      return "generator-yield-failed";
+    case "consumer-throw":
+      return "consumer-threw";
+    case "attachment-open":
+      return "attachment-open-failed";
+    case "attachment-read":
+      return "attachment-read-failed";
+    default: {
+      const _exhaustive: never = phase;
+      throw new Error(`unhandled corpus failure phase ${String(_exhaustive)}`);
     }
   }
-  return Object.freeze({ name, message });
+}
+
+function failureRecord(phase: CorpusRunFailurePhase): CorpusRunFailure {
+  return Object.freeze({
+    protocol: "agent-mail-demo-corpus-failure.v1",
+    code: failureCodeForPhase(phase),
+    message: "observed corpus operation failed",
+  });
 }
 
 export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
@@ -893,7 +912,7 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
                 selectTerminal({
                   kind: "failed",
                   phase: "attachment-open",
-                  error: failureRecord(error),
+                  error: failureRecord("attachment-open"),
                 });
                 throw error;
               }
@@ -914,7 +933,7 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
               selectTerminal({
                 kind: "failed",
                 phase: "attachment-read",
-                error: failureRecord(error),
+                error: failureRecord("attachment-read"),
               });
               throw error;
             }
@@ -939,7 +958,7 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
             if (state !== "terminal") {
               const phase = state === "before-start" ? "attachment-open" : "attachment-read";
               finalize();
-              selectTerminal({ kind: "failed", phase, error: failureRecord(rejection) });
+              selectTerminal({ kind: "failed", phase, error: failureRecord(phase) });
               await completion;
             }
             throw rejection;
@@ -955,7 +974,11 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
     try {
       options = parseCorpusOptions(input);
     } catch (error: unknown) {
-      selectTerminal({ kind: "failed", phase: "options-parse", error: failureRecord(error) });
+      selectTerminal({
+        kind: "failed",
+        phase: "options-parse",
+        error: failureRecord("options-parse"),
+      });
       throw error;
     }
     try {
@@ -968,7 +991,11 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
       mailboxIds = acquiredMailboxIds;
       generatorAcquiredCount = 1;
     } catch (error: unknown) {
-      selectTerminal({ kind: "failed", phase: "generator-acquire", error: failureRecord(error) });
+      selectTerminal({
+        kind: "failed",
+        phase: "generator-acquire",
+        error: failureRecord("generator-acquire"),
+      });
       throw error;
     }
   };
@@ -986,7 +1013,7 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
           selectTerminal({
             kind: "failed",
             phase: "generator-acquire",
-            error: failureRecord(error),
+            error: failureRecord("generator-acquire"),
           });
           throw error;
         }
@@ -1010,7 +1037,11 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
           generatorYieldedCount += 1;
           return { done: false, value: message };
         } catch (error: unknown) {
-          selectTerminal({ kind: "failed", phase: "generator-yield", error: failureRecord(error) });
+          selectTerminal({
+            kind: "failed",
+            phase: "generator-yield",
+            error: failureRecord("generator-yield"),
+          });
           await completion;
           throw error;
         }
@@ -1033,7 +1064,7 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
           selectTerminal({
             kind: "failed",
             phase: "consumer-throw",
-            error: failureRecord(rejection),
+            error: failureRecord("consumer-throw"),
           });
           await completion;
         }

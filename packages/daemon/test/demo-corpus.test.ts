@@ -1244,7 +1244,11 @@ describe("deterministic demo corpus", () => {
     expect(throwReceipt.kind).toBe("failed");
     if (throwReceipt.kind !== "failed") throw new Error("throw receipt did not fail");
     expect(throwReceipt.phase).toBe("consumer-throw");
-    expect(throwReceipt.error).toEqual({ name: "Error", message: thrown.message });
+    expect(throwReceipt.error).toEqual({
+      protocol: "agent-mail-demo-corpus-failure.v1",
+      code: "consumer-threw",
+      message: "observed corpus operation failed",
+    });
     expect(throwReceipt.generator.finallyCompletedCount).toBe(0);
 
     const invalidRun = createObservedCorpusRun({});
@@ -1286,6 +1290,74 @@ describe("deterministic demo corpus", () => {
       yieldedCount: 0,
       finallyCompletedCount: 0,
     });
+  });
+
+  test("redacts arbitrary thrown values without touching their metadata", async () => {
+    const reads: PropertyKey[] = [];
+    const hostile = new Proxy(
+      {},
+      {
+        get: (_target, property) => {
+          reads.push(property);
+          throw new Error("hostile getter read");
+        },
+        getPrototypeOf: () => {
+          reads.push("getPrototypeOf");
+          throw new Error("hostile prototype read");
+        },
+        ownKeys: () => {
+          reads.push("ownKeys");
+          throw new Error("hostile keys read");
+        },
+        getOwnPropertyDescriptor: (_target, property) => {
+          reads.push(property);
+          throw new Error("hostile descriptor read");
+        },
+      },
+    );
+    const run = createObservedCorpusRun(options("redaction-hostile", 2));
+    const iterator = run.stream[Symbol.asyncIterator]();
+    await expect(iterator.throw(hostile)).rejects.toBe(hostile);
+    const receipt = await terminalReceipt(run.completion);
+    expect(receipt.kind).toBe("failed");
+    if (receipt.kind !== "failed") throw new Error("hostile receipt did not fail");
+    expect(receipt.phase).toBe("consumer-throw");
+    expect(receipt.error).toEqual({
+      protocol: "agent-mail-demo-corpus-failure.v1",
+      code: "consumer-threw",
+      message: "observed corpus operation failed",
+    });
+    expect(Object.isFrozen(receipt)).toBe(true);
+    expect(Object.isFrozen(receipt.error)).toBe(true);
+    expect(reads).toEqual([]);
+    expect(JSON.stringify(receipt)).not.toContain("hostile");
+    expect(await terminalReceipt(run.completion)).toBe(receipt);
+
+    const secret = "password=credential \u0000 \u202e秘密";
+    const stringRun = createObservedCorpusRun(options("redaction-string", 2));
+    const stringIterator = stringRun.stream[Symbol.asyncIterator]();
+    await expect(stringIterator.throw(secret)).rejects.toBe(secret);
+    const stringReceipt = await terminalReceipt(stringRun.completion);
+    expect(stringReceipt.kind).toBe("failed");
+    if (stringReceipt.kind !== "failed") throw new Error("string receipt did not fail");
+    expect(JSON.stringify(stringReceipt)).not.toContain(secret);
+
+    const credential = "AKIA_TEST credential=password \u0000 \u202e秘密";
+    const invalidRun = createObservedCorpusRun({
+      ...options("credential-options", 2),
+      credential,
+    });
+    await expect(invalidRun.stream.next()).rejects.toBeInstanceOf(CorpusOptionsError);
+    const invalidReceipt = await terminalReceipt(invalidRun.completion);
+    expect(invalidReceipt.kind).toBe("failed");
+    if (invalidReceipt.kind !== "failed") throw new Error("credential receipt did not fail");
+    expect(invalidReceipt.phase).toBe("options-parse");
+    expect(invalidReceipt.error).toEqual({
+      protocol: "agent-mail-demo-corpus-failure.v1",
+      code: "options-rejected",
+      message: "observed corpus operation failed",
+    });
+    expect(JSON.stringify(invalidReceipt)).not.toContain(credential);
   });
 
   test("settles return, throw, consumer error, and concurrent terminals after acquisition", async () => {
@@ -1341,8 +1413,9 @@ describe("deterministic demo corpus", () => {
   test("settles attachment open, read, cancel, and forced-finalization paths", async () => {
     const unopenedCancelRun = createObservedCorpusRun(options("attachment-unopened-cancel", 24));
     const unopenedCancelFixture = await firstObservedAttachment(unopenedCancelRun);
-    const unopenedCancelIterator =
-      unopenedCancelFixture.attachment.openStream()[Symbol.asyncIterator]();
+    const unopenedCancelIterator = unopenedCancelFixture.attachment
+      .openStream()
+      [Symbol.asyncIterator]();
     await unopenedCancelIterator.return?.();
     const unopenedCancelReceipt = await terminalReceipt(unopenedCancelRun.completion);
     expect(unopenedCancelReceipt.kind).toBe("cancelled-after-start");
@@ -1366,7 +1439,8 @@ describe("deterministic demo corpus", () => {
     const readIterator = readFixture.attachment.openStream()[Symbol.asyncIterator]();
     const firstChunk = await readIterator.next();
     expect(firstChunk.done).toBe(false);
-    if (!firstChunk.done) expect(firstChunk.value.byteLength).toBeLessThanOrEqual(STREAM_CHUNK_BYTES);
+    if (!firstChunk.done)
+      expect(firstChunk.value.byteLength).toBeLessThanOrEqual(STREAM_CHUNK_BYTES);
     const readError = new Error("attachment read failed");
     await expect(readIterator.throw?.(readError)).rejects.toBe(readError);
     const readReceipt = await terminalReceipt(readRun.completion);
