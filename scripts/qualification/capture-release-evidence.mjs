@@ -79,7 +79,8 @@ function repositorySnapshot(root) {
 }
 
 function isAllowedUntracked(path, allowlist = []) {
-  return allowlist.some((entry) => path === entry || path.startsWith(`${entry}/`));
+  const normalized = path.replace(/\/+$/u, "");
+  return allowlist.some((entry) => normalized === entry.replace(/\/+$/u, ""));
 }
 
 function assertCleanCandidate(root, allowlist = []) {
@@ -98,10 +99,8 @@ function installFrozenDependencies(checkout, manifest) {
   const dependencyMode = manifest.runner?.dependencyMode;
   if (!dependencyMode) return { mode: "none", installed: false };
   assert(dependencyMode === "bun-frozen-offline", "unsupported dependency mode");
-  assert(
-    existsSync(join(checkout, "package.json")) && existsSync(join(checkout, "bun.lock")),
-    "frozen dependency inputs are missing",
-  );
+  if (!existsSync(join(checkout, "package.json")) || !existsSync(join(checkout, "bun.lock")))
+    return { mode: dependencyMode, installed: false };
   execFileSync("bun", ["install", "--frozen-lockfile", "--offline"], {
     cwd: checkout,
     encoding: "utf8",
@@ -113,7 +112,14 @@ function installFrozenDependencies(checkout, manifest) {
     status.every((entry) => {
       const normalized = entry.path.replace(/\/+$/u, "");
       return (
-        entry.code === "??" && (normalized === "node_modules" || normalized.startsWith("packages/"))
+        entry.code === "??" &&
+        [
+          "node_modules",
+          "packages/cli/node_modules",
+          "packages/daemon/node_modules",
+          "packages/imap/node_modules",
+          "packages/storage/node_modules",
+        ].includes(normalized)
       );
     }),
     "dependency install changed committed candidate files",
@@ -206,10 +212,16 @@ function validateAssertion(assertion, step) {
       `${step.id} oracle event is missing`,
     );
     assert(
-      typeof assertion.field === "string" && assertion.field.length > 0,
-      `${step.id} oracle field is missing`,
+      typeof assertion.path === "string" &&
+        step.sources.some((source) => source.path === assertion.path),
+      `${step.id} oracle path is not source-bound`,
     );
-    assert(assertion.expected !== undefined, `${step.id} oracle expected value is missing`);
+    assert(/^[0-9a-f]{64}$/u.test(assertion.sha256 ?? ""), `${step.id} oracle digest is missing`);
+    assert(
+      typeof assertion.pointer === "string" && assertion.pointer.startsWith("/"),
+      `${step.id} oracle pointer is missing`,
+    );
+    assert(assertion.value !== undefined, `${step.id} oracle value is missing`);
   } else if (assertion.kind === "exitCode") {
     assert(Number.isInteger(assertion.expected), `${step.id} exit expectation is invalid`);
   } else {
@@ -245,6 +257,10 @@ export function validateManifest(manifest, root, commit = git(root, ["rev-parse"
     );
   }
   if (manifest.runner?.sources) {
+    assert(
+      manifest.runner.dependencyMode === "bun-frozen-offline",
+      "runner dependency mode must be bun-frozen-offline",
+    );
     assert(
       Array.isArray(manifest.runner.sources) && manifest.runner.sources.length > 0,
       "runner source bindings are missing",
@@ -287,6 +303,12 @@ export function validateManifest(manifest, root, commit = git(root, ["rev-parse"
       `${step.id} assertions are missing`,
     );
     for (const assertion of step.assertions) validateAssertion(assertion, step);
+    for (const assertion of step.assertions.filter(
+      (candidate) => candidate.kind === "structured-oracle",
+    )) {
+      const source = step.sources.find((candidate) => candidate.path === assertion.path);
+      assert(source.sha256 === assertion.sha256, `${step.id} oracle digest is detached`);
+    }
     assert(
       step.observations && step.thresholds && step.probes,
       `${step.id} observation authority is incomplete`,
@@ -440,6 +462,27 @@ function parseMachineEvents(stdout, stderr) {
   return events;
 }
 
+function candidateSourceEvents(step, sourceRoot, bindings) {
+  return step.assertions
+    .filter((assertion) => assertion.kind === "source-token")
+    .map((assertion) => {
+      const source = bindings.find((candidate) => candidate.path === assertion.sourcePath);
+      const sourceText = readFileSync(resolve(sourceRoot, assertion.sourcePath), "utf8");
+      const observed = sourceText.split(assertion.token).length - 1;
+      return {
+        format: "agent-mail.observation/v1",
+        event: "source-token",
+        assertionId: assertion.id,
+        sourcePath: assertion.sourcePath,
+        sourceSha256: source.sha256,
+        token: assertion.token,
+        observed,
+        expected: assertion.occurrences,
+        pass: observed === assertion.occurrences,
+      };
+    });
+}
+
 function resolveArgv(argv, fixturePath, outputRoot, runId) {
   const replacements = {
     "<temp-corpus>": fixturePath,
@@ -498,13 +541,32 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       };
     }
     if (assertion.kind === "source-token") {
-      const source = readFileSync(resolve(sourceRoot, assertion.sourcePath), "utf8");
-      const observed = source.split(assertion.token).length - 1;
-      return { ...assertion, observed, pass: observed === assertion.occurrences };
+      const matching = events.filter(
+        (event) => event.event === "source-token" && event.assertionId === assertion.id,
+      );
+      assert(matching.length === 1, `${step.id} source-token event count is not exactly one`);
+      const event = matching[0];
+      const source = step.sources.find((candidate) => candidate.path === assertion.sourcePath);
+      assert(
+        event.sourcePath === assertion.sourcePath && event.sourceSha256 === source.sha256,
+        `${step.id} source-token event is detached`,
+      );
+      return {
+        ...assertion,
+        observed: event.observed,
+        pass: event.pass === true && event.observed === assertion.occurrences,
+      };
     }
-    const matching = events.find((event) => event.event === assertion.event);
-    const observed = matching?.[assertion.field];
-    return { ...assertion, observed, pass: Object.is(observed, assertion.expected) };
+    const matching = events.filter(
+      (event) =>
+        event.event === assertion.event &&
+        event.path === assertion.path &&
+        event.sha256 === assertion.sha256 &&
+        event.pointer === assertion.pointer,
+    );
+    assert(matching.length === 1, `${step.id} structured oracle event count is not exactly one`);
+    const observed = matching[0].value;
+    return { ...assertion, observed, pass: Object.is(observed, assertion.value) };
   });
 }
 
@@ -618,7 +680,10 @@ export async function capture({
     const completedAt = completedWallTime(startedAt);
     const processAfter = processTreeSnapshot(processResult.pid);
     const descendants = descendantPids(processResult.pid);
-    const eventsValue = parseMachineEvents(processResult.stdout, processResult.stderr);
+    const eventsValue = [
+      ...parseMachineEvents(processResult.stdout, processResult.stderr),
+      ...candidateSourceEvents(step, checkout, stepBindings),
+    ];
     const eventBytes = Buffer.from(
       eventsValue.map((event) => `${JSON.stringify(event)}\n`).join(""),
     );
@@ -676,8 +741,7 @@ export async function capture({
         manifestSha256: sha256(manifestBytes),
       },
       cwd: step.cwd,
-      argv: [...step.argv],
-      resolvedArgv: [...argv],
+      argv: [...argv],
       stdin: { kind: "none" },
       sources: stepBindings,
       runnerSources: runnerBindings,

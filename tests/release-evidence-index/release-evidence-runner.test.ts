@@ -12,14 +12,19 @@ function git(root: string, args: string[]) {
 
 function disposableManifest(root: string) {
   const sourcePath = "tiny-runner.mjs";
+  const oraclePath = "oracle.json";
+  const oracleBytes = Buffer.from('{"value":"pass"}\n');
+  writeFileSync(join(root, oraclePath), oracleBytes);
+  const oracleSha256 = sha256(oracleBytes);
   const sourceBytes = Buffer.from(
-    "process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'oracle',value:'pass'}) + '\\n');\nconst sourceToken = true;\n",
+    `process.stdout.write(JSON.stringify({format:'agent-mail.observation/v1',event:'oracle',path:'${oraclePath}',sha256:'${oracleSha256}',pointer:'/value',value:'pass'}) + '\\n');\nconst sourceToken = true;\n`,
   );
   writeFileSync(join(root, sourcePath), sourceBytes);
-  git(root, ["add", sourcePath]);
+  git(root, ["add", sourcePath, oraclePath]);
   git(root, ["commit", "-qm", "candidate source"]);
   const commit = git(root, ["rev-parse", "HEAD"]);
   const blob = git(root, ["rev-parse", `HEAD:${sourcePath}`]);
+  const oracleBlob = git(root, ["rev-parse", `HEAD:${oraclePath}`]);
   const manifest = {
     format: "agent-mail.release-evidence-execution-manifest/v2",
     schemaVersion: 2,
@@ -33,10 +38,21 @@ function disposableManifest(root: string) {
         obligationIds: ["F17"],
         cwd: ".",
         argv: ["node", sourcePath],
-        sources: [{ role: "entrypoint", path: sourcePath, gitBlob: blob, sha256: sha256(sourceBytes) }],
+        sources: [
+          { role: "entrypoint", path: sourcePath, gitBlob: blob, sha256: sha256(sourceBytes) },
+          { role: "oracle", path: oraclePath, gitBlob: oracleBlob, sha256: oracleSha256 },
+        ],
         assertions: [
           { id: "source-token", kind: "source-token", sourcePath, token: "sourceToken", occurrences: 1 },
-          { id: "oracle", kind: "structured-oracle", event: "oracle", field: "value", expected: "pass" },
+          {
+            id: "oracle",
+            kind: "structured-oracle",
+            event: "oracle",
+            path: oraclePath,
+            sha256: oracleSha256,
+            pointer: "/value",
+            value: "pass",
+          },
           { id: "exit", kind: "exitCode", expected: 0 },
         ],
         observations: ["stdout", "events"],
@@ -79,9 +95,9 @@ describe("release evidence executable runner", () => {
         });
         expect(primary.result).toBe("pass");
         expect(replay.result).toBe("pass");
-        expect(primary.sources).toHaveLength(1);
+        expect(primary.sources).toHaveLength(2);
         expect(primary.runnerSources).toHaveLength(0);
-        expect(primary.resolvedArgv).toEqual(["node", "tiny-runner.mjs"]);
+        expect(primary.argv).toEqual(["node", "tiny-runner.mjs"]);
         expect(compareReceipts(primary, replay).replayResult).toBe("pass");
       } finally {
         rmSync(replayRoot, { recursive: true, force: true });
