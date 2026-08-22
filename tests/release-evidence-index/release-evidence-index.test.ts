@@ -38,6 +38,14 @@ describe("release qualification evidence index", () => {
     });
   });
 
+  test("keeps the legacy v1 projection inactive", async () => {
+    const index = await Bun.file("docs/architecture/release-evidence-index.v1.json").json();
+    expect(index.legacyV1Projection.status).toBe("inactive");
+    const legacy = structuredClone(index);
+    legacy.resultRecords = [{ protocol: "legacy-v1", sequence: 1 }];
+    expect(() => validateIndex(legacy)).toThrow(/legacy v1 records are inactive/u);
+  });
+
   test("rejects focused completeness mutations", { timeout: 90_000 }, () => {
     expect(runSelfTest()).toEqual({
       attacks: 80,

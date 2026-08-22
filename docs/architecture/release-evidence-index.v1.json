@@ -2673,7 +2673,13 @@
     },
     "appendOnly": true,
     "protocols": ["legacy-v1", "agent-mail.release-evidence/v2"],
-    "v2RecordTypes": ["qualification", "disposition"]
+    "v2RecordTypes": ["qualification", "disposition"],
+    "provenanceEnvelope": {
+      "format": "agent-mail.capture-provenance/v1",
+      "requiredForPromotion": true,
+      "outputRootClosure": true
+    },
+    "commitModel": "candidate-parent-of-evidence-parent-of-index"
   },
   "resultRecords": [],
   "executionManifest": {

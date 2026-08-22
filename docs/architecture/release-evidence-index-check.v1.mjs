@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validateManifest as validateExecutionManifest } from "../../scripts/qualification/capture-release-evidence.mjs";
 
@@ -374,6 +374,12 @@ const resultRecordSchema = {
   appendOnly: true,
   protocols: ["legacy-v1", "agent-mail.release-evidence/v2"],
   v2RecordTypes: ["qualification", "disposition"],
+  provenanceEnvelope: {
+    format: "agent-mail.capture-provenance/v1",
+    requiredForPromotion: true,
+    outputRootClosure: true,
+  },
+  commitModel: "candidate-parent-of-evidence-parent-of-index",
 };
 let repositoryFilesCache;
 let currentCommitCache;
@@ -776,6 +782,20 @@ function finiteNonnegative(value, label) {
       value <= Number.MAX_SAFE_INTEGER,
     `${label} must be finite, safe, and nonnegative`,
   );
+}
+
+// Receipt provenance is produced by the runner with canonical JSON.  Keep the
+// checker-side projection independent of object insertion order so a persisted
+// envelope cannot be made to agree merely by reserializing its fields.
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 function canonicalEvidencePath(path, label, ownerIssueId = 176) {
@@ -1509,6 +1529,323 @@ function v2CandidateRef(record, ref, root, label) {
   return bytes;
 }
 
+function validatePersistedReceiptEnvelope(
+  receipt,
+  envelopeBytes,
+  step,
+  record,
+  label,
+  envelopeRef,
+) {
+  assert(
+    receipt.provenance?.format === "agent-mail.capture-provenance/v1",
+    `${label} persisted provenance envelope is missing`,
+  );
+  assert(
+    envelopeRef && envelopeRef.path === receipt.provenance.path,
+    `${label} provenance path is not receipt-bound`,
+  );
+  assert(
+    envelopeBytes.length === receipt.provenance.bytes &&
+      digest(envelopeBytes) === receipt.provenance.sha256,
+    `${label} persisted provenance digest drifted`,
+  );
+  let envelope;
+  try {
+    envelope = JSON.parse(envelopeBytes.toString("utf8"));
+  } catch {
+    fail(`${label} persisted provenance is not JSON`);
+  }
+  assert(
+    envelope?.format === "agent-mail.capture-provenance/v1" &&
+      envelope.runId === receipt.runId &&
+      envelope.role === receipt.role,
+    `${label} persisted provenance identity is detached`,
+  );
+  const core = structuredClone(receipt);
+  delete core.provenance;
+  const receiptSha256 = digest(Buffer.from(canonicalJson(core)));
+  assert(
+    receipt.provenance.receiptSha256 === receiptSha256 && envelope.receiptSha256 === receiptSha256,
+    `${label} persisted provenance receipt digest is detached`,
+  );
+  const observations = {
+    process: receipt.process,
+    processProbe: receipt.probes?.process,
+    resources: receipt.probes?.resources,
+    termination: receipt.probes?.cleanup?.termination,
+    cleanup: receipt.probes?.cleanup,
+    streams: receipt.probes?.streams,
+    monotonic: receipt.monotonic,
+    startedAt: receipt.startedAt,
+    completedAt: receipt.completedAt,
+    result: receipt.result,
+    observedOutcome: receipt.observedOutcome,
+  };
+  const observationsSha256 = digest(Buffer.from(canonicalJson(observations)));
+  assert(
+    canonicalJson(envelope.observations) === canonicalJson(observations) &&
+      envelope.observationsSha256 === observationsSha256 &&
+      receipt.provenance.observationsSha256 === observationsSha256,
+    `${label} persisted provenance observations are detached`,
+  );
+  const authority = {
+    candidate: receipt.candidate,
+    manifestStepId: receipt.manifestStepId,
+    cwd: receipt.cwd,
+    argv: receipt.argv,
+    sources: receipt.sources,
+    runnerSources: receipt.runnerSources,
+    fixture: receipt.fixture,
+    assertions: receipt.assertions,
+    probes: step.probes,
+    thresholds: step.thresholds,
+  };
+  assert(
+    canonicalJson(envelope.authority) === canonicalJson(authority),
+    `${label} persisted provenance authority is detached`,
+  );
+  const output = envelope.roots?.output;
+  const temporary = envelope.roots?.temporary;
+  assert(
+    output &&
+      typeof output.path === "string" &&
+      output.path.length > 0 &&
+      isAbsolute(output.path) &&
+      output.path === resolve(output.path) &&
+      !output.path.includes("\0") &&
+      Number.isSafeInteger(output.dev) &&
+      Number.isSafeInteger(output.ino) &&
+      output.dev >= 0 &&
+      output.ino > 0,
+    `${label} persisted output-root identity is missing`,
+  );
+  assert(
+    temporary &&
+      typeof temporary.path === "string" &&
+      isAbsolute(temporary.path) &&
+      temporary.path === resolve(temporary.path) &&
+      Number.isSafeInteger(temporary.dev) &&
+      Number.isSafeInteger(temporary.ino) &&
+      temporary.removed === true,
+    `${label} persisted temporary-root closure is missing`,
+  );
+  const streamRefs = {
+    stdout: receipt.streams?.stdout,
+    stderr: receipt.streams?.stderr,
+    events: receipt.streams?.events,
+    ...(receipt.fixture?.materialized?.path ? { fixture: receipt.fixture.materialized } : {}),
+  };
+  const seenPaths = new Set([receipt.provenance.path]);
+  for (const [key, ref] of Object.entries(streamRefs)) {
+    assert(
+      ref && typeof ref.path === "string" && /^[0-9a-f]{64}$/u.test(ref.sha256),
+      `${label} ${key} persisted artifact reference is missing`,
+    );
+    assert(!seenPaths.has(ref.path), `${label} persisted artifact path is reused`);
+    seenPaths.add(ref.path);
+    const artifact = envelope.artifacts?.[key];
+    assert(
+      artifact &&
+        artifact.path === ref.path &&
+        artifact.bytes === ref.bytes &&
+        artifact.sha256 === ref.sha256,
+      `${label} ${key} persisted artifact is detached`,
+    );
+  }
+  return envelope;
+}
+
+function validateV2CapacityEvidence(record, baseline, root, label) {
+  const evidence = record.evidence;
+  assert(evidence && typeof evidence === "object", `${label} capacity evidence is missing`);
+  const subgates = evidence.subgates;
+  assert(
+    subgates &&
+      JSON.stringify(Object.keys(subgates).sort()) ===
+        JSON.stringify([...requiredCapacitySubgates].sort()),
+    `${label} capacity subgate coverage is incomplete or extra`,
+  );
+  const aggregatePaths = [
+    ...new Set(requiredCapacitySubgates.flatMap((id) => capacityManifest[id].argv.slice(2))),
+  ];
+  assert(
+    JSON.stringify(record.argv) === JSON.stringify(["bun", "test", ...aggregatePaths]),
+    `${label} capacity aggregate argv is not canonical`,
+  );
+  const read = (ref, refLabel) => {
+    assert(
+      ref && typeof ref.path === "string" && /^[0-9a-f]{64}$/u.test(ref.sha256),
+      `${refLabel} reference is invalid`,
+    );
+    const bytes = v2EvidenceRef(record, ref, root, refLabel);
+    assert(digest(bytes) === ref.sha256, `${refLabel} digest drifted`);
+    return JSON.parse(bytes.toString("utf8"));
+  };
+  const rawDigests = new Set();
+  for (const id of requiredCapacitySubgates) {
+    const spec = capacityManifest[id];
+    const subgate = subgates[id];
+    assert(
+      JSON.stringify(subgate.argv) === JSON.stringify(spec.argv),
+      `${label} ${id} argv drifted`,
+    );
+    assert(
+      subgate.descriptor?.path === spec.descriptorPath &&
+        /^[0-9a-f]{64}$/u.test(subgate.descriptor.sha256),
+      `${label} ${id} descriptor binding is invalid`,
+    );
+    const descriptorBytes = regularCandidateBlob(
+      record.candidateCommit,
+      spec.descriptorPath,
+      root,
+      `${label} ${id} descriptor`,
+    );
+    assert(
+      digest(descriptorBytes) === subgate.descriptor.sha256,
+      `${label} ${id} descriptor drifted`,
+    );
+    assert(
+      subgate.fixtureIds?.length === 1 &&
+        subgate.fixtureIds[0] === spec.fixtureId &&
+        subgate.fixtureDigests?.length === 1 &&
+        subgate.fixtureDigests[0] === subgate.descriptor.sha256,
+      `${label} ${id} fixture binding is invalid`,
+    );
+    finiteNonnegative(subgate.scale?.[spec.scale.key], `${label} ${id} scale`);
+    assert(
+      subgate.scale?.unit === spec.scale.unit &&
+        subgate.scale[spec.scale.key] >= spec.scale.minimum,
+      `${label} ${id} scale is below manifest minimum`,
+    );
+    const thresholds = new Map(
+      (subgate.thresholds ?? []).map((threshold) => [threshold.metric, threshold]),
+    );
+    assert(
+      thresholds.size === Object.keys(spec.metrics).length,
+      `${label} ${id} threshold coverage is incomplete`,
+    );
+    for (const [metric, expected] of Object.entries(spec.metrics)) {
+      const threshold = thresholds.get(metric);
+      assert(
+        threshold?.operator === expected.operator && threshold.unit === expected.unit,
+        `${label} ${id} threshold authority drifted`,
+      );
+      finiteNonnegative(threshold.limit, `${label} ${id} threshold`);
+    }
+    assert(subgate.rawSamples?.length === 1, `${label} ${id} raw sample coverage is incomplete`);
+    const sample = subgate.rawSamples[0];
+    assert(!rawDigests.has(sample.sha256), `${label} ${id} raw sample is reused`);
+    rawDigests.add(sample.sha256);
+    const raw = read(sample, `${label} ${id} raw sample`);
+    assert(
+      raw.subgateId === id &&
+        raw.fixtureId === spec.fixtureId &&
+        raw.fixtureDigest === subgate.descriptor.sha256 &&
+        raw.descriptorPath === spec.descriptorPath &&
+        raw.descriptorDigest === subgate.descriptor.sha256 &&
+        JSON.stringify(raw.scale) === JSON.stringify(subgate.scale),
+      `${label} ${id} raw sample identity is detached`,
+    );
+    for (const [metric, expected] of Object.entries(spec.metrics)) {
+      finiteNonnegative(raw.metrics?.[metric], `${label} ${id} raw ${metric}`);
+      assert(
+        evaluateThreshold(raw.metrics[metric], expected.operator, thresholds.get(metric).limit),
+        `${label} ${id} raw ${metric} misses threshold`,
+      );
+    }
+    assert(
+      JSON.stringify(subgate.observations?.metrics) === JSON.stringify(raw.metrics),
+      `${label} ${id} observations are detached`,
+    );
+    const correctness = read(subgate.artifacts?.correctness, `${label} ${id} correctness`);
+    assert(
+      correctness.kind === "correctness" &&
+        correctness.subgateId === id &&
+        correctness.candidateCommit === record.candidateCommit &&
+        correctness.status === "pass",
+      `${label} ${id} correctness proof is invalid`,
+    );
+    const resources = read(subgate.artifacts?.resources, `${label} ${id} resources`);
+    assert(
+      resources.kind === "resources" &&
+        resources.subgateId === id &&
+        resources.candidateCommit === record.candidateCommit &&
+        resources.status === "pass",
+      `${label} ${id} resources proof is invalid`,
+    );
+    for (const key of ["peak", "retained"]) {
+      finiteNonnegative(resources[key]?.value, `${label} ${id} ${key} resource`);
+      assert(
+        resources[key].unit === spec.resources.units[key],
+        `${label} ${id} ${key} unit drifted`,
+      );
+      finiteNonnegative(resources.limits?.[key], `${label} ${id} ${key} limit`);
+      assert(
+        resources.limits[key] === spec.resources.limits[key] &&
+          resources[key].value <= resources.limits[key],
+        `${label} ${id} ${key} limit exceeded`,
+      );
+    }
+    const cleanup = read(subgate.artifacts?.cleanup, `${label} ${id} cleanup`);
+    assert(
+      cleanup.kind === "cleanup" &&
+        cleanup.subgateId === id &&
+        cleanup.candidateCommit === record.candidateCommit &&
+        cleanup.status === "pass" &&
+        JSON.stringify(Object.keys(cleanup.leaks ?? {}).sort()) ===
+          JSON.stringify(["files", "listeners", "openHandles", "processes"]) &&
+        Object.values(cleanup.leaks).every((value) => Number.isSafeInteger(value) && value === 0),
+      `${label} ${id} cleanup proof is invalid`,
+    );
+  }
+  assert(
+    evidence.correctness?.status === "pass" && evidence.cleanup?.status === "pass",
+    `${label} aggregate outcome is incomplete`,
+  );
+  for (const obligationId of ["F17", "F18", "F22", "F23"]) {
+    const row = baseline.get(obligationId);
+    if (row?.result.kind !== "blocked") continue;
+    const closure = record.closure?.[obligationId];
+    assert(
+      closure &&
+        closure.baselineSourceStatusSha256 === digest(Buffer.from(row.sourceStatus)) &&
+        closure.baselineProofDigest === baselineProofDigest(row),
+      `${label} ${obligationId} closure is missing`,
+    );
+    for (const [entryKey, contractKey] of [
+      ["originalReproduction", "reproduction"],
+      ["adjacentCounterexample", "counterexample"],
+    ]) {
+      const entry = closure[entryKey];
+      assert(
+        entry?.artifact && entry?.proof && Array.isArray(entry.argv),
+        `${label} ${obligationId} ${entryKey} closure is incomplete`,
+      );
+      const artifact = read(entry.artifact, `${label} ${obligationId} ${entryKey} artifact`);
+      const proof = read(entry.proof, `${label} ${obligationId} ${entryKey} proof`);
+      const contract = closureSourceContracts[obligationId][contractKey];
+      assert(
+        artifact.candidateCommit === record.candidateCommit &&
+          artifact.candidateTree === record.candidateTree &&
+          artifact.obligationId === obligationId &&
+          artifact.role === contractKey &&
+          artifact.result === "pass" &&
+          proof.candidateCommit === record.candidateCommit &&
+          proof.candidateTree === record.candidateTree &&
+          proof.obligationId === obligationId &&
+          proof.role === contractKey &&
+          proof.result === "pass" &&
+          proof.receipt?.exitCode === 0 &&
+          proof.receipt.assertions?.length === 1 &&
+          proof.receipt.assertions[0].id === contract.assertionId &&
+          proof.receipt.assertions[0].outcome === contract.outcome,
+        `${label} ${obligationId} ${entryKey} closure proof is detached`,
+      );
+    }
+  }
+}
+
 function validateV2Record(record, baseline, sequence, previousDigest, root, options = {}) {
   const label = `v2 result sequence ${record.sequence}`;
   assert(record.protocol === "agent-mail.release-evidence/v2", `${label} protocol is invalid`);
@@ -1627,6 +1964,7 @@ function validateV2Record(record, baseline, sequence, previousDigest, root, opti
   assert(digest(manifestBytes) === record.manifest.sha256, `${label} manifest digest drifted`);
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
   validateExecutionManifest(manifest, root, record.candidateCommit);
+  if (record.gateId === "capacity") validateV2CapacityEvidence(record, baseline, root, label);
   assert(
     Array.isArray(record.primaryReceipt) && record.primaryReceipt.length > 0,
     `${label} primary receipt is missing`,
@@ -1647,6 +1985,46 @@ function validateV2Record(record, baseline, sequence, previousDigest, root, opti
       assert(step, `${label} receipt step is not in manifest`);
       assert(receipt.role === role, `${label} receipt role is detached`);
       validateExecutableReceipt(receipt, manifest, step, { repositoryRoot: root });
+      assert(
+        receipt.provenance &&
+          typeof receipt.provenance.path === "string" &&
+          /^[0-9a-f]{64}$/u.test(receipt.provenance.sha256),
+        `${label} ${role} receipt provenance is not persisted`,
+      );
+      const envelopeRef = {
+        path: receipt.provenance.path,
+        sha256: receipt.provenance.sha256,
+      };
+      const envelopeBytes = v2EvidenceRef(
+        record,
+        envelopeRef,
+        root,
+        `${label} ${role} provenance envelope`,
+      );
+      validatePersistedReceiptEnvelope(
+        receipt,
+        envelopeBytes,
+        step,
+        record,
+        `${label} ${role} ${receipt.manifestStepId}`,
+        envelopeRef,
+      );
+      for (const [artifactKey, artifactRef] of Object.entries({
+        ...receipt.streams,
+        ...(receipt.fixture?.materialized?.path ? { fixture: receipt.fixture.materialized } : {}),
+      })) {
+        const artifactBytes = v2EvidenceRef(
+          record,
+          artifactRef,
+          root,
+          `${label} ${role} ${receipt.manifestStepId} ${artifactKey} artifact`,
+        );
+        assert(
+          artifactBytes.length === artifactRef.bytes &&
+            digest(artifactBytes) === artifactRef.sha256,
+          `${label} ${role} ${receipt.manifestStepId} ${artifactKey} artifact drifted`,
+        );
+      }
       receipts.push(receipt);
     }
   }
@@ -1663,6 +2041,30 @@ function validateV2Record(record, baseline, sequence, previousDigest, root, opti
     primary.runId !== replay.runId && primary.result === "pass" && replay.result === "pass",
     `${label} independent replay did not pass`,
   );
+  if (record.ownerIssueId === 176 && record.gateId === "capacity") {
+    const expectedObligations = ["F17", "F18", "F22", "F23", "F30", "SEC-R03", "S04", "S05"];
+    assert(
+      JSON.stringify([...record.obligationIds].sort((a, b) => a.localeCompare(b))) ===
+        JSON.stringify([...expectedObligations].sort((a, b) => a.localeCompare(b))),
+      `${label} #176 capacity obligation coverage is not definitive`,
+    );
+    const expectedSteps = manifest.steps.map((step) => step.id);
+    for (const [role, roleReceipts] of [
+      ["primary", record.primaryReceipt],
+      ["independent-replay", record.replayReceipt],
+    ]) {
+      assert(
+        roleReceipts.length === expectedSteps.length &&
+          JSON.stringify(
+            roleReceipts.map((ref) => {
+              const bytes = v2EvidenceRef(record, ref, root, `${label} ${role} receipt`);
+              return JSON.parse(bytes.toString("utf8")).manifestStepId;
+            }),
+          ) === JSON.stringify(expectedSteps),
+        `${label} ${role} does not cover every manifest step`,
+      );
+    }
+  }
   assert(record.bundle, `${label} bundle is missing`);
   const bundleBytes = v2EvidenceRef(record, record.bundle, root, `${label} bundle`);
   const bundle = JSON.parse(bundleBytes.toString("utf8"));
@@ -1734,6 +2136,10 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
     .map((line) => line.slice(3).trim());
   for (let recordIndex = 0; recordIndex < indexData.resultRecords.length; recordIndex += 1) {
     const record = indexData.resultRecords[recordIndex];
+    assert(
+      record.protocol !== "legacy-v1",
+      `result sequence ${record.sequence ?? recordIndex + 1} legacy v1 records are inactive`,
+    );
     const ownerRule =
       record.protocol === "agent-mail.release-evidence/v2"
         ? validateV2Record(
@@ -1763,9 +2169,24 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
         `v2 disposition ${record.sequence} target is not a qualification`,
       );
       assert(
+        record.targetSequence < record.sequence,
+        `v2 disposition ${record.sequence} targets a future record`,
+      );
+      assert(
         record.targetRecordDigest === recordDigest(target),
         `v2 disposition ${record.sequence} target digest is detached`,
       );
+      for (const key of ["candidateCommit", "candidateTree", "evidenceCommit"]) {
+        if (record[key] !== undefined)
+          assert(record[key] === target[key], `v2 disposition ${record.sequence} ${key} diverged`);
+      }
+      if (record.correctedFromSequence !== undefined) {
+        assert(
+          record.correctedFromSequence === record.targetSequence &&
+            record.correctedFromRecordDigest === record.targetRecordDigest,
+          `v2 disposition ${record.sequence} corrected rerun target is detached`,
+        );
+      }
       assert(
         !indexData.resultRecords
           .slice(0, recordIndex)
@@ -1777,6 +2198,56 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
           ),
         `v2 disposition ${record.sequence} targets a record twice`,
       );
+    }
+    if (
+      record.protocol === "agent-mail.release-evidence/v2" &&
+      record.recordType === "qualification" &&
+      options.mode !== "prospective" &&
+      !options.bundleCommit &&
+      !options.diffCommit
+    ) {
+      const evidenceParent = execFileSync("git", ["rev-parse", `${record.evidenceCommit}^`], {
+        cwd: validationRoot,
+        encoding: "utf8",
+      }).trim();
+      assert(
+        evidenceParent === record.candidateCommit,
+        `result sequence ${record.sequence} evidence commit is not a direct evidence append`,
+      );
+      if (recordIndex === indexData.resultRecords.length - 1) {
+        const indexParents = execFileSync(
+          "git",
+          ["rev-list", "--parents", "-n", "1", evidenceHead],
+          { cwd: validationRoot, encoding: "utf8" },
+        )
+          .trim()
+          .split(/\s+/u);
+        assert(
+          indexParents.length === 2,
+          `result sequence ${record.sequence} index commit is not a one-parent append`,
+        );
+        const indexParent = execFileSync("git", ["rev-parse", `${evidenceHead}^`], {
+          cwd: validationRoot,
+          encoding: "utf8",
+        }).trim();
+        assert(
+          indexParent === record.evidenceCommit,
+          `result sequence ${record.sequence} index commit is not the evidence child`,
+        );
+        const indexChanges = execFileSync(
+          "git",
+          ["diff", "--name-only", `${record.evidenceCommit}..${evidenceHead}`],
+          { cwd: validationRoot, encoding: "utf8" },
+        )
+          .trim()
+          .split("\n")
+          .filter(Boolean);
+        assert(
+          JSON.stringify(indexChanges) ===
+            JSON.stringify(["docs/architecture/release-evidence-index.v1.json"]),
+          `result sequence ${record.sequence} index commit is not index-only`,
+        );
+      }
     }
     if (options.mode !== "prospective" && !options.bundleCommit) {
       assert(
@@ -1838,7 +2309,6 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
       .split("\n")
       .filter(Boolean);
     const allowed = new Set([
-      "docs/architecture/release-evidence-index.v1.json",
       ...(record.bundle?.path ? [record.bundle.path] : []),
       ...(record.primaryReceipt ?? []).map((ref) => ref.path),
       ...(record.replayReceipt ?? []).map((ref) => ref.path),
@@ -1851,6 +2321,24 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
           if (artifact?.path) allowed.add(artifact.path);
       }
     }
+    for (const receiptRef of [...(record.primaryReceipt ?? []), ...(record.replayReceipt ?? [])]) {
+      try {
+        const receipt = JSON.parse(
+          v2EvidenceRef(
+            record,
+            receiptRef,
+            validationRoot,
+            `result sequence ${record.sequence} receipt`,
+          ).toString("utf8"),
+        );
+        if (receipt.provenance?.path) allowed.add(receipt.provenance.path);
+        for (const stream of Object.values(receipt.streams ?? {}))
+          if (stream?.path) allowed.add(stream.path);
+        if (receipt.fixture?.materialized?.path) allowed.add(receipt.fixture.materialized.path);
+      } catch {
+        // The record validator reports malformed or missing persisted receipts.
+      }
+    }
     for (const closure of Object.values(record.closure ?? {})) {
       for (const entry of [closure.originalReproduction, closure.adjacentCounterexample]) {
         if (entry?.artifact?.path) allowed.add(entry.artifact.path);
@@ -1861,6 +2349,18 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
       changed.every((path) => allowed.has(path)),
       `result sequence ${record.sequence} evidence commit mixes implementation or checker changes`,
     );
+    if (
+      record.protocol === "agent-mail.release-evidence/v2" &&
+      record.recordType === "qualification" &&
+      options.mode !== "prospective" &&
+      !options.bundleCommit &&
+      !options.diffCommit
+    ) {
+      assert(
+        !changed.includes("docs/architecture/release-evidence-index.v1.json"),
+        `result sequence ${record.sequence} evidence commit includes the index`,
+      );
+    }
     for (const obligationId of record.obligationIds) {
       const target = `${record.gateId}:${obligationId}`;
       assert(!seenTargets.has(target), `result sequence ${record.sequence} duplicates ${target}`);
