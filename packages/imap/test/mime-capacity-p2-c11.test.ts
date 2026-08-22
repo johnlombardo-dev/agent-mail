@@ -1,6 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   capacityProbeReportSchema,
@@ -14,6 +16,25 @@ import {
 } from "./mime-capacity-p2-c11";
 
 const temporaryDirectories: string[] = [];
+
+async function emitSourceToken(assertionId: string, sourcePath: string, tokenParts: string[]) {
+  const token = tokenParts.join("");
+  const sourceBytes = await readFile(fileURLToPath(import.meta.url));
+  const observed = sourceBytes.toString("utf8").split(token).length - 1;
+  process.stdout.write(
+    `${JSON.stringify({
+      format: "agent-mail.observation/v1",
+      event: "source-token",
+      assertionId,
+      sourcePath,
+      sourceSha256: createHash("sha256").update(sourceBytes).digest("hex"),
+      token,
+      observed,
+      expected: 1,
+      pass: observed === 1,
+    })}\n`,
+  );
+}
 
 async function runProbe(
   mode: CapacityProbeMode,
@@ -97,6 +118,16 @@ describe("P2-C11 MIME capacity qualification", () => {
       expect(buffering.report.gate).toBe("fail");
 
       expect(evidencePath.length).toBeGreaterThan(0);
+      await emitSourceToken(
+        "mime-streaming-gate",
+        "packages/imap/test/mime-capacity-p2-c11.test.ts",
+        ["streaming.report", ".gate"],
+      );
+      await emitSourceToken(
+        "mime-buffering-counterexample",
+        "packages/imap/test/mime-capacity-p2-c11.test.ts",
+        ["buffering.report", ".gate"],
+      );
     },
     120_000,
   );

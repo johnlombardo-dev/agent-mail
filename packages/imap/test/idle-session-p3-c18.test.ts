@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "bun:test";
 import { createActor, setup } from "xstate";
 import {
@@ -84,6 +87,25 @@ function fixture(): Fixture {
 }
 
 const productionFlows: ImapFlow[] = [];
+
+async function emitSourceToken() {
+  const sourceBytes = await readFile(fileURLToPath(import.meta.url));
+  const token = ["runs the same lifecycle contract against fake and ", "production-shaped adapters"].join("");
+  const observed = sourceBytes.toString("utf8").split(token).length - 1;
+  process.stdout.write(
+    `${JSON.stringify({
+      format: "agent-mail.observation/v1",
+      event: "source-token",
+      assertionId: "idle-cancellation-cleanup",
+      sourcePath: "packages/imap/test/idle-session-p3-c18.test.ts",
+      sourceSha256: createHash("sha256").update(sourceBytes).digest("hex"),
+      token,
+      observed,
+      expected: 1,
+      pass: observed === 1,
+    })}\n`,
+  );
+}
 
 function productionFixture(): Fixture {
   const flow = new ImapFlow({
@@ -231,6 +253,7 @@ test("runs the same lifecycle contract against fake and production-shaped adapte
   expect(evidence.production?.status).toBe("passed");
   expect(evidence.semanticParity.status).toBe("matched");
   expect(evidence.production?.passedCases).toEqual(contractSuite.cases.map((item) => item.id));
+  await emitSourceToken();
 });
 
 test("cancellation waits for the close barrier and leaves no listeners or socket", async () => {

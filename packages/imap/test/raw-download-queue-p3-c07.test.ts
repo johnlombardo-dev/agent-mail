@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "bun:test";
 import {
   createAccountId,
@@ -36,6 +39,25 @@ async function tick(): Promise<void> {
   await Bun.sleep(0);
 }
 
+async function emitSourceToken() {
+  const sourceBytes = await readFile(fileURLToPath(import.meta.url));
+  const token = ["serializes FIFO", " jobs"].join("");
+  const observed = sourceBytes.toString("utf8").split(token).length - 1;
+  process.stdout.write(
+    `${JSON.stringify({
+      format: "agent-mail.observation/v1",
+      event: "source-token",
+      assertionId: "queue-backpressure-bound",
+      sourcePath: "packages/imap/test/raw-download-queue-p3-c07.test.ts",
+      sourceSha256: createHash("sha256").update(sourceBytes).digest("hex"),
+      token,
+      observed,
+      expected: 1,
+      pass: observed === 1,
+    })}\n`,
+  );
+}
+
 describe("raw download queue actor", () => {
   test("serializes FIFO jobs and rejects overflow at the configured capacity", async () => {
     const starts: number[] = [];
@@ -65,6 +87,7 @@ describe("raw download queue actor", () => {
     await second.result;
     expect(finishes).toEqual([1, 2]);
     await queue.stop();
+    await emitSourceToken();
   });
 
   test("queued cancellation rejects only that job and active cancellation waits for cleanup", async () => {

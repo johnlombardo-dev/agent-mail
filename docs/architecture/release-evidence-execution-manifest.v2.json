@@ -104,8 +104,8 @@
         {
           "role": "test",
           "path": "packages/imap/test/mime-capacity-p2-c11.test.ts",
-          "gitBlob": "01929f4458e596cee8b73049fc8e1b9758a5cbd5",
-          "sha256": "98a30bd92a9312f092198541d55afcb1393b085683d29125e70c8d136642cccb"
+          "gitBlob": "638c84ba17ec86832f6d8395a39932079f66dd4d",
+          "sha256": "41998b9c94fa5762d92f83c5a9f60c84ec7dbed96665f1396b0c578a1348a29c"
         },
         {
           "role": "package-manifest",
@@ -172,8 +172,8 @@
         {
           "role": "generator",
           "path": "scripts/capacity/generate-search-corpus.ts",
-          "gitBlob": "7be405a63a1d2b79e1c634f25bc9196f3b42e3ff",
-          "sha256": "23b39f7b42a25c3fe8c6741a3198c5cd96f03e8be80bb6f70c98c95bcb716557"
+          "gitBlob": "f9cf9193ced0b0d7be3e19ab3c39537c5e771259",
+          "sha256": "18a25837970e296f5c3fba40a080cc475db0673de12fba61e797b41a7b1b12ee"
         },
         {
           "role": "package-manifest",
@@ -239,8 +239,8 @@
         {
           "role": "benchmark",
           "path": "scripts/capacity/benchmark-search.ts",
-          "gitBlob": "b8de483c16fa4a246044c4da3a6f1494ba6a830f",
-          "sha256": "1e60cd86c5359c0a00606839cb364dba0fa5c48acbcd5516b41c59e6c9b32a0c"
+          "gitBlob": "1bc513391647c783080e9e35249d0e4c7cc36efb",
+          "sha256": "79827d07460aa8b6e737e8194c98a519dffa55d727860f846921b4c3dbcb890e"
         },
         {
           "role": "package-manifest",
@@ -293,8 +293,8 @@
         {
           "role": "daemon-test",
           "path": "packages/daemon/test/selected-export-stream-p6-c19.test.ts",
-          "gitBlob": "cbde6957b01576105ce0a4f68e62f28c87a23598",
-          "sha256": "b13ab48beed594d2da0155ab8d78ade98853e3ed6da351ce533c7445cfd9454f"
+          "gitBlob": "81070e85f15ea22429e1aceb1d348c4f41333870",
+          "sha256": "ae99f3f3f8b4b5fa27ed7dca66e5528d8f7d94c3f8ddc1b4b030b63bb69d2f63"
         },
         {
           "role": "cli-test",
@@ -345,8 +345,8 @@
         {
           "role": "test",
           "path": "packages/daemon/test/http-admission-sec-r03.test.ts",
-          "gitBlob": "b69a9a9b261483988127119052fbdfed30169c3e",
-          "sha256": "928877aaf8f05a5a74294ab8156e78d2bc43094698eae817ed6b1e48184d883f"
+          "gitBlob": "5e12c69561a83596910c0a4ebbbc73202dffbcb1",
+          "sha256": "edaee0c03927d3720271afde91860f32dcebcc847f8ca3c5dde78f335ad3c9a3"
         },
         {
           "role": "package-manifest",
@@ -397,8 +397,8 @@
         {
           "role": "test",
           "path": "packages/imap/test/raw-download-queue-p3-c07.test.ts",
-          "gitBlob": "71033e60636f9c0c32007a6dfe6813e5a4a06b4a",
-          "sha256": "53146a3be9ddb66fa9374ad04ed59fca533601c0daa8f07e51925292c68f583f"
+          "gitBlob": "5f03b343ee1d09b649782b9c1ea8fc978e54e3dd",
+          "sha256": "6a1a91f8a96dcf30d1ae9e625928e9d17c54bed22fc314a72e30488761053c26"
         },
         {
           "role": "package-manifest",
@@ -442,8 +442,8 @@
         {
           "role": "test",
           "path": "packages/imap/test/idle-session-p3-c18.test.ts",
-          "gitBlob": "4bcf398d76e960739b70893a65bf979f56fe1c7f",
-          "sha256": "c2e6b3fa9c09f5f996d42482b222229ed6f313ec06981f496e5b12cece5aee14"
+          "gitBlob": "a2b0ece2559befecbee4829dc6e35cb2f6df7494",
+          "sha256": "173a358bdc949e587b72895c0adf49b8e3eb03ab5858cac0cc4a7eb610892869"
         },
         {
           "role": "package-manifest",
@@ -488,14 +488,14 @@
         {
           "role": "polling-test",
           "path": "packages/daemon/test/polling-timer-actor-p3-c20.test.ts",
-          "gitBlob": "f011d7f4c6a0a925a7eadef1d6de66b79985932e",
-          "sha256": "1e635cd24da437caa19f66318c90e6b3cc023a0dc168f686d7f7201d42ec708d"
+          "gitBlob": "3f9d0165a770c5d699098e3e9d1cead2443e54f3",
+          "sha256": "814b6b69aaec376bf0aaf9117b9afccb941516f01b48d6ac100a76a61ee85dd5"
         },
         {
           "role": "conformance-test",
           "path": "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts",
-          "gitBlob": "955d81f75158ed4c889b58c7630aee2d697520da",
-          "sha256": "9df90efa3908e93f813f9d36c93b1182c229b59674a6ba9674312423554ad0db"
+          "gitBlob": "49e8f3b3311d7e51899108e1e1ec4f3fbebe9f82",
+          "sha256": "5c439c8c61071567baa042003cfc6b15b2b0050c2c5f9eb524064bc84681b423"
         },
         {
           "role": "package-manifest",
