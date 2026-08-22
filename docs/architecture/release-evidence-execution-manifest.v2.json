@@ -101,8 +101,8 @@
       {
         "role": "replay-runner",
         "path": "scripts/qualification/replay-release-evidence.mjs",
-        "gitBlob": "c9384fc497fffe19d3b797a417ab13d5a64a0eca",
-        "sha256": "f2befa3e81400fb83037090bcd61f644a8e0b8ab46e4e7bcdf7986b7fdd9fd69"
+        "gitBlob": "808754a609ec44fe600d642a387ff12ff153f489",
+        "sha256": "70da5e99562f84fa40caeae36161568f07e5cc2fe069323b0c6e476ea12b4db3"
       }
     ]
   },
