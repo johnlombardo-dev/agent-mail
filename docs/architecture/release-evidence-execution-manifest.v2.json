@@ -528,12 +528,6 @@
           "sha256": "5c439c8c61071567baa042003cfc6b15b2b0050c2c5f9eb524064bc84681b423"
         },
         {
-          "role": "source-token-helper",
-          "path": "scripts/capacity/source-token-event.ts",
-          "gitBlob": "a78be0049384b4c9611552f609ccd1ab0c7dbfa6",
-          "sha256": "51b7fc28a196c0167d04c90e11b0d580761a513846e8df46bb55210a0eefc818"
-        },
-        {
           "role": "package-manifest",
           "path": "package.json",
           "gitBlob": "3058bc41f65b382bbf4ff23bf3e59f6d83fd0100",
