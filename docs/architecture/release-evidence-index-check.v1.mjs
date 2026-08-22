@@ -4634,10 +4634,7 @@ function runComposedV2Fixture(baselineIndex) {
       pointer: "/name",
       value: oracleValue,
     };
-    const oracleReceipt = JSON.parse(readFileSync(join(root, receiptRefs.primary[0].path), "utf8"));
-    oracleReceipt.assertions = [
-      { id: oracleAssertion.id, kind: oracleAssertion.kind, observed: oracleValue, pass: true },
-    ];
+    const sourceReceipt = JSON.parse(readFileSync(join(root, receiptRefs.primary[0].path), "utf8"));
     const oracleEvent = JSON.stringify({
       event: "structured-oracle",
       path: oracleAssertion.path,
@@ -4645,16 +4642,103 @@ function runComposedV2Fixture(baselineIndex) {
       pointer: oracleAssertion.pointer,
       value: oracleValue,
     });
-    const structuredOracleCheck = (eventText) => {
-      validateExecutableReceipt(
-        oracleReceipt,
-        manifest,
-        { ...oracleStep, assertions: [oracleAssertion] },
-        {
-          repositoryRoot: root,
-          eventBytes: Buffer.from(`${eventText}\n`),
-        },
+    const sourceEventBytes = readFileSync(join(root, sourceReceipt.streams.events.path));
+    const sourceEventText = sourceEventBytes.toString("utf8");
+    const retainedMimeEvents = (oracleText) =>
+      Buffer.from(
+        `${sourceEventText.endsWith("\n") ? sourceEventText : `${sourceEventText}\n`}${oracleText}\n`,
       );
+    const oracleStepWithAssertion = {
+      ...oracleStep,
+      assertions: [...oracleStep.assertions, oracleAssertion],
+    };
+    const oracleEventBytes = retainedMimeEvents(oracleEvent);
+    const oracleEventsPath = `${evidenceRoot}/${sourceReceipt.runId}-structured-oracle-events.jsonl`;
+    mkdirSync(dirname(join(root, oracleEventsPath)), { recursive: true });
+    writeFileSync(join(root, oracleEventsPath), oracleEventBytes);
+    const oracleEventsRef = {
+      path: oracleEventsPath,
+      sha256: digest(oracleEventBytes),
+      bytes: oracleEventBytes.length,
+    };
+    const oracleReceipt = structuredClone(sourceReceipt);
+    const sourceEventsSha256 = oracleReceipt.streams.events.sha256;
+    oracleReceipt.streams.events = oracleEventsRef;
+    oracleReceipt.probes.streams.events = oracleEventsRef.bytes;
+    oracleReceipt.observedOutcome.derivedFrom = oracleReceipt.observedOutcome.derivedFrom.map(
+      (value) => (value === sourceEventsSha256 ? oracleEventsRef.sha256 : value),
+    );
+    oracleReceipt.assertions = [
+      ...oracleReceipt.assertions,
+      { id: oracleAssertion.id, kind: oracleAssertion.kind, observed: oracleValue, pass: true },
+    ];
+    const sourceEnvelope = JSON.parse(
+      readFileSync(join(root, sourceReceipt.provenance.path), "utf8"),
+    );
+    const oracleObservations = {
+      process: oracleReceipt.process,
+      processProbe: oracleReceipt.probes.process,
+      resources: oracleReceipt.probes.resources,
+      termination: oracleReceipt.probes.cleanup.termination,
+      cleanup: oracleReceipt.probes.cleanup,
+      streams: oracleReceipt.probes.streams,
+      monotonic: oracleReceipt.monotonic,
+      startedAt: oracleReceipt.startedAt,
+      completedAt: oracleReceipt.completedAt,
+      result: oracleReceipt.result,
+      observedOutcome: oracleReceipt.observedOutcome,
+    };
+    const oracleAuthority = {
+      candidate: oracleReceipt.candidate,
+      manifestStepId: oracleReceipt.manifestStepId,
+      cwd: oracleReceipt.cwd,
+      argv: oracleReceipt.argv,
+      sources: oracleReceipt.sources,
+      runnerSources: oracleReceipt.runnerSources,
+      fixture: oracleReceipt.fixture,
+      assertions: oracleReceipt.assertions,
+      probes: oracleStepWithAssertion.probes,
+      thresholds: oracleStepWithAssertion.thresholds,
+    };
+    const oracleCore = structuredClone(oracleReceipt);
+    delete oracleCore.provenance;
+    const oracleReceiptSha256 = digest(Buffer.from(canonicalJson(oracleCore)));
+    const oracleObservationsSha256 = digest(Buffer.from(canonicalJson(oracleObservations)));
+    const oracleProvenancePath = `${evidenceRoot}/${sourceReceipt.runId}-structured-oracle-provenance.json`;
+    const oracleProvenance = {
+      format: "agent-mail.capture-provenance/v1",
+      runId: oracleReceipt.runId,
+      role: oracleReceipt.role,
+      receiptSha256: oracleReceiptSha256,
+      observations: oracleObservations,
+      observationsSha256: oracleObservationsSha256,
+      authority: oracleAuthority,
+      roots: sourceEnvelope.roots,
+      artifacts: Object.fromEntries(
+        Object.entries({
+          ...oracleReceipt.streams,
+          fixture: oracleReceipt.fixture.materialized,
+        }).map(([key, ref]) => [key, { path: ref.path, bytes: ref.bytes, sha256: ref.sha256 }]),
+      ),
+    };
+    const oracleProvenanceRef = writeJson(oracleProvenancePath, oracleProvenance);
+    oracleReceipt.provenance = {
+      format: oracleProvenance.format,
+      path: oracleProvenancePath,
+      bytes: oracleProvenanceRef.bytes,
+      sha256: oracleProvenanceRef.sha256,
+      receiptSha256: oracleReceiptSha256,
+      observationsSha256: oracleObservationsSha256,
+    };
+    const structuredOracleCheck = (
+      eventText,
+      receipt = oracleReceipt,
+      step = oracleStepWithAssertion,
+    ) => {
+      validateExecutableReceipt(receipt, manifest, step, {
+        repositoryRoot: root,
+        eventBytes: retainedMimeEvents(eventText),
+      });
     };
     structuredOracleCheck(oracleEvent);
     const oracleAttacks = [
@@ -4662,6 +4746,7 @@ function runComposedV2Fixture(baselineIndex) {
       oracleEvent.replace(oracleAssertion.sha256, zeroSha),
       oracleEvent.replace('"/name"', '"/version"'),
       oracleEvent.replace(JSON.stringify(oracleValue), JSON.stringify("detached")),
+      oracleEvent.replace('"structured-oracle"', '"wrong-event"'),
     ];
     for (const eventText of oracleAttacks) {
       let rejected = false;
@@ -4672,6 +4757,23 @@ function runComposedV2Fixture(baselineIndex) {
       }
       assert(rejected, "structured-oracle mutation was accepted");
     }
+    const missingFixtureReceipt = structuredClone(oracleReceipt);
+    missingFixtureReceipt.assertions = missingFixtureReceipt.assertions.filter(
+      (assertion) => assertion.id !== "mime-fixture-observation",
+    );
+    const missingFixtureStep = {
+      ...oracleStepWithAssertion,
+      assertions: oracleStepWithAssertion.assertions.filter(
+        (assertion) => assertion.id !== "mime-fixture-observation",
+      ),
+    };
+    let missingFixtureRejected = false;
+    try {
+      structuredOracleCheck(oracleEvent, missingFixtureReceipt, missingFixtureStep);
+    } catch {
+      missingFixtureRejected = true;
+    }
+    assert(missingFixtureRejected, "structured-oracle success masked missing MIME fixture metrics");
     const partial = structuredClone(baselineIndex);
     partial.resultRecords = [];
     const partialProjection = materializeCurrent(partial);
