@@ -70,19 +70,7 @@
     "dependencyMode": "bun-frozen-offline",
     "untrackedAllowlist": [
       "native/icloud-credential-broker.swift",
-      "native/icloud-credential-broker.test.swift",
-      "node_modules",
-      "packages/cli/dist",
-      "packages/cli/node_modules",
-      "packages/contracts/dist",
-      "packages/core/dist",
-      "packages/daemon/dist",
-      "packages/daemon/node_modules",
-      "packages/imap/dist",
-      "packages/imap/node_modules",
-      "packages/storage/dist",
-      "packages/storage/node_modules",
-      "packaging"
+      "native/icloud-credential-broker.test.swift"
     ],
     "sources": [
       {
@@ -94,8 +82,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "ae6c0b2fb0664940f49847c04d26287fd4e7a912",
-        "sha256": "27067efc487878156571841b885ed8b0c08ee42dab8a8f69044c607a04782bc4"
+        "gitBlob": "11bfd210531a898b58fbde0607a6b322ef16f440",
+        "sha256": "e7fac779653933d53637212b93be1fc23cc91097549bfcf3c4d7fe37d7571df6"
       },
       {
         "role": "replay-runner",

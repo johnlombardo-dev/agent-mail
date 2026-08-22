@@ -99,8 +99,10 @@ function installFrozenDependencies(checkout, manifest) {
   const dependencyMode = manifest.runner?.dependencyMode;
   if (!dependencyMode) return { mode: "none", installed: false };
   assert(dependencyMode === "bun-frozen-offline", "unsupported dependency mode");
-  if (!existsSync(join(checkout, "package.json")) || !existsSync(join(checkout, "bun.lock")))
-    return { mode: dependencyMode, installed: false };
+  assert(
+    existsSync(join(checkout, "package.json")) && existsSync(join(checkout, "bun.lock")),
+    "frozen dependency inputs are missing",
+  );
   execFileSync("bun", ["install", "--frozen-lockfile", "--offline"], {
     cwd: checkout,
     encoding: "utf8",
@@ -229,6 +231,20 @@ function validateAssertion(assertion, step) {
   }
 }
 
+function resolveJsonPointer(document, pointer) {
+  assert(pointer === "" || pointer.startsWith("/"), "oracle JSON pointer is invalid");
+  let value = document;
+  for (const token of pointer === "" ? [] : pointer.slice(1).split("/")) {
+    const key = token.replaceAll("~1", "/").replaceAll("~0", "~");
+    assert(
+      value !== null && value !== undefined && Object.hasOwn(value, key),
+      "oracle JSON pointer is missing",
+    );
+    value = value[key];
+  }
+  return value;
+}
+
 export function validateManifest(manifest, root, commit = git(root, ["rev-parse", "HEAD"])) {
   assert(
     manifest?.format === "agent-mail.release-evidence-execution-manifest/v2",
@@ -302,6 +318,11 @@ export function validateManifest(manifest, root, commit = git(root, ["rev-parse"
       Array.isArray(step.assertions) && step.assertions.length > 0,
       `${step.id} assertions are missing`,
     );
+    const assertionIds = new Set();
+    for (const assertion of step.assertions) {
+      assert(!assertionIds.has(assertion.id), `${step.id} assertion id repeats`);
+      assertionIds.add(assertion.id);
+    }
     for (const assertion of step.assertions) validateAssertion(assertion, step);
     for (const assertion of step.assertions.filter(
       (candidate) => candidate.kind === "structured-oracle",
@@ -565,8 +586,25 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
         event.pointer === assertion.pointer,
     );
     assert(matching.length === 1, `${step.id} structured oracle event count is not exactly one`);
+    const oracleBytes = readFileSync(resolve(sourceRoot, assertion.path));
+    assert(sha256(oracleBytes) === assertion.sha256, `${step.id} oracle bytes drifted`);
+    const oracleValue = resolveJsonPointer(
+      JSON.parse(oracleBytes.toString("utf8")),
+      assertion.pointer,
+    );
     const observed = matching[0].value;
-    return { ...assertion, observed, pass: Object.is(observed, assertion.value) };
+    assert(
+      matching[0].path === assertion.path &&
+        matching[0].sha256 === assertion.sha256 &&
+        matching[0].pointer === assertion.pointer &&
+        Object.is(observed, oracleValue),
+      `${step.id} structured oracle event is detached`,
+    );
+    return {
+      ...assertion,
+      observed,
+      pass: Object.is(observed, assertion.value) && Object.is(observed, oracleValue),
+    };
   });
 }
 

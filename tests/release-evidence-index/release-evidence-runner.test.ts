@@ -115,6 +115,26 @@ describe("release evidence executable runner", () => {
       await expect(
         capture({ root: fixture.root, manifestPath: fixture.manifestPath }),
       ).rejects.toThrow(/worktree is dirty/u);
+      rmSync(fixture.root, { recursive: true, force: true });
+      const placeholder = disposableRepo();
+      placeholder.manifest.steps[0].argv = ["node", "<unresolved-placeholder>"];
+      writeFileSync(placeholder.manifestPath, `${JSON.stringify(placeholder.manifest, null, 2)}\n`);
+      git(placeholder.root, ["add", "manifest.json"]);
+      git(placeholder.root, ["commit", "-qm", "placeholder attack"]);
+      await expect(
+        capture({ root: placeholder.root, manifestPath: placeholder.manifestPath }),
+      ).rejects.toThrow(/placeholder/u);
+      rmSync(placeholder.root, { recursive: true, force: true });
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects duplicate assertion IDs before candidate execution", () => {
+    const fixture = disposableRepo();
+    try {
+      fixture.manifest.steps[0].assertions.push({ ...fixture.manifest.steps[0].assertions[0] });
+      expect(() => validateManifest(fixture.manifest, fixture.root)).toThrow(/assertion id repeats/u);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
