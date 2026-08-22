@@ -34,6 +34,7 @@ import {
   type SearchCapacityEvidence,
   type SearchSample,
 } from "./search-capacity-gate";
+import { composeSourceToken, emitSourceTokenEvent } from "./source-token-event";
 
 const ACCOUNT_ID = "account:capacity";
 const DEFAULT_CORPUS = ".artifacts/p4-c16-search-corpus.sqlite";
@@ -472,6 +473,12 @@ async function main(): Promise<void> {
     process.stdout.write(
       `${JSON.stringify({ status: evaluation.status, outputPath, p95ByQuery: evaluation.p95ByQuery })}\n`,
     );
+    await emitSourceTokenEvent({
+      assertionId: "fts-exact-top20",
+      sourcePath: "scripts/capacity/benchmark-search.ts",
+      token: composeSourceToken(["export", "function", "assertHydrationPlanParameterCount"]),
+      expected: 1,
+    });
     if (evaluation.status !== "pass") process.exitCode = 1;
   } finally {
     database.close();

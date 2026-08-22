@@ -12,6 +12,7 @@ import { chmod, mkdir, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Database } from "bun:sqlite";
 import { openDatabase } from "../../packages/storage/src/database";
+import { composeSourceToken, emitSourceTokenEvent } from "./source-token-event";
 
 export const DEFAULT_SEED = 116_2026;
 export const DEFAULT_COUNT = 250_000;
@@ -632,4 +633,10 @@ if (import.meta.main) {
   const output = resolve(process.argv[3] ?? join(".artifacts", "p4-c16-search-corpus.sqlite"));
   const seed = Number(process.argv[4] ?? DEFAULT_SEED);
   console.log(JSON.stringify(await generateCorpus(output, count, seed), null, 2));
+  await emitSourceTokenEvent({
+    assertionId: "fts-corpus-inventory",
+    sourcePath: "scripts/capacity/generate-search-corpus.ts",
+    token: composeSourceToken(["export", "type", "CorpusInventory"]),
+    expected: 1,
+  });
 }

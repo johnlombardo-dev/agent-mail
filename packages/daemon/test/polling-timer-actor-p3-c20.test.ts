@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { createActor, fromCallback, fromPromise } from "xstate";
 import {
   createPollingTimerActor,
@@ -14,6 +14,16 @@ import {
   type SyncCleanupPhaseTerminal,
   type SyncLifecycleDependencies,
 } from "../src/sync-statechart";
+import { composeSourceToken, emitSourceTokenEvent } from "../../../scripts/capacity/source-token-event";
+
+afterAll(async () => {
+  await emitSourceTokenEvent({
+    assertionId: "polling-timer-cleanup",
+    sourcePath: "packages/daemon/test/polling-timer-actor-p3-c20.test.ts",
+    token: composeSourceToken(["registers", "the", "timer/listener", "release"]),
+    expected: 1,
+  });
+});
 
 type VirtualTimer = Readonly<{
   readonly callback: () => void;

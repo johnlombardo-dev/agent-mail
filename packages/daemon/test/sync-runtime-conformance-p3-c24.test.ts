@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { createActor, fromPromise } from "xstate";
 import type { Database } from "bun:sqlite";
 import model from "../../../docs/architecture/sync-statechart.model.json" with { type: "json" };
@@ -61,6 +61,7 @@ import {
   type SyncLifecycleEvent,
 } from "../src/sync-statechart";
 import type { InitialBackfillBatchDependencies } from "../src/initial-backfill-batch";
+import { composeSourceToken, emitSourceTokenEvent } from "../../../scripts/capacity/source-token-event";
 
 const modelDigest = "3c26fe8132871e2f2295ca805161e17571c93d99a74aad0161117c38eb979f91";
 const accountId = createAccountId("account:p3-c24-runtime");
@@ -88,6 +89,15 @@ const configuration: SyncLifecycleConfiguration = {
   maxReleaseSlotEntries: 32,
 };
 const roots: string[] = [];
+
+afterAll(async () => {
+  await emitSourceTokenEvent({
+    assertionId: "sync-runtime-cleanup",
+    sourcePath: "packages/daemon/test/sync-runtime-conformance-p3-c24.test.ts",
+    token: composeSourceToken(["P3-C24", "runtime", "conformance"]),
+    expected: 1,
+  });
+});
 
 type VirtualTimer = Readonly<{ readonly callback: () => void; readonly handle: number; readonly delayMs: number }>;
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Database } from "bun:sqlite";
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { createMessageId, type MessageId } from "@agent-mail/core";
 import { publicErrorEnvelopeSchema } from "@agent-mail/contracts";
 import { decodeExportStream } from "../src/export-stream-framing";
@@ -12,6 +12,16 @@ import {
   type SelectedExportRecord,
   type SelectedExportSource,
 } from "../src/selected-export-stream";
+import { composeSourceToken, emitSourceTokenEvent } from "../../../scripts/capacity/source-token-event";
+
+afterAll(async () => {
+  await emitSourceTokenEvent({
+    assertionId: "selected-export-streaming",
+    sourcePath: "packages/daemon/test/selected-export-stream-p6-c19.test.ts",
+    token: composeSourceToken(["slow", "blob", "reader"]),
+    expected: 1,
+  });
+});
 
 const queryDigest = "a".repeat(64);
 

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { createOperationRegistry, defineOperation, publicErrorEnvelopeSchema } from "@agent-mail/contracts";
 import {
@@ -11,6 +11,16 @@ import {
   type HttpCredentialResolution,
   type HttpAdmissionRequest,
 } from "../src/http";
+import { composeSourceToken, emitSourceTokenEvent } from "../../../scripts/capacity/source-token-event";
+
+afterAll(async () => {
+  await emitSourceTokenEvent({
+    assertionId: "http-admission-sec-r03",
+    sourcePath: "packages/daemon/test/http-admission-sec-r03.test.ts",
+    token: composeSourceToken(["SEC", "-", "R03"], ""),
+    expected: 1,
+  });
+});
 
 const requestSchema = z.strictObject({ value: z.string() });
 const responseSchema = z.union([z.strictObject({ ok: z.literal(true), value: z.string() }), publicErrorEnvelopeSchema]);
