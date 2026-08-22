@@ -1106,6 +1106,28 @@ function signalTrackedProcesses(rootPid, processGroups, pids, signal) {
 }
 
 function resourceSummary(samples) {
+  const attemptedPids = [...new Set(samples.flatMap((sample) => sample.attemptedPids ?? []))].sort(
+    (left, right) => left - right,
+  );
+  const observedPids = [...new Set(samples.flatMap((sample) => sample.observedPids ?? []))].sort(
+    (left, right) => left - right,
+  );
+  const unavailableReasons = new Map();
+  for (const sample of samples) {
+    for (const unavailable of sample.unavailablePids ?? []) {
+      if (!unavailableReasons.has(unavailable.pid))
+        unavailableReasons.set(unavailable.pid, new Set());
+      unavailableReasons.get(unavailable.pid).add(unavailable.reason);
+    }
+  }
+  const unavailablePids = attemptedPids
+    .filter((pid) => !observedPids.includes(pid))
+    .map((pid) => ({
+      pid,
+      reasons: [...(unavailableReasons.get(pid) ?? new Set())].sort((left, right) =>
+        left.localeCompare(right),
+      ),
+    }));
   const observed = samples.filter((sample) => sample.observed);
   const maximum = (key) => {
     const values = observed.map((sample) => sample[key]).filter(Number.isFinite);
@@ -1113,12 +1135,10 @@ function resourceSummary(samples) {
   };
   return {
     observed: observed.length > 0,
-    pids: [...new Set(samples.flatMap((sample) => sample.pids ?? []))],
-    attemptedPids: [
-      ...new Set(samples.flatMap((sample) => sample.attemptedPids ?? sample.pids ?? [])),
-    ],
-    observedPids: [...new Set(samples.flatMap((sample) => sample.observedPids ?? []))],
-    unavailablePids: samples.flatMap((sample) => sample.unavailablePids ?? []),
+    pids: attemptedPids,
+    attemptedPids,
+    observedPids,
+    unavailablePids,
     fileDescriptors: maximum("fileDescriptors"),
     sockets: maximum("sockets"),
     listeners: maximum("listeners"),
@@ -1127,6 +1147,40 @@ function resourceSummary(samples) {
     ),
     samples,
     ...(observed.length === 0 && samples.at(-1)?.reason ? { reason: samples.at(-1).reason } : {}),
+  };
+}
+
+function mergeKernelResourceSnapshots(snapshots) {
+  const byPid = new Map();
+  for (const snapshot of snapshots) {
+    for (const result of snapshot.pidResults ?? []) {
+      assert(!byPid.has(result.pid), `kernel resource PID ${result.pid} was sampled twice`);
+      byPid.set(result.pid, result);
+    }
+  }
+  const results = [...byPid.values()].sort((left, right) => left.pid - right.pid);
+  const observedResults = results.filter((result) => result.observed === true);
+  const unavailablePids = results
+    .filter((result) => result.observed !== true)
+    .map(({ pid, reason }) => ({ pid, reason }));
+  const aggregate = (key) =>
+    observedResults.length > 0
+      ? observedResults.reduce((sum, result) => sum + result[key], 0)
+      : null;
+  return {
+    observed: observedResults.length > 0,
+    pids: results.map((result) => result.pid),
+    attemptedPids: results.map((result) => result.pid),
+    observedPids: observedResults.map((result) => result.pid),
+    unavailablePids,
+    pidResults: results,
+    fileDescriptors: aggregate("fileDescriptors"),
+    sockets: aggregate("sockets"),
+    listeners: aggregate("listeners"),
+    hermesPorts: [...new Set(observedResults.flatMap((result) => result.hermesPorts))].sort(
+      (left, right) => left - right,
+    ),
+    ...(observedResults.length === 0 ? { reason: unavailablePids[0]?.reason } : {}),
   };
 }
 
@@ -1156,11 +1210,15 @@ export function runProcess(argv, cwd, timeoutMs) {
     const treeSamples = [];
     const resourceSamples = [];
     const sample = () => {
+      const rootResources = kernelResourceSnapshot([child.pid]);
       const tree = processTreeSnapshot(child.pid, [...trackedPids]);
       for (const pid of tree.pids) trackedPids.add(pid);
       for (const processGroup of tree.processGroups ?? []) trackedProcessGroups.add(processGroup);
+      const descendants = kernelResourceSnapshot(
+        [...trackedPids].filter((pid) => pid !== child.pid),
+      );
       treeSamples.push(tree);
-      resourceSamples.push(kernelResourceSnapshot([...trackedPids]));
+      resourceSamples.push(mergeKernelResourceSnapshots([rootResources, descendants]));
       return tree;
     };
     const spawnedAt = sample();
@@ -1483,6 +1541,13 @@ function kernelResourceSelfTest() {
     duplicate.pids.length === 1 && duplicate.pidResults.length === 1,
     "duplicate kernel PIDs were not deduplicated",
   );
+  let duplicateMergeRejected = false;
+  try {
+    mergeKernelResourceSnapshots([duplicate, duplicate]);
+  } catch {
+    duplicateMergeRejected = true;
+  }
+  assert(duplicateMergeRejected, "duplicate per-sample kernel PID was merged twice");
 }
 
 function thresholdSatisfied(value, threshold) {
@@ -1951,7 +2016,7 @@ function selfTestManifest(root) {
       "  writeFileSync(output, 'tiny-output');",
       "}",
       "process.stdout.write('tiny-pass\\n');",
-      "setTimeout(() => {}, 250);",
+      "setTimeout(() => {}, 1500);",
       "",
     ].join("\n"),
   );
@@ -2423,6 +2488,22 @@ async function main() {
       writeFileSync(manifestPath, json(manifest));
       git(root, ["add", "manifest.json"]);
       git(root, ["commit", "-qm", "tiny manifest"]);
+      const shortLived = runProcess(
+        [process.execPath, "-e", "process.stdout.write('short-lived')"],
+        root,
+        5000,
+      );
+      const shortLivedResult = await shortLived;
+      await shortLivedResult.terminate("short-lived root proof");
+      assert(
+        shortLivedResult.tree.samples.length === shortLivedResult.resources.samples.length &&
+          shortLivedResult.resources.samples.every(
+            (sample) =>
+              Array.isArray(sample.attemptedPids) &&
+              new Set(sample.attemptedPids).size === sample.attemptedPids.length,
+          ),
+        "short-lived root resource samples were not aligned and duplicate-free",
+      );
       const generation = await capture({
         manifestPath,
         root,

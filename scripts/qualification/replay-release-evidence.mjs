@@ -358,52 +358,60 @@ function receiptPidSet(receipt, label) {
   for (const descendant of receipt.probes.process.descendants ?? [])
     assert(pids.has(descendant.pid), `${label} descendant PID is detached`);
   const resources = receipt.probes?.resources;
-  assert(resources && Array.isArray(resources.pids), `${label} resource PID inventory is missing`);
+  assert(
+    resources && Array.isArray(resources.pids) && Array.isArray(resources.attemptedPids),
+    `${label} resource PID inventory is missing`,
+  );
+  const sorted = (values) => [...values].sort((left, right) => left - right);
+  const samePids = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
+  const uniquePids = (values, message) => {
+    assert(
+      values.every((pid) => Number.isSafeInteger(pid) && pid > 1),
+      message,
+    );
+    assert(new Set(values).size === values.length, `${message} repeats a PID`);
+  };
+  uniquePids(resources.pids, `${label} resource PID is invalid`);
+  uniquePids(resources.attemptedPids, `${label} attempted resource PID is invalid`);
+  assert(samePids(resources.pids, resources.attemptedPids), `${label} top PID inventory diverges`);
   const resourcePids = new Set(resources.pids);
-  for (const pid of resourcePids) {
-    assert(Number.isSafeInteger(pid) && pid > 1, `${label} resource PID is invalid`);
+  for (const pid of resourcePids)
     assert(pids.has(pid), `${label} resource PID is detached from process samples`);
-  }
-  const resourceObservedPids = new Set(resources.observedPids ?? []);
-  for (const pid of resourceObservedPids) {
-    assert(resourcePids.has(pid), `${label} observed resource PID is not attempted`);
-  }
-  for (const unavailable of resources.unavailablePids ?? []) {
+  const resourceSamples = resources.samples;
+  assert(
+    Array.isArray(resourceSamples) && resourceSamples.length === samples.length,
+    `${label} resource/process sample cardinality is inconsistent`,
+  );
+  const attemptedUnion = new Set();
+  const observedUnion = new Set();
+  const unavailableReasons = new Map();
+  let anyObserved = false;
+  const maximums = { fileDescriptors: null, sockets: null, listeners: null };
+  const hermesPorts = new Set();
+  for (const sample of resourceSamples) {
     assert(
-      Number.isSafeInteger(unavailable.pid) &&
-        resourcePids.has(unavailable.pid) &&
-        typeof unavailable.reason === "string" &&
-        unavailable.reason.length > 0,
-      `${label} unavailable resource PID record is malformed`,
+      Array.isArray(sample.attemptedPids),
+      `${label} resource attempted PID inventory is missing`,
     );
-  }
-  for (const sample of resources.samples ?? []) {
-    const attemptedPids = sample.attemptedPids ?? sample.pids;
-    assert(Array.isArray(attemptedPids), `${label} resource attempted PID inventory is missing`);
+    assert(Array.isArray(sample.pids), `${label} resource sample PID inventory is missing`);
+    uniquePids(sample.attemptedPids, `${label} resource attempted PID is invalid`);
     assert(
-      JSON.stringify([...new Set(sample.pids ?? [])].sort((left, right) => left - right)) ===
-        JSON.stringify([...attemptedPids].sort((left, right) => left - right)),
-      `${label} resource attempted PID inventory is detached`,
+      samePids(sample.pids, sample.attemptedPids),
+      `${label} resource sample PID inventory is detached`,
     );
-    assert(
-      JSON.stringify([...new Set(attemptedPids)].sort((left, right) => left - right)) ===
-        JSON.stringify([...attemptedPids].sort((left, right) => left - right)),
-      `${label} resource attempted PID inventory repeats a PID`,
-    );
+    for (const pid of sample.attemptedPids) {
+      attemptedUnion.add(pid);
+      assert(pids.has(pid), `${label} resource sample PID is detached from process samples`);
+    }
     const results = sample.pidResults;
     assert(
-      Array.isArray(results) && results.length === attemptedPids.length,
+      Array.isArray(results) && results.length === sample.attemptedPids.length,
       `${label} per-PID resource observations are incomplete`,
     );
-    for (const result of results)
-      assert(
-        Number.isSafeInteger(result.pid) && result.pid > 1,
-        `${label} per-PID resource identity is malformed`,
-      );
     const resultPids = results.map((result) => result.pid);
+    uniquePids(resultPids, `${label} per-PID resource identity is malformed`);
     assert(
-      JSON.stringify([...resultPids].sort((left, right) => left - right)) ===
-        JSON.stringify([...attemptedPids].sort((left, right) => left - right)),
+      samePids(resultPids, sample.attemptedPids),
       `${label} per-PID resource observations are detached`,
     );
     const observedResults = results.filter((result) => result.observed === true);
@@ -412,22 +420,47 @@ function receiptPidSet(receipt, label) {
       observedResults.length + unavailableResults.length === results.length,
       `${label} resource observation status is invalid`,
     );
+    const observedSamplePids = observedResults.map((result) => result.pid);
+    const unavailableSamplePids = unavailableResults.map((result) => result.pid);
+    uniquePids(sample.observedPids ?? [], `${label} observed resource PID is invalid`);
     assert(
-      JSON.stringify((sample.observedPids ?? []).slice().sort((left, right) => left - right)) ===
-        JSON.stringify(
-          observedResults.map((result) => result.pid).sort((left, right) => left - right),
-        ),
+      samePids(sample.observedPids ?? [], observedSamplePids),
       `${label} observed resource PID attribution is inconsistent`,
     );
+    const unavailableRecords = sample.unavailablePids ?? [];
     assert(
-      JSON.stringify(
-        (sample.unavailablePids ?? [])
-          .map((entry) => entry.pid)
-          .sort((left, right) => left - right),
-      ) ===
-        JSON.stringify(
-          unavailableResults.map((result) => result.pid).sort((left, right) => left - right),
-        ),
+      Array.isArray(unavailableRecords),
+      `${label} unavailable resource PID inventory is malformed`,
+    );
+    assert(
+      unavailableRecords.length === unavailableSamplePids.length,
+      `${label} unavailable resource PID attribution is inconsistent`,
+    );
+    const unavailableSeen = new Set();
+    for (const unavailable of unavailableRecords) {
+      assert(
+        Number.isSafeInteger(unavailable.pid) && unavailable.pid > 1,
+        `${label} unavailable resource PID is malformed`,
+      );
+      assert(
+        !unavailableSeen.has(unavailable.pid),
+        `${label} unavailable resource PID repeats a PID`,
+      );
+      unavailableSeen.add(unavailable.pid);
+      assert(
+        unavailableSamplePids.includes(unavailable.pid),
+        `${label} unavailable resource PID attribution is inconsistent`,
+      );
+      assert(
+        typeof unavailable.reason === "string" && unavailable.reason.length > 0,
+        `${label} unavailable resource reason is missing`,
+      );
+      if (!unavailableReasons.has(unavailable.pid))
+        unavailableReasons.set(unavailable.pid, new Set());
+      unavailableReasons.get(unavailable.pid).add(unavailable.reason);
+    }
+    assert(
+      samePids(unavailableSamplePids, [...unavailableSeen]),
       `${label} unavailable resource PID attribution is inconsistent`,
     );
     for (const result of observedResults) {
@@ -438,15 +471,22 @@ function receiptPidSet(receipt, label) {
         );
       assert(Array.isArray(result.hermesPorts), `${label} observed Hermes ports are malformed`);
       assert(
+        new Set(result.hermesPorts).size === result.hermesPorts.length,
+        `${label} observed Hermes ports repeat a value`,
+      );
+      assert(
         !Object.hasOwn(result, "reason"),
         `${label} observed resource has an unavailable reason`,
       );
+      for (const port of result.hermesPorts) hermesPorts.add(port);
+      observedUnion.add(result.pid);
     }
     for (const result of unavailableResults)
       assert(
         typeof result.reason === "string" && result.reason.length > 0,
         `${label} unavailable resource reason is missing`,
       );
+    anyObserved ||= observedResults.length > 0;
     assert(
       sample.observed === observedResults.length > 0,
       `${label} resource sample status is inconsistent`,
@@ -457,13 +497,100 @@ function receiptPidSet(receipt, label) {
           ? observedResults.reduce((sum, result) => sum + result[metric], 0)
           : null;
       assert(sample[metric] === expected, `${label} resource aggregate ${metric} is inconsistent`);
+      if (expected !== null)
+        maximums[metric] =
+          maximums[metric] === null ? expected : Math.max(maximums[metric], expected);
     }
+    assert(
+      Array.isArray(sample.hermesPorts),
+      `${label} resource sample Hermes ports are malformed`,
+    );
+    assert(
+      new Set(sample.hermesPorts).size === sample.hermesPorts.length,
+      `${label} resource sample Hermes ports repeat a value`,
+    );
+    assert(
+      samePids(sample.hermesPorts, [
+        ...new Set(observedResults.flatMap((result) => result.hermesPorts)),
+      ]),
+      `${label} resource sample Hermes ports are inconsistent`,
+    );
   }
-  for (const sample of resources.samples ?? [])
-    for (const pid of sample.pids ?? []) {
-      assert(Number.isSafeInteger(pid) && pid > 1, `${label} resource sample PID is invalid`);
-      assert(pids.has(pid), `${label} resource sample PID is detached from process samples`);
-    }
+  assert(
+    samePids([...attemptedUnion], resources.pids),
+    `${label} top attempted PID union is inconsistent`,
+  );
+  assert(Array.isArray(resources.observedPids), `${label} top observed PID inventory is missing`);
+  uniquePids(resources.observedPids, `${label} top observed resource PID is invalid`);
+  assert(
+    samePids([...observedUnion], resources.observedPids),
+    `${label} top observed PID union is inconsistent`,
+  );
+  assert(
+    resources.observed === anyObserved,
+    `${label} top resource observation status is inconsistent`,
+  );
+  const topUnavailable = resources.unavailablePids;
+  assert(Array.isArray(topUnavailable), `${label} top unavailable resource inventory is missing`);
+  const expectedUnavailable = [...attemptedUnion]
+    .filter((pid) => !observedUnion.has(pid))
+    .sort((left, right) => left - right);
+  assert(
+    topUnavailable.length === expectedUnavailable.length,
+    `${label} top unavailable resource inventory is inconsistent`,
+  );
+  const topUnavailableSeen = new Set();
+  for (const entry of topUnavailable) {
+    assert(
+      Number.isSafeInteger(entry.pid) && entry.pid > 1,
+      `${label} top unavailable resource PID is malformed`,
+    );
+    assert(
+      !topUnavailableSeen.has(entry.pid),
+      `${label} top unavailable resource PID repeats a PID`,
+    );
+    topUnavailableSeen.add(entry.pid);
+    assert(
+      expectedUnavailable.includes(entry.pid),
+      `${label} top unavailable resource PID is stale`,
+    );
+    assert(
+      Array.isArray(entry.reasons) && entry.reasons.length > 0,
+      `${label} top unavailable resource reasons are missing`,
+    );
+    assert(
+      new Set(entry.reasons).size === entry.reasons.length &&
+        entry.reasons.every((reason) => typeof reason === "string" && reason.length > 0),
+      `${label} top unavailable resource reasons are malformed`,
+    );
+    assert(
+      JSON.stringify([...entry.reasons].sort((left, right) => left.localeCompare(right))) ===
+        JSON.stringify(
+          [...(unavailableReasons.get(entry.pid) ?? [])].sort((left, right) =>
+            left.localeCompare(right),
+          ),
+        ),
+      `${label} top unavailable resource reasons diverge`,
+    );
+  }
+  assert(
+    samePids([...topUnavailableSeen], expectedUnavailable),
+    `${label} top unavailable resource PID inventory is inconsistent`,
+  );
+  for (const metric of ["fileDescriptors", "sockets", "listeners"])
+    assert(
+      resources[metric] === maximums[metric],
+      `${label} top resource ${metric} maximum is inconsistent`,
+    );
+  assert(Array.isArray(resources.hermesPorts), `${label} top resource Hermes ports are missing`);
+  assert(
+    new Set(resources.hermesPorts).size === resources.hermesPorts.length,
+    `${label} top resource Hermes ports repeat a value`,
+  );
+  assert(
+    samePids(resources.hermesPorts, [...hermesPorts]),
+    `${label} top resource Hermes ports union is inconsistent`,
+  );
   assert(pids.size > 0, `${label} process PID inventory is empty`);
   return pids;
 }
@@ -992,7 +1119,7 @@ async function selfTest() {
         "  writeFileSync(output, 'tiny-output');",
         "}",
         "process.stdout.write('tiny-pass\\n');",
-        "setTimeout(() => {}, 250);",
+        "setTimeout(() => {}, 1500);",
         "",
       ].join("\n"),
     );
@@ -1206,15 +1333,42 @@ async function selfTest() {
         },
       ],
       [
+        "resource attempted PID fallback",
+        (value) => delete value.probes.resources.samples[0].attemptedPids,
+      ],
+      [
         "resource PID result stale",
         (value) => (value.probes.resources.samples[0].pidResults[0].pid = 999999),
       ],
       [
         "resource unavailable reason missing",
-        (value) =>
-          (value.probes.resources.unavailablePids = [
-            { pid: value.probes.resources.pids[0], reason: "" },
-          ]),
+        (value) => {
+          const unavailable = value.probes.resources.unavailablePids[0];
+          if (unavailable) unavailable.reasons = [""];
+          else
+            value.probes.resources.unavailablePids = [
+              { pid: value.probes.resources.pids[0], reasons: [""] },
+            ];
+        },
+      ],
+      [
+        "resource top union omission",
+        (value) => {
+          if (value.probes.resources.observedPids.length > 0)
+            value.probes.resources.observedPids.pop();
+          else value.probes.resources.observedPids = [1234];
+        },
+      ],
+      [
+        "resource top unavailable reason drift",
+        (value) => {
+          const unavailable = value.probes.resources.unavailablePids[0];
+          if (unavailable) unavailable.reasons = ["forged reason"];
+          else
+            value.probes.resources.unavailablePids = [
+              { pid: value.probes.resources.pids[0], reasons: ["forged reason"] },
+            ];
+        },
       ],
       [
         "resource all-dead fabricated zero",
