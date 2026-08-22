@@ -351,8 +351,8 @@ export function validateManifest(
       const source = step.sources.find((candidate) => candidate.path === assertion.path);
       assert(source.sha256 === assertion.sha256, `${step.id} oracle digest is detached`);
     }
-      assert(
-        step.observations && step.thresholds && step.probes,
+    assert(
+      step.observations && step.thresholds && step.probes,
       `${step.id} observation authority is incomplete`,
     );
   }
