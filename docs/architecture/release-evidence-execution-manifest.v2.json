@@ -95,8 +95,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "141a967d6f2439c1ba8d85ecf3708ebcfe2a9aea",
-        "sha256": "b0847921852fff487480693ca0eca5448764dcdb94c70e35693d7c92542afae5"
+        "gitBlob": "27753e63f53c9e561a465a57f41f8077d5249722",
+        "sha256": "b867e6169847e694597445ca9d9613ba82896558032c443d9d41df331a0ffb88"
       },
       {
         "role": "replay-runner",
