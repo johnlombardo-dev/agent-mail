@@ -363,7 +363,9 @@ function receiptPidSet(receipt, label) {
     `${label} resource PID inventory is missing`,
   );
   const sorted = (values) => [...values].sort((left, right) => left - right);
+  const sortedStrings = (values) => [...values].sort((left, right) => left.localeCompare(right));
   const samePids = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
+  const sameOrdered = (left, right) => JSON.stringify(left) === JSON.stringify(right);
   const hermesPortsArray = (values, message) => {
     assert(Array.isArray(values), `${message} is missing`);
     assert(
@@ -381,9 +383,16 @@ function receiptPidSet(receipt, label) {
     );
     assert(new Set(values).size === values.length, `${message} repeats a PID`);
   };
-  uniquePids(resources.pids, `${label} resource PID is invalid`);
-  uniquePids(resources.attemptedPids, `${label} attempted resource PID is invalid`);
-  assert(samePids(resources.pids, resources.attemptedPids), `${label} top PID inventory diverges`);
+  const orderedPids = (values, message) => {
+    uniquePids(values, message);
+    assert(sameOrdered(values, sorted(values)), `${message} is not sorted`);
+  };
+  orderedPids(resources.pids, `${label} resource PID is invalid`);
+  orderedPids(resources.attemptedPids, `${label} attempted resource PID is invalid`);
+  assert(
+    sameOrdered(resources.pids, resources.attemptedPids),
+    `${label} top PID inventory diverges`,
+  );
   const resourcePids = new Set(resources.pids);
   for (const pid of resourcePids)
     assert(pids.has(pid), `${label} resource PID is detached from process samples`);
@@ -404,9 +413,10 @@ function receiptPidSet(receipt, label) {
       `${label} resource attempted PID inventory is missing`,
     );
     assert(Array.isArray(sample.pids), `${label} resource sample PID inventory is missing`);
-    uniquePids(sample.attemptedPids, `${label} resource attempted PID is invalid`);
+    orderedPids(sample.attemptedPids, `${label} resource attempted PID is invalid`);
+    orderedPids(sample.pids, `${label} resource sample PID is invalid`);
     assert(
-      samePids(sample.pids, sample.attemptedPids),
+      sameOrdered(sample.pids, sample.attemptedPids),
       `${label} resource sample PID inventory is detached`,
     );
     for (const pid of sample.attemptedPids) {
@@ -419,9 +429,9 @@ function receiptPidSet(receipt, label) {
       `${label} per-PID resource observations are incomplete`,
     );
     const resultPids = results.map((result) => result.pid);
-    uniquePids(resultPids, `${label} per-PID resource identity is malformed`);
+    orderedPids(resultPids, `${label} per-PID resource identity is malformed`);
     assert(
-      samePids(resultPids, sample.attemptedPids),
+      sameOrdered(resultPids, sample.attemptedPids),
       `${label} per-PID resource observations are detached`,
     );
     const observedResults = results.filter((result) => result.observed === true);
@@ -436,9 +446,9 @@ function receiptPidSet(receipt, label) {
       Array.isArray(sample.observedPids),
       `${label} observed resource PID inventory is missing`,
     );
-    uniquePids(sample.observedPids, `${label} observed resource PID is invalid`);
+    orderedPids(sample.observedPids, `${label} observed resource PID is invalid`);
     assert(
-      samePids(sample.observedPids, observedSamplePids),
+      sameOrdered(sample.observedPids, observedSamplePids),
       `${label} observed resource PID attribution is inconsistent`,
     );
     const unavailableRecords = sample.unavailablePids;
@@ -450,6 +460,8 @@ function receiptPidSet(receipt, label) {
       unavailableRecords.length === unavailableSamplePids.length,
       `${label} unavailable resource PID attribution is inconsistent`,
     );
+    const unavailableRecordPids = unavailableRecords.map((entry) => entry.pid);
+    orderedPids(unavailableRecordPids, `${label} unavailable resource PID inventory`);
     const unavailableSeen = new Set();
     for (const unavailable of unavailableRecords) {
       assert(
@@ -474,7 +486,7 @@ function receiptPidSet(receipt, label) {
       unavailableReasons.get(unavailable.pid).add(unavailable.reason);
     }
     assert(
-      samePids(unavailableSamplePids, [...unavailableSeen]),
+      sameOrdered(unavailableSamplePids, unavailableRecordPids),
       `${label} unavailable resource PID attribution is inconsistent`,
     );
     for (const result of observedResults) {
@@ -521,13 +533,13 @@ function receiptPidSet(receipt, label) {
     );
   }
   assert(
-    samePids([...attemptedUnion], resources.pids),
+    sameOrdered(sorted([...attemptedUnion]), resources.pids),
     `${label} top attempted PID union is inconsistent`,
   );
   assert(Array.isArray(resources.observedPids), `${label} top observed PID inventory is missing`);
-  uniquePids(resources.observedPids, `${label} top observed resource PID is invalid`);
+  orderedPids(resources.observedPids, `${label} top observed resource PID is invalid`);
   assert(
-    samePids([...observedUnion], resources.observedPids),
+    sameOrdered(sorted([...observedUnion]), resources.observedPids),
     `${label} top observed PID union is inconsistent`,
   );
   assert(
@@ -568,6 +580,10 @@ function receiptPidSet(receipt, label) {
       `${label} top unavailable resource reasons are malformed`,
     );
     assert(
+      sameOrdered(entry.reasons, sortedStrings(entry.reasons)),
+      `${label} top unavailable resource reasons are not sorted`,
+    );
+    assert(
       JSON.stringify([...entry.reasons].sort((left, right) => left.localeCompare(right))) ===
         JSON.stringify(
           [...(unavailableReasons.get(entry.pid) ?? [])].sort((left, right) =>
@@ -577,8 +593,10 @@ function receiptPidSet(receipt, label) {
       `${label} top unavailable resource reasons diverge`,
     );
   }
+  const topUnavailablePids = topUnavailable.map((entry) => entry.pid);
+  orderedPids(topUnavailablePids, `${label} top unavailable resource PID inventory`);
   assert(
-    samePids([...topUnavailableSeen], expectedUnavailable),
+    sameOrdered(topUnavailablePids, expectedUnavailable),
     `${label} top unavailable resource PID inventory is inconsistent`,
   );
   for (const metric of ["fileDescriptors", "sockets", "listeners"])
@@ -1291,6 +1309,12 @@ async function selfTest() {
       assert(!accepted, `${name} was accepted`);
       manifestRejected += 1;
     }
+    const reorderOrInvalidate = (values, invalidValue) =>
+      values.length > 1
+        ? values.slice().reverse()
+        : values.length === 1
+          ? [values[0], values[0]]
+          : [invalidValue];
     const attacks = [
       ["reused run ID", (value) => (value.runId = primary.runId)],
       ["reused temp root", (value) => (value.probes.tempRoot.path = primary.probes.tempRoot.path)],
@@ -1362,6 +1386,85 @@ async function selfTest() {
           if (value.probes.resources.observedPids.length > 0)
             value.probes.resources.observedPids.pop();
           else value.probes.resources.observedPids = [1234];
+        },
+      ],
+      [
+        "resource top pids reorder",
+        (value) =>
+          (value.probes.resources.pids = reorderOrInvalidate(value.probes.resources.pids, 1234)),
+      ],
+      [
+        "resource top attempted pids reorder",
+        (value) =>
+          (value.probes.resources.attemptedPids = reorderOrInvalidate(
+            value.probes.resources.attemptedPids,
+            1234,
+          )),
+      ],
+      [
+        "resource top observed pids reorder",
+        (value) =>
+          (value.probes.resources.observedPids = reorderOrInvalidate(
+            value.probes.resources.observedPids,
+            1234,
+          )),
+      ],
+      [
+        "resource top unavailable pids reorder",
+        (value) => {
+          const entries = value.probes.resources.unavailablePids;
+          value.probes.resources.unavailablePids =
+            entries.length > 1
+              ? entries.slice().reverse()
+              : [{ pid: value.probes.resources.pids[0], reasons: ["forged"] }];
+        },
+      ],
+      [
+        "resource sample pids reorder",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.pids = reorderOrInvalidate(sample.pids, 1234);
+        },
+      ],
+      [
+        "resource sample attempted pids reorder",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.attemptedPids = reorderOrInvalidate(sample.attemptedPids, 1234);
+        },
+      ],
+      [
+        "resource sample observed pids reorder",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.observedPids = reorderOrInvalidate(sample.observedPids, 1234);
+        },
+      ],
+      [
+        "resource sample unavailable pids reorder",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.unavailablePids =
+            sample.unavailablePids.length > 1
+              ? sample.unavailablePids.slice().reverse()
+              : [{ pid: sample.attemptedPids[0], reason: "forged" }];
+        },
+      ],
+      [
+        "resource sample pidResults reorder",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.pidResults = reorderOrInvalidate(sample.pidResults, { pid: 1234 });
+        },
+      ],
+      [
+        "resource coordinated PID reorder",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.pids = reorderOrInvalidate(sample.pids, 1234);
+          sample.attemptedPids = reorderOrInvalidate(sample.attemptedPids, 1234);
+          sample.observedPids = reorderOrInvalidate(sample.observedPids, 1234);
+          sample.pidResults = reorderOrInvalidate(sample.pidResults, { pid: 1234 });
         },
       ],
       [
