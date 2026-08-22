@@ -151,6 +151,8 @@ describe("release evidence executable runner", () => {
           compareReceipts(primary, replay, {
             primaryOutputRoot: output,
             replayOutputRoot: replayOutput,
+            step: fixture.manifest.steps[0],
+            runnerSources: fixture.manifest.runner.sources,
           }).replayResult,
         ).toBe("pass");
         const attacks = [
@@ -167,6 +169,8 @@ describe("release evidence executable runner", () => {
           expect(() => compareReceipts(primary, forged, {
             primaryOutputRoot: output,
             replayOutputRoot: replayOutput,
+            step: fixture.manifest.steps[0],
+            runnerSources: fixture.manifest.runner.sources,
           })).toThrow();
         }
       } finally {

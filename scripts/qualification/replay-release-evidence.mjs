@@ -1,7 +1,16 @@
-import { lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  linkSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { capture, canonicalJson, sha256 } from "./capture-release-evidence.mjs";
 
@@ -33,22 +42,83 @@ function finiteReceiptNumber(value, label) {
   );
 }
 
+function canonicalOutputRoot(value, label) {
+  assert(typeof value === "string" && value.length > 0, `${label} output root is required`);
+  const lexical = resolve(value);
+  const lexicalStat = lstatSync(lexical);
+  assert(
+    lexicalStat.isDirectory() && !lexicalStat.isSymbolicLink(),
+    `${label} output root is invalid`,
+  );
+  const canonical = realpathSync(lexical);
+  const canonicalStat = lstatSync(canonical);
+  assert(canonicalStat.isDirectory(), `${label} output root is not a directory`);
+  return canonical;
+}
+
+function assertManifestStep(step) {
+  assert(step && typeof step === "object", "manifest step authority is required");
+  assert(typeof step.id === "string" && step.id.length > 0, "manifest step ID is required");
+  assert(typeof step.cwd === "string", "manifest step cwd is required");
+  assert(
+    Array.isArray(step.argv) && step.argv.every((arg) => typeof arg === "string"),
+    "manifest step argv is invalid",
+  );
+  assert(
+    step.thresholds && typeof step.thresholds === "object",
+    "manifest step thresholds are required",
+  );
+  assert(Array.isArray(step.probes), "manifest step probes are required");
+}
+
 function receiptPidSet(receipt, label) {
   const samples = receipt.probes?.process?.samples;
   assert(Array.isArray(samples) && samples.length >= 2, `${label} process samples are incomplete`);
+  const process = receipt.process;
+  assert(Number.isSafeInteger(process?.pid) && process.pid > 1, `${label} process PID is invalid`);
+  assert(Number.isSafeInteger(process?.processGroup), `${label} process group is invalid`);
+  assert(Math.abs(process.processGroup) === process.pid, `${label} process group is detached`);
   const pids = new Set();
+  const processGroups = new Set();
   for (const sample of samples) {
     assert(Array.isArray(sample.pids), `${label} process sample PIDs are missing`);
     for (const pid of sample.pids) {
       assert(Number.isSafeInteger(pid) && pid > 1, `${label} process sample PID is invalid`);
       pids.add(pid);
     }
+    for (const processGroup of sample.processGroups ?? []) {
+      assert(
+        Number.isSafeInteger(processGroup) && processGroup > 1,
+        `${label} process sample group is invalid`,
+      );
+      processGroups.add(processGroup);
+    }
   }
+  assert(pids.has(process.pid), `${label} process PID is absent from process samples`);
+  assert(
+    processGroups.has(Math.abs(process.processGroup)),
+    `${label} process group is absent from samples`,
+  );
+  for (const descendant of receipt.probes.process.descendants ?? [])
+    assert(pids.has(descendant.pid), `${label} descendant PID is detached`);
+  const resources = receipt.probes?.resources;
+  assert(resources && Array.isArray(resources.pids), `${label} resource PID inventory is missing`);
+  const resourcePids = new Set(resources.pids);
+  for (const pid of resourcePids) {
+    assert(Number.isSafeInteger(pid) && pid > 1, `${label} resource PID is invalid`);
+    assert(pids.has(pid), `${label} resource PID is detached from process samples`);
+  }
+  for (const sample of resources.samples ?? [])
+    for (const pid of sample.pids ?? []) {
+      assert(Number.isSafeInteger(pid) && pid > 1, `${label} resource sample PID is invalid`);
+      assert(pids.has(pid), `${label} resource sample PID is detached from process samples`);
+    }
   assert(pids.size > 0, `${label} process PID inventory is empty`);
   return pids;
 }
 
 function validateIndependentRuntime(receipt, label, step) {
+  assertManifestStep(step);
   assert(receipt.result === "pass", `${label} result is not pass`);
   const process = receipt.probes?.process;
   assert(process?.observed === true, `${label} process probe is unavailable`);
@@ -72,34 +142,79 @@ function validateIndependentRuntime(receipt, label, step) {
     `${label} temporary root probe is unavailable`,
   );
   const thresholds = step?.thresholds ?? {};
-  const rssThreshold = thresholds.processRssBytes;
-  if (rssThreshold) {
-    const { operator, limit } = rssThreshold;
-    const pass =
-      operator === "<"
-        ? process.peakRssBytes < limit
-        : operator === "<="
-          ? process.peakRssBytes <= limit
-          : operator === "==="
-            ? process.peakRssBytes === limit
-            : operator === ">="
-              ? process.peakRssBytes >= limit
-              : process.peakRssBytes > limit;
-    assert(pass, `${label} RSS threshold failed`);
-  }
-  if (step?.probes?.includes("fileDescriptors"))
+  const thresholdSatisfied = (value, threshold) => {
+    if (!Number.isFinite(value)) return false;
+    if (threshold.operator === "<") return value < threshold.limit;
+    if (threshold.operator === "<=") return value <= threshold.limit;
+    if (threshold.operator === "===") return value === threshold.limit;
+    if (threshold.operator === ">=") return value >= threshold.limit;
+    if (threshold.operator === ">") return value > threshold.limit;
+    return false;
+  };
+  const values = {
+    processRssBytes: process.peakRssBytes,
+    fileDescriptors: receipt.probes.resources?.fileDescriptors,
+    sockets: receipt.probes.resources?.sockets,
+    listeners: receipt.probes.resources?.listeners,
+  };
+  for (const [metric, threshold] of Object.entries(thresholds)) {
+    if (metric === "timeoutMs") continue;
     assert(
-      receipt.probes.resources?.observed === true,
-      `${label} file descriptor probe is unavailable`,
+      threshold && thresholdSatisfied(values[metric], threshold),
+      `${label} ${metric} threshold failed`,
     );
-  if (step?.probes?.includes("listeners"))
-    assert(receipt.probes.resources?.observed === true, `${label} listener probe is unavailable`);
+  }
+  const probes = new Set(step.probes);
+  if (probes.has("streams")) {
+    assert(receipt.probes?.streams?.observed === true, `${label} stream probe is unavailable`);
+    for (const key of ["stdout", "stderr", "events"])
+      assert(receipt.streams?.[key], `${label} ${key} stream is missing`);
+  }
+  if (probes.has("tempRoot"))
+    assert(
+      receipt.probes?.tempRoot?.path && receipt.probes.tempRoot.removed === true,
+      `${label} temporary root probe is unavailable`,
+    );
+  if (["fileDescriptors", "sockets", "listeners", "HermesLease"].some((probe) => probes.has(probe)))
+    assert(receipt.probes.resources?.observed === true, `${label} resource probe is unavailable`);
   return receiptPidSet(receipt, label);
 }
 
 function assertDistinctRegularArtifacts(primary, replay, options) {
-  const primaryRoot = options?.primaryOutputRoot;
-  const replayRoot = options?.replayOutputRoot;
+  const primaryRoot = canonicalOutputRoot(options?.primaryOutputRoot, "primary");
+  const replayRoot = canonicalOutputRoot(options?.replayOutputRoot, "replay");
+  assert(primaryRoot !== replayRoot, "primary and replay output roots are aliased");
+  assert(
+    !primaryRoot.startsWith(`${replayRoot}/`) && !replayRoot.startsWith(`${primaryRoot}/`),
+    "output roots overlap",
+  );
+  const identities = new Set();
+  const validateRef = (root, runId, ref, label) => {
+    assert(ref && typeof ref.path === "string", `${label} reference is missing`);
+    assert(
+      typeof ref.sha256 === "string" && /^[0-9a-f]{64}$/u.test(ref.sha256),
+      `${label} digest is missing`,
+    );
+    assert(Number.isSafeInteger(ref.bytes) && ref.bytes >= 0, `${label} byte count is invalid`);
+    assert(!isAbsolute(ref.path) && !ref.path.includes("\\"), `${label} path is unsafe`);
+    const parts = ref.path.split("/");
+    assert(
+      parts[0] === runId && parts.every((part) => part && part !== "." && part !== ".."),
+      `${label} path is not run-bound`,
+    );
+    const path = resolve(root, ref.path);
+    assert(relative(root, path) === ref.path, `${label} path escaped output root`);
+    const stat = lstatSync(path);
+    assert(stat.isFile() && !stat.isSymbolicLink(), `${label} is not a regular non-symlink file`);
+    const realPath = realpathSync(path);
+    assert(relative(root, realPath) === ref.path, `${label} path resolves outside output root`);
+    const bytes = readFileSync(path);
+    assert(bytes.length === ref.bytes, `${label} byte count drifted`);
+    assert(sha256(bytes) === ref.sha256, `${label} digest drifted`);
+    const identity = `${stat.dev}:${stat.ino}`;
+    assert(!identities.has(identity), `${label} reuses another artifact inode`);
+    identities.add(identity);
+  };
   const refs = ["stdout", "stderr", "events"].map((key) => [
     key,
     primary.streams[key],
@@ -107,20 +222,8 @@ function assertDistinctRegularArtifacts(primary, replay, options) {
   ]);
   for (const [key, primaryRef, replayRef] of refs) {
     assert(primaryRef.path !== replayRef.path, `${key} path was reused`);
-    assert(primaryRef.path.split("/")[0] === primary.runId, `${key} primary path is not run-bound`);
-    assert(replayRef.path.split("/")[0] === replay.runId, `${key} replay path is not run-bound`);
-    if (!primaryRoot || !replayRoot) continue;
-    const primaryStat = lstatSync(resolve(primaryRoot, primaryRef.path));
-    const replayStat = lstatSync(resolve(replayRoot, replayRef.path));
-    assert(primaryStat.isFile() && replayStat.isFile(), `${key} artifact is not a regular file`);
-    assert(
-      !primaryStat.isSymbolicLink() && !replayStat.isSymbolicLink(),
-      `${key} artifact is a symlink`,
-    );
-    assert(
-      primaryStat.dev !== replayStat.dev || primaryStat.ino !== replayStat.ino,
-      `${key} artifact is hard-linked or reused`,
-    );
+    validateRef(primaryRoot, primary.runId, primaryRef, `primary ${key}`);
+    validateRef(replayRoot, replay.runId, replayRef, `replay ${key}`);
   }
   const primaryFixturePath = primary.fixture?.materialized?.path;
   const replayFixturePath = replay.fixture?.materialized?.path;
@@ -129,13 +232,53 @@ function assertDistinctRegularArtifacts(primary, replay, options) {
     assert(primaryFixturePath !== replayFixturePath, "fixture artifact path was reused");
     assert(primaryFixturePath.split("/")[0] === primary.runId, "primary fixture is not run-bound");
     assert(replayFixturePath.split("/")[0] === replay.runId, "replay fixture is not run-bound");
+    validateRef(primaryRoot, primary.runId, primary.fixture.materialized, "primary fixture");
+    validateRef(replayRoot, replay.runId, replay.fixture.materialized, "replay fixture");
   }
 }
 
 export function compareReceipts(primary, replay, options = {}) {
+  assertManifestStep(options.step);
+  assert(
+    options.primaryOutputRoot && options.replayOutputRoot,
+    "primary and replay output roots are required",
+  );
+  assert(Array.isArray(options.runnerSources), "runner source authority is required");
   assert(primary.format === "agent-mail.executable-receipt/v2", "primary receipt format");
   assert(replay.format === primary.format, "replay receipt format");
   assert(primary.role === "primary" && replay.role === "independent-replay", "receipt roles");
+  assert(
+    primary.manifestStepId === options.step.id && replay.manifestStepId === options.step.id,
+    "manifest step diverged",
+  );
+  assert(
+    primary.cwd === options.step.cwd && replay.cwd === options.step.cwd,
+    "manifest cwd diverged",
+  );
+  const expectedSources = (options.step.sources ?? []).map(
+    ({ role, path, gitBlob, sha256: digest }) => ({ role, path, gitBlob, sha256: digest }),
+  );
+  assert(
+    canonicalJson(primary.sources) === canonicalJson(expectedSources),
+    "primary source authority diverged",
+  );
+  assert(
+    canonicalJson(replay.sources) === canonicalJson(expectedSources),
+    "replay source authority diverged",
+  );
+  const expectedRunnerSources = options.runnerSources.map(
+    ({ role, path, gitBlob, sha256: digest }) => ({
+      role,
+      path,
+      gitBlob,
+      sha256: digest,
+    }),
+  );
+  assert(
+    canonicalJson(primary.runnerSources ?? []) === canonicalJson(expectedRunnerSources) &&
+      canonicalJson(replay.runnerSources ?? []) === canonicalJson(expectedRunnerSources),
+    "runner source authority diverged",
+  );
   assert(primary.runId !== replay.runId, "replay reused the primary run ID");
   const primaryPids = validateIndependentRuntime(primary, "primary receipt", options.step);
   const replayPids = validateIndependentRuntime(replay, "replay receipt", options.step);
@@ -262,6 +405,7 @@ async function selfTest() {
       primaryOutputRoot: primaryRoot,
       replayOutputRoot: replayRoot,
       step: manifest.steps[0],
+      runnerSources: manifest.runner?.sources ?? [],
     });
     const attacks = [
       ["reused run ID", (value) => (value.runId = primary.runId)],
@@ -284,7 +428,73 @@ async function selfTest() {
         "cleanup survivor",
         (value) => (value.probes.cleanup.termination.survivorsAfterKill = [1234]),
       ],
+      ["artifact digest drift", (value) => (value.streams.stdout.sha256 = "0".repeat(64))],
+      ["artifact missing", (value) => (value.streams.stderr.path = `${value.runId}/missing`)],
+      ["artifact traversal", (value) => (value.streams.events.path = "../events.jsonl")],
+      ["resource PID retyping", (value) => (value.probes.resources.pids = [1234])],
     ];
+    let authorityRejected = 0;
+    for (const invalidOptions of [
+      { step: manifest.steps[0], runnerSources: manifest.runner?.sources ?? [] },
+      { primaryOutputRoot: primaryRoot, replayOutputRoot: replayRoot },
+      { primaryOutputRoot: primaryRoot, replayOutputRoot: replayRoot, step: manifest.steps[0] },
+    ]) {
+      try {
+        compareReceipts(primary, replay, invalidOptions);
+      } catch {
+        authorityRejected += 1;
+      }
+    }
+    assert(authorityRejected === 3, "root or manifest authority omission was accepted");
+    let aliasRejected = false;
+    try {
+      compareReceipts(primary, replay, {
+        primaryOutputRoot: primaryRoot,
+        replayOutputRoot: primaryRoot,
+        step: manifest.steps[0],
+        runnerSources: manifest.runner?.sources ?? [],
+      });
+    } catch {
+      aliasRejected = true;
+    }
+    assert(aliasRejected, "aliased output roots were accepted");
+    const replayRunDirectory = join(replayRoot, replay.runId);
+    const symlinkPath = join(replayRunDirectory, "symlink");
+    symlinkSync(join(primaryRoot, primary.streams.stdout.path), symlinkPath);
+    const symlinkForged = structuredClone(replay);
+    symlinkForged.streams.stderr.path = `${replay.runId}/symlink`;
+    symlinkForged.streams.stderr.bytes = primary.streams.stdout.bytes;
+    symlinkForged.streams.stderr.sha256 = primary.streams.stdout.sha256;
+    let symlinkRejected = false;
+    try {
+      compareReceipts(primary, symlinkForged, {
+        primaryOutputRoot: primaryRoot,
+        replayOutputRoot: replayRoot,
+        step: manifest.steps[0],
+        runnerSources: manifest.runner?.sources ?? [],
+      });
+    } catch {
+      symlinkRejected = true;
+    }
+    assert(symlinkRejected, "symlink artifact alias was accepted");
+    const hardlinkPath = join(replayRunDirectory, "hardlink");
+    linkSync(join(primaryRoot, primary.streams.stdout.path), hardlinkPath);
+    const hardlinkForged = structuredClone(replay);
+    hardlinkForged.streams.stderr.path = `${replay.runId}/hardlink`;
+    hardlinkForged.streams.stderr.bytes = primary.streams.stdout.bytes;
+    hardlinkForged.streams.stderr.sha256 = primary.streams.stdout.sha256;
+    let hardlinkRejected = false;
+    try {
+      compareReceipts(primary, hardlinkForged, {
+        primaryOutputRoot: primaryRoot,
+        replayOutputRoot: replayRoot,
+        step: manifest.steps[0],
+        runnerSources: manifest.runner?.sources ?? [],
+      });
+    } catch {
+      hardlinkRejected = true;
+    }
+    assert(hardlinkRejected, "hard-linked artifact alias was accepted");
     let rejected = 0;
     for (const [name, mutate] of attacks) {
       const forged = structuredClone(replay);
@@ -295,10 +505,12 @@ async function selfTest() {
           primaryOutputRoot: primaryRoot,
           replayOutputRoot: replayRoot,
           step: manifest.steps[0],
+          runnerSources: manifest.runner?.sources ?? [],
         });
         accepted = true;
       } catch {}
-      assert(!accepted, `${name} attack was accepted`);
+      const attackName = typeof name === "string" ? name : "unknown";
+      assert(!accepted, `${attackName} attack was accepted`);
       rejected += 1;
     }
     rmSync(primaryRoot, { recursive: true, force: true });
@@ -307,7 +519,7 @@ async function selfTest() {
       JSON.stringify({
         format: "agent-mail.executable-receipt/v2",
         accepted: true,
-        attacks: rejected,
+        attacks: rejected + authorityRejected + 2,
         comparison,
       }),
     );
@@ -319,15 +531,28 @@ async function selfTest() {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.selfTest) return selfTest();
+  assert(args.primary, "--primary receipt is required");
+  assert(args.manifest, "--manifest is required");
+  assert(args["primary-output-root"], "--primary-output-root is required");
+  assert(args["output-root"], "--output-root is required");
   const primary = JSON.parse(readFileSync(resolve(args.primary), "utf8"));
+  const manifest = JSON.parse(readFileSync(resolve(args.manifest), "utf8"));
+  const stepId = args.step ?? primary.manifestStepId;
+  const step = manifest.steps?.find((candidate) => candidate.id === stepId);
+  assert(step, `manifest step ${stepId} is missing`);
   const receipt = await capture({
     manifestPath: args.manifest,
     root: args.root ? resolve(args.root) : resolve(here, "../.."),
     outputRoot: args.outputRoot ? resolve(args.outputRoot) : undefined,
     role: "independent-replay",
-    stepId: args.step,
+    stepId,
   });
-  const comparison = compareReceipts(primary, receipt);
+  const comparison = compareReceipts(primary, receipt, {
+    primaryOutputRoot: args["primary-output-root"],
+    replayOutputRoot: args["output-root"],
+    step,
+    runnerSources: manifest.runner?.sources ?? [],
+  });
   const output = args.receipt
     ? resolve(args.receipt)
     : join(process.cwd(), `${receipt.runId}.replay.json`);
