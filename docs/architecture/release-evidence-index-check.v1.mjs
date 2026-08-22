@@ -2269,10 +2269,6 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
           `v2 disposition ${record.sequence} ${dispositionKey} diverged`,
         );
       }
-      for (const key of ["candidateCommit", "candidateTree", "evidenceCommit"]) {
-        if (record[key] !== undefined)
-          assert(record[key] === target[key], `v2 disposition ${record.sequence} ${key} diverged`);
-      }
       if (record.correctedFromSequence !== undefined) {
         assert(
           record.correctedFromSequence === record.targetSequence &&
@@ -2405,10 +2401,9 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
         ...(record.primaryReceipt ?? []).map((ref) => ref.path),
         ...(record.replayReceipt ?? []).map((ref) => ref.path),
         ...(record.reviewArtifact?.path ? [record.reviewArtifact.path] : []),
-        ...((record.evidence?.subgates ?? {}) &&
-          Object.values(record.evidence.subgates).flatMap((subgate) =>
-            (subgate.rawSamples ?? []).map((sample) => sample.path),
-          )),
+        ...Object.values(record.evidence?.subgates ?? {}).flatMap((subgate) =>
+          (subgate.rawSamples ?? []).map((sample) => sample.path),
+        ),
       ]);
       for (const subgate of Object.values(record.evidence?.subgates ?? {})) {
         for (const artifact of Object.values(subgate.artifacts ?? {})) {
@@ -3867,6 +3862,724 @@ export function validateIndex(index, options = {}) {
   };
 }
 
+// A committed, validator-facing v2 fixture.  This is intentionally kept
+// separate from the live ledger: it exercises the same candidate -> evidence
+// -> index ancestry and the actual v2 receipt paths without making synthetic
+// evidence look like production evidence.
+function runComposedV2Fixture(baselineIndex) {
+  const root = mkdtempSync("/tmp/release-evidence-v2-composed-");
+  const evidenceRoot = "docs/qualification/evidence/issue-176";
+  const writeJson = (path, value) => {
+    const bytes = Buffer.from(JSON.stringify(value));
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), bytes);
+    return { path, sha256: digest(bytes), bytes: bytes.length };
+  };
+  const zeroSha = "0".repeat(64);
+  try {
+    execFileSync("git", ["clone", "-q", repositoryRoot, "."], { cwd: root });
+    execFileSync("git", ["config", "user.email", "fixture@example.invalid"], { cwd: root });
+    execFileSync("git", ["config", "user.name", "fixture"], { cwd: root });
+    const candidateCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    const candidateTree = execFileSync("git", ["rev-parse", "HEAD^{tree}"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    const manifestBytes = execFileSync(
+      "git",
+      [
+        "cat-file",
+        "blob",
+        `${candidateCommit}:docs/architecture/release-evidence-execution-manifest.v2.json`,
+      ],
+      { cwd: root },
+    );
+    const manifest = JSON.parse(manifestBytes.toString("utf8"));
+    const manifestSha256 = digest(manifestBytes);
+    const startedAt = new Date(Date.now() - 1000).toISOString();
+    const completedAt = new Date(Date.now()).toISOString();
+    const aggregateArgv = [
+      "bun",
+      "test",
+      ...new Set(requiredCapacitySubgates.flatMap((id) => capacityManifest[id].argv.slice(2))),
+    ];
+    const receiptRefs = { primary: [], replay: [] };
+    const receiptObjects = [];
+    const writeReceipt = (step, role, index) => {
+      const runId = `fixture-${role}-${step.id}-${index}`;
+      const pid = 32000 + index;
+      const events = [];
+      const observations = {};
+      for (const assertion of step.assertions) {
+        if (assertion.kind === "source-token") {
+          const event = {
+            format: "agent-mail.observation/v1",
+            event: "source-token",
+            assertionId: assertion.id,
+            sourcePath: assertion.sourcePath,
+            sourceSha256: step.sources.find((source) => source.path === assertion.sourcePath)
+              .sha256,
+            token: assertion.token,
+            observed: assertion.occurrences,
+            expected: assertion.occurrences,
+            pass: true,
+          };
+          events.push(event);
+          observations[assertion.id] = { ...event };
+        } else if (assertion.kind === "fixture-observation") {
+          const bytes = assertion.expectedBytes ?? 1;
+          const event = {
+            format: "agent-mail.fixture-observation/v1",
+            event: "fixture-observation",
+            sourcePath: assertion.sourcePath,
+            sourceSha256: step.sources.find((source) => source.path === assertion.sourcePath)
+              .sha256,
+            fixtureId: assertion.fixtureId,
+            producedBytes: bytes,
+            consumedBytes: bytes,
+            producedSha256: digest(Buffer.from(`${runId}-fixture`)),
+            consumedSha256: digest(Buffer.from(`${runId}-fixture`)),
+            producedChunks: 1,
+            consumedChunks: 1,
+            expectedBytes: bytes,
+            producerCompleted: true,
+            consumerCompleted: true,
+            bytesEqual: true,
+            sha256Equal: true,
+            exactBytes: true,
+            pass: true,
+          };
+          events.push(event);
+          observations[assertion.id] = { ...event };
+        }
+      }
+      const eventBytes = Buffer.from(
+        events.map((event) => JSON.stringify(event)).join("\n") + "\n",
+      );
+      const stdoutBytes = Buffer.from(`${runId}: stdout\n`);
+      const stderrBytes = Buffer.from(`${runId}: stderr\n`);
+      const stream = (name, bytes) => {
+        const path = `${evidenceRoot}/${runId}-${name}.json`;
+        mkdirSync(dirname(join(root, path)), { recursive: true });
+        writeFileSync(join(root, path), bytes);
+        return { path, sha256: digest(bytes), bytes: bytes.length };
+      };
+      const streams = {
+        stdout: stream("stdout", stdoutBytes),
+        stderr: stream("stderr", stderrBytes),
+        events: stream("events", eventBytes),
+      };
+      const fixtureBytes = Buffer.from(`${runId}: generated fixture\n`);
+      const fixture = {
+        ...step.fixture,
+        materialized: writeJson(
+          `${evidenceRoot}/${runId}-fixture.json`,
+          fixtureBytes.toString("utf8"),
+        ),
+      };
+      const processSamples = [
+        {
+          rootPresent: true,
+          rssStatus: "observed",
+          rssBytes: 1,
+          pids: [pid],
+          processGroups: [pid],
+          descendants: [],
+        },
+        {
+          rootPresent: false,
+          rssStatus: "notApplicable",
+          rssBytes: null,
+          pids: [pid],
+          processGroups: [pid],
+          descendants: [],
+        },
+      ];
+      const resourceSamples = processSamples.map((sample) => ({
+        observed: true,
+        pids: [pid],
+        fileDescriptors: 0,
+        sockets: 0,
+        listeners: 0,
+        hermesPorts: [6110],
+      }));
+      const receipt = {
+        format: "agent-mail.executable-receipt/v2",
+        runId,
+        role,
+        manifestStepId: step.id,
+        argv: step.argv,
+        cwd: step.cwd,
+        candidate: {
+          commit: candidateCommit,
+          tree: candidateTree,
+          manifestPath: "docs/architecture/release-evidence-execution-manifest.v2.json",
+          manifestSha256,
+        },
+        startedAt,
+        completedAt,
+        monotonic: {
+          startedNs: "1000000000",
+          completedNs: "1000004000",
+          durationNs: "2000",
+          aggregateDurationNs: "4000",
+          intervals: [
+            { id: "setup", startedNs: "1000000000", completedNs: "1000001000", durationNs: "1000" },
+            {
+              id: "execution",
+              startedNs: "1000001000",
+              completedNs: "1000003000",
+              durationNs: "2000",
+            },
+            {
+              id: "retention-and-cleanup",
+              startedNs: "1000003000",
+              completedNs: "1000004000",
+              durationNs: "1000",
+            },
+          ],
+        },
+        environment: { os: "darwin", arch: "arm64", runtime: "Bun 1.3.14" },
+        process: { exitCode: 0 },
+        result: "pass",
+        observedOutcome: {
+          status: "pass",
+          derivedFrom: [
+            candidateCommit,
+            candidateTree,
+            manifestSha256,
+            ...Object.values(streams).map((ref) => ref.sha256),
+          ],
+          summary: "synthetic committed qualification fixture",
+        },
+        sources: step.sources,
+        selectedSources: step.sources,
+        runnerSources: manifest.runner.sources,
+        fixture,
+        assertions: step.assertions.map((assertion) => ({
+          id: assertion.id,
+          kind: assertion.kind,
+          observed:
+            assertion.kind === "source-token"
+              ? observations[assertion.id].observed
+              : (observations[assertion.id] ?? assertion.occurrences),
+          pass: true,
+        })),
+        streams,
+        probes: {
+          process: {
+            observed: true,
+            samples: processSamples,
+            descendants: [],
+            rssStatus: "observed",
+            rssBytes: 1,
+            peakRssBytes: 1,
+          },
+          resources: {
+            observed: true,
+            samples: resourceSamples,
+            pids: [pid],
+            fileDescriptors: 0,
+            sockets: 0,
+            listeners: 0,
+            hermesPorts: [6110],
+          },
+          streams: {
+            observed: true,
+            stdout: streams.stdout.bytes,
+            stderr: streams.stderr.bytes,
+            events: streams.events.bytes,
+          },
+          tempRoot: { removed: true },
+          cleanup: {
+            barrier: "awaited-idempotent",
+            invocations: 1,
+            executionRootRemoved: true,
+            survivorsAfterKill: [],
+            descendantsBeforeRemoval: [],
+            termination: {
+              sigtermSent: true,
+              sigkillSent: false,
+              survivorsBeforeKill: [],
+              survivorsAfterKill: [],
+              completed: true,
+            },
+          },
+        },
+      };
+      const core = structuredClone(receipt);
+      const provenancePath = `${evidenceRoot}/${runId}-provenance.json`;
+      const observationsProjection = {
+        process: receipt.process,
+        processProbe: receipt.probes.process,
+        resources: receipt.probes.resources,
+        termination: receipt.probes.cleanup.termination,
+        cleanup: receipt.probes.cleanup,
+        streams: receipt.probes.streams,
+        monotonic: receipt.monotonic,
+        startedAt,
+        completedAt,
+        result: receipt.result,
+        observedOutcome: receipt.observedOutcome,
+      };
+      const authority = {
+        candidate: receipt.candidate,
+        manifestStepId: receipt.manifestStepId,
+        cwd: receipt.cwd,
+        argv: receipt.argv,
+        sources: receipt.sources,
+        runnerSources: receipt.runnerSources,
+        fixture: receipt.fixture,
+        assertions: receipt.assertions,
+        probes: step.probes,
+        thresholds: step.thresholds,
+      };
+      const receiptSha256 = digest(Buffer.from(canonicalJson(core)));
+      const observationsSha256 = digest(Buffer.from(canonicalJson(observationsProjection)));
+      const envelope = {
+        format: "agent-mail.capture-provenance/v1",
+        runId,
+        role,
+        receiptSha256,
+        observations: observationsProjection,
+        observationsSha256,
+        authority,
+        roots: {
+          output: { path: `/tmp/${runId}-output`, dev: 1, ino: 1000 + index },
+          temporary: { path: `/tmp/${runId}-temporary`, dev: 1, ino: 2000 + index, removed: true },
+        },
+        artifacts: Object.fromEntries(
+          Object.entries({ ...streams, fixture: fixture.materialized }).map(([key, ref]) => [
+            key,
+            { path: ref.path, bytes: ref.bytes, sha256: ref.sha256 },
+          ]),
+        ),
+      };
+      const envelopeRef = writeJson(provenancePath, envelope);
+      receipt.provenance = {
+        format: envelope.format,
+        path: provenancePath,
+        bytes: envelopeRef.bytes,
+        sha256: envelopeRef.sha256,
+        receiptSha256,
+        observationsSha256,
+      };
+      const receiptRef = writeJson(`${evidenceRoot}/${runId}-receipt.json`, receipt);
+      receiptObjects.push({ receipt, receiptRef, envelopeRef });
+      return receiptRef;
+    };
+    for (const role of ["primary", "independent-replay"]) {
+      for (const [index, step] of manifest.steps.entries())
+        receiptRefs[role === "primary" ? "primary" : "replay"].push(
+          writeReceipt(step, role, index + (role === "primary" ? 1 : 101)),
+        );
+    }
+    const baseline = new Map(baselineRows(authorities()).map((row) => [row.id, row]));
+    const subgates = Object.fromEntries(
+      requiredCapacitySubgates.map((id) => {
+        const spec = capacityManifest[id];
+        const descriptorBytes = execFileSync(
+          "git",
+          ["cat-file", "blob", `${candidateCommit}:${spec.descriptorPath}`],
+          { cwd: root },
+        );
+        const descriptorSha = digest(descriptorBytes);
+        const scale = { [spec.scale.key]: spec.scale.minimum, unit: spec.scale.unit };
+        const metrics = Object.fromEntries(
+          Object.keys(spec.metrics).map((metric) => [
+            metric,
+            metric === spec.scale.key ? spec.scale.minimum : 1,
+          ]),
+        );
+        const raw = writeJson(`${evidenceRoot}/${id}-raw.json`, {
+          subgateId: id,
+          fixtureId: spec.fixtureId,
+          fixtureDigest: descriptorSha,
+          descriptorPath: spec.descriptorPath,
+          descriptorDigest: descriptorSha,
+          scale,
+          metrics,
+        });
+        const correctness = writeJson(`${evidenceRoot}/${id}-correctness.json`, {
+          kind: "correctness",
+          subgateId: id,
+          candidateCommit,
+          status: "pass",
+          oracle: spec.fixtureId,
+        });
+        const resources = writeJson(`${evidenceRoot}/${id}-resources.json`, {
+          kind: "resources",
+          subgateId: id,
+          candidateCommit,
+          status: "pass",
+          peak: { value: 0, unit: "MiB" },
+          retained: { value: 0, unit: "MiB" },
+          limits: { peak: 1, retained: 0 },
+        });
+        const cleanup = writeJson(`${evidenceRoot}/${id}-cleanup.json`, {
+          kind: "cleanup",
+          subgateId: id,
+          candidateCommit,
+          status: "pass",
+          leaks: { openHandles: 0, processes: 0, files: 0, listeners: 0 },
+        });
+        return [
+          id,
+          {
+            argv: spec.argv,
+            descriptor: { path: spec.descriptorPath, sha256: descriptorSha },
+            fixtureIds: [spec.fixtureId],
+            fixtureDigests: [descriptorSha],
+            scale,
+            thresholds: Object.entries(spec.metrics).map(([metric, expected]) => ({
+              metric,
+              operator: expected.operator,
+              limit: expected.operator === "<=" ? 300 : spec.scale.minimum,
+              unit: expected.unit,
+            })),
+            rawSamples: [{ path: raw.path, sha256: raw.sha256 }],
+            observations: { metrics },
+            artifacts: { correctness, resources, cleanup },
+          },
+        ];
+      }),
+    );
+    const closure = {};
+    for (const obligationId of ["F17", "F18", "F22", "F23"]) {
+      const row = baseline.get(obligationId);
+      const contract = closureSourceContracts[obligationId];
+      const make = (kind) => {
+        const role = contract[kind];
+        const descriptorBytes = execFileSync(
+          "git",
+          ["cat-file", "blob", `${candidateCommit}:${contract.descriptorPaths[0]}`],
+          { cwd: root },
+        );
+        const sourceDescriptors = [
+          { path: contract.descriptorPaths[0], sha256: digest(descriptorBytes) },
+        ];
+        const argv = ["bun", "test", `closure-${obligationId}-${kind}.test.ts`];
+        const proof = writeJson(`${evidenceRoot}/${obligationId}-${kind}-proof.json`, {
+          kind: "closure-proof",
+          role: kind,
+          obligationId,
+          ownerIssueId: 176,
+          gateId: "capacity",
+          sequence: 1,
+          argv,
+          candidateCommit,
+          candidateTree,
+          sourceDescriptors,
+          baselineProofDigest: baselineProofDigest(row),
+          exitCode: 0,
+          result: "pass",
+          observedOutcome: { kind, baselineMatch: kind === "reproduction", status: "pass" },
+          receipt: {
+            argv,
+            exitCode: 0,
+            assertions: [{ id: role.assertionId, outcome: role.outcome }],
+          },
+        });
+        const artifact = writeJson(`${evidenceRoot}/${obligationId}-${kind}.json`, {
+          kind,
+          role: kind,
+          obligationId,
+          ownerIssueId: 176,
+          gateId: "capacity",
+          sequence: 1,
+          argv,
+          candidateCommit,
+          candidateTree,
+          sourceDescriptors,
+          baselineProofDigest: baselineProofDigest(row),
+          exitCode: 0,
+          result: "pass",
+          observedOutcome: { kind, baselineMatch: kind === "reproduction", status: "pass" },
+          receipt: {
+            argv,
+            exitCode: 0,
+            assertions: [{ id: role.assertionId, outcome: role.outcome }],
+          },
+          proof,
+        });
+        return { argv, proof, artifact };
+      };
+      closure[obligationId] = {
+        baselineSourceStatusSha256: digest(Buffer.from(row.sourceStatus)),
+        baselineProofDigest: baselineProofDigest(row),
+        originalReproduction: make("reproduction"),
+        adjacentCounterexample: make("counterexample"),
+      };
+    }
+    const execution = {
+      argv: aggregateArgv,
+      startedAt,
+      completedAt,
+      environment: { os: "darwin", arch: "arm64", runtime: "Bun 1.3.14" },
+      evidence: { subgates, correctness: { status: "pass" }, cleanup: { status: "pass" } },
+      result: "pass",
+      observedOutcome: { status: "pass", summary: "all seven subgates pass" },
+    };
+    const bundleFor = (record) =>
+      writeJson(record.bundle.path, {
+        protocol: "agent-mail.release-evidence-bundle/v2",
+        record: {
+          protocol: record.protocol,
+          recordType: record.recordType,
+          sequence: record.sequence,
+          previousRecordDigest: record.previousRecordDigest,
+          ownerIssueId: record.ownerIssueId,
+          mode: record.mode,
+          gateId: record.gateId,
+          obligationIds: record.obligationIds,
+          candidateCommit: record.candidateCommit,
+          candidateTree: record.candidateTree,
+        },
+      });
+    const baseRecord = {
+      protocol: "agent-mail.release-evidence/v2",
+      recordType: "qualification",
+      sequence: 1,
+      previousRecordDigest: null,
+      ownerIssueId: 176,
+      mode: "promotion",
+      gateId: "capacity",
+      obligationIds: ["F17", "F18", "F22", "F23", "F30", "SEC-R03", "S04", "S05"],
+      candidateCommit,
+      candidateTree,
+      evidenceCommit: candidateCommit,
+      manifest: {
+        path: "docs/architecture/release-evidence-execution-manifest.v2.json",
+        sha256: manifestSha256,
+      },
+      bundle: { path: `${evidenceRoot}/qualification-1-bundle.json`, sha256: zeroSha },
+      closure,
+      ...execution,
+      primaryReceipt: receiptRefs.primary,
+      replayReceipt: receiptRefs.replay,
+    };
+    // E1: all qualification artifacts and its bundle are committed together.
+    const qualificationBundle = bundleFor(baseRecord);
+    execFileSync("git", ["add", evidenceRoot], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "composed qualification evidence"], { cwd: root });
+    const evidenceCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    const qualification = { ...baseRecord, evidenceCommit, bundle: qualificationBundle };
+    // I1: recording the qualification is a separate index-only commit.
+    const indexFor = (records) => {
+      const value = structuredClone(baselineIndex);
+      value.resultRecords = records;
+      const projection = materializeCurrent(value);
+      value.rows = projection.rows;
+      value.gates = projection.gates;
+      value.promotion = { ...value.promotion, ...projection.promotion };
+      return value;
+    };
+    let stagedIndex = indexFor([qualification]);
+    mkdirSync(join(root, "docs/architecture"), { recursive: true });
+    writeFileSync(
+      join(root, "docs/architecture/release-evidence-index.v1.json"),
+      JSON.stringify(stagedIndex),
+    );
+    execFileSync("git", ["add", "docs/architecture/release-evidence-index.v1.json"], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "record qualification"], { cwd: root });
+    const i1 = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+    const i1Tree = execFileSync("git", ["rev-parse", "HEAD^{tree}"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    // E2 carries #184's review artifact. Its local commit identity is
+    // intentionally distinct from the target qualification identity.
+    const reviewPath = "docs/qualification/evidence/issue-184/disposition-review.json";
+    const dispositionBase = {
+      protocol: "agent-mail.release-evidence/v2",
+      recordType: "disposition",
+      sequence: 2,
+      previousRecordDigest: recordDigest(qualification),
+      ownerIssueId: 184,
+      mode: "disposition",
+      gateId: "disposition",
+      obligationIds: [],
+      candidateCommit: i1,
+      candidateTree: i1Tree,
+      evidenceCommit: i1,
+      startedAt,
+      completedAt,
+      environment: execution.environment,
+      result: "invalidated",
+      observedOutcome: { status: "invalidated" },
+      targetSequence: 1,
+      targetRecordDigest: recordDigest(qualification),
+      targetOwnerIssueId: 176,
+      targetGateId: "capacity",
+      targetCandidateCommit: candidateCommit,
+      targetCandidateTree: candidateTree,
+      targetEvidenceCommit: evidenceCommit,
+      reasonCode: "review-revoked",
+      reviewArtifact: { path: reviewPath, sha256: zeroSha },
+    };
+    const review = writeJson(reviewPath, {
+      kind: "disposition-review",
+      status: "pass",
+      ownerIssueId: 184,
+      gateId: "disposition",
+      targetSequence: 1,
+      targetRecordDigest: dispositionBase.targetRecordDigest,
+      targetOwnerIssueId: 176,
+      targetGateId: "capacity",
+      targetCandidateCommit: candidateCommit,
+      targetCandidateTree: candidateTree,
+      targetEvidenceCommit: evidenceCommit,
+    });
+    execFileSync("git", ["add", evidenceRoot, "docs/qualification/evidence/issue-184"], {
+      cwd: root,
+    });
+    execFileSync("git", ["commit", "-qm", "disposition review"], { cwd: root });
+    const e2 = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+    const disposition = { ...dispositionBase, evidenceCommit: e2, reviewArtifact: review };
+    // I2: disposition index append.
+    stagedIndex = indexFor([qualification, disposition]);
+    writeFileSync(
+      join(root, "docs/architecture/release-evidence-index.v1.json"),
+      JSON.stringify(stagedIndex),
+    );
+    execFileSync("git", ["add", "docs/architecture/release-evidence-index.v1.json"], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "record disposition"], { cwd: root });
+    const i2 = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+    const i2Tree = execFileSync("git", ["rev-parse", "HEAD^{tree}"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    const correctedEvidence = structuredClone(execution.evidence);
+    for (const [id, subgate] of Object.entries(correctedEvidence.subgates)) {
+      for (const key of ["correctness", "resources", "cleanup"]) {
+        const sourceRef = subgate.artifacts[key];
+        const value = JSON.parse(readFileSync(join(root, sourceRef.path), "utf8"));
+        value.candidateCommit = i2;
+        value.candidateTree = i2Tree;
+        const ref = writeJson(`${evidenceRoot}/corrected-${id}-${key}.json`, value);
+        subgate.artifacts[key] = ref;
+      }
+    }
+    correctedEvidence.subgates = correctedEvidence.subgates;
+    const correctedClosure = structuredClone(closure);
+    for (const [obligationId, obligationClosure] of Object.entries(correctedClosure)) {
+      for (const entryName of ["originalReproduction", "adjacentCounterexample"]) {
+        const entry = obligationClosure[entryName];
+        for (const key of ["proof", "artifact"]) {
+          const value = JSON.parse(readFileSync(join(root, entry[key].path), "utf8"));
+          value.candidateCommit = i2;
+          value.candidateTree = i2Tree;
+          const ref = writeJson(
+            `${evidenceRoot}/corrected-${obligationId}-${entryName}-${key}.json`,
+            value,
+          );
+          entry[key] = ref;
+        }
+      }
+    }
+    // E3: corrected qualification targets the revoked sequence but runs from
+    // the disposition index commit, so its evidence append remains direct.
+    const correctedBase = {
+      ...qualification,
+      sequence: 3,
+      previousRecordDigest: recordDigest(disposition),
+      candidateCommit: i2,
+      candidateTree: i2Tree,
+      evidenceCommit: i2,
+      evidence: correctedEvidence,
+      closure: correctedClosure,
+      bundle: { path: `${evidenceRoot}/qualification-3-bundle.json`, sha256: zeroSha },
+      correctedFromSequence: 1,
+      correctedFromRecordDigest: recordDigest(qualification),
+    };
+    const correctedBundle = bundleFor(correctedBase);
+    execFileSync("git", ["add", evidenceRoot], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "corrected qualification evidence"], { cwd: root });
+    const e3 = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+    const corrected = { ...correctedBase, evidenceCommit: e3, bundle: correctedBundle };
+    const finalIndex = indexFor([qualification, disposition, corrected]);
+    writeFileSync(
+      join(root, "docs/architecture/release-evidence-index.v1.json"),
+      JSON.stringify(finalIndex),
+    );
+    execFileSync("git", ["add", "docs/architecture/release-evidence-index.v1.json"], { cwd: root });
+    execFileSync("git", ["commit", "-qm", "record corrected qualification"], { cwd: root });
+    validateIndex(finalIndex, { repositoryRoot: root, allowEmptyBaseline: true });
+    const partial = structuredClone(baselineIndex);
+    partial.resultRecords = [];
+    const partialProjection = materializeCurrent(partial);
+    partial.rows = partialProjection.rows;
+    partial.gates = partialProjection.gates;
+    partial.promotion = { ...partial.promotion, ...partialProjection.promotion };
+    assert(
+      partial.gates.find((gate) => gate.id === "capacity").status !== "locally verified",
+      "partial v2 fixture promoted capacity",
+    );
+    const attacks = [
+      [
+        "duplicate disposition",
+        (candidate) =>
+          candidate.resultRecords.push({
+            ...structuredClone(disposition),
+            sequence: 4,
+            previousRecordDigest: recordDigest(corrected),
+          }),
+      ],
+      [
+        "forward disposition target",
+        (candidate) => {
+          candidate.resultRecords[1].targetSequence = 99;
+        },
+      ],
+      [
+        "inactive correction",
+        (candidate) => {
+          candidate.resultRecords[2].correctedFromSequence = 2;
+          candidate.resultRecords[2].correctedFromRecordDigest = recordDigest(disposition);
+        },
+      ],
+      [
+        "unbound correction",
+        (candidate) => {
+          delete candidate.resultRecords[2].correctedFromSequence;
+          delete candidate.resultRecords[2].correctedFromRecordDigest;
+        },
+      ],
+      [
+        "restoration without disposition",
+        (candidate) => {
+          candidate.resultRecords.splice(1, 1);
+          candidate.resultRecords[1].previousRecordDigest = recordDigest(
+            candidate.resultRecords[0],
+          );
+        },
+      ],
+    ];
+    for (const [name, mutate] of attacks) {
+      const candidate = structuredClone(finalIndex);
+      validateIndex(candidate, { repositoryRoot: root, allowEmptyBaseline: true });
+      mutate(candidate);
+      let rejected = false;
+      try {
+        validateIndex(candidate, { repositoryRoot: root, allowEmptyBaseline: true });
+      } catch {
+        rejected = true;
+      }
+      assert(rejected, `composed v2 attack was accepted: ${name}`);
+    }
+    return { root, full: finalIndex, partial, attacks: attacks.length };
+  } catch (error) {
+    rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 export function runSelfTest() {
   const liveIndexBytes = readFileSync(indexPath);
   const liveIndex = readJson(indexPath);
@@ -3928,6 +4641,7 @@ export function runSelfTest() {
   let partialRoot;
   let partialBundleBytes;
   let replayRoot;
+  let composedV2;
   const isolatedRoot = mkdtempSync("/tmp/release-evidence-fixture-");
   try {
     writeFileSync(join(isolatedRoot, "candidate.js"), "export const fixture = true;\\n");
@@ -4443,6 +5157,7 @@ export function runSelfTest() {
       fixtureIndex.promotion.releaseReady === false,
       "capacity fixture promoted release readiness",
     );
+    composedV2 = runComposedV2Fixture(baseline);
   } catch (error) {
     rmSync(isolatedRoot, { recursive: true, force: true });
     throw error;
@@ -5131,6 +5846,7 @@ export function runSelfTest() {
       accepted: true,
     };
   } finally {
+    if (composedV2?.root) rmSync(composedV2.root, { recursive: true, force: true });
     if (replayRoot) rmSync(replayRoot, { recursive: true, force: true });
     if (partialRoot) rmSync(partialRoot, { recursive: true, force: true });
     rmSync(isolatedRoot, { recursive: true, force: true });
