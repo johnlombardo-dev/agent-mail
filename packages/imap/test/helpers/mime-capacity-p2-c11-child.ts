@@ -189,6 +189,7 @@ if (mode === "streaming") {
       consumedChunks: consumedSourceChunkCount,
       consumerCompleted,
       peakRssGrowthBytes,
+      expectedPeakGrowthBytes: RSS_GROWTH_THRESHOLD_BYTES,
       expectedBytes: FIXTURE_BYTES,
       bytesEqual,
       sha256Equal,

@@ -342,6 +342,7 @@ describe("release evidence executable runner", () => {
         producerCompleted: true,
         consumerCompleted: true,
         peakRssGrowthBytes: 1,
+        expectedPeakGrowthBytes: 134217728,
         pass: true,
       },
     };
@@ -356,6 +357,10 @@ describe("release evidence executable runner", () => {
       { peakRssGrowthBytes: 134217729 },
       { peakRssGrowthBytes: -1 },
       { peakRssGrowthBytes: 1.5 },
+      { expectedPeakGrowthBytes: 1024 * 1024 * 1024 },
+      { expectedPeakGrowthBytes: 1.5 },
+      { expectedPeakGrowthBytes: "128MiB" },
+      { expectedPeakGrowthBytes: undefined },
       { pass: false },
     ];
     for (const patch of attacks) {
@@ -381,6 +386,28 @@ describe("release evidence executable runner", () => {
         observationThresholdValues(
           { ...step, thresholds: { ...step.thresholds, peakGrowth: threshold } },
           [base],
+        ),
+      ).toThrow();
+    }
+    for (const role of ["primary", "independent-replay"]) {
+      const coordinatedManifestDrift = {
+        ...step,
+        thresholds: {
+          ...step.thresholds,
+          peakGrowth: { ...step.thresholds.peakGrowth, limit: 1024 * 1024 * 1024 },
+        },
+        assertions: step.assertions.map((assertion) =>
+          assertion.kind === "fixture-observation"
+            ? { ...assertion, expectedPeakGrowthBytes: 1024 * 1024 * 1024 }
+            : assertion,
+        ),
+      };
+      expect(() => observationThresholdValues(coordinatedManifestDrift, [base], role)).toThrow();
+      expect(() =>
+        observationThresholdValues(
+          step,
+          [{ ...base, observed: { ...base.observed, expectedPeakGrowthBytes: 1024 * 1024 * 1024 } }],
+          role,
         ),
       ).toThrow();
     }

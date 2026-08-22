@@ -1253,6 +1253,7 @@ function fixtureObservationDerived(event, expectedBytes, expectedPeakGrowthBytes
   const bytesEqual = event.producedBytes === event.consumedBytes;
   const sha256Equal = event.producedSha256 === event.consumedSha256;
   const exactBytes = event.producedBytes === expectedBytes && event.consumedBytes === expectedBytes;
+  const ceilingEqual = event.expectedPeakGrowthBytes === expectedPeakGrowthBytes;
   const validGrowth =
     Number.isSafeInteger(event.peakRssGrowthBytes) && event.peakRssGrowthBytes >= 0;
   const pass =
@@ -1261,6 +1262,7 @@ function fixtureObservationDerived(event, expectedBytes, expectedPeakGrowthBytes
     bytesEqual &&
     sha256Equal &&
     exactBytes &&
+    ceilingEqual &&
     event.producedChunks > 0 &&
     event.consumedChunks > 0 &&
     validGrowth &&
@@ -1292,6 +1294,11 @@ export function observationThresholdValues(step, assertions, label = step.id) {
   assert(
     typeof event.pass === "boolean" && event.pass === derived.pass,
     `${label} fixture observation pass is inconsistent`,
+  );
+  assert(
+    Number.isSafeInteger(event.expectedPeakGrowthBytes) &&
+      event.expectedPeakGrowthBytes === expectedPeakGrowthBytes,
+    `${label} fixture observation growth ceiling is detached`,
   );
   const values = {};
   for (const [metric, threshold] of fixtureThresholds) {
@@ -1563,6 +1570,7 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
         "producedChunks",
         "consumedChunks",
         "peakRssGrowthBytes",
+        "expectedPeakGrowthBytes",
         "expectedBytes",
       ])
         assert(
@@ -1599,6 +1607,7 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       const pass = derived.pass;
       assert(
         event.expectedBytes === assertion.expectedBytes &&
+          event.expectedPeakGrowthBytes === assertion.expectedPeakGrowthBytes &&
           event.bytesEqual === bytesEqual &&
           event.sha256Equal === sha256Equal &&
           event.exactBytes === exactBytes &&

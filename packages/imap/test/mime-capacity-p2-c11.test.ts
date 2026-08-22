@@ -34,6 +34,7 @@ const fixtureObservationSchema = z
     consumedChunks: z.number().int().positive(),
     consumerCompleted: z.boolean(),
     peakRssGrowthBytes: z.number().int().nonnegative(),
+    expectedPeakGrowthBytes: z.literal(RSS_GROWTH_THRESHOLD_BYTES),
     expectedBytes: z.literal(FIXTURE_BYTES),
     bytesEqual: z.boolean(),
     sha256Equal: z.boolean(),
@@ -275,6 +276,14 @@ describe("P2-C11 MIME capacity qualification", () => {
         withPatch({ peakRssGrowthBytes: 1.5 as unknown as number }),
       ).pass,
     ).toBe(false);
+    expect(() =>
+      fixtureObservationSchema.parse({ ...baseline, expectedPeakGrowthBytes: 1 }),
+    ).toThrow();
+    expect(() =>
+      fixtureObservationSchema.parse({ ...baseline, expectedPeakGrowthBytes: "128MiB" }),
+    ).toThrow();
+    const { expectedPeakGrowthBytes: _removed, ...missingCeiling } = baseline;
+    expect(() => fixtureObservationSchema.parse(missingCeiling)).toThrow();
     expect(() =>
       fixtureObservationSchema.parse({ ...baseline, format: "agent-mail.observation/v1" }),
     ).toThrow();

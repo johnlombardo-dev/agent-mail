@@ -3138,6 +3138,7 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
         "producedChunks",
         "consumedChunks",
         "peakRssGrowthBytes",
+        "expectedPeakGrowthBytes",
         "expectedBytes",
       ])
         assert(
@@ -3149,6 +3150,7 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
       const exactBytes =
         event.producedBytes === expected.expectedBytes &&
         event.consumedBytes === expected.expectedBytes;
+      const ceilingEqual = event.expectedPeakGrowthBytes === expected.expectedPeakGrowthBytes;
       assert(
         Number.isSafeInteger(expected.expectedPeakGrowthBytes) &&
           expected.expectedPeakGrowthBytes > 0,
@@ -3167,11 +3169,13 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
         bytesEqual &&
         sha256Equal &&
         exactBytes &&
+        ceilingEqual &&
         event.producedChunks > 0 &&
         event.consumedChunks > 0 &&
         event.peakRssGrowthBytes < expected.expectedPeakGrowthBytes;
       assert(
         event.expectedBytes === expected.expectedBytes &&
+          event.expectedPeakGrowthBytes === expected.expectedPeakGrowthBytes &&
           event.bytesEqual === bytesEqual &&
           event.sha256Equal === sha256Equal &&
           event.exactBytes === exactBytes &&
