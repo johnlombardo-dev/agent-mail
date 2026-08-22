@@ -290,30 +290,124 @@ function skipBlockComment(source, start) {
   return end + 2;
 }
 
-function skipTemplateInterpolation(source, start) {
-  let cursor = start;
-  let depth = 1;
+const regexKeywordAllowlist = Object.freeze([
+  "await",
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
+]);
+
+function regexLiteralAllowed(previous) {
+  if (!previous) return true;
+  if (previous.kind === "identifier") return regexKeywordAllowlist.includes(previous.value);
+  if (["number", "literal", "regex"].includes(previous.kind)) return false;
+  return ![")", "]", "}"].includes(previous.value);
+}
+
+function skipRegexLiteral(source, start) {
+  let cursor = start + 1;
+  let characterClass = false;
   while (cursor < source.length) {
     const character = source[cursor];
+    assert(character !== "\n" && character !== "\r", "numeric source regex contains a newline");
+    if (character === "\\") {
+      assert(cursor + 1 < source.length, "numeric source regex escape is unterminated");
+      assert(
+        source[cursor + 1] !== "\n" && source[cursor + 1] !== "\r",
+        "numeric source regex escape is invalid",
+      );
+      cursor += 2;
+      continue;
+    }
+    if (character === "[") {
+      characterClass = true;
+      cursor += 1;
+      continue;
+    }
+    if (character === "]" && characterClass) {
+      characterClass = false;
+      cursor += 1;
+      continue;
+    }
+    if (character === "/" && !characterClass) {
+      cursor += 1;
+      const flags = new Set();
+      while (cursor < source.length && /[A-Za-z]/u.test(source[cursor])) {
+        const flag = source[cursor];
+        assert(
+          "dgimsuvy".includes(flag) && !flags.has(flag),
+          "numeric source regex flags are invalid",
+        );
+        flags.add(flag);
+        cursor += 1;
+      }
+      assert(!(flags.has("u") && flags.has("v")), "numeric source regex flags are invalid");
+      return cursor;
+    }
+    cursor += 1;
+  }
+  assert(!characterClass, "numeric source regex character class is unterminated");
+  fail("numeric source regex is unterminated");
+}
+
+function skipTemplateInterpolation(source, start) {
+  let cursor = start;
+  const delimiters = ["{"];
+  let previous = null;
+  const identifier = /[A-Za-z_$][A-Za-z0-9_$]*/y;
+  const integer = /(?:0|[1-9](?:_?[0-9])*)/y;
+  while (cursor < source.length) {
+    const character = source[cursor];
+    if (/\s/u.test(character)) {
+      cursor += 1;
+      continue;
+    }
     if (character === "/" && source[cursor + 1] === "/") {
       cursor = skipLineComment(source, cursor);
     } else if (character === "/" && source[cursor + 1] === "*") {
       cursor = skipBlockComment(source, cursor);
     } else if (character === "'" || character === '"') {
       cursor = skipQuotedSource(source, cursor, character);
+      previous = { kind: "literal", value: "<string>" };
     } else if (character === "`") {
       cursor = skipTemplateLiteral(source, cursor);
-    } else if (character === "{") {
-      depth += 1;
-      cursor += 1;
-    } else if (character === "}") {
-      depth -= 1;
-      cursor += 1;
-      if (depth === 0) return cursor;
-    } else if (character === "\\") {
-      assert(cursor + 1 < source.length, "numeric source template interpolation is unterminated");
-      cursor += 2;
+      previous = { kind: "literal", value: "<template>" };
+    } else if (character === "/" && regexLiteralAllowed(previous)) {
+      cursor = skipRegexLiteral(source, cursor);
+      previous = { kind: "regex", value: "<regex>" };
     } else {
+      identifier.lastIndex = cursor;
+      const identifierMatch = identifier.exec(source);
+      if (identifierMatch) {
+        previous = { kind: "identifier", value: identifierMatch[0] };
+        cursor = identifier.lastIndex;
+        continue;
+      }
+      integer.lastIndex = cursor;
+      const integerMatch = integer.exec(source);
+      if (integerMatch) {
+        previous = { kind: "number", value: integerMatch[0] };
+        cursor = integer.lastIndex;
+        continue;
+      }
+      if (character === "{" || character === "[" || character === "(") {
+        delimiters.push(character);
+      } else if (character === "}" || character === "]" || character === ")") {
+        const expected = character === "}" ? "{" : character === "]" ? "[" : "(";
+        assert(delimiters.at(-1) === expected, "numeric source template delimiter mismatch");
+        delimiters.pop();
+        if (delimiters.length === 0) return cursor + 1;
+      }
+      previous = { kind: "punctuation", value: character };
       cursor += 1;
     }
   }
@@ -340,11 +434,11 @@ function skipTemplateLiteral(source, start) {
 
 function sourceTokens(source) {
   const tokens = [];
-  const scopes = { brace: 0, bracket: 0, parenthesis: 0 };
+  const delimiters = [];
   const identifier = /[A-Za-z_$][A-Za-z0-9_$]*/y;
   const integer = /(?:0|[1-9](?:_?[0-9])*)/y;
   let cursor = 0;
-  const scopeDepth = () => scopes.brace + scopes.bracket + scopes.parenthesis;
+  let previous = null;
   while (cursor < source.length) {
     const character = source[cursor];
     if (/\s/u.test(character)) {
@@ -361,49 +455,63 @@ function sourceTokens(source) {
     }
     if (character === "'" || character === '"') {
       cursor = skipQuotedSource(source, cursor, character);
+      previous = { kind: "literal", value: "<string>" };
       continue;
     }
     if (character === "`") {
       cursor = skipTemplateLiteral(source, cursor);
+      previous = { kind: "literal", value: "<template>" };
+      continue;
+    }
+    if (character === "/" && regexLiteralAllowed(previous)) {
+      const start = cursor;
+      cursor = skipRegexLiteral(source, cursor);
+      const token = { value: "<regex>", start, end: cursor, depth: delimiters.length };
+      tokens.push(token);
+      previous = { kind: "regex", value: "<regex>" };
       continue;
     }
     identifier.lastIndex = cursor;
     const identifierMatch = identifier.exec(source);
     if (identifierMatch) {
-      tokens.push({
+      const token = {
         value: identifierMatch[0],
         start: cursor,
         end: identifier.lastIndex,
-        depth: scopeDepth(),
-      });
+        depth: delimiters.length,
+      };
+      tokens.push(token);
+      previous = { kind: "identifier", value: token.value };
       cursor = identifier.lastIndex;
       continue;
     }
     integer.lastIndex = cursor;
     const integerMatch = integer.exec(source);
     if (integerMatch) {
-      tokens.push({
+      const token = {
         value: integerMatch[0],
         start: cursor,
         end: integer.lastIndex,
-        depth: scopeDepth(),
-      });
+        depth: delimiters.length,
+      };
+      tokens.push(token);
+      previous = { kind: "number", value: token.value };
       cursor = integer.lastIndex;
       continue;
     }
-    const depth = scopeDepth();
+    const depth = delimiters.length;
     if (character === "}" || character === "]" || character === ")") {
-      const scope = character === "}" ? "brace" : character === "]" ? "bracket" : "parenthesis";
-      assert(scopes[scope] > 0, "numeric source scope is unbalanced");
-      scopes[scope] -= 1;
+      const expected = character === "}" ? "{" : character === "]" ? "[" : "(";
+      assert(delimiters.at(-1) === expected, "numeric source delimiter mismatch");
+      delimiters.pop();
     }
-    tokens.push({ value: character, start: cursor, end: cursor + 1, depth });
-    if (character === "{") scopes.brace += 1;
-    if (character === "[") scopes.bracket += 1;
-    if (character === "(") scopes.parenthesis += 1;
+    const token = { value: character, start: cursor, end: cursor + 1, depth };
+    tokens.push(token);
+    previous = { kind: "punctuation", value: character };
+    if (character === "{" || character === "[" || character === "(") delimiters.push(character);
     cursor += 1;
   }
-  assert(scopeDepth() === 0, "numeric source scope is unterminated");
+  assert(delimiters.length === 0, "numeric source delimiter is unterminated");
   return tokens;
 }
 

@@ -554,6 +554,20 @@ describe("release evidence executable runner", () => {
       ["unterminated block comment", "/* export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
       ["unterminated string", "const text = 'export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
       ["unterminated template", "const text = `export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
+      ["regex at file start", "/export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["regex after equals", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/giu;\n"],
+      ["regex after return", "function f() { return /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/; }\n"],
+      ["regex argument", "call(/export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/);\n"],
+      ["regex escaped slash and class", "const pattern = /export[\\/] const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["regex malformed delimiter text", "/[)] export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["regex malformed nesting text", "const pattern = /([)] export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
+      ["regex comments and template", "const text = `value ${/* comment */ /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g}`;\n"],
+      ["regex invalid flags", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/z;\n"],
+      ["regex incompatible flags", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/uv;\n"],
+      ["unterminated regex", "/export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
+      ["delimiter mismatch", "const value = (];\n"],
+      ["delimiter underflow", "const value = );\n"],
+      ["delimiter unclosed", "const value = ({\n"],
       [
         "ambiguous export",
         "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
@@ -569,6 +583,17 @@ describe("release evidence executable runner", () => {
       sourceBinding.sha256 = committed.sha256;
       expect(() => validateManifest(candidate, fixture.root, committed.commit), name).toThrow();
     }
+
+    const division = commitAuthoritySource(
+      "const ratio = 128 / MEBIBYTE;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
+    );
+    const divisionCandidate = structuredClone(base);
+    const divisionSource = divisionCandidate.steps[0].sources.find(
+      (entry: { path: string }) => entry.path === fixture.sourcePath,
+    );
+    divisionSource.gitBlob = division.gitBlob;
+    divisionSource.sha256 = division.sha256;
+    expect(() => validateManifest(divisionCandidate, fixture.root, division.commit)).not.toThrow();
 
     const coordinated = commitAuthoritySource(
       "export const RSS_GROWTH_THRESHOLD_BYTES = 1024 * MEBIBYTE;\n",
