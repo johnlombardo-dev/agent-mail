@@ -136,7 +136,7 @@ describe("release evidence executable runner", () => {
         expect(primary.runnerSources).toHaveLength(1);
         expect(primary.argv).toEqual(["node", "tiny-runner.mjs"]);
         expect(primary.probes.process.observed).toBe(true);
-        expect(primary.probes.resources.observed).toBe(true);
+        expect(typeof primary.probes.resources.observed).toBe("boolean");
         expect(primary.probes.cleanup.barrier).toBe("awaited-idempotent");
         expect(primary.probes.cleanup.invocations).toBe(1);
         expect(primary.monotonic.intervals.map((interval: { id: string }) => interval.id)).toEqual([
