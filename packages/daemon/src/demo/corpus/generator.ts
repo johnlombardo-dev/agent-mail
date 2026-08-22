@@ -193,9 +193,12 @@ function messageIdentifierForRecord(options: CorpusOptions, index: number): stri
 }
 
 function categoryFor(options: CorpusOptions, index: number): ScenarioCategory {
-  if (index < scenarioCategories.length) return scenarioCategories[index];
+  const enabled = scenarioCategories.filter(
+    (category) => options.scenarioMix[category] !== undefined,
+  );
+  if (index < enabled.length) return enabled[index];
   const weights: readonly (readonly [ScenarioCategory, number])[] = scenarioCategories.map(
-    (category) => [category, options.scenarioMix[category] ?? 1],
+    (category) => [category, options.scenarioMix[category] ?? 0],
   );
   const total = weights.reduce((sum, [, weight]) => sum + weight, 0);
   let cursor =
@@ -212,8 +215,9 @@ function coverageFor(index: number): readonly RequiredCoverageCase[] {
   const first = requiredCoverageCases[index % requiredCoverageCases.length];
   const second = requiredCoverageCases[(index * 7 + 3) % requiredCoverageCases.length];
   const initial = first === second ? [first] : [first, second];
-  if (index === 12 && !initial.includes("duplicate-id")) return [...initial, "duplicate-id"];
-  return initial;
+  if (index === 12 && !initial.includes("duplicate-id"))
+    return Object.freeze([...initial, "duplicate-id"]);
+  return Object.freeze(initial);
 }
 
 function relationshipFor(
@@ -227,13 +231,13 @@ function relationshipFor(
       inReplyTo: `<missing-reference:${options.seed}:${index}@example.test>`,
       references: Object.freeze([`<missing-reference:${options.seed}:${index}@example.test>`]),
     });
-  if (index === 0) return Object.freeze({ kind: "root" });
-  const parentIndex =
-    coverage.includes("forked-thread") || (index >= 16 && index <= 18) ? 15 : index - 1;
+  if (index === 0 || index === 6 || index === 15 || (index >= 19 && (index - 19) % 3 === 0))
+    return Object.freeze({ kind: "root" });
+  const parentIndex = index - 1;
   const inReplyTo = messageIdentifierForRecord(options, parentIndex);
   const references = Object.freeze([inReplyTo]);
-  if (coverage.includes("forked-thread") || (index >= 16 && index <= 18))
-    return Object.freeze({ kind: "fork", inReplyTo, references, branch: index - 15 });
+  if (coverage.includes("forked-thread"))
+    return Object.freeze({ kind: "fork", inReplyTo, references, branch: Math.floor(index / 7) });
   return Object.freeze({ kind: "reply", inReplyTo, references });
 }
 
@@ -308,13 +312,11 @@ function buildMessage(
   const relationship = relationshipFor(options, index, coverage);
   const id = createCorpusMessageId(`${options.scenarioVersion}:${randomWord(options.seed, index)}`);
   const thread = createCorpusThreadId(
-    coverage.includes("long-thread") || (index >= 6 && index <= 15)
+    (index >= 6 && index <= 14) || coverage.includes("long-thread")
       ? "long:0"
-      : coverage.includes("forked-thread") || (index >= 16 && index <= 18)
+      : index >= 15 && index <= 18
         ? "fork:0"
-        : coverage.includes("cross-mailbox-thread") || index === 11
-          ? "cross-mailbox:0"
-          : `thread:${Math.floor(index / 3)}`,
+        : `thread:${index < 6 ? 0 : index < 15 ? Math.floor(index / 3) : Math.floor((index - 19) / 3) + 6}`,
   );
   const uid = index % 11 === 0 ? 1_000_000 + index * 17 : index + 1;
   const mailboxIndex = index % 3;
@@ -430,7 +432,7 @@ function mailboxState(
     name,
     uidValidity: 7000 + index,
     uidNext: index === 1 ? null : maxUid + 1,
-    highestModSeq: index === 2 ? null : maxModSeq + 1,
+    highestModSeq: index === 2 ? null : maxModSeq,
     exists: extant.length,
     flags: Object.freeze(["\\Seen", "\\Flagged"]),
   });
@@ -498,8 +500,9 @@ function derivedCoverageFor(
 function inventoryFor(
   messages: readonly CorpusMessage[],
   mailboxes: readonly MailboxState[],
+  requiredCases: readonly RequiredCoverageCase[],
 ): CorpusInventory {
-  const entries: CorpusInventoryEntry[] = requiredCoverageCases.map((caseId) => {
+  const entries: CorpusInventoryEntry[] = requiredCases.map((caseId) => {
     const matching = messages.filter((message) =>
       derivedCoverageFor(message, messages, mailboxes).includes(caseId),
     );
@@ -513,13 +516,22 @@ function inventoryFor(
     .filter((entry) => entry.messageIds.length > 0)
     .map((entry) => entry.caseId);
   return Object.freeze({
-    requiredCases: requiredCoverageCases,
+    requiredCases,
     entries: Object.freeze(entries),
     presentCases: Object.freeze(presentCases),
-    missingCases: Object.freeze(
-      requiredCoverageCases.filter((item) => !presentCases.includes(item)),
-    ),
+    missingCases: Object.freeze(requiredCases.filter((item) => !presentCases.includes(item))),
   });
+}
+
+function requiredCasesForScenario(
+  scenarioMix: CorpusOptions["scenarioMix"],
+): readonly RequiredCoverageCase[] {
+  return Object.freeze(
+    requiredCoverageCases.filter((caseId) => {
+      const category = scenarioCategories.find((candidate) => candidate === caseId);
+      return category === undefined || scenarioMix[category] !== undefined;
+    }),
+  );
 }
 
 function timelineFor(
@@ -658,7 +670,11 @@ function digestState(
   readonly checksum: CorpusDigest;
 }> {
   const normalizedMessages = normalizeMessages(messages, mailboxes);
-  const inventory = inventoryFor(normalizedMessages, mailboxes);
+  const inventory = inventoryFor(
+    normalizedMessages,
+    mailboxes,
+    requiredCasesForScenario(scenarioMix),
+  );
   const timeline = timelineFor(normalizedMessages, mailboxes);
   const logical = logicalProjection({
     scenarioVersion,
@@ -763,9 +779,13 @@ export function createObservedCorpusRun(input: unknown): ObservedCorpusRun {
 export const streamDemoCorpus = streamCorpus;
 
 export function deriveCorpusInventory(
-  corpus: Pick<DemoCorpus, "messages" | "mailboxes">,
+  corpus: Pick<DemoCorpus, "messages" | "mailboxes" | "scenarioMix">,
 ): CorpusInventory {
-  return inventoryFor(corpus.messages, corpus.mailboxes);
+  return inventoryFor(
+    corpus.messages,
+    corpus.mailboxes,
+    requiredCasesForScenario(corpus.scenarioMix),
+  );
 }
 
 function canonicalEqual(left: unknown, right: unknown): boolean {
@@ -773,7 +793,7 @@ function canonicalEqual(left: unknown, right: unknown): boolean {
 }
 
 export function assertRequiredCoverage(
-  corpus: Pick<DemoCorpus, "messages" | "mailboxes" | "inventory">,
+  corpus: Pick<DemoCorpus, "messages" | "mailboxes" | "scenarioMix" | "inventory">,
 ): void {
   const derived = deriveCorpusInventory(corpus);
   if (!canonicalEqual(derived, corpus.inventory))
@@ -785,23 +805,31 @@ export function assertRequiredCoverage(
 function assertCorpusStructure(corpus: DemoCorpus): void {
   if (corpus.size !== corpus.messages.length)
     throw new Error("corpus size does not match generated message count");
-  const state = digestState(
-    corpus.scenarioVersion,
-    corpus.seed,
-    corpus.size,
-    corpus.scenarioMix,
-    corpus.messages,
-    corpus.mailboxes,
-  );
+  const byMessageId = new Map<string, CorpusMessage>();
+  for (const message of corpus.messages) {
+    if (!byMessageId.has(message.messageId)) byMessageId.set(message.messageId, message);
+  }
+  for (const [index, message] of corpus.messages.entries()) {
+    if (message.relationship.kind === "root") continue;
+    if (message.relationship.kind === "missing-reference") {
+      if (byMessageId.has(message.relationship.inReplyTo))
+        throw new Error(`message ${index} missing-reference resolves to a generated message`);
+      continue;
+    }
+    const parent = byMessageId.get(message.relationship.inReplyTo);
+    if (parent === undefined)
+      throw new Error(`message ${index} relationship parent is not generated`);
+    if (parent.threadId !== message.threadId)
+      throw new Error(`message ${index} relationship parent is in another thread`);
+    if (!message.relationship.references.includes(message.relationship.inReplyTo))
+      throw new Error(`message ${index} relationship references omit its parent`);
+    if (
+      message.relationship.kind === "fork" &&
+      (!Number.isSafeInteger(message.relationship.branch) || message.relationship.branch < 0)
+    )
+      throw new Error(`message ${index} fork branch is invalid`);
+  }
   assertRequiredCoverage(corpus);
-  if (!canonicalEqual(state.timeline, corpus.timeline))
-    throw new Error("corpus timeline does not match generated messages");
-  if (state.logicalDigest !== corpus.logicalDigest)
-    throw new Error("corpus logical digest does not match generated state");
-  if (state.byteDigest !== corpus.byteDigest)
-    throw new Error("corpus byte digest does not match generated bytes");
-  if (state.checksum !== corpus.checksum)
-    throw new Error("corpus checksum does not match generated state");
   for (const [index, message] of corpus.messages.entries()) {
     const expectedCoverage = derivedCoverageFor(message, corpus.messages, corpus.mailboxes);
     if (!canonicalEqual(expectedCoverage, message.coverage))
@@ -826,14 +854,34 @@ function assertCorpusStructure(corpus: DemoCorpus): void {
       throw new Error(`mailbox ${mailbox.id} UIDVALIDITY is inconsistent`);
     if (mailbox.exists !== extant.length)
       throw new Error(`mailbox ${mailbox.id} exists count is inconsistent`);
-    if (mailbox.uidNext !== null && mailbox.uidNext <= maxUid)
-      throw new Error(`mailbox ${mailbox.id} UIDNEXT is not above extant UIDs`);
-    if (mailbox.highestModSeq !== null && mailbox.highestModSeq <= maxModSeq)
-      throw new Error(`mailbox ${mailbox.id} HIGHESTMODSEQ is not above extant MODSEQ values`);
+    const expectedUidNext = mailbox.id === createCorpusMailboxId("archive") ? null : maxUid + 1;
+    if (mailbox.uidNext !== expectedUidNext)
+      throw new Error(`mailbox ${mailbox.id} UIDNEXT is not authoritative`);
+    const expectedHighestModSeq = extant.some((message) => message.modSeq !== null)
+      ? maxModSeq
+      : null;
+    if (mailbox.highestModSeq !== expectedHighestModSeq)
+      throw new Error(`mailbox ${mailbox.id} HIGHESTMODSEQ is not authoritative`);
   }
   const mailboxIds = new Set(corpus.mailboxes.map((mailbox) => mailbox.id));
   if (corpus.messages.some((message) => !mailboxIds.has(message.mailboxId)))
     throw new Error("message placement references an unknown mailbox");
+  const state = digestState(
+    corpus.scenarioVersion,
+    corpus.seed,
+    corpus.size,
+    corpus.scenarioMix,
+    corpus.messages,
+    corpus.mailboxes,
+  );
+  if (!canonicalEqual(state.timeline, corpus.timeline))
+    throw new Error("corpus timeline does not match generated messages");
+  if (state.logicalDigest !== corpus.logicalDigest)
+    throw new Error("corpus logical digest does not match generated state");
+  if (state.byteDigest !== corpus.byteDigest)
+    throw new Error("corpus byte digest does not match generated bytes");
+  if (state.checksum !== corpus.checksum)
+    throw new Error("corpus checksum does not match generated state");
 }
 
 export function checksumCorpus(

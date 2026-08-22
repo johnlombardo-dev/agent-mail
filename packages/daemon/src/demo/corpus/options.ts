@@ -59,7 +59,12 @@ function parseMix(value: unknown): ScenarioMix {
           "invalid-field",
           "scenarioMix list contains an unknown category",
         );
-      result[item] = (result[item] ?? 0) + 1;
+      if (result[item] !== undefined)
+        throw new CorpusOptionsError(
+          "invalid-field",
+          `scenarioMix list contains duplicate category ${item}`,
+        );
+      result[item] = 1;
     }
     return Object.freeze(result);
   }
@@ -70,10 +75,10 @@ function parseMix(value: unknown): ScenarioMix {
     if (!isScenarioCategory(key))
       throw new CorpusOptionsError("invalid-field", `scenarioMix has unknown category ${key}`);
     const weight = value[key];
-    if (typeof weight !== "number" || !Number.isSafeInteger(weight) || weight < 0)
+    if (typeof weight !== "number" || !Number.isSafeInteger(weight) || weight < 1)
       throw new CorpusOptionsError(
         "invalid-field",
-        `scenarioMix weight for ${key} must be a non-negative integer`,
+        `scenarioMix weight for ${key} must be a positive integer`,
       );
     result[key] = weight;
   }

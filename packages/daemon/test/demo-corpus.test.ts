@@ -12,6 +12,8 @@ import {
   checksumCorpus,
   CorpusOptionsError,
   createObservedCorpusRun,
+  createCorpusMailboxId,
+  createCorpusThreadId,
   deriveCorpusInventory,
   parseCorpusOptions,
   requiredCoverageCases,
@@ -88,7 +90,8 @@ type ProfileObservation = Readonly<{
     }>;
     readonly runtimeHighWater: ParsedHighWater &
       Readonly<{ readonly source: "bun-process-resource-usage-max-rss" }>;
-    readonly kernelHighWater: ParsedHighWater & Readonly<{ readonly source: KernelHighWaterSource }>;
+    readonly kernelHighWater: ParsedHighWater &
+      Readonly<{ readonly source: KernelHighWaterSource }>;
   }>;
   readonly resources: Readonly<{
     readonly lifecycleReceipt: CorpusRunCompletionReceipt;
@@ -349,8 +352,7 @@ function parseProfileObservation(value: unknown): ProfileObservation {
     (kernelHighWater.source === "darwin-resource-usage-max-rss" &&
       (kernelHighWater.nativeUnit !== "bytes" || kernelHighWater.bytesPerNativeUnit !== 1)) ||
     (kernelHighWater.source === "linux-proc-vmhwm" &&
-      (kernelHighWater.nativeUnit !== "kibibytes" ||
-        kernelHighWater.bytesPerNativeUnit !== 1024))
+      (kernelHighWater.nativeUnit !== "kibibytes" || kernelHighWater.bytesPerNativeUnit !== 1024))
   )
     throw new TypeError("kernel high-water RSS unit is inconsistent with its source");
   const resources = exactRecord(root.resources, "profile resources", [
@@ -369,18 +371,14 @@ function parseProfileObservation(value: unknown): ProfileObservation {
     "maximumInFlightNextCalls",
     "maximumInFlightMessages",
   ]);
-  const consumerAttachments = exactRecord(
-    consumer.attachmentStreams,
-    "consumer attachments",
-    [
-      "closeRequestedCount",
-      "closeAwaitedCount",
-      "finallyCompletedCount",
-      "maximumInFlightNextCalls",
-      "maximumInFlightChunks",
-      "maximumInFlightChunkBytes",
-    ],
-  );
+  const consumerAttachments = exactRecord(consumer.attachmentStreams, "consumer attachments", [
+    "closeRequestedCount",
+    "closeAwaitedCount",
+    "finallyCompletedCount",
+    "maximumInFlightNextCalls",
+    "maximumInFlightChunks",
+    "maximumInFlightChunkBytes",
+  ]);
   const closure = exactRecord(root.closure, "profile closure", [
     "referencesDropped",
     "fullGcAvailable",
@@ -414,10 +412,7 @@ function parseProfileObservation(value: unknown): ProfileObservation {
     sampled.postCleanupDeltaFromBaselineBytes,
     "sampled postCleanupDeltaFromBaselineBytes",
   );
-  const baselineSampleIndex = positiveInteger(
-    sampled.baselineSampleIndex,
-    "baselineSampleIndex",
-  );
+  const baselineSampleIndex = positiveInteger(sampled.baselineSampleIndex, "baselineSampleIndex");
   const preCleanupSampleIndex = positiveInteger(
     sampled.preCleanupSampleIndex,
     "preCleanupSampleIndex",
@@ -458,10 +453,7 @@ function parseProfileObservation(value: unknown): ProfileObservation {
   const observedCompleted = trueValue(resultRecord.completed, "result.completed");
   const referencesDropped = trueValue(closure.referencesDropped, "referencesDropped");
   const fullGcAvailable = trueValue(closure.fullGcAvailable, "fullGcAvailable");
-  const fixedSettleCompleted = trueValue(
-    closure.fixedSettleCompleted,
-    "fixedSettleCompleted",
-  );
+  const fixedSettleCompleted = trueValue(closure.fixedSettleCompleted, "fixedSettleCompleted");
   if (requestedSize !== 250_000 || producedCount !== requestedSize)
     throw new TypeError("profile completion count is inconsistent");
   if (
@@ -853,6 +845,76 @@ describe("deterministic demo corpus", () => {
     ])
       expect(() => parseCorpusOptions(input)).toThrow(CorpusOptionsError);
     expect(() => parseCorpusOptions({ ...valid, size: undefined })).toThrow(/size must be/);
+    expect(() => parseCorpusOptions({ ...valid, scenarioMix: ["ordinary", "ordinary"] })).toThrow(
+      /duplicate category/,
+    );
+    expect(() => parseCorpusOptions({ ...valid, scenarioMix: { ordinary: 0 } })).toThrow(
+      /positive integer/,
+    );
+    expect(parseCorpusOptions({ ...valid, scenarioMix: { ordinary: 2 } }).scenarioMix).toEqual({
+      ordinary: 2,
+    });
+  });
+
+  test("makes partial and weighted mixes authoritative across coverage, relationships, and state", async () => {
+    const mixes = [
+      { ordinary: 1 },
+      { newsletter: 1 },
+      { ordinary: 1, spam: 3 },
+      scenarioMix,
+    ] as const;
+    for (const [index, mix] of mixes.entries()) {
+      const corpus = buildCorpus({
+        ...options(`mix-${index}`),
+        scenarioMix: mix,
+      });
+      const enabled = new Set(Object.keys(mix));
+      expect(corpus.messages.every((message) => enabled.has(message.category))).toBe(true);
+      const expectedCases = requiredCoverageCases.filter(
+        (caseId) =>
+          ![
+            "ordinary",
+            "transactional",
+            "mailing-list",
+            "newsletter",
+            "automated",
+            "spam",
+          ].includes(caseId) || enabled.has(caseId),
+      );
+      expect(corpus.inventory.requiredCases).toEqual(expectedCases);
+      expect(corpus.inventory.missingCases).toEqual([]);
+      const byMessageId = new Map(corpus.messages.map((message) => [message.messageId, message]));
+      for (const message of corpus.messages) {
+        if (message.relationship.kind === "root") continue;
+        if (message.relationship.kind === "missing-reference") {
+          expect(byMessageId.has(message.relationship.inReplyTo)).toBe(false);
+          continue;
+        }
+        const parent = byMessageId.get(message.relationship.inReplyTo);
+        expect(parent).toBeDefined();
+        expect(parent?.threadId).toBe(message.threadId);
+        expect(message.relationship.references).toContain(message.relationship.inReplyTo);
+        if (message.relationship.kind === "fork")
+          expect(message.relationship.branch).toBeGreaterThanOrEqual(0);
+      }
+      for (const mailbox of corpus.mailboxes) {
+        const extant = corpus.messages.filter(
+          (message) => message.mailboxId === mailbox.id && !message.tombstone,
+        );
+        const maxUid = extant.reduce((maximum, message) => Math.max(maximum, message.uid), 0);
+        const maxModSeq = extant.reduce(
+          (maximum, message) => Math.max(maximum, message.modSeq ?? 0),
+          0,
+        );
+        expect(mailbox.uidNext).toBe(
+          mailbox.id === createCorpusMailboxId("archive") ? null : maxUid + 1,
+        );
+        expect(mailbox.highestModSeq).toBe(
+          mailbox.id === createCorpusMailboxId("missing-state") ? null : maxModSeq,
+        );
+      }
+      await expect(assertCorpusIntegrity(corpus)).resolves.toBeUndefined();
+    }
   });
 
   test("resolves replies, records intentional exceptions, and binds mailbox state", async () => {
@@ -882,6 +944,95 @@ describe("deterministic demo corpus", () => {
         );
     }
     await expect(assertCorpusIntegrity(corpus)).resolves.toBeUndefined();
+  });
+
+  test("rejects off-by-one mailbox and invalid relationship authorities", async () => {
+    const corpus = buildCorpus(options("authority-attacks"));
+    const withMailboxes = (
+      edit: (
+        mailbox: (typeof corpus.mailboxes)[number],
+      ) =>
+        | Partial<Pick<(typeof corpus.mailboxes)[number], "uidNext" | "highestModSeq">>
+        | undefined,
+    ) => {
+      const mailboxes = corpus.mailboxes.map((mailbox) => {
+        const value = edit(mailbox);
+        return value === undefined ? mailbox : { ...mailbox, ...value };
+      });
+      const altered = { ...corpus, mailboxes };
+      return { ...altered, checksum: checksumCorpus(altered) };
+    };
+    const inbox = createCorpusMailboxId("inbox");
+    const highestAttack = withMailboxes((mailbox) =>
+      mailbox.id === inbox ? { highestModSeq: (mailbox.highestModSeq ?? 0) + 1 } : undefined,
+    );
+    await expect(assertCorpusIntegrity(highestAttack)).rejects.toThrow(/HIGHESTMODSEQ/);
+    const highestBelowAttack = withMailboxes((mailbox) =>
+      mailbox.id === inbox
+        ? { highestModSeq: Math.max(0, (mailbox.highestModSeq ?? 0) - 1) }
+        : undefined,
+    );
+    await expect(assertCorpusIntegrity(highestBelowAttack)).rejects.toThrow(/HIGHESTMODSEQ/);
+    const missingStateValueAttack = withMailboxes((mailbox) =>
+      mailbox.id === createCorpusMailboxId("missing-state") ? { highestModSeq: 0 } : undefined,
+    );
+    await expect(assertCorpusIntegrity(missingStateValueAttack)).rejects.toThrow(/HIGHESTMODSEQ/);
+    const uidNextAttack = withMailboxes((mailbox) =>
+      mailbox.id === inbox ? { uidNext: (mailbox.uidNext ?? 0) + 1 } : undefined,
+    );
+    await expect(assertCorpusIntegrity(uidNextAttack)).rejects.toThrow(/UIDNEXT/);
+    const uidNextBelowAttack = withMailboxes((mailbox) =>
+      mailbox.id === inbox ? { uidNext: Math.max(1, (mailbox.uidNext ?? 1) - 1) } : undefined,
+    );
+    await expect(assertCorpusIntegrity(uidNextBelowAttack)).rejects.toThrow(/UIDNEXT/);
+    const parentIndex = corpus.messages.findIndex(
+      (message) => message.relationship.kind === "reply",
+    );
+    const parent = corpus.messages[parentIndex];
+    if (parent.relationship.kind !== "reply") throw new Error("reply fixture is unavailable");
+    const wrongThread = {
+      ...corpus,
+      messages: corpus.messages.map((message, index) =>
+        index === parentIndex
+          ? { ...message, threadId: createCorpusThreadId("wrong-thread") }
+          : message,
+      ),
+    };
+    await expect(
+      assertCorpusIntegrity({ ...wrongThread, checksum: checksumCorpus(wrongThread) }),
+    ).rejects.toThrow(/another thread/);
+    const missingParent = {
+      ...corpus,
+      messages: corpus.messages.map((message, index) =>
+        index === parentIndex && message.relationship.kind === "reply"
+          ? {
+              ...message,
+              relationship: {
+                ...message.relationship,
+                inReplyTo: "<fabricated-parent@example.test>",
+                references: ["<fabricated-parent@example.test>"],
+              },
+            }
+          : message,
+      ),
+    };
+    await expect(
+      assertCorpusIntegrity({ ...missingParent, checksum: checksumCorpus(missingParent) }),
+    ).rejects.toThrow(/not generated/);
+    const forkIndex = corpus.messages.findIndex((message) => message.relationship.kind === "fork");
+    const fork = corpus.messages[forkIndex];
+    if (fork.relationship.kind !== "fork") throw new Error("fork fixture is unavailable");
+    const negativeBranch = {
+      ...corpus,
+      messages: corpus.messages.map((message, index) =>
+        index === forkIndex
+          ? { ...message, relationship: { ...fork.relationship, branch: -1 } }
+          : message,
+      ),
+    };
+    await expect(
+      assertCorpusIntegrity({ ...negativeBranch, checksum: checksumCorpus(negativeBranch) }),
+    ).rejects.toThrow(/branch/);
   });
 
   test("derives coverage and rejects independent authority mutations", async () => {
@@ -929,6 +1080,8 @@ describe("deterministic demo corpus", () => {
     expect(Object.isFrozen(corpus.timeline)).toBe(true);
     expect(Object.isFrozen(corpus.inventory)).toBe(true);
     expect(Object.isFrozen(corpus.messages[0].headers)).toBe(true);
+    expect(Object.isFrozen(corpus.messages[0].coverage)).toBe(true);
+    expect(Object.isFrozen(corpus.messages[1].relationship)).toBe(true);
     expect(Object.isFrozen(corpus.messages[0].parts)).toBe(true);
     const attachment = corpus.messages[20].parts.find((part) => part.kind === "attachment");
     expect(attachment).toBeDefined();
@@ -980,8 +1133,14 @@ describe("deterministic demo corpus", () => {
         finallyCompleted: () => (injectedCallbacks += 1),
       },
     };
-    const first = createObservedCorpusRun({ ...options("concurrent-a", 10), [oldGlobalProbe]: injected });
-    const second = createObservedCorpusRun({ ...options("concurrent-b", 24), [oldGlobalProbe]: injected });
+    const first = createObservedCorpusRun({
+      ...options("concurrent-a", 10),
+      [oldGlobalProbe]: injected,
+    });
+    const second = createObservedCorpusRun({
+      ...options("concurrent-b", 24),
+      [oldGlobalProbe]: injected,
+    });
     expect(Object.isFrozen(first)).toBe(true);
     expect(Object.isFrozen(first.completion)).toBe(true);
     expect(Reflect.set(first, "completion", second.completion)).toBe(false);
@@ -1110,18 +1269,12 @@ describe("deterministic demo corpus", () => {
       }),
     ).toThrow(/source/);
     const omittedFinalizer = validProfileFixture();
-    const omittedResources = recordValue(
-      omittedFinalizer.resources,
-      "omitted-finalizer resources",
-    );
+    const omittedResources = recordValue(omittedFinalizer.resources, "omitted-finalizer resources");
     const omittedReceipt = recordValue(
       omittedResources.lifecycleReceipt,
       "omitted-finalizer receipt",
     );
-    const omittedGenerator = recordValue(
-      omittedReceipt.generator,
-      "omitted-finalizer generator",
-    );
+    const omittedGenerator = recordValue(omittedReceipt.generator, "omitted-finalizer generator");
     expect(() =>
       parseProfileObservation({
         ...omittedFinalizer,
@@ -1201,9 +1354,7 @@ describe("deterministic demo corpus", () => {
         expect(run.observation.result.producedCount).toBe(250_000);
         expect(run.observation.result.maximumStreamChunkBytes).toBe(STREAM_CHUNK_BYTES);
         expect(run.observation.memory.rssUnit).toBe("bytes");
-        expect(run.observation.memory.kernelHighWater.source).toBe(
-          "darwin-resource-usage-max-rss",
-        );
+        expect(run.observation.memory.kernelHighWater.source).toBe("darwin-resource-usage-max-rss");
         expect(run.observation.memory.kernelHighWater.nativeUnit).toBe("bytes");
         expect(run.observation.memory.kernelHighWater.bytesPerNativeUnit).toBe(1);
         expect(run.observation.memory.kernelHighWater.finalBytes).toBeGreaterThanOrEqual(
@@ -1212,9 +1363,7 @@ describe("deterministic demo corpus", () => {
         expect(run.observation.resources.lifecycleReceipt.generator.yieldedCount).toBe(250_000);
         expect(
           run.observation.resources.lifecycleReceipt.attachmentStreams.finallyCompletedCount,
-        ).toBe(
-          run.observation.resources.lifecycleReceipt.attachmentStreams.acquiredCount,
-        );
+        ).toBe(run.observation.resources.lifecycleReceipt.attachmentStreams.acquiredCount);
         expect(run.observation.closure.referencesDropped).toBe(true);
       }
       expect(first.observation.result.logicalDigest).toBe(second.observation.result.logicalDigest);
