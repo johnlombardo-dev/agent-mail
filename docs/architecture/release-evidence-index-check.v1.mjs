@@ -2055,6 +2055,13 @@ function validateV2Record(record, baseline, sequence, previousDigest, root, opti
       const step = manifest.steps.find((candidate) => candidate.id === receipt.manifestStepId);
       assert(step, `${label} receipt step is not in manifest`);
       assert(receipt.role === role, `${label} receipt role is detached`);
+      assert(
+        receipt.candidate?.commit === record.candidateCommit &&
+          receipt.candidate?.tree === record.candidateTree &&
+          receipt.candidate?.manifestPath === record.manifest.path &&
+          receipt.candidate?.manifestSha256 === record.manifest.sha256,
+        `${label} ${role} receipt candidate is detached from enclosing record`,
+      );
       const eventBytes = v2EvidenceRef(
         record,
         receipt.streams?.events,
@@ -4455,6 +4462,95 @@ function runComposedV2Fixture(baselineIndex) {
       cwd: root,
       encoding: "utf8",
     }).trim();
+    const correctedReceipts = { primary: [], replay: [] };
+    for (const [roleKey, refs] of Object.entries({
+      primary: receiptRefs.primary,
+      replay: receiptRefs.replay,
+    })) {
+      for (const [receiptIndex, sourceRef] of refs.entries()) {
+        const receipt = JSON.parse(readFileSync(join(root, sourceRef.path), "utf8"));
+        const oldCommit = receipt.candidate.commit;
+        const oldTree = receipt.candidate.tree;
+        receipt.runId = `corrected-${receipt.runId}`;
+        receipt.candidate = { ...receipt.candidate, commit: i2, tree: i2Tree };
+        receipt.observedOutcome = {
+          ...receipt.observedOutcome,
+          derivedFrom: receipt.observedOutcome.derivedFrom.map((value) =>
+            value === oldCommit ? i2 : value === oldTree ? i2Tree : value,
+          ),
+        };
+        const step = manifest.steps.find((candidate) => candidate.id === receipt.manifestStepId);
+        const provenancePath = `${evidenceRoot}/corrected-${roleKey}-${receiptIndex + 1}-provenance.json`;
+        const observations = {
+          process: receipt.process,
+          processProbe: receipt.probes.process,
+          resources: receipt.probes.resources,
+          termination: receipt.probes.cleanup.termination,
+          cleanup: receipt.probes.cleanup,
+          streams: receipt.probes.streams,
+          monotonic: receipt.monotonic,
+          startedAt: receipt.startedAt,
+          completedAt: receipt.completedAt,
+          result: receipt.result,
+          observedOutcome: receipt.observedOutcome,
+        };
+        const authority = {
+          candidate: receipt.candidate,
+          manifestStepId: receipt.manifestStepId,
+          cwd: receipt.cwd,
+          argv: receipt.argv,
+          sources: receipt.sources,
+          runnerSources: receipt.runnerSources,
+          fixture: receipt.fixture,
+          assertions: receipt.assertions,
+          probes: step.probes,
+          thresholds: step.thresholds,
+        };
+        const core = structuredClone(receipt);
+        delete core.provenance;
+        const receiptSha256 = digest(Buffer.from(canonicalJson(core)));
+        const observationsSha256 = digest(Buffer.from(canonicalJson(observations)));
+        const artifacts = Object.fromEntries(
+          Object.entries({ ...receipt.streams, fixture: receipt.fixture.materialized }).map(
+            ([key, ref]) => [key, { path: ref.path, bytes: ref.bytes, sha256: ref.sha256 }],
+          ),
+        );
+        const envelope = {
+          format: "agent-mail.capture-provenance/v1",
+          runId: receipt.runId,
+          role: receipt.role,
+          receiptSha256,
+          observations,
+          observationsSha256,
+          authority,
+          roots: {
+            output: { path: `/tmp/${receipt.runId}-output`, dev: 1, ino: 5000 + receiptIndex },
+            temporary: {
+              path: `/tmp/${receipt.runId}-temporary`,
+              dev: 1,
+              ino: 6000 + receiptIndex,
+              removed: true,
+            },
+          },
+          artifacts,
+        };
+        const envelopeRef = writeJson(provenancePath, envelope);
+        receipt.provenance = {
+          format: envelope.format,
+          path: provenancePath,
+          bytes: envelopeRef.bytes,
+          sha256: envelopeRef.sha256,
+          receiptSha256,
+          observationsSha256,
+        };
+        correctedReceipts[roleKey].push(
+          writeJson(
+            `${evidenceRoot}/corrected-${roleKey}-${receiptIndex + 1}-receipt.json`,
+            receipt,
+          ),
+        );
+      }
+    }
     const correctedEvidence = structuredClone(execution.evidence);
     for (const [id, subgate] of Object.entries(correctedEvidence.subgates)) {
       for (const key of ["correctness", "resources", "cleanup"]) {
@@ -4494,6 +4590,8 @@ function runComposedV2Fixture(baselineIndex) {
       evidenceCommit: i2,
       evidence: correctedEvidence,
       closure: correctedClosure,
+      primaryReceipt: correctedReceipts.primary,
+      replayReceipt: correctedReceipts.replay,
       bundle: { path: `${evidenceRoot}/qualification-3-bundle.json`, sha256: zeroSha },
       correctedFromSequence: 1,
       correctedFromRecordDigest: recordDigest(qualification),
@@ -4511,6 +4609,62 @@ function runComposedV2Fixture(baselineIndex) {
     execFileSync("git", ["add", "docs/architecture/release-evidence-index.v1.json"], { cwd: root });
     execFileSync("git", ["commit", "-qm", "record corrected qualification"], { cwd: root });
     validateIndex(finalIndex, { repositoryRoot: root, allowEmptyBaseline: true });
+    const oracleStep = manifest.steps.find((step) => step.id === "mime-250mib");
+    const oracleBytes = execFileSync(
+      "git",
+      ["cat-file", "blob", `${candidateCommit}:package.json`],
+      {
+        cwd: root,
+      },
+    );
+    const oracleValue = JSON.parse(oracleBytes.toString("utf8")).name;
+    const oracleAssertion = {
+      id: "synthetic-structured-oracle",
+      kind: "structured-oracle",
+      event: "structured-oracle",
+      path: "package.json",
+      sha256: digest(oracleBytes),
+      pointer: "/name",
+      value: oracleValue,
+    };
+    const oracleReceipt = JSON.parse(readFileSync(join(root, receiptRefs.primary[0].path), "utf8"));
+    oracleReceipt.assertions = [
+      { id: oracleAssertion.id, kind: oracleAssertion.kind, observed: oracleValue, pass: true },
+    ];
+    const oracleEvent = JSON.stringify({
+      event: "structured-oracle",
+      path: oracleAssertion.path,
+      sha256: oracleAssertion.sha256,
+      pointer: oracleAssertion.pointer,
+      value: oracleValue,
+    });
+    const structuredOracleCheck = (eventText) => {
+      validateExecutableReceipt(
+        oracleReceipt,
+        manifest,
+        { ...oracleStep, assertions: [oracleAssertion] },
+        {
+          repositoryRoot: root,
+          eventBytes: Buffer.from(`${eventText}\n`),
+        },
+      );
+    };
+    structuredOracleCheck(oracleEvent);
+    const oracleAttacks = [
+      oracleEvent.replace("package.json", "README.md"),
+      oracleEvent.replace(oracleAssertion.sha256, zeroSha),
+      oracleEvent.replace('"/name"', '"/version"'),
+      oracleEvent.replace(JSON.stringify(oracleValue), JSON.stringify("detached")),
+    ];
+    for (const eventText of oracleAttacks) {
+      let rejected = false;
+      try {
+        structuredOracleCheck(eventText);
+      } catch {
+        rejected = true;
+      }
+      assert(rejected, "structured-oracle mutation was accepted");
+    }
     const partial = structuredClone(baselineIndex);
     partial.resultRecords = [];
     const partialProjection = materializeCurrent(partial);
@@ -4573,7 +4727,13 @@ function runComposedV2Fixture(baselineIndex) {
       }
       assert(rejected, `composed v2 attack was accepted: ${name}`);
     }
-    return { root, full: finalIndex, partial, attacks: attacks.length };
+    return {
+      root,
+      full: finalIndex,
+      partial,
+      attacks: attacks.length,
+      structuredOracleAttacks: oracleAttacks.length,
+    };
   } catch (error) {
     rmSync(root, { recursive: true, force: true });
     throw error;
