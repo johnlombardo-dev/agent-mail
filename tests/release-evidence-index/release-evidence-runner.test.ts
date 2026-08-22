@@ -326,6 +326,7 @@ describe("release evidence executable runner", () => {
           id: "mime-fixture-observation",
           kind: "fixture-observation",
           expectedBytes: 262144000,
+          expectedPeakGrowthBytes: 134217728,
         },
       ],
     };
@@ -370,7 +371,55 @@ describe("release evidence executable runner", () => {
         [base],
       ),
     ).toThrow();
+    for (const threshold of [
+      { ...step.thresholds.peakGrowth, limit: 1024 * 1024 * 1024 },
+      { ...step.thresholds.peakGrowth, operator: "<=" },
+      { ...step.thresholds.peakGrowth, source: "kernel:ps" },
+      { ...step.thresholds.peakGrowth, unit: "MiB" },
+    ]) {
+      expect(() =>
+        observationThresholdValues(
+          { ...step, thresholds: { ...step.thresholds, peakGrowth: threshold } },
+          [base],
+        ),
+      ).toThrow();
+    }
     expect(thresholdMetricRegistry.peakGrowth.operator).toBe("<");
+  });
+
+  test("source-binds MIME growth threshold before execution", () => {
+    const manifest = JSON.parse(
+      readFileSync("docs/architecture/release-evidence-execution-manifest.v2.json", "utf8"),
+    );
+    const attacks = [
+      (candidate: typeof manifest) => {
+        candidate.steps.find((step: { id: string }) => step.id === "mime-250mib").thresholds.peakGrowth.limit =
+          1024 * 1024 * 1024;
+      },
+      (candidate: typeof manifest) => {
+        candidate.steps.find((step: { id: string }) => step.id === "mime-250mib").thresholds.peakGrowth.operator =
+          "<=";
+      },
+      (candidate: typeof manifest) => {
+        candidate.steps.find((step: { id: string }) => step.id === "mime-250mib").thresholds.peakGrowth.source =
+          "kernel:ps";
+      },
+      (candidate: typeof manifest) => {
+        candidate.steps.find((step: { id: string }) => step.id === "mime-250mib").thresholds.peakGrowth.unit =
+          "MiB";
+      },
+      (candidate: typeof manifest) => {
+        candidate.steps
+          .find((step: { id: string }) => step.id === "mime-250mib")
+          .assertions.find((assertion: { id: string }) => assertion.id === "mime-fixture-observation")
+          .expectedPeakGrowthBytes = 1024 * 1024 * 1024;
+      },
+    ];
+    for (const mutate of attacks) {
+      const candidate = structuredClone(manifest);
+      mutate(candidate);
+      expect(() => validateManifest(candidate, ".")).toThrow();
+    }
   });
 
   test("rejects an evil descendant beneath an exact untracked allowlist entry", async () => {

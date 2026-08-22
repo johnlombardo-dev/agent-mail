@@ -73,6 +73,7 @@ export const thresholdMetricRegistry = Object.freeze({
     source: "fixture-observation",
     unit: "bytes",
     field: "producedBytes",
+    assertionField: "expectedBytes",
     operator: "===",
   }),
   peakGrowth: Object.freeze({
@@ -81,6 +82,7 @@ export const thresholdMetricRegistry = Object.freeze({
     source: "fixture-observation",
     unit: "bytes",
     field: "peakRssGrowthBytes",
+    assertionField: "expectedPeakGrowthBytes",
     operator: "<",
   }),
 });
@@ -315,6 +317,11 @@ function validateAssertion(assertion, step) {
       Number.isSafeInteger(assertion.expectedBytes) && assertion.expectedBytes > 0,
       `${step.id} fixture observation byte target is invalid`,
     );
+    assert(
+      Number.isSafeInteger(assertion.expectedPeakGrowthBytes) &&
+        assertion.expectedPeakGrowthBytes > 0,
+      `${step.id} fixture observation growth target is invalid`,
+    );
   } else if (assertion.kind === "structured-oracle") {
     assert(
       typeof assertion.event === "string" && assertion.event.length > 0,
@@ -490,6 +497,24 @@ export function validateManifest(
           (!metricSpec.stepId || metricSpec.stepId === step.id) &&
           (!metricSpec.operator || metricSpec.operator === threshold.operator),
         `${step.id} threshold ${metric} source/operator/unit is incomplete`,
+      );
+    }
+    for (const [metric, threshold] of Object.entries(step.thresholds)) {
+      if (metric === "timeoutMs" || threshold?.source !== "fixture-observation") continue;
+      const metricSpec = thresholdMetricRegistry[metric];
+      const fixtureAssertion = step.assertions.find(
+        (assertion) =>
+          assertion.kind === "fixture-observation" &&
+          assertion.sourcePath &&
+          step.sources.some((source) => source.path === assertion.sourcePath),
+      );
+      assert(
+        metricSpec?.kind === "fixture-observation" &&
+          typeof metricSpec.assertionField === "string" &&
+          fixtureAssertion &&
+          Number.isSafeInteger(fixtureAssertion[metricSpec.assertionField]) &&
+          threshold.limit === fixtureAssertion[metricSpec.assertionField],
+        `${step.id} threshold ${metric} limit is detached from fixture observation`,
       );
     }
     if (step.fixture !== undefined) {
@@ -1224,7 +1249,7 @@ function thresholdSatisfied(value, threshold) {
   return false;
 }
 
-function fixtureObservationDerived(event, expectedBytes) {
+function fixtureObservationDerived(event, expectedBytes, expectedPeakGrowthBytes) {
   const bytesEqual = event.producedBytes === event.consumedBytes;
   const sha256Equal = event.producedSha256 === event.consumedSha256;
   const exactBytes = event.producedBytes === expectedBytes && event.consumedBytes === expectedBytes;
@@ -1239,13 +1264,15 @@ function fixtureObservationDerived(event, expectedBytes) {
     event.producedChunks > 0 &&
     event.consumedChunks > 0 &&
     validGrowth &&
-    event.peakRssGrowthBytes < 128 * 1024 * 1024;
+    event.peakRssGrowthBytes < expectedPeakGrowthBytes;
   return { bytesEqual, sha256Equal, exactBytes, pass };
 }
 
 export function observationThresholdValues(step, assertions, label = step.id) {
   const fixtureThresholds = Object.entries(step.thresholds ?? {}).filter(
-    ([, threshold]) => threshold?.source === "fixture-observation",
+    ([metric, threshold]) =>
+      threshold?.source === "fixture-observation" ||
+      thresholdMetricRegistry[metric]?.kind === "fixture-observation",
   );
   if (fixtureThresholds.length === 0) return {};
   const expectedAssertion = step.assertions.find(
@@ -1256,7 +1283,12 @@ export function observationThresholdValues(step, assertions, label = step.id) {
   const event = receiptAssertion?.observed;
   assert(event && typeof event === "object", `${label} fixture observation is missing`);
   const expectedBytes = expectedAssertion.expectedBytes;
-  const derived = fixtureObservationDerived(event, expectedBytes);
+  const expectedPeakGrowthBytes = expectedAssertion.expectedPeakGrowthBytes;
+  assert(
+    Number.isSafeInteger(expectedPeakGrowthBytes) && expectedPeakGrowthBytes > 0,
+    `${label} fixture observation growth target is invalid`,
+  );
+  const derived = fixtureObservationDerived(event, expectedBytes, expectedPeakGrowthBytes);
   assert(
     typeof event.pass === "boolean" && event.pass === derived.pass,
     `${label} fixture observation pass is inconsistent`,
@@ -1267,6 +1299,16 @@ export function observationThresholdValues(step, assertions, label = step.id) {
     assert(
       spec?.kind === "fixture-observation" && spec.field,
       `${label} threshold ${metric} is not an observed metric`,
+    );
+    assert(
+      spec.assertionField &&
+        Number.isSafeInteger(expectedAssertion[spec.assertionField]) &&
+        threshold.source === spec.source &&
+        threshold.unit === spec.unit &&
+        (!spec.stepId || spec.stepId === step.id) &&
+        (!spec.operator || spec.operator === threshold.operator) &&
+        threshold.limit === expectedAssertion[spec.assertionField],
+      `${label} threshold ${metric} is detached from fixture observation`,
     );
     const value = event[spec.field];
     assert(
@@ -1549,7 +1591,11 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       const exactBytes =
         event.producedBytes === assertion.expectedBytes &&
         event.consumedBytes === assertion.expectedBytes;
-      const derived = fixtureObservationDerived(event, assertion.expectedBytes);
+      const derived = fixtureObservationDerived(
+        event,
+        assertion.expectedBytes,
+        assertion.expectedPeakGrowthBytes,
+      );
       const pass = derived.pass;
       assert(
         event.expectedBytes === assertion.expectedBytes &&

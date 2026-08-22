@@ -3149,6 +3149,11 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
       const exactBytes =
         event.producedBytes === expected.expectedBytes &&
         event.consumedBytes === expected.expectedBytes;
+      assert(
+        Number.isSafeInteger(expected.expectedPeakGrowthBytes) &&
+          expected.expectedPeakGrowthBytes > 0,
+        `${label} fixture observation growth target is invalid`,
+      );
       const pass =
         event.format === "agent-mail.fixture-observation/v1" &&
         source &&
@@ -3164,7 +3169,7 @@ function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, 
         exactBytes &&
         event.producedChunks > 0 &&
         event.consumedChunks > 0 &&
-        event.peakRssGrowthBytes < 128 * 1024 * 1024;
+        event.peakRssGrowthBytes < expected.expectedPeakGrowthBytes;
       assert(
         event.expectedBytes === expected.expectedBytes &&
           event.bytesEqual === bytesEqual &&

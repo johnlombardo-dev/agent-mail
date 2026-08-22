@@ -166,7 +166,8 @@
           "kind": "fixture-observation",
           "sourcePath": "packages/imap/test/helpers/mime-capacity-p2-c11-child.ts",
           "fixtureId": "issue-176-mime-250mib",
-          "expectedBytes": 262144000
+          "expectedBytes": 262144000,
+          "expectedPeakGrowthBytes": 134217728
         }
       ],
       "observations": [
