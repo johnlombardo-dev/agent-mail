@@ -502,7 +502,7 @@ async function validateGeneratedSearchArtifact(path, bytes, digest) {
     "search inventory is not a regular non-symlink file",
   );
   const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
-  assert(inventory.rowCount === 250000, "search inventory row count drifted");
+  assert(inventory.messages === 250000, "search inventory row count drifted");
   assert(inventory.bytes === bytes.length, "search inventory byte count drifted");
   assert(
     typeof inventory.logicalChecksum === "string" &&
