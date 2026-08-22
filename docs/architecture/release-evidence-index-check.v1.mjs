@@ -3967,6 +3967,7 @@ function runComposedV2Fixture(baselineIndex) {
             producedChunks: 1,
             consumedChunks: 1,
             expectedBytes: bytes,
+            expectedPeakGrowthBytes: assertion.expectedPeakGrowthBytes,
             peakRssGrowthBytes: 1,
             producerCompleted: true,
             consumerCompleted: true,
@@ -4653,9 +4654,9 @@ function runComposedV2Fixture(baselineIndex) {
     });
     const sourceEventBytes = readFileSync(join(root, sourceReceipt.streams.events.path));
     const sourceEventText = sourceEventBytes.toString("utf8");
-    const retainedMimeEvents = (oracleText) =>
+    const retainedMimeEvents = (oracleText, retainedSourceText = sourceEventText) =>
       Buffer.from(
-        `${sourceEventText.endsWith("\n") ? sourceEventText : `${sourceEventText}\n`}${oracleText}\n`,
+        `${retainedSourceText.endsWith("\n") ? retainedSourceText : `${retainedSourceText}\n`}${oracleText}\n`,
       );
     const oracleStepWithAssertion = {
       ...oracleStep,
@@ -4743,13 +4744,51 @@ function runComposedV2Fixture(baselineIndex) {
       eventText,
       receipt = oracleReceipt,
       step = oracleStepWithAssertion,
+      retainedSourceText = sourceEventText,
     ) => {
       validateExecutableReceipt(receipt, manifest, step, {
         repositoryRoot: root,
-        eventBytes: retainedMimeEvents(eventText),
+        eventBytes: retainedMimeEvents(eventText, retainedSourceText),
       });
     };
     structuredOracleCheck(oracleEvent);
+    const mutateFixtureObservation = (sourceText, mutate) => {
+      const lines = sourceText
+        .split("\n")
+        .filter((line) => line.length > 0)
+        .map((line) => JSON.parse(line));
+      let found = false;
+      const mutated = lines.map((event) => {
+        if (event.event !== "fixture-observation") return event;
+        found = true;
+        const value = structuredClone(event);
+        mutate(value);
+        return value;
+      });
+      assert(found, "composed fixture observation event is missing");
+      return `${mutated.map((event) => JSON.stringify(event)).join("\n")}\n`;
+    };
+    const fixtureObservationAttacks = [
+      ["missing fixture ceiling", (event) => delete event.expectedPeakGrowthBytes],
+      ["malformed fixture ceiling", (event) => (event.expectedPeakGrowthBytes = "128MiB")],
+      ["coordinated fixture ceiling drift", (event) => (event.expectedPeakGrowthBytes = 1024 ** 3)],
+    ];
+    for (const [name, mutate] of fixtureObservationAttacks) {
+      const mutatedSource = mutateFixtureObservation(sourceEventText, mutate);
+      const mutatedReceipt = structuredClone(oracleReceipt);
+      if (name === "coordinated fixture ceiling drift") {
+        mutatedReceipt.assertions.find(
+          (assertion) => assertion.id === "mime-fixture-observation",
+        ).observed.expectedPeakGrowthBytes = 1024 ** 3;
+      }
+      let rejected = false;
+      try {
+        structuredOracleCheck(oracleEvent, mutatedReceipt, oracleStepWithAssertion, mutatedSource);
+      } catch {
+        rejected = true;
+      }
+      assert(rejected, `fixture observation mutation was accepted: ${name}`);
+    }
     const oracleAttacks = [
       oracleEvent.replace("package.json", "README.md"),
       oracleEvent.replace(oracleAssertion.sha256, zeroSha),
