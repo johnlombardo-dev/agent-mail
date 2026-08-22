@@ -364,6 +364,101 @@ function receiptPidSet(receipt, label) {
     assert(Number.isSafeInteger(pid) && pid > 1, `${label} resource PID is invalid`);
     assert(pids.has(pid), `${label} resource PID is detached from process samples`);
   }
+  const resourceObservedPids = new Set(resources.observedPids ?? []);
+  for (const pid of resourceObservedPids) {
+    assert(resourcePids.has(pid), `${label} observed resource PID is not attempted`);
+  }
+  for (const unavailable of resources.unavailablePids ?? []) {
+    assert(
+      Number.isSafeInteger(unavailable.pid) &&
+        resourcePids.has(unavailable.pid) &&
+        typeof unavailable.reason === "string" &&
+        unavailable.reason.length > 0,
+      `${label} unavailable resource PID record is malformed`,
+    );
+  }
+  for (const sample of resources.samples ?? []) {
+    const attemptedPids = sample.attemptedPids ?? sample.pids;
+    assert(Array.isArray(attemptedPids), `${label} resource attempted PID inventory is missing`);
+    assert(
+      JSON.stringify([...new Set(sample.pids ?? [])].sort((left, right) => left - right)) ===
+        JSON.stringify([...attemptedPids].sort((left, right) => left - right)),
+      `${label} resource attempted PID inventory is detached`,
+    );
+    assert(
+      JSON.stringify([...new Set(attemptedPids)].sort((left, right) => left - right)) ===
+        JSON.stringify([...attemptedPids].sort((left, right) => left - right)),
+      `${label} resource attempted PID inventory repeats a PID`,
+    );
+    const results = sample.pidResults;
+    assert(
+      Array.isArray(results) && results.length === attemptedPids.length,
+      `${label} per-PID resource observations are incomplete`,
+    );
+    for (const result of results)
+      assert(
+        Number.isSafeInteger(result.pid) && result.pid > 1,
+        `${label} per-PID resource identity is malformed`,
+      );
+    const resultPids = results.map((result) => result.pid);
+    assert(
+      JSON.stringify([...resultPids].sort((left, right) => left - right)) ===
+        JSON.stringify([...attemptedPids].sort((left, right) => left - right)),
+      `${label} per-PID resource observations are detached`,
+    );
+    const observedResults = results.filter((result) => result.observed === true);
+    const unavailableResults = results.filter((result) => result.observed === false);
+    assert(
+      observedResults.length + unavailableResults.length === results.length,
+      `${label} resource observation status is invalid`,
+    );
+    assert(
+      JSON.stringify((sample.observedPids ?? []).slice().sort((left, right) => left - right)) ===
+        JSON.stringify(
+          observedResults.map((result) => result.pid).sort((left, right) => left - right),
+        ),
+      `${label} observed resource PID attribution is inconsistent`,
+    );
+    assert(
+      JSON.stringify(
+        (sample.unavailablePids ?? [])
+          .map((entry) => entry.pid)
+          .sort((left, right) => left - right),
+      ) ===
+        JSON.stringify(
+          unavailableResults.map((result) => result.pid).sort((left, right) => left - right),
+        ),
+      `${label} unavailable resource PID attribution is inconsistent`,
+    );
+    for (const result of observedResults) {
+      for (const metric of ["fileDescriptors", "sockets", "listeners"])
+        assert(
+          Number.isSafeInteger(result[metric]) && result[metric] >= 0,
+          `${label} observed resource metric is malformed`,
+        );
+      assert(Array.isArray(result.hermesPorts), `${label} observed Hermes ports are malformed`);
+      assert(
+        !Object.hasOwn(result, "reason"),
+        `${label} observed resource has an unavailable reason`,
+      );
+    }
+    for (const result of unavailableResults)
+      assert(
+        typeof result.reason === "string" && result.reason.length > 0,
+        `${label} unavailable resource reason is missing`,
+      );
+    assert(
+      sample.observed === observedResults.length > 0,
+      `${label} resource sample status is inconsistent`,
+    );
+    for (const metric of ["fileDescriptors", "sockets", "listeners"]) {
+      const expected =
+        observedResults.length > 0
+          ? observedResults.reduce((sum, result) => sum + result[metric], 0)
+          : null;
+      assert(sample[metric] === expected, `${label} resource aggregate ${metric} is inconsistent`);
+    }
+  }
   for (const sample of resources.samples ?? [])
     for (const pid of sample.pids ?? []) {
       assert(Number.isSafeInteger(pid) && pid > 1, `${label} resource sample PID is invalid`);
@@ -1095,6 +1190,42 @@ async function selfTest() {
       ["artifact missing", (value) => (value.streams.stderr.path = `${value.runId}/missing`)],
       ["artifact traversal", (value) => (value.streams.events.path = "../events.jsonl")],
       ["resource PID retyping", (value) => (value.probes.resources.pids = [1234])],
+      [
+        "resource aggregate forged zero",
+        (value) => {
+          const sample = value.probes.resources.samples.find((candidate) => candidate.observed);
+          sample.fileDescriptors = 0;
+          value.probes.resources.fileDescriptors = 0;
+        },
+      ],
+      [
+        "resource PID result duplication",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.pidResults.push(structuredClone(sample.pidResults[0]));
+        },
+      ],
+      [
+        "resource PID result stale",
+        (value) => (value.probes.resources.samples[0].pidResults[0].pid = 999999),
+      ],
+      [
+        "resource unavailable reason missing",
+        (value) =>
+          (value.probes.resources.unavailablePids = [
+            { pid: value.probes.resources.pids[0], reason: "" },
+          ]),
+      ],
+      [
+        "resource all-dead fabricated zero",
+        (value) => {
+          const sample = value.probes.resources.samples[0];
+          sample.observed = false;
+          sample.fileDescriptors = 0;
+          sample.sockets = 0;
+          sample.listeners = 0;
+        },
+      ],
       [
         "provenance receipt digest drift",
         (value) => (value.provenance.receiptSha256 = "0".repeat(64)),

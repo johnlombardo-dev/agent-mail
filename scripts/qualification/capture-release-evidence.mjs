@@ -1114,6 +1114,11 @@ function resourceSummary(samples) {
   return {
     observed: observed.length > 0,
     pids: [...new Set(samples.flatMap((sample) => sample.pids ?? []))],
+    attemptedPids: [
+      ...new Set(samples.flatMap((sample) => sample.attemptedPids ?? sample.pids ?? [])),
+    ],
+    observedPids: [...new Set(samples.flatMap((sample) => sample.observedPids ?? []))],
+    unavailablePids: samples.flatMap((sample) => sample.unavailablePids ?? []),
     fileDescriptors: maximum("fileDescriptors"),
     sockets: maximum("sockets"),
     listeners: maximum("listeners"),
@@ -1341,59 +1346,143 @@ export function processTreeSnapshot(pid, trackedPids = []) {
   }
 }
 
-function kernelResourceSnapshot(pids) {
+function parseKernelLsofOutput(output, pid) {
+  assert(typeof output === "string", `kernel resource output for PID ${pid} is malformed`);
+  const lines = output.split("\n").filter((line) => line.trim().length > 0);
+  assert(
+    lines.length > 0 && lines[0].startsWith("COMMAND"),
+    `kernel resource header for PID ${pid} is malformed`,
+  );
+  const rows = lines.slice(1);
+  let sockets = 0;
+  let listeners = 0;
+  const hermesPorts = new Set();
+  for (const line of rows) {
+    const columns = line.trim().split(/\s+/u);
+    assert(columns.length >= 5, `kernel resource row for PID ${pid} is malformed`);
+    const rowPid = Number(columns[1]);
+    assert(rowPid === pid, `kernel resource row PID ${rowPid} is detached from ${pid}`);
+    const type = columns[4];
+    if (!["IPv4", "IPv6", "unix"].includes(type)) continue;
+    sockets += 1;
+    if (line.includes("(LISTEN)")) {
+      listeners += 1;
+      for (const match of line.matchAll(/:(611\d)\b/gu)) hermesPorts.add(Number(match[1]));
+    }
+  }
+  return {
+    pid,
+    observed: true,
+    fileDescriptors: rows.length,
+    sockets,
+    listeners,
+    hermesPorts: [...hermesPorts].sort((left, right) => left - right),
+  };
+}
+
+export function kernelResourceSnapshot(pids, { runLsof } = {}) {
   const uniquePids = [...new Set(pids.filter((pid) => Number.isInteger(pid) && pid > 0))];
   if (uniquePids.length === 0)
     return {
       observed: false,
       reason: "no kernel process ids",
       pids: [],
+      attemptedPids: [],
+      observedPids: [],
+      unavailablePids: [],
+      pidResults: [],
       fileDescriptors: null,
       sockets: null,
       listeners: null,
       hermesPorts: [],
     };
-  try {
-    const output = execFileSync("lsof", ["-nP", "-a", "-p", uniquePids.join(",")], {
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    const lines = output
-      .split("\n")
-      .slice(1)
-      .filter((line) => line.trim().length > 0);
-    let sockets = 0;
-    let listeners = 0;
-    const hermesPorts = new Set();
-    for (const line of lines) {
-      const columns = line.trim().split(/\s+/u);
-      const type = columns[4];
-      if (!["IPv4", "IPv6", "unix"].includes(type)) continue;
-      sockets += 1;
-      if (line.includes("(LISTEN)")) {
-        listeners += 1;
-        for (const match of line.matchAll(/:(611\d)\b/gu)) hermesPorts.add(Number(match[1]));
-      }
+  const results = uniquePids.map((pid) => {
+    try {
+      const output = runLsof
+        ? runLsof(pid)
+        : execFileSync("lsof", ["-nP", "-a", "-p", String(pid)], {
+            encoding: "utf8",
+            maxBuffer: 16 * 1024 * 1024,
+          });
+      return parseKernelLsofOutput(output, pid);
+    } catch (error) {
+      return { pid, observed: false, reason: String(error) };
     }
-    return {
-      observed: true,
-      pids: uniquePids,
-      fileDescriptors: lines.length,
-      sockets,
-      listeners,
-      hermesPorts: [...hermesPorts].sort((left, right) => left - right),
-    };
-  } catch (error) {
-    return {
-      observed: false,
-      reason: String(error),
-      pids: uniquePids,
-      fileDescriptors: null,
-      sockets: null,
-      listeners: null,
-      hermesPorts: [],
-    };
-  }
+  });
+  const observedResults = results.filter((result) => result.observed);
+  const unavailablePids = results
+    .filter((result) => !result.observed)
+    .map(({ pid, reason }) => ({ pid, reason }));
+  const aggregate = (key) =>
+    observedResults.length > 0
+      ? observedResults.reduce((sum, result) => sum + result[key], 0)
+      : null;
+  return {
+    observed: observedResults.length > 0,
+    pids: uniquePids,
+    attemptedPids: uniquePids,
+    observedPids: observedResults.map((result) => result.pid),
+    unavailablePids,
+    pidResults: results,
+    fileDescriptors: aggregate("fileDescriptors"),
+    sockets: aggregate("sockets"),
+    listeners: aggregate("listeners"),
+    hermesPorts: [...new Set(observedResults.flatMap((result) => result.hermesPorts))].sort(
+      (left, right) => left - right,
+    ),
+    ...(observedResults.length === 0 ? { reason: unavailablePids[0]?.reason } : {}),
+  };
+}
+
+function kernelResourceSelfTest() {
+  const header = "COMMAND PID USER FD TYPE DEVICE SIZE/OFF NODE NAME\n";
+  const live = `${header}bun 4101 test 0r REG 1,1 10 1 /tmp/input\n`;
+  const liveSocket =
+    `${header}bun 4101 test 0r REG 1,1 10 1 /tmp/input\n` +
+    "bun 4101 test 7u IPv4 1,2 0t0 TCP 127.0.0.1:6110 (LISTEN)\n";
+  const partial = kernelResourceSnapshot([4101, 4102], {
+    runLsof: (pid) => {
+      if (pid === 4101) return liveSocket;
+      throw new Error("ESRCH");
+    },
+  });
+  assert(partial.observed === true, "partial kernel resource observation was not observed");
+  assert(partial.observedPids.join() === "4101", "partial kernel observed PID attribution drifted");
+  assert(
+    partial.unavailablePids.length === 1 && partial.unavailablePids[0].pid === 4102,
+    "partial kernel unavailable PID was lost",
+  );
+  assert(
+    partial.fileDescriptors === 2 && partial.sockets === 1 && partial.listeners === 1,
+    "partial kernel metrics were not aggregated from live PID only",
+  );
+  const allDead = kernelResourceSnapshot([4102, 4103], {
+    runLsof: () => {
+      throw new Error("ESRCH");
+    },
+  });
+  assert(
+    allDead.observed === false &&
+      allDead.fileDescriptors === null &&
+      allDead.sockets === null &&
+      allDead.listeners === null,
+    "all-dead kernel sample fabricated zero metrics",
+  );
+  const malformed = kernelResourceSnapshot([4101], { runLsof: () => "malformed" });
+  assert(
+    malformed.observed === false && malformed.unavailablePids[0].reason.includes("malformed"),
+    "malformed kernel output was accepted",
+  );
+  const stale = kernelResourceSnapshot([4102], { runLsof: () => liveSocket });
+  assert(
+    stale.observed === false && stale.unavailablePids[0].reason.includes("detached"),
+    "stale kernel PID output was accepted",
+  );
+  const duplicate = kernelResourceSnapshot([4101, 4101], { runLsof: () => live });
+  assert(
+    duplicate.pids.length === 1 && duplicate.pidResults.length === 1,
+    "duplicate kernel PIDs were not deduplicated",
+  );
 }
 
 function thresholdSatisfied(value, threshold) {
@@ -2322,6 +2411,7 @@ export async function capture({
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.selfTest) {
+    kernelResourceSelfTest();
     const root = mkdtempSync("/tmp/agent-mail-capture-self-test-");
     const outputRoot = mkdtempSync("/tmp/agent-mail-capture-output-self-test-");
     try {
