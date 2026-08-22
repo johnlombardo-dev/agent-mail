@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
@@ -26,11 +26,132 @@ function git(root, args) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
 }
 
-export function compareReceipts(primary, replay) {
+function finiteReceiptNumber(value, label) {
+  assert(
+    typeof value === "number" && Number.isFinite(value) && value >= 0,
+    `${label} is unavailable or invalid`,
+  );
+}
+
+function receiptPidSet(receipt, label) {
+  const samples = receipt.probes?.process?.samples;
+  assert(Array.isArray(samples) && samples.length >= 2, `${label} process samples are incomplete`);
+  const pids = new Set();
+  for (const sample of samples) {
+    assert(Array.isArray(sample.pids), `${label} process sample PIDs are missing`);
+    for (const pid of sample.pids) {
+      assert(Number.isSafeInteger(pid) && pid > 1, `${label} process sample PID is invalid`);
+      pids.add(pid);
+    }
+  }
+  assert(pids.size > 0, `${label} process PID inventory is empty`);
+  return pids;
+}
+
+function validateIndependentRuntime(receipt, label, step) {
+  assert(receipt.result === "pass", `${label} result is not pass`);
+  const process = receipt.probes?.process;
+  assert(process?.observed === true, `${label} process probe is unavailable`);
+  assert(process.rssStatus === "observed", `${label} RSS probe is unavailable`);
+  finiteReceiptNumber(process.peakRssBytes, `${label} peak RSS`);
+  const terminal = process.samples.at(-1);
+  assert(
+    terminal && terminal.rootPresent === false,
+    `${label} process did not reach terminal sample`,
+  );
+  assert(
+    receipt.probes?.cleanup?.barrier === "awaited-idempotent" &&
+      receipt.probes.cleanup.invocations === 1 &&
+      receipt.probes.cleanup.executionRootRemoved === true &&
+      receipt.probes.cleanup.termination?.completed === true &&
+      receipt.probes.cleanup.termination.survivorsAfterKill?.length === 0,
+    `${label} cleanup is unsettled`,
+  );
+  assert(
+    receipt.probes?.tempRoot?.path && receipt.probes.tempRoot.removed === true,
+    `${label} temporary root probe is unavailable`,
+  );
+  const thresholds = step?.thresholds ?? {};
+  const rssThreshold = thresholds.processRssBytes;
+  if (rssThreshold) {
+    const { operator, limit } = rssThreshold;
+    const pass =
+      operator === "<"
+        ? process.peakRssBytes < limit
+        : operator === "<="
+          ? process.peakRssBytes <= limit
+          : operator === "==="
+            ? process.peakRssBytes === limit
+            : operator === ">="
+              ? process.peakRssBytes >= limit
+              : process.peakRssBytes > limit;
+    assert(pass, `${label} RSS threshold failed`);
+  }
+  if (step?.probes?.includes("fileDescriptors"))
+    assert(
+      receipt.probes.resources?.observed === true,
+      `${label} file descriptor probe is unavailable`,
+    );
+  if (step?.probes?.includes("listeners"))
+    assert(receipt.probes.resources?.observed === true, `${label} listener probe is unavailable`);
+  return receiptPidSet(receipt, label);
+}
+
+function assertDistinctRegularArtifacts(primary, replay, options) {
+  const primaryRoot = options?.primaryOutputRoot;
+  const replayRoot = options?.replayOutputRoot;
+  const refs = ["stdout", "stderr", "events"].map((key) => [
+    key,
+    primary.streams[key],
+    replay.streams[key],
+  ]);
+  for (const [key, primaryRef, replayRef] of refs) {
+    assert(primaryRef.path !== replayRef.path, `${key} path was reused`);
+    assert(primaryRef.path.split("/")[0] === primary.runId, `${key} primary path is not run-bound`);
+    assert(replayRef.path.split("/")[0] === replay.runId, `${key} replay path is not run-bound`);
+    if (!primaryRoot || !replayRoot) continue;
+    const primaryStat = lstatSync(resolve(primaryRoot, primaryRef.path));
+    const replayStat = lstatSync(resolve(replayRoot, replayRef.path));
+    assert(primaryStat.isFile() && replayStat.isFile(), `${key} artifact is not a regular file`);
+    assert(
+      !primaryStat.isSymbolicLink() && !replayStat.isSymbolicLink(),
+      `${key} artifact is a symlink`,
+    );
+    assert(
+      primaryStat.dev !== replayStat.dev || primaryStat.ino !== replayStat.ino,
+      `${key} artifact is hard-linked or reused`,
+    );
+  }
+  const primaryFixturePath = primary.fixture?.materialized?.path;
+  const replayFixturePath = replay.fixture?.materialized?.path;
+  if (primaryFixturePath || replayFixturePath) {
+    assert(primaryFixturePath && replayFixturePath, "fixture materialization path is missing");
+    assert(primaryFixturePath !== replayFixturePath, "fixture artifact path was reused");
+    assert(primaryFixturePath.split("/")[0] === primary.runId, "primary fixture is not run-bound");
+    assert(replayFixturePath.split("/")[0] === replay.runId, "replay fixture is not run-bound");
+  }
+}
+
+export function compareReceipts(primary, replay, options = {}) {
   assert(primary.format === "agent-mail.executable-receipt/v2", "primary receipt format");
   assert(replay.format === primary.format, "replay receipt format");
   assert(primary.role === "primary" && replay.role === "independent-replay", "receipt roles");
   assert(primary.runId !== replay.runId, "replay reused the primary run ID");
+  const primaryPids = validateIndependentRuntime(primary, "primary receipt", options.step);
+  const replayPids = validateIndependentRuntime(replay, "replay receipt", options.step);
+  assert(
+    primary.process?.pid !== replay.process?.pid &&
+      primary.process?.processGroup !== replay.process?.processGroup,
+    "replay reused the primary process identity",
+  );
+  assert(
+    [...primaryPids].every((pid) => !replayPids.has(pid)),
+    "replay reused a primary process PID",
+  );
+  assert(
+    primary.probes.tempRoot.path !== replay.probes.tempRoot.path,
+    "replay reused the primary checkout/temp root",
+  );
   for (const key of ["commit", "tree", "manifestPath", "manifestSha256"]) {
     assert(primary.candidate[key] === replay.candidate[key], `candidate ${key} diverged`);
   }
@@ -50,10 +171,7 @@ export function compareReceipts(primary, replay) {
     canonicalJson(primary.assertions) === canonicalJson(replay.assertions),
     "replay assertions diverged",
   );
-  assert(primary.result === "pass" && replay.result === "pass", "replay did not pass");
-  assert(primary.streams.stdout.path !== replay.streams.stdout.path, "stdout path was reused");
-  assert(primary.streams.stderr.path !== replay.streams.stderr.path, "stderr path was reused");
-  assert(primary.streams.events.path !== replay.streams.events.path, "event path was reused");
+  assertDistinctRegularArtifacts(primary, replay, options);
   return {
     candidateCommit: primary.candidate.commit,
     candidateTree: primary.candidate.tree,
@@ -62,6 +180,10 @@ export function compareReceipts(primary, replay) {
     replayRunId: replay.runId,
     primaryResult: primary.result,
     replayResult: replay.result,
+    primaryDurationNs: primary.monotonic.durationNs,
+    replayDurationNs: replay.monotonic.durationNs,
+    primaryPeakRssBytes: primary.probes.process.peakRssBytes,
+    replayPeakRssBytes: replay.probes.process.peakRssBytes,
   };
 }
 
@@ -136,11 +258,58 @@ async function selfTest() {
       outputRoot: replayRoot,
       role: "independent-replay",
     });
-    const comparison = compareReceipts(primary, replay);
+    const comparison = compareReceipts(primary, replay, {
+      primaryOutputRoot: primaryRoot,
+      replayOutputRoot: replayRoot,
+      step: manifest.steps[0],
+    });
+    const attacks = [
+      ["reused run ID", (value) => (value.runId = primary.runId)],
+      ["reused temp root", (value) => (value.probes.tempRoot.path = primary.probes.tempRoot.path)],
+      ["reused process PID", (value) => (value.process.pid = primary.process.pid)],
+      [
+        "reused process group",
+        (value) => (value.process.processGroup = primary.process.processGroup),
+      ],
+      ["source drift", (value) => (value.sources[0].sha256 = "0".repeat(64))],
+      ["argv drift", (value) => (value.argv = ["node", "forged.mjs"])],
+      ["assertion drift", (value) => (value.assertions[0].pass = false)],
+      [
+        "fixture path reuse",
+        (value) => (value.fixture.materialized.path = primary.fixture.materialized.path),
+      ],
+      ["stream path reuse", (value) => (value.streams.stdout.path = primary.streams.stdout.path)],
+      ["RSS unavailable", (value) => (value.probes.process.rssStatus = "notApplicable")],
+      [
+        "cleanup survivor",
+        (value) => (value.probes.cleanup.termination.survivorsAfterKill = [1234]),
+      ],
+    ];
+    let rejected = 0;
+    for (const [name, mutate] of attacks) {
+      const forged = structuredClone(replay);
+      mutate(forged);
+      let accepted = false;
+      try {
+        compareReceipts(primary, forged, {
+          primaryOutputRoot: primaryRoot,
+          replayOutputRoot: replayRoot,
+          step: manifest.steps[0],
+        });
+        accepted = true;
+      } catch {}
+      assert(!accepted, `${name} attack was accepted`);
+      rejected += 1;
+    }
     rmSync(primaryRoot, { recursive: true, force: true });
     rmSync(replayRoot, { recursive: true, force: true });
     console.log(
-      JSON.stringify({ format: "agent-mail.executable-receipt/v2", accepted: true, comparison }),
+      JSON.stringify({
+        format: "agent-mail.executable-receipt/v2",
+        accepted: true,
+        attacks: rejected,
+        comparison,
+      }),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

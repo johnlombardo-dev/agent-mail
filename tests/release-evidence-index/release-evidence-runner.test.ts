@@ -124,12 +124,13 @@ describe("release evidence executable runner", () => {
     try {
       const primary = await testCapture({ root: fixture.root, manifestPath: fixture.manifestPath, outputRoot: output });
       const replayRoot = mkdtempSync(join(tmpdir(), "agent-mail-runner-replay-"));
+      const replayOutput = mkdtempSync(join(tmpdir(), "agent-mail-runner-replay-output-"));
       try {
         git(fixture.root, ["clone", "-q", "--no-hardlinks", fixture.root, replayRoot]);
         const replay = await testCapture({
           root: replayRoot,
           manifestPath: join(replayRoot, "manifest.json"),
-          outputRoot: mkdtempSync(join(tmpdir(), "agent-mail-runner-replay-output-")),
+          outputRoot: replayOutput,
           role: "independent-replay",
         });
         expect(primary.result).toBe("pass");
@@ -146,9 +147,31 @@ describe("release evidence executable runner", () => {
           "execution",
           "retention-and-cleanup",
         ]);
-        expect(compareReceipts(primary, replay).replayResult).toBe("pass");
+        expect(
+          compareReceipts(primary, replay, {
+            primaryOutputRoot: output,
+            replayOutputRoot: replayOutput,
+          }).replayResult,
+        ).toBe("pass");
+        const attacks = [
+          (value: typeof replay) => (value.runId = primary.runId),
+          (value: typeof replay) => (value.process.pid = primary.process.pid),
+          (value: typeof replay) => (value.probes.tempRoot.path = primary.probes.tempRoot.path),
+          (value: typeof replay) =>
+            (value.streams.stdout.path = primary.streams.stdout.path),
+          (value: typeof replay) => (value.probes.cleanup.termination.survivorsAfterKill = [1234]),
+        ];
+        for (const mutate of attacks) {
+          const forged = structuredClone(replay);
+          mutate(forged);
+          expect(() => compareReceipts(primary, forged, {
+            primaryOutputRoot: output,
+            replayOutputRoot: replayOutput,
+          })).toThrow();
+        }
       } finally {
         rmSync(replayRoot, { recursive: true, force: true });
+        rmSync(replayOutput, { recursive: true, force: true });
       }
     } finally {
       rmSync(output, { recursive: true, force: true });
