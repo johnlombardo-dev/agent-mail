@@ -207,7 +207,7 @@ describe("demo IMAP lifecycle and process-safe port ownership", () => {
       expect(exitCode).toBe(73);
       expect(stderr).toBe("");
       expect(stdout).toContain('"kind":"acquired"');
-      expect(demoImapTestPortLeaseExists(port, directory)).toBe(true);
+      expect(demoImapTestPortLeaseExists(port, directory)).toBe(false);
       const durableRecord = await lstat(join(directory, `${port}.json`));
       expect(durableRecord.mode & 0o777).toBe(0o600);
       const recovered = leaseDemoImapTestPort({ directory, preferredPort: port });
@@ -219,7 +219,7 @@ describe("demo IMAP lifecycle and process-safe port ownership", () => {
     }
   });
 
-  test("reclaims a PID-reused record only when its process start identity differs", async () => {
+  test("ignores a PID-reused diagnostic while the kernel owner remains live", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-mail-demo-imap-reused-pid-"));
     const port = 6112;
     try {
@@ -246,8 +246,11 @@ describe("demo IMAP lifecycle and process-safe port ownership", () => {
         }),
         "utf8",
       );
-      const replacement = leaseDemoImapTestPort({ directory, preferredPort: port });
+      expect(() => leaseDemoImapTestPort({ directory, preferredPort: port })).toThrow(
+        "demo IMAP test port 6112 is leased",
+      );
       oldOwner.release();
+      const replacement = leaseDemoImapTestPort({ directory, preferredPort: port });
       replacement.release();
       expect(demoImapTestPortLeaseExists(port, directory)).toBe(false);
       expect(activeDemoImapTestPortLeases()).toBe(0);
