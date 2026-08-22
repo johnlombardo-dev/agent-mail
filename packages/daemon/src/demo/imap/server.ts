@@ -28,6 +28,15 @@ const CAPABILITIES =
 const FORBIDDEN_COMMANDS = new Set(["DELETE", "EXPUNGE", "UID EXPUNGE"]);
 const LOOPBACK_HOST = "127.0.0.1";
 
+export const DEMO_IMAP_ADMISSION_LIMITS = Object.freeze({
+  maxLineBytes: 16 * 1024,
+  maxLiteralBytes: 64 * 1024,
+  maxQueuedCommands: 16,
+  maxBufferedBytes: 96 * 1024,
+});
+
+const EMPTY_BUFFER = Buffer.alloc(0);
+
 type MutableMessage = {
   uid: number;
   flags: Set<string>;
@@ -49,17 +58,46 @@ type MutableMailbox = {
   messages: MutableMessage[];
 };
 
+type LiteralAdmissionState =
+  | Readonly<{ readonly kind: "none" }>
+  | {
+      kind: "discarding";
+      tag: string;
+      headerBytes: number;
+      remaining: number;
+      terminatorBytes: 0 | 1;
+    };
+
 type Session = {
   socket: Socket;
   state: DemoImapSessionState;
-  input: string;
+  input: Buffer;
+  inFlightCommands: number;
+  inFlightBytes: number;
+  admissionFailed: boolean;
+  literal: LiteralAdmissionState;
   closed: boolean;
 };
 
 type TimerEntry = Readonly<{
   readonly handle: ReturnType<typeof setTimeout>;
   readonly resolve: () => void;
+  readonly owner: Session | null;
 }>;
+
+type ServerLifecycleState =
+  | Readonly<{ readonly kind: "idle" }>
+  | Readonly<{ readonly kind: "starting"; readonly listener: Server }>
+  | Readonly<{ readonly kind: "listening"; readonly listener: Server }>
+  | Readonly<{ readonly kind: "closing"; readonly listener: Server | null }>
+  | Readonly<{ readonly kind: "stopped" }>;
+
+type ServerLifecycleEvent =
+  | Readonly<{ readonly kind: "start-requested"; readonly listener: Server }>
+  | Readonly<{ readonly kind: "listener-ready" }>
+  | Readonly<{ readonly kind: "close-requested" }>
+  | Readonly<{ readonly kind: "start-failed" }>
+  | Readonly<{ readonly kind: "cleanup-completed" }>;
 
 type ParsedCommand = Readonly<{
   readonly tag: string;
@@ -437,6 +475,65 @@ function selectedMailbox(
   return mailboxes.get(session.state.mailbox) ?? null;
 }
 
+function transitionServerLifecycle(
+  state: ServerLifecycleState,
+  event: ServerLifecycleEvent,
+): ServerLifecycleState {
+  switch (event.kind) {
+    case "start-requested":
+      if (state.kind !== "idle") throw new Error("demo IMAP server cannot start now");
+      return Object.freeze({ kind: "starting", listener: event.listener });
+    case "listener-ready":
+      if (state.kind !== "starting") throw new Error("demo IMAP listener is not starting");
+      return Object.freeze({ kind: "listening", listener: state.listener });
+    case "close-requested":
+      if (state.kind === "closing" || state.kind === "stopped") return state;
+      return Object.freeze({
+        kind: "closing",
+        listener: state.kind === "idle" ? null : state.listener,
+      });
+    case "start-failed":
+      if (state.kind !== "starting") throw new Error("demo IMAP listener did not fail to start");
+      return Object.freeze({ kind: "stopped" });
+    case "cleanup-completed":
+      if (state.kind !== "closing") throw new Error("demo IMAP server is not closing");
+      return Object.freeze({ kind: "stopped" });
+    default: {
+      const exhaustive: never = event;
+      return exhaustive;
+    }
+  }
+}
+
+function lifecycleListener(state: ServerLifecycleState): Server | null {
+  switch (state.kind) {
+    case "starting":
+    case "listening":
+      return state.listener;
+    case "closing":
+      return state.listener;
+    case "idle":
+    case "stopped":
+      return null;
+    default: {
+      const exhaustive: never = state;
+      return exhaustive;
+    }
+  }
+}
+
+function firstCommandTag(line: string): string {
+  return /^\S+/u.exec(line)?.[0] ?? "*";
+}
+
+function literalDeclaration(
+  line: string,
+): Readonly<{ readonly bytes: bigint; readonly nonSynchronizing: boolean }> | null {
+  const match = /\{(\d+)(\+)?\}$/u.exec(line.trimEnd());
+  if (match?.[1] === undefined) return null;
+  return Object.freeze({ bytes: BigInt(match[1]), nonSynchronizing: match[2] === "+" });
+}
+
 export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoImapServer {
   const host = LOOPBACK_HOST;
   const port = normalizePort(options.port);
@@ -465,19 +562,24 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
   const pendingTimers = new Set<TimerEntry>();
   const faults: DemoImapFault[] = [];
   let faultState: DemoImapFaultState = Object.freeze({ kind: "dormant" });
-  let server: Server | undefined;
-  let started = false;
-  let closed = false;
+  let lifecycle: ServerLifecycleState = Object.freeze({ kind: "idle" });
+  let closeRequested = false;
+  let startPromise: Promise<void> | undefined;
   let closePromise: Promise<void> | undefined;
+  let releasePromise: Promise<void> | undefined;
 
-  const delay = (milliseconds: number): Promise<void> =>
+  const delay = (milliseconds: number, owner: Session | null): Promise<void> =>
     new Promise((resolve) => {
       let entry: TimerEntry;
       const complete = (): void => {
         pendingTimers.delete(entry);
         resolve();
       };
-      entry = Object.freeze({ handle: setTimeout(complete, milliseconds), resolve: complete });
+      entry = Object.freeze({
+        handle: setTimeout(complete, milliseconds),
+        resolve: complete,
+        owner,
+      });
       pendingTimers.add(entry);
     });
 
@@ -486,21 +588,30 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     wire: string,
     throttle?: Extract<DemoImapFault, { kind: "throttle" }>,
   ): Promise<void> => {
-    if (session.closed || session.socket.destroyed) return;
+    if (session.closed || session.admissionFailed || session.socket.destroyed) return;
     if (throttle === undefined) {
       session.socket.write(wire);
       return;
     }
     for (let offset = 0; offset < wire.length; offset += throttle.chunkBytes) {
-      if (session.closed || session.socket.destroyed) return;
+      if (session.closed || session.admissionFailed || session.socket.destroyed) return;
       session.socket.write(wire.slice(offset, offset + throttle.chunkBytes));
-      if (offset + throttle.chunkBytes < wire.length) await delay(throttle.delayMilliseconds);
+      if (offset + throttle.chunkBytes < wire.length) {
+        await delay(throttle.delayMilliseconds, session);
+      }
     }
   };
 
   const closeSession = (session: Session): void => {
     if (session.closed) return;
     session.closed = true;
+    session.input = EMPTY_BUFFER;
+    session.literal = Object.freeze({ kind: "none" });
+    for (const entry of pendingTimers) {
+      if (entry.owner !== session) continue;
+      clearTimeout(entry.handle);
+      entry.resolve();
+    }
     session.state = transitionDemoImapSession(session.state, { kind: "connection-closed" });
     sessions.delete(session);
   };
@@ -712,7 +823,7 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     const fault = findFault(command);
     if (fault !== undefined) {
       faultState = beginDemoImapFault(scheduleDemoImapFault(fault), command);
-      if (fault.kind === "latency") await delay(fault.milliseconds);
+      if (fault.kind === "latency") await delay(fault.milliseconds, session);
       if (fault.kind === "disconnect" && fault.phase === "before-response") {
         faultState = completeDemoImapFault(faultState);
         session.socket.destroy();
@@ -774,7 +885,147 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     await processCommand(session, parsed);
   };
 
+  const rejectAdmission = (session: Session, reason: string): void => {
+    if (session.admissionFailed || session.closed) return;
+    session.admissionFailed = true;
+    session.input = EMPTY_BUFFER;
+    session.literal = Object.freeze({ kind: "none" });
+    session.socket.pause();
+    session.socket.write(`* BYE [LIMIT] ${reason}\r\n`);
+    session.socket.destroy();
+  };
+
+  const reserveOutstandingCommand = (session: Session, bytes: number): boolean => {
+    if (session.inFlightCommands >= DEMO_IMAP_ADMISSION_LIMITS.maxQueuedCommands) {
+      rejectAdmission(session, "Too many queued commands");
+      return false;
+    }
+    if (
+      session.input.length + session.inFlightBytes + bytes >
+      DEMO_IMAP_ADMISSION_LIMITS.maxBufferedBytes
+    ) {
+      rejectAdmission(session, "Buffered command bytes exceeded");
+      return false;
+    }
+    session.inFlightCommands += 1;
+    session.inFlightBytes += bytes;
+    return true;
+  };
+
+  const releaseOutstandingCommand = (session: Session, bytes: number): void => {
+    session.inFlightCommands = Math.max(0, session.inFlightCommands - 1);
+    session.inFlightBytes = Math.max(0, session.inFlightBytes - bytes);
+  };
+
+  const launchAdmittedLine = (session: Session, line: string, bytes: number): void => {
+    if (!reserveOutstandingCommand(session, bytes)) return;
+    void handleLine(session, line)
+      .catch(() => session.socket.destroy())
+      .finally(() => releaseOutstandingCommand(session, bytes));
+  };
+
+  const completeLiteral = (session: Session): void => {
+    const literal = session.literal;
+    if (literal.kind !== "discarding") return;
+    session.literal = Object.freeze({ kind: "none" });
+    void writeWire(
+      session,
+      `${literal.tag} BAD [CANNOT] Literal commands are unsupported\r\n`,
+    ).finally(() => releaseOutstandingCommand(session, literal.headerBytes));
+  };
+
+  const processAdmittedInput = (session: Session): void => {
+    while (!session.closed && !session.admissionFailed) {
+      if (session.literal.kind === "discarding") {
+        const literal = session.literal;
+        if (literal.remaining > 0) {
+          if (session.input.length === 0) return;
+          const consumed = Math.min(literal.remaining, session.input.length);
+          literal.remaining -= consumed;
+          session.input = session.input.subarray(consumed);
+          continue;
+        }
+        if (session.input.length === 0) return;
+        if (literal.terminatorBytes === 0) {
+          if (session.input[0] !== 13) {
+            rejectAdmission(session, "Literal terminator is invalid");
+            return;
+          }
+          literal.terminatorBytes = 1;
+          session.input = session.input.subarray(1);
+          continue;
+        }
+        if (session.input[0] !== 10) {
+          rejectAdmission(session, "Literal terminator is invalid");
+          return;
+        }
+        session.input = session.input.subarray(1);
+        completeLiteral(session);
+        continue;
+      }
+
+      const end = session.input.indexOf("\r\n");
+      if (end < 0) {
+        const permittedPartialTerminator =
+          session.input.length === DEMO_IMAP_ADMISSION_LIMITS.maxLineBytes + 1 &&
+          session.input.at(-1) === 13;
+        if (
+          session.input.length > DEMO_IMAP_ADMISSION_LIMITS.maxLineBytes &&
+          !permittedPartialTerminator
+        ) {
+          rejectAdmission(session, "Command line is too long");
+        }
+        return;
+      }
+      if (end > DEMO_IMAP_ADMISSION_LIMITS.maxLineBytes) {
+        rejectAdmission(session, "Command line is too long");
+        return;
+      }
+      const lineBuffer = session.input.subarray(0, end);
+      session.input = session.input.subarray(end + 2);
+      const line = lineBuffer.toString("utf8");
+      const declaration = literalDeclaration(line);
+      if (declaration === null) {
+        launchAdmittedLine(session, line, end);
+        continue;
+      }
+      if (declaration.bytes > BigInt(DEMO_IMAP_ADMISSION_LIMITS.maxLiteralBytes)) {
+        rejectAdmission(session, "Literal is too large");
+        return;
+      }
+      if (!reserveOutstandingCommand(session, end)) return;
+      session.literal = {
+        kind: "discarding",
+        tag: firstCommandTag(line),
+        headerBytes: end,
+        remaining: Number(declaration.bytes),
+        terminatorBytes: 0,
+      };
+      if (!declaration.nonSynchronizing) session.socket.write("+ literal accepted\r\n");
+    }
+  };
+
+  const admitBytes = (session: Session, chunk: Buffer): void => {
+    if (session.closed || session.admissionFailed) return;
+    if (
+      session.input.length + session.inFlightBytes + chunk.length >
+      DEMO_IMAP_ADMISSION_LIMITS.maxBufferedBytes
+    ) {
+      rejectAdmission(session, "Buffered command bytes exceeded");
+      return;
+    }
+    session.input =
+      session.input.length === 0
+        ? chunk
+        : Buffer.concat([session.input, chunk], session.input.length + chunk.length);
+    processAdmittedInput(session);
+  };
+
   const accept = (socket: Socket): void => {
+    if (lifecycle.kind !== "listening") {
+      socket.destroy();
+      return;
+    }
     const remoteAddress = socket.remoteAddress;
     if (remoteAddress !== "127.0.0.1" && remoteAddress !== "::ffff:127.0.0.1") {
       socket.destroy();
@@ -783,20 +1034,16 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     const session: Session = {
       socket,
       state: Object.freeze({ kind: "not-authenticated" }),
-      input: "",
+      input: EMPTY_BUFFER,
+      inFlightCommands: 0,
+      inFlightBytes: 0,
+      admissionFailed: false,
+      literal: Object.freeze({ kind: "none" }),
       closed: false,
     };
     sessions.add(session);
-    socket.setEncoding("utf8");
     socket.on("data", (chunk) => {
-      session.input += typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      while (true) {
-        const end = session.input.indexOf("\r\n");
-        if (end < 0) break;
-        const line = session.input.slice(0, end);
-        session.input = session.input.slice(end + 2);
-        void handleLine(session, line).catch(() => socket.destroy());
-      }
+      admitBytes(session, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8"));
     });
     socket.on("error", () => undefined);
     socket.on("close", () => {
@@ -806,45 +1053,120 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     socket.write(`* OK [CAPABILITY ${CAPABILITIES}] Agent Mail demo ready\r\n`);
   };
 
-  const start = async (): Promise<void> => {
-    if (closed) throw new Error("demo IMAP server is closed");
-    if (started) return;
-    server = createServer(accept);
-    server.on("error", () => undefined);
-    await new Promise<void>((resolve, reject) => {
-      const onError = (error: Error): void => {
-        server?.off("listening", onListening);
-        reject(error);
-      };
-      const onListening = (): void => {
-        server?.off("error", onError);
-        resolve();
-      };
-      server?.once("error", onError);
-      server?.once("listening", onListening);
-      server?.listen({ host, port, exclusive: true });
-    });
-    started = true;
+  const releasePort = (): Promise<void> => {
+    releasePromise ??= Promise.resolve().then(async () => options.releasePort?.());
+    return releasePromise;
   };
 
-  const close = async (): Promise<void> => {
-    closePromise ??= (async () => {
-      closed = true;
+  const closeListener = (listener: Server): Promise<void> => {
+    if (!listener.listening) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      listener.close((error?: Error) => {
+        if (error === undefined) resolve();
+        else reject(error);
+      });
+    });
+  };
+
+  const cleanupOwnedResources = async (listener: Server | null): Promise<void> => {
+    const errors: unknown[] = [];
+    try {
       for (const entry of pendingTimers) {
         clearTimeout(entry.handle);
         entry.resolve();
       }
       for (const session of sessions) session.socket.destroy();
-      if (server !== undefined && server.listening) {
-        await new Promise<void>((resolve) => server?.close(() => resolve()));
+      for (const session of sessions) {
+        closeSession(session);
+        session.socket.removeAllListeners();
       }
-      for (const session of sessions) closeSession(session);
       faults.splice(0);
-      await options.releasePort?.();
-      server?.removeAllListeners();
-      started = false;
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+    if (listener !== null) {
+      try {
+        await closeListener(listener);
+      } catch (error: unknown) {
+        errors.push(error);
+      } finally {
+        listener.removeAllListeners();
+      }
+    }
+    if (lifecycle.kind === "closing") {
+      lifecycle = transitionServerLifecycle(lifecycle, { kind: "cleanup-completed" });
+    } else if (lifecycle.kind === "starting") {
+      lifecycle = transitionServerLifecycle(lifecycle, { kind: "start-failed" });
+    }
+    try {
+      await releasePort();
+    } catch (error: unknown) {
+      errors.push(error);
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length > 1) throw new AggregateError(errors, "demo IMAP cleanup failed");
+  };
+
+  const start = (): Promise<void> => {
+    if (closeRequested || lifecycle.kind === "closing" || lifecycle.kind === "stopped") {
+      return Promise.reject(new Error("demo IMAP server is closed"));
+    }
+    if (lifecycle.kind === "listening") return Promise.resolve();
+    if (lifecycle.kind === "starting") {
+      if (startPromise === undefined) {
+        return Promise.reject(new Error("demo IMAP start serialization failed"));
+      }
+      return startPromise;
+    }
+
+    const listener = createServer(accept);
+    lifecycle = transitionServerLifecycle(lifecycle, { kind: "start-requested", listener });
+    startPromise = (async () => {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const onError = (error: Error): void => {
+            listener.off("listening", onListening);
+            reject(error);
+          };
+          const onListening = (): void => {
+            listener.off("error", onError);
+            resolve();
+          };
+          listener.once("error", onError);
+          listener.once("listening", onListening);
+          listener.listen({ host, port, exclusive: true });
+        });
+        lifecycle = transitionServerLifecycle(lifecycle, { kind: "listener-ready" });
+        listener.on("error", () => {
+          void close().catch(() => undefined);
+        });
+      } catch (error: unknown) {
+        try {
+          await cleanupOwnedResources(listener);
+        } catch (cleanupError: unknown) {
+          throw new AggregateError([error, cleanupError], "demo IMAP start rollback failed");
+        }
+        throw error;
+      }
     })();
-    await closePromise;
+    return startPromise;
+  };
+
+  const close = (): Promise<void> => {
+    closeRequested = true;
+    closePromise ??= (async () => {
+      if (startPromise !== undefined) {
+        try {
+          await startPromise;
+        } catch {
+          return;
+        }
+      }
+      const listener = lifecycleListener(lifecycle);
+      lifecycle = transitionServerLifecycle(lifecycle, { kind: "close-requested" });
+      await cleanupOwnedResources(listener);
+    })();
+    return closePromise;
   };
 
   const scheduleFault = (fault: DemoImapFault): void => {
@@ -950,14 +1272,15 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
       ),
     });
 
-  const snapshot = (): import("./types").DemoImapServerSnapshot =>
-    Object.freeze({
-      listening: started && server?.listening === true,
+  const snapshot = (): import("./types").DemoImapServerSnapshot => {
+    const listener = lifecycleListener(lifecycle);
+    return Object.freeze({
+      listening: lifecycle.kind === "listening" && listener?.listening === true,
       port,
       activeSessions: sessions.size,
       activeSockets: [...sessions].filter((session) => !session.socket.destroyed).length,
       activeListeners:
-        (server?.eventNames().length ?? 0) +
+        (listener?.eventNames().length ?? 0) +
         [...sessions].reduce((sum, session) => sum + session.socket.eventNames().length, 0),
       pendingTimers: pendingTimers.size,
       childProcesses: 0,
@@ -967,6 +1290,7 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
       faultState,
       mailboxes: Object.freeze([...mailboxes.values()].map(mailboxSnapshot)),
     });
+  };
 
   return Object.freeze({ host, port, start, close, scheduleFault, applyMailboxEvent, snapshot });
 }
