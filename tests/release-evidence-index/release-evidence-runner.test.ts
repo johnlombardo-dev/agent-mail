@@ -184,13 +184,20 @@ describe("release evidence executable runner", () => {
     }
   });
 
-  test("requires nonempty runner source bindings and frozen-offline mode", () => {
+  test("requires nonempty runner source bindings", () => {
     const fixture = disposableRepo();
     try {
       const missingSources = structuredClone(fixture.manifest);
       delete missingSources.runner.sources;
       expect(() => validateManifest(missingSources, fixture.root)).toThrow(/source bindings are missing/u);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
 
+  test("requires bun-frozen-offline runner dependency mode", () => {
+    const fixture = disposableRepo();
+    try {
       const missingMode = structuredClone(fixture.manifest);
       delete missingMode.runner.dependencyMode;
       expect(() => validateManifest(missingMode, fixture.root)).toThrow(/dependency mode/u);
