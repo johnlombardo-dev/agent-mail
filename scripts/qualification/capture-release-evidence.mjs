@@ -508,6 +508,63 @@ function assertAbsent(path, label) {
   fail(`${label} already exists before execution (${stat.isSymbolicLink() ? "symlink" : "path"})`);
 }
 
+export function cleanGeneratedStaging(path) {
+  for (const suffix of ["", ".inventory.json", "-wal", "-shm"]) {
+    const candidate = `${path}${suffix}`;
+    if (existsSync(candidate)) rmSync(candidate, { force: true });
+  }
+}
+
+export function retainGeneratedArtifact(outputRoot, fixture, sourcePath, runId) {
+  const source = fileDigest(sourcePath, "generated SQLite artifact");
+  const sourceInventoryPath = `${sourcePath}.inventory.json`;
+  const sourceInventory = fileDigest(sourceInventoryPath, "generated inventory");
+  const inventory = JSON.parse(readFileSync(sourceInventoryPath, "utf8"));
+  assert(
+    typeof inventory.logicalChecksum === "string" &&
+      /^[0-9a-f]{64}$/u.test(inventory.logicalChecksum),
+    "generated inventory logical checksum is missing",
+  );
+  const retainedPath = join(
+    outputRoot,
+    runId,
+    "retained",
+    `${fixture.id ?? "generated-artifact"}.sqlite`,
+  );
+  const retainedInventoryPath = `${retainedPath}.inventory.json`;
+  mkdirSync(dirname(retainedPath), { recursive: true });
+  assertAbsent(retainedPath, "retained generated SQLite artifact");
+  assertAbsent(retainedInventoryPath, "retained generated inventory");
+  cpSync(sourcePath, retainedPath);
+  cpSync(sourceInventoryPath, retainedInventoryPath);
+  const retained = fileDigest(retainedPath, "retained generated SQLite artifact");
+  const retainedInventory = fileDigest(retainedInventoryPath, "retained generated inventory");
+  assert(
+    retained.sha256 === source.sha256 && retained.bytes === source.bytes,
+    "retained generated SQLite artifact drifted",
+  );
+  assert(
+    retainedInventory.sha256 === sourceInventory.sha256 &&
+      retainedInventory.bytes === sourceInventory.bytes,
+    "retained generated inventory drifted",
+  );
+  return {
+    path: retainedPath,
+    relativePath: ownerRelativePath(outputRoot, retainedPath, "retained generated artifact"),
+    inventoryPath: retainedInventoryPath,
+    inventoryRelativePath: ownerRelativePath(
+      outputRoot,
+      retainedInventoryPath,
+      "retained generated inventory",
+    ),
+    artifactSha256: retained.sha256,
+    artifactBytes: retained.bytes,
+    inventorySha256: retainedInventory.sha256,
+    inventoryBytes: retainedInventory.bytes,
+    logicalChecksum: inventory.logicalChecksum,
+  };
+}
+
 async function validateGeneratedSearchArtifact(path, checkout, expectedInventory) {
   const physical = fileDigest(path, "search artifact");
   const inventoryPath = `${path}.inventory.json`;
@@ -554,7 +611,7 @@ async function validateGeneratedSearchArtifact(path, checkout, expectedInventory
   };
 }
 
-function generationReceipt(receiptPath, outputRoot, fixture, candidateCommit) {
+export function generationReceipt(receiptPath, outputRoot, fixture, candidateCommit) {
   assert(receiptPath, `${fixture.id} requires a prior generation receipt`);
   const receiptBytes = readFileSync(receiptPath);
   const receipt = JSON.parse(receiptBytes.toString("utf8"));
@@ -590,14 +647,17 @@ function generationReceipt(receiptPath, outputRoot, fixture, candidateCommit) {
     generatedInventory &&
       /^[0-9a-f]{64}$/u.test(generatedInventory.inventorySha256 ?? "") &&
       Number.isSafeInteger(generatedInventory.inventoryBytes) &&
-      generatedInventory.inventoryBytes > 0,
+      generatedInventory.inventoryBytes > 0 &&
+      /^[0-9a-f]{64}$/u.test(generatedInventory.logicalChecksum ?? ""),
     "generation receipt inventory binding is missing",
   );
   const inventoryPath = `${sourcePath}.inventory.json`;
   const inventory = fileDigest(inventoryPath, "generation inventory");
+  const inventoryValue = JSON.parse(readFileSync(inventoryPath, "utf8"));
   assert(
     inventory.sha256 === generatedInventory.inventorySha256 &&
-      inventory.bytes === generatedInventory.inventoryBytes,
+      inventory.bytes === generatedInventory.inventoryBytes &&
+      inventoryValue.logicalChecksum === generatedInventory.logicalChecksum,
     "generation inventory drifted",
   );
   const receiptAbsolute = resolve(receiptPath);
@@ -613,6 +673,7 @@ function generationReceipt(receiptPath, outputRoot, fixture, candidateCommit) {
     inventoryRelativePath: ownerRelativePath(outputRoot, inventoryPath, "generation inventory"),
     inventorySha256: inventory.sha256,
     inventoryBytes: inventory.bytes,
+    logicalChecksum: generatedInventory.logicalChecksum,
   };
 }
 
@@ -821,11 +882,18 @@ function materializeFixture(fixture, destination, runId, priorGeneration) {
   if (!fixture) return null;
   const bytes = fixture.observationAssertionId ? null : fixtureBytes(fixture);
   if (fixture.kind === "generated-stream" && fixture.observationAssertionId) return { ...fixture };
-  const path = join(destination, runId, "fixtures", `${fixture.id ?? "fixture"}.bin`);
+  const path = join(
+    destination,
+    runId,
+    fixture.kind === "generated-file" && !fixture.generationStepId ? "staging" : "fixtures",
+    `${fixture.id ?? "fixture"}.bin`,
+  );
   if (fixture.kind === "generated-file") {
     if (fixture.generationStepId) {
       assert(priorGeneration, `${fixture.id} requires a prior generation receipt`);
       mkdirSync(dirname(path), { recursive: true });
+      assertAbsent(path, "measurement fixture");
+      assertAbsent(`${path}.inventory.json`, "measurement inventory");
       cpSync(priorGeneration.artifactPath, path);
       cpSync(priorGeneration.inventoryPath, `${path}.inventory.json`);
       const copied = fileDigest(path, "measurement fixture");
@@ -848,6 +916,7 @@ function materializeFixture(fixture, destination, runId, priorGeneration) {
           inventoryPath: priorGeneration.inventoryRelativePath,
           inventorySha256: priorGeneration.inventorySha256,
           inventoryBytes: priorGeneration.inventoryBytes,
+          logicalChecksum: priorGeneration.logicalChecksum,
         },
         materialized: {
           path: relative(destination, path),
@@ -1144,8 +1213,8 @@ export async function capture({
           candidateCommit,
         )
       : undefined;
-    const fixture = materializeFixture(step.fixture, destination, runId, priorGeneration);
-    const fixturePath = fixture?.materialized?.path
+    let fixture = materializeFixture(step.fixture, destination, runId, priorGeneration);
+    let fixturePath = fixture?.materialized?.path
       ? resolve(destination, fixture.materialized.path)
       : join(executionRoot, "generated-fixture");
     if (fixture?.materialized?.owner === "generator")
@@ -1195,6 +1264,33 @@ export async function capture({
     );
     const durationNs = processResult.completed - processResult.started;
     const assertions = evaluateAssertions(step, checkout, processResult, eventsValue);
+    const result =
+      processResult.timedOut || processResult.exitCode === null
+        ? "blocked"
+        : processResult.exitCode === 0 && assertions.every((assertion) => assertion.pass)
+          ? "pass"
+          : "fail";
+    if (fixture?.materialized?.owner === "generator" && result === "pass") {
+      const retained = retainGeneratedArtifact(destination, fixture, fixturePath, runId);
+      cleanGeneratedStaging(fixturePath);
+      fixture = {
+        ...fixture,
+        materialized: {
+          ...fixture.materialized,
+          path: retained.relativePath,
+          retainedFrom: fixture.materialized.path,
+          presentAfterRun: true,
+          sha256: retained.artifactSha256,
+          bytes: retained.artifactBytes,
+          integrity: {
+            inventorySha256: retained.inventorySha256,
+            inventoryBytes: retained.inventoryBytes,
+            logicalChecksum: retained.logicalChecksum,
+          },
+        },
+      };
+      fixturePath = retained.path;
+    }
     const observedFixture = fixtureFromObservation(fixture, assertions);
     const retainedFixture = await finalizeFixture(
       observedFixture,
@@ -1203,18 +1299,27 @@ export async function capture({
       checkout,
       integrityBefore,
     );
-    const result =
-      processResult.timedOut || processResult.exitCode === null
-        ? "blocked"
-        : processResult.exitCode === 0 && assertions.every((assertion) => assertion.pass)
-          ? "pass"
-          : "fail";
     assert(
       JSON.stringify(repositorySnapshot(checkout)) === JSON.stringify(beforeRun),
       "candidate checkout changed during execution",
     );
     assert(descendants.length === 0, "runner left descendant processes behind");
-    const cleanup = { attempted: true, completed: true, descendants: [], checkoutRemoved: true };
+    const generatedStaging = fixture?.materialized?.retainedFrom
+      ? {
+          path: fixture.materialized.retainedFrom,
+          removed: !existsSync(resolve(destination, fixture.materialized.retainedFrom)),
+          retainedPath: fixture.materialized.path,
+        }
+      : undefined;
+    if (generatedStaging)
+      assert(generatedStaging.removed, "generated staging artifact was not cleaned");
+    const cleanup = {
+      attempted: true,
+      completed: true,
+      descendants: [],
+      checkoutRemoved: true,
+      generatedStaging,
+    };
     const receipt = {
       format: receiptFormat,
       runId,

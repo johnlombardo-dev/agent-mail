@@ -1,9 +1,24 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
-import { capture, sha256, validateManifest } from "../../scripts/qualification/capture-release-evidence.mjs";
+import {
+  capture,
+  cleanGeneratedStaging,
+  generationReceipt,
+  retainGeneratedArtifact,
+  sha256,
+  validateManifest,
+} from "../../scripts/qualification/capture-release-evidence.mjs";
 import { compareReceipts } from "../../scripts/qualification/replay-release-evidence.mjs";
 
 function git(root: string, args: string[]) {
@@ -300,6 +315,99 @@ describe("release evidence executable runner", () => {
     } finally {
       rmSync(output, { recursive: true, force: true });
       rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("retains closed FTS artifacts and rejects lifecycle substitutions", () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-mail-runner-retention-"));
+    try {
+      const output = join(root, "output");
+      const runId = "run";
+      const staging = join(output, runId, "staging", "fts.bin");
+      const inventory = { logicalChecksum: "a".repeat(64) };
+      mkdirSync(join(output, runId, "staging"), { recursive: true });
+      writeFileSync(staging, "closed sqlite\n");
+      writeFileSync(`${staging}.inventory.json`, `${JSON.stringify(inventory)}\n`);
+      writeFileSync(`${staging}-wal`, "stale wal\n");
+      writeFileSync(`${staging}-shm`, "stale shm\n");
+
+      const retained = retainGeneratedArtifact(output, { id: "fts" }, staging, runId);
+      expect(retained.artifactBytes).toBe("closed sqlite\n".length);
+      expect(retained.logicalChecksum).toBe(inventory.logicalChecksum);
+      cleanGeneratedStaging(staging);
+      expect(existsSync(staging)).toBe(false);
+      expect(existsSync(`${staging}-wal`)).toBe(false);
+      expect(existsSync(retained.path)).toBe(true);
+
+      const missing = join(output, "missing", "fts.bin");
+      mkdirSync(join(output, "missing"), { recursive: true });
+      writeFileSync(`${missing}.inventory.json`, `${JSON.stringify(inventory)}\n`);
+      expect(() => retainGeneratedArtifact(output, { id: "missing" }, missing, "missing")).toThrow(
+        /ENOENT/u,
+      );
+
+      const symlinkTarget = join(root, "target.sqlite");
+      const symlinkPath = join(output, "symlink.sqlite");
+      writeFileSync(symlinkTarget, "target\n");
+      symlinkSync(symlinkTarget, symlinkPath);
+      writeFileSync(`${symlinkPath}.inventory.json`, `${JSON.stringify(inventory)}\n`);
+      expect(() => retainGeneratedArtifact(output, { id: "symlink" }, symlinkPath, "symlink")).toThrow(
+        /regular non-symlink/u,
+      );
+
+      const occupied = join(output, "occupied", "staging", "fts.bin");
+      const occupiedRetained = join(output, "occupied", "retained", "occupied.sqlite");
+      mkdirSync(join(output, "occupied", "staging"), { recursive: true });
+      mkdirSync(join(output, "occupied", "retained"), { recursive: true });
+      writeFileSync(occupied, "closed sqlite\n");
+      writeFileSync(`${occupied}.inventory.json`, `${JSON.stringify(inventory)}\n`);
+      writeFileSync(occupiedRetained, "attacker\n");
+      expect(() => retainGeneratedArtifact(output, { id: "occupied" }, occupied, "occupied")).toThrow(
+        /already exists/u,
+      );
+
+      const receiptOutput = join(root, "receipt-output");
+      const receiptRun = "receipt-run";
+      const receiptArtifact = join(receiptOutput, receiptRun, "retained", "fts.sqlite");
+      const receiptInventory = `${receiptArtifact}.inventory.json`;
+      const artifactBytes = Buffer.from("receipt sqlite\n");
+      const inventoryBytes = Buffer.from(`${JSON.stringify(inventory)}\n`);
+      mkdirSync(join(receiptOutput, receiptRun, "retained"), { recursive: true });
+      writeFileSync(receiptArtifact, artifactBytes);
+      writeFileSync(receiptInventory, inventoryBytes);
+      const receiptPath = join(root, "generation.receipt.json");
+      writeFileSync(
+        receiptPath,
+        `${JSON.stringify({
+          format: "agent-mail.executable-receipt/v2",
+          result: "pass",
+          manifestStepId: "generation",
+          candidate: { commit: "candidate" },
+          fixture: {
+            materialized: {
+              owner: "generator",
+              presentAfterRun: true,
+              path: `${receiptRun}/retained/fts.sqlite`,
+              sha256: sha256(artifactBytes),
+              bytes: artifactBytes.length,
+              integrity: {
+                inventorySha256: sha256(inventoryBytes),
+                inventoryBytes: inventoryBytes.length,
+                logicalChecksum: inventory.logicalChecksum,
+              },
+            },
+          },
+        })}\n`,
+      );
+      expect(
+        generationReceipt(receiptPath, receiptOutput, { generationStepId: "generation" }, "candidate"),
+      ).toMatchObject({ artifactSha256: sha256(artifactBytes), logicalChecksum: inventory.logicalChecksum });
+      writeFileSync(receiptArtifact, "substituted\n");
+      expect(() => generationReceipt(receiptPath, receiptOutput, { generationStepId: "generation" }, "candidate")).toThrow(
+        /artifact drifted/u,
+      );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });
