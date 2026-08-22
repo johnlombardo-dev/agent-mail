@@ -89,14 +89,14 @@
       {
         "role": "checker",
         "path": "docs/architecture/release-evidence-index-check.v1.mjs",
-        "gitBlob": "fbd4974f90dcf6e92a6aa58d6f5e22ee048029ef",
-        "sha256": "461022b8071d19596808e8342852de68b6fee336def12044227afdcd19bba27a"
+        "gitBlob": "948e6a35994fc0cfd130470c7d1baebe6cff4ea0",
+        "sha256": "7d7cfeeca24e56a685a50c8d12c35a4013589237c10912134de6ab0a1b88f286"
       },
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "7ff680568a8234b7df8cb9fe71fbb009412fd9ab",
-        "sha256": "c7f6b6269973db00546b2e7df80b789d51945cdfa0d4ec4ffdc0ed0ff3a942fc"
+        "gitBlob": "f8ea41cea840c6e94073cb1992668efd7121df14",
+        "sha256": "028f6a27918f2a8ae2c05beae77cd2fa75752d781e56dff652c892850cf5743e"
       },
       {
         "role": "replay-runner",
