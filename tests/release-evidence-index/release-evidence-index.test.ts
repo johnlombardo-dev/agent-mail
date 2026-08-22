@@ -46,8 +46,10 @@ describe("release qualification evidence index", () => {
     expect(() => validateIndex(legacy)).toThrow(/legacy v1 records are inactive/u);
   });
 
-  test("rejects incomplete #184 whole-record dispositions", async () => {
+  test("rejects incomplete #184 whole-record dispositions", { timeout: 30_000 }, async () => {
     const index = await Bun.file("docs/architecture/release-evidence-index.v1.json").json();
+    const head = Bun.spawnSync(["git", "rev-parse", "HEAD"]).stdout.toString().trim();
+    const tree = Bun.spawnSync(["git", "rev-parse", "HEAD^{tree}"]).stdout.toString().trim();
     const attacks = [
       ["missing target identity", (record: Record<string, unknown>) => delete record.targetGateId],
       ["null target digest", (record: Record<string, unknown>) => (record.targetRecordDigest = null)],
@@ -71,12 +73,19 @@ describe("release qualification evidence index", () => {
           targetRecordDigest: "a".repeat(64),
           targetOwnerIssueId: 176,
           targetGateId: "capacity",
-          targetCandidateCommit: "a".repeat(40),
-          targetCandidateTree: "b".repeat(40),
-          targetEvidenceCommit: "c".repeat(40),
+          targetCandidateCommit: head,
+          targetCandidateTree: tree,
+          targetEvidenceCommit: head,
           reasonCode: "review-revocation",
           result: "invalidated",
           observedOutcome: { status: "invalidated" },
+          candidateCommit: head,
+          candidateTree: tree,
+          evidenceCommit: head,
+          reviewArtifact: {
+            path: "docs/qualification/evidence/issue-184/disposition-review.json",
+            sha256: "0".repeat(64),
+          },
         },
       ];
       mutate(candidate.resultRecords[0]);
