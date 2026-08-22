@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { createServer as createNetServer, type Server as NetServer } from "node:net";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
   activeDemoImapTestPortLeases,
   createDemoImapServer,
+  DemoImapReleaseObserverError,
   demoImapTestPortLeaseExists,
   leaseDemoImapTestPort,
   type DemoImapTestPort,
@@ -119,6 +120,49 @@ describe("demo IMAP lifecycle and process-safe port ownership", () => {
     zeroResources(rebound);
   });
 
+  test("separates failed-bind cleanup truth from a retryable release observer", async () => {
+    const lease = leaseDemoImapTestPort();
+    const occupied = await bindRawServer(lease.port);
+    let releaseCalls = 0;
+    const server = createDemoImapServer({
+      port: lease.port,
+      releasePort: () => {
+        releaseCalls += 1;
+        if (releaseCalls === 1) throw new Error("attacker-controlled observer detail");
+        lease.release();
+      },
+    });
+    try {
+      await expect(server.start()).rejects.toMatchObject({
+        errors: expect.arrayContaining([expect.any(DemoImapReleaseObserverError)]),
+      });
+      expect(releaseCalls).toBe(1);
+      expect(server.snapshot()).toMatchObject({
+        listening: false,
+        activeSessions: 0,
+        activeSockets: 0,
+        activeListeners: 0,
+        pendingTimers: 0,
+        activeTestLeases: 1,
+      });
+      await server.close();
+      expect(releaseCalls).toBe(2);
+      zeroResources(server);
+    } finally {
+      await closeRawServer(occupied);
+      lease.release();
+    }
+
+    const reboundLease = leaseDemoImapTestPort({ preferredPort: lease.port });
+    const rebound = createDemoImapServer({
+      port: reboundLease.port,
+      releasePort: reboundLease.release,
+    });
+    await rebound.start();
+    await rebound.close();
+    zeroResources(rebound);
+  });
+
   test("rejects a live cross-process contender and recovers its killed owner", async () => {
     const directory = await mkdtemp(join(tmpdir(), "agent-mail-demo-imap-live-lease-"));
     const port = 6113;
@@ -164,6 +208,8 @@ describe("demo IMAP lifecycle and process-safe port ownership", () => {
       expect(stderr).toBe("");
       expect(stdout).toContain('"kind":"acquired"');
       expect(demoImapTestPortLeaseExists(port, directory)).toBe(true);
+      const durableRecord = await lstat(join(directory, `${port}.json`));
+      expect(durableRecord.mode & 0o777).toBe(0o600);
       const recovered = leaseDemoImapTestPort({ directory, preferredPort: port });
       recovered.release();
       expect(demoImapTestPortLeaseExists(port, directory)).toBe(false);
@@ -183,9 +229,21 @@ describe("demo IMAP lifecycle and process-safe port ownership", () => {
       if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
         throw new Error("lease record is not an object");
       }
+      const processStartIdentity = Reflect.get(parsed, "processStartIdentity");
+      if (typeof processStartIdentity !== "string") {
+        throw new Error("lease record lacks process identity");
+      }
+      const identityMatch = /^(\d+):([0-9]{6})$/u.exec(processStartIdentity);
+      if (identityMatch?.[1] === undefined || identityMatch[2] === undefined) {
+        throw new Error("lease record identity is not exact");
+      }
+      const reusedMicroseconds = (Number(identityMatch[2]) + 1) % 1_000_000;
       await writeFile(
         path,
-        JSON.stringify({ ...parsed, processStartIdentity: "darwin:simulated-reused-pid" }),
+        JSON.stringify({
+          ...parsed,
+          processStartIdentity: `${identityMatch[1]}:${String(reusedMicroseconds).padStart(6, "0")}`,
+        }),
         "utf8",
       );
       const replacement = leaseDemoImapTestPort({ directory, preferredPort: port });
@@ -195,6 +253,33 @@ describe("demo IMAP lifecycle and process-safe port ownership", () => {
       expect(activeDemoImapTestPortLeases()).toBe(0);
     } finally {
       await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("fails closed for symlinked, shared-mode, and foreign-owned lease directories", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "agent-mail-demo-imap-hostile-lease-"));
+    const target = join(parent, "target");
+    const linked = join(parent, "linked");
+    const permissive = join(parent, "permissive");
+    try {
+      await mkdir(target, { mode: 0o700 });
+      await symlink(target, linked);
+      expect(() => leaseDemoImapTestPort({ directory: linked, preferredPort: 6112 })).toThrow(
+        "demo IMAP lease directory is not private",
+      );
+
+      await mkdir(permissive, { mode: 0o700 });
+      await chmod(permissive, 0o755);
+      expect(() =>
+        leaseDemoImapTestPort({ directory: permissive, preferredPort: 6112 }),
+      ).toThrow("demo IMAP lease directory is not private");
+
+      expect(() =>
+        leaseDemoImapTestPort({ directory: "/private/tmp", preferredPort: 6112 }),
+      ).toThrow("demo IMAP lease directory is not private");
+      expect(activeDemoImapTestPortLeases()).toBe(0);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
     }
   });
 });

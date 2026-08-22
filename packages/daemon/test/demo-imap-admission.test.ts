@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { createConnection, type Socket } from "node:net";
+import { join } from "node:path";
 import {
   createDemoImapServer,
   DEMO_IMAP_ADMISSION_LIMITS,
   leaseDemoImapTestPort,
+  type DemoImapMailboxInput,
 } from "../src/demo/imap";
+
+const commandProfileChild = join(import.meta.dir, "helpers/demo-imap-command-profile-child.ts");
 
 type WireClient = Readonly<{
   readonly socket: Socket;
@@ -261,5 +265,170 @@ describe("demo IMAP bounded byte admission", () => {
       pendingTimers: 0,
       activeTestLeases: 0,
     });
+  });
+
+  test("caps global sessions before allocation and closes every admitted session", async () => {
+    const { server } = await createRunningServer();
+    const clients: WireClient[] = [];
+    let excess: Socket | null = null;
+    let excessClosed = false;
+    try {
+      for (let index = 0; index < DEMO_IMAP_ADMISSION_LIMITS.maxSessions; index += 1) {
+        clients.push(await connectClient(server));
+      }
+      excess = createConnection({ host: server.host, port: server.port });
+      excess.on("error", () => undefined);
+      excess.on("close", () => {
+        excessClosed = true;
+      });
+      await waitFor(() => excessClosed, "session ceiling did not reject the excess connection");
+      expect(server.snapshot().activeSessions).toBe(DEMO_IMAP_ADMISSION_LIMITS.maxSessions);
+    } finally {
+      excess?.destroy();
+      for (const client of clients) client.socket.destroy();
+      await server.close();
+    }
+    expect(server.snapshot()).toMatchObject({
+      activeSessions: 0,
+      activeSockets: 0,
+      activeListeners: 0,
+      pendingTimers: 0,
+      activeTestLeases: 0,
+    });
+  });
+
+  test("enforces fixed pre-auth and non-resetting partial-frame deadlines", async () => {
+    const { server } = await createRunningServer();
+    const unauthenticated = await connectClient(server);
+    try {
+      await waitFor(
+        unauthenticated.closed,
+        "pre-authentication deadline left a slow client open",
+        DEMO_IMAP_ADMISSION_LIMITS.preAuthDeadlineMilliseconds + 1_000,
+      );
+      await waitFor(() => server.snapshot().pendingTimers === 0, "pre-auth timer survived close");
+
+      const partial = await connectClient(server);
+      try {
+        partial.socket.write('A1 LOGIN "demo-user" "demo-pass"\r\n');
+        await waitFor(
+          () => partial.transcript().includes("A1 OK"),
+          "deadline proof login did not complete",
+        );
+        partial.reset();
+        partial.socket.write("P");
+        await Bun.sleep(100);
+        partial.socket.write("1");
+        await Bun.sleep(100);
+        partial.socket.write(" ");
+        await waitFor(
+          partial.closed,
+          "partial-frame deadline was reset by slowloris bytes",
+          DEMO_IMAP_ADMISSION_LIMITS.partialFrameDeadlineMilliseconds + 500,
+        );
+      } finally {
+        partial.socket.destroy();
+      }
+    } finally {
+      unauthenticated.socket.destroy();
+      await server.close();
+    }
+    expect(server.snapshot()).toMatchObject({
+      activeSessions: 0,
+      activeSockets: 0,
+      activeListeners: 0,
+      pendingTimers: 0,
+      activeTestLeases: 0,
+    });
+  });
+
+  test("cancels a blocked writer within the fixed output budget", async () => {
+    const lease = leaseDemoImapTestPort();
+    const inbox: DemoImapMailboxInput = Object.freeze({
+      path: "INBOX",
+      selectable: true,
+      uidValidity: Object.freeze({ kind: "known", value: 1 }),
+      uidNext: Object.freeze({ kind: "known", value: 2 }),
+      highestModseq: Object.freeze({ kind: "known", value: 1n }),
+      messages: Object.freeze([
+        Object.freeze({
+          uid: 1,
+          flags: Object.freeze([]),
+          modseq: 1n,
+          internalDate: "2026-08-17T12:00:00.000Z",
+          subject: "Backpressure proof",
+          from: "sender@example.test",
+          to: "person@example.test",
+          raw: `Subject: Backpressure proof\r\n\r\n${"x".repeat(48 * 1024)}`,
+        }),
+      ]),
+    });
+    const server = createDemoImapServer({
+      port: lease.port,
+      releasePort: lease.release,
+      mailboxes: Object.freeze([inbox]),
+    });
+    await server.start();
+    const client = await connectClient(server);
+    try {
+      client.socket.write('A1 LOGIN "demo-user" "demo-pass"\r\nA2 SELECT "INBOX"\r\n');
+      await waitFor(
+        () => client.transcript().includes("A2 OK [READ-WRITE]"),
+        "backpressure proof setup stalled",
+      );
+      client.reset();
+      client.socket.pause();
+      client.socket.write(
+        Array.from(
+          { length: DEMO_IMAP_ADMISSION_LIMITS.maxQueuedCommands },
+          (_, index) => `F${index} UID FETCH 1 (BODY.PEEK[])\r\n`,
+        ).join(""),
+      );
+      await waitFor(
+        () => server.snapshot().activeSessions === 0,
+        "blocked writer exceeded its cancellation deadline",
+        2_000,
+      );
+      await waitFor(() => server.snapshot().pendingTimers === 0, "blocked writer retained a timer");
+    } finally {
+      client.socket.destroy();
+      await server.close();
+    }
+    expect(server.snapshot()).toMatchObject({
+      activeSessions: 0,
+      activeSockets: 0,
+      activeListeners: 0,
+      pendingTimers: 0,
+      activeTestLeases: 0,
+    });
+  });
+
+  test("bounds 6000-command diagnostics and RSS in an isolated process", async () => {
+    const child = Bun.spawn([process.execPath, commandProfileChild], {
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      child.exited,
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    expect(exitCode).toBe(0);
+    expect(stderr).toBe("");
+    const profile: unknown = JSON.parse(stdout);
+    expect(profile).toMatchObject({
+      kind: "profile",
+      responses: 6_000,
+      retainedCommands: DEMO_IMAP_ADMISSION_LIMITS.maxCommandHistory,
+      activeSessions: 0,
+      activeSockets: 0,
+      activeListeners: 0,
+      pendingTimers: 0,
+      activeTestLeases: 0,
+    });
+    if (typeof profile !== "object" || profile === null || Array.isArray(profile)) {
+      throw new Error("command profile result is not an object");
+    }
+    expect(Reflect.get(profile, "rssGrowthBytes")).toBeLessThan(64 * 1024 * 1024);
   });
 });

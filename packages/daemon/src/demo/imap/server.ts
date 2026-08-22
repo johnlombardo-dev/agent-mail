@@ -33,9 +33,51 @@ export const DEMO_IMAP_ADMISSION_LIMITS = Object.freeze({
   maxLiteralBytes: 64 * 1024,
   maxQueuedCommands: 16,
   maxBufferedBytes: 96 * 1024,
+  maxSessions: 8,
+  preAuthDeadlineMilliseconds: 1_000,
+  partialFrameDeadlineMilliseconds: 250,
+  maxCommandHistory: 128,
+  maxForbiddenCommandHistory: 32,
+  maxPendingWriteBytes: 64 * 1024,
+  outputDrainDeadlineMilliseconds: 250,
 });
 
 const EMPTY_BUFFER = Buffer.alloc(0);
+
+export class DemoImapReleaseObserverError extends Error {
+  constructor() {
+    super("demo IMAP port release observer failed");
+    this.name = "DemoImapReleaseObserverError";
+  }
+}
+
+type FixedRing<T> = {
+  readonly capacity: number;
+  readonly values: Map<number, T>;
+  next: number;
+  total: number;
+};
+
+function fixedRing<T>(capacity: number): FixedRing<T> {
+  return { capacity, values: new Map(), next: 0, total: 0 };
+}
+
+function appendFixedRing<T>(ring: FixedRing<T>, value: T): void {
+  ring.values.set(ring.next, value);
+  ring.next = (ring.next + 1) % ring.capacity;
+  ring.total += 1;
+}
+
+function fixedRingValues<T>(ring: FixedRing<T>): T[] {
+  const count = Math.min(ring.total, ring.capacity);
+  const start = ring.total < ring.capacity ? 0 : ring.next;
+  const result: T[] = [];
+  for (let offset = 0; offset < count; offset += 1) {
+    const value = ring.values.get((start + offset) % ring.capacity);
+    if (value !== undefined) result.push(value);
+  }
+  return result;
+}
 
 type MutableMessage = {
   uid: number;
@@ -76,6 +118,8 @@ type Session = {
   inFlightBytes: number;
   admissionFailed: boolean;
   literal: LiteralAdmissionState;
+  preAuthDeadline: TimerEntry | null;
+  partialFrameDeadline: TimerEntry | null;
   closed: boolean;
 };
 
@@ -557,16 +601,27 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
   if (!mailboxes.has("INBOX")) throw new TypeError("demo IMAP requires INBOX");
 
   const sessions = new Set<Session>();
-  const commands: DemoImapCommandRecord[] = [];
-  const forbiddenCommands: string[] = [];
+  const commands = fixedRing<DemoImapCommandRecord>(DEMO_IMAP_ADMISSION_LIMITS.maxCommandHistory);
+  const forbiddenCommands = fixedRing<string>(
+    DEMO_IMAP_ADMISSION_LIMITS.maxForbiddenCommandHistory,
+  );
+  const diagnosticCounters = {
+    acceptedSessions: 0,
+    rejectedSessions: 0,
+    admissionFailures: 0,
+    outputBackpressureFailures: 0,
+    cleanupOperationFailures: 0,
+  };
   const pendingTimers = new Set<TimerEntry>();
   const faults: DemoImapFault[] = [];
   let faultState: DemoImapFaultState = Object.freeze({ kind: "dormant" });
   let lifecycle: ServerLifecycleState = Object.freeze({ kind: "idle" });
   let closeRequested = false;
   let startPromise: Promise<void> | undefined;
-  let closePromise: Promise<void> | undefined;
-  let releasePromise: Promise<void> | undefined;
+  let resourceCleanupPromise: Promise<void> | undefined;
+  let closeAttempt: Promise<void> | undefined;
+  let releaseAttempt: Promise<void> | undefined;
+  let releaseCompleted = false;
 
   const delay = (milliseconds: number, owner: Session | null): Promise<void> =>
     new Promise((resolve) => {
@@ -583,6 +638,88 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
       pendingTimers.add(entry);
     });
 
+  const cancelTimer = (entry: TimerEntry): void => {
+    clearTimeout(entry.handle);
+    entry.resolve();
+  };
+
+  const scheduleDeadline = (
+    milliseconds: number,
+    owner: Session,
+    expire: () => void,
+  ): TimerEntry => {
+    let entry: TimerEntry;
+    const cancel = (): void => {
+      pendingTimers.delete(entry);
+    };
+    const onTimeout = (): void => {
+      pendingTimers.delete(entry);
+      expire();
+    };
+    entry = Object.freeze({
+      handle: setTimeout(onTimeout, milliseconds),
+      resolve: cancel,
+      owner,
+    });
+    pendingTimers.add(entry);
+    return entry;
+  };
+
+  const boundedSocketWrite = async (session: Session, wire: string): Promise<boolean> => {
+    if (session.closed || session.admissionFailed || session.socket.destroyed) return false;
+    const bytes = Buffer.byteLength(wire);
+    if (
+      bytes > DEMO_IMAP_ADMISSION_LIMITS.maxPendingWriteBytes ||
+      session.socket.writableLength + bytes > DEMO_IMAP_ADMISSION_LIMITS.maxPendingWriteBytes
+    ) {
+      diagnosticCounters.outputBackpressureFailures += 1;
+      session.socket.destroy();
+      return false;
+    }
+
+    let accepted: boolean;
+    try {
+      accepted = session.socket.write(wire);
+    } catch {
+      diagnosticCounters.outputBackpressureFailures += 1;
+      session.socket.destroy();
+      return false;
+    }
+    if (accepted) return true;
+
+    return await new Promise<boolean>((resolve) => {
+      let settled = false;
+      let deadline: TimerEntry;
+      const finish = (drained: boolean): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(deadline.handle);
+        pendingTimers.delete(deadline);
+        session.socket.off("drain", onDrain);
+        session.socket.off("close", onClose);
+        session.socket.off("error", onError);
+        resolve(drained);
+      };
+      const onDrain = (): void => finish(true);
+      const onClose = (): void => finish(false);
+      const onError = (): void => finish(false);
+      const onTimeout = (): void => {
+        diagnosticCounters.outputBackpressureFailures += 1;
+        finish(false);
+        session.socket.destroy();
+      };
+      deadline = Object.freeze({
+        handle: setTimeout(onTimeout, DEMO_IMAP_ADMISSION_LIMITS.outputDrainDeadlineMilliseconds),
+        resolve: () => finish(false),
+        owner: session,
+      });
+      pendingTimers.add(deadline);
+      session.socket.once("drain", onDrain);
+      session.socket.once("close", onClose);
+      session.socket.once("error", onError);
+    });
+  };
+
   const writeWire = async (
     session: Session,
     wire: string,
@@ -590,12 +727,16 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
   ): Promise<void> => {
     if (session.closed || session.admissionFailed || session.socket.destroyed) return;
     if (throttle === undefined) {
-      session.socket.write(wire);
+      await boundedSocketWrite(session, wire);
       return;
     }
     for (let offset = 0; offset < wire.length; offset += throttle.chunkBytes) {
       if (session.closed || session.admissionFailed || session.socket.destroyed) return;
-      session.socket.write(wire.slice(offset, offset + throttle.chunkBytes));
+      const wrote = await boundedSocketWrite(
+        session,
+        wire.slice(offset, offset + throttle.chunkBytes),
+      );
+      if (!wrote) return;
       if (offset + throttle.chunkBytes < wire.length) {
         await delay(throttle.delayMilliseconds, session);
       }
@@ -609,9 +750,10 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     session.literal = Object.freeze({ kind: "none" });
     for (const entry of pendingTimers) {
       if (entry.owner !== session) continue;
-      clearTimeout(entry.handle);
-      entry.resolve();
+      cancelTimer(entry);
     }
+    session.preAuthDeadline = null;
+    session.partialFrameDeadline = null;
     session.state = transitionDemoImapSession(session.state, { kind: "connection-closed" });
     sessions.delete(session);
   };
@@ -676,7 +818,7 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     const { tag, normalized: command, argumentsText } = parsed;
     if (command === null) {
       if (FORBIDDEN_COMMANDS.has(parsed.command) || parsed.command.includes("EXPUNGE")) {
-        forbiddenCommands.push(parsed.command);
+        appendFixedRing(forbiddenCommands, parsed.command);
       }
       return { wire: `${tag} BAD [CANNOT] Unsupported command\r\n` };
     }
@@ -759,7 +901,7 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
           return { wire: `${tag} OK [MODIFIED ${result.uid}] Conditional STORE not applied\r\n` };
         }
         if (result.kind === "forbidden") {
-          forbiddenCommands.push("UID STORE \\Deleted");
+          appendFixedRing(forbiddenCommands, "UID STORE \\Deleted");
           return { wire: `${tag} BAD [CANNOT] Deleted flags are disabled\r\n` };
         }
         return { wire: `${result.response}${tag} OK STORE completed\r\n` };
@@ -813,7 +955,10 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
   };
 
   const processCommand = async (session: Session, parsed: ParsedCommand): Promise<void> => {
-    commands.push({ command: parsed.command, sessionState: session.state.kind });
+    appendFixedRing(commands, {
+      command: parsed.command,
+      sessionState: session.state.kind,
+    });
     const command = parsed.normalized;
     if (command === null) {
       const response = await handleCommand(session, parsed);
@@ -846,7 +991,7 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
 
     const response = await handleCommand(session, parsed);
     if (fault?.kind === "partial-response") {
-      session.socket.write(response.wire.slice(0, fault.bytes));
+      await boundedSocketWrite(session, response.wire.slice(0, fault.bytes));
       faultState = completeDemoImapFault(faultState);
       session.socket.destroy();
       return;
@@ -887,6 +1032,7 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
 
   const rejectAdmission = (session: Session, reason: string): void => {
     if (session.admissionFailed || session.closed) return;
+    diagnosticCounters.admissionFailures += 1;
     session.admissionFailed = true;
     session.input = EMPTY_BUFFER;
     session.literal = Object.freeze({ kind: "none" });
@@ -921,7 +1067,13 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     if (!reserveOutstandingCommand(session, bytes)) return;
     void handleLine(session, line)
       .catch(() => session.socket.destroy())
-      .finally(() => releaseOutstandingCommand(session, bytes));
+      .finally(() => {
+        releaseOutstandingCommand(session, bytes);
+        if (session.state.kind !== "not-authenticated" && session.preAuthDeadline !== null) {
+          cancelTimer(session.preAuthDeadline);
+          session.preAuthDeadline = null;
+        }
+      });
   };
 
   const completeLiteral = (session: Session): void => {
@@ -1019,6 +1171,21 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
         ? chunk
         : Buffer.concat([session.input, chunk], session.input.length + chunk.length);
     processAdmittedInput(session);
+    if (session.closed || session.admissionFailed) return;
+    const hasPartialFrame = session.input.length > 0 || session.literal.kind === "discarding";
+    if (hasPartialFrame && session.partialFrameDeadline === null) {
+      session.partialFrameDeadline = scheduleDeadline(
+        DEMO_IMAP_ADMISSION_LIMITS.partialFrameDeadlineMilliseconds,
+        session,
+        () => {
+          session.partialFrameDeadline = null;
+          rejectAdmission(session, "Partial frame deadline exceeded");
+        },
+      );
+    } else if (!hasPartialFrame && session.partialFrameDeadline !== null) {
+      cancelTimer(session.partialFrameDeadline);
+      session.partialFrameDeadline = null;
+    }
   };
 
   const accept = (socket: Socket): void => {
@@ -1031,6 +1198,14 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
       socket.destroy();
       return;
     }
+    if (sessions.size >= DEMO_IMAP_ADMISSION_LIMITS.maxSessions) {
+      diagnosticCounters.rejectedSessions += 1;
+      socket.on("error", () => undefined);
+      socket.once("close", () => socket.removeAllListeners());
+      socket.write("* BYE [LIMIT] Concurrent session limit reached\r\n");
+      socket.destroy();
+      return;
+    }
     const session: Session = {
       socket,
       state: Object.freeze({ kind: "not-authenticated" }),
@@ -1039,9 +1214,20 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
       inFlightBytes: 0,
       admissionFailed: false,
       literal: Object.freeze({ kind: "none" }),
+      preAuthDeadline: null,
+      partialFrameDeadline: null,
       closed: false,
     };
     sessions.add(session);
+    diagnosticCounters.acceptedSessions += 1;
+    session.preAuthDeadline = scheduleDeadline(
+      DEMO_IMAP_ADMISSION_LIMITS.preAuthDeadlineMilliseconds,
+      session,
+      () => {
+        session.preAuthDeadline = null;
+        rejectAdmission(session, "Authentication deadline exceeded");
+      },
+    );
     socket.on("data", (chunk) => {
       admitBytes(session, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8"));
     });
@@ -1054,8 +1240,24 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
   };
 
   const releasePort = (): Promise<void> => {
-    releasePromise ??= Promise.resolve().then(async () => options.releasePort?.());
-    return releasePromise;
+    if (releaseCompleted) return Promise.resolve();
+    if (releaseAttempt !== undefined) return releaseAttempt;
+    const attempt = Promise.resolve()
+      .then(async () => options.releasePort?.())
+      .then(
+        () => {
+          releaseCompleted = true;
+        },
+        () => {
+          throw new DemoImapReleaseObserverError();
+        },
+      );
+    releaseAttempt = attempt;
+    const clearAttempt = (): void => {
+      if (releaseAttempt === attempt) releaseAttempt = undefined;
+    };
+    void attempt.then(clearAttempt, clearAttempt);
+    return attempt;
   };
 
   const closeListener = (listener: Server): Promise<void> => {
@@ -1068,43 +1270,68 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
     });
   };
 
-  const cleanupOwnedResources = async (listener: Server | null): Promise<void> => {
-    const errors: unknown[] = [];
-    try {
+  const cleanupOwnedResources = (listener: Server | null): Promise<void> => {
+    if (resourceCleanupPromise !== undefined) return resourceCleanupPromise;
+    const attempt = (async () => {
       for (const entry of pendingTimers) {
-        clearTimeout(entry.handle);
-        entry.resolve();
+        try {
+          cancelTimer(entry);
+        } catch {
+          diagnosticCounters.cleanupOperationFailures += 1;
+        }
       }
-      for (const session of sessions) session.socket.destroy();
       for (const session of sessions) {
-        closeSession(session);
-        session.socket.removeAllListeners();
+        try {
+          session.socket.destroy();
+        } catch {
+          diagnosticCounters.cleanupOperationFailures += 1;
+        }
+        if (session.socket.destroyed) {
+          try {
+            closeSession(session);
+          } catch {
+            diagnosticCounters.cleanupOperationFailures += 1;
+          }
+          try {
+            session.socket.removeAllListeners();
+          } catch {
+            diagnosticCounters.cleanupOperationFailures += 1;
+          }
+        }
       }
       faults.splice(0);
-    } catch (error: unknown) {
-      errors.push(error);
-    }
-    if (listener !== null) {
-      try {
-        await closeListener(listener);
-      } catch (error: unknown) {
-        errors.push(error);
-      } finally {
-        listener.removeAllListeners();
+      if (listener !== null) {
+        try {
+          await closeListener(listener);
+        } catch {
+          diagnosticCounters.cleanupOperationFailures += 1;
+        }
+        if (!listener.listening) {
+          try {
+            listener.removeAllListeners();
+          } catch {
+            diagnosticCounters.cleanupOperationFailures += 1;
+          }
+        }
       }
-    }
-    if (lifecycle.kind === "closing") {
-      lifecycle = transitionServerLifecycle(lifecycle, { kind: "cleanup-completed" });
-    } else if (lifecycle.kind === "starting") {
-      lifecycle = transitionServerLifecycle(lifecycle, { kind: "start-failed" });
-    }
-    try {
-      await releasePort();
-    } catch (error: unknown) {
-      errors.push(error);
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length > 1) throw new AggregateError(errors, "demo IMAP cleanup failed");
+
+      const listenerAbsent =
+        listener === null || (!listener.listening && listener.eventNames().length === 0);
+      if (sessions.size !== 0 || pendingTimers.size !== 0 || !listenerAbsent) {
+        throw new Error("demo IMAP cleanup left owned resources active");
+      }
+      if (lifecycle.kind === "closing") {
+        lifecycle = transitionServerLifecycle(lifecycle, { kind: "cleanup-completed" });
+      } else if (lifecycle.kind === "starting") {
+        lifecycle = transitionServerLifecycle(lifecycle, { kind: "start-failed" });
+      }
+    })();
+    resourceCleanupPromise = attempt;
+    const clearAttempt = (): void => {
+      if (resourceCleanupPromise === attempt) resourceCleanupPromise = undefined;
+    };
+    void attempt.then(clearAttempt, clearAttempt);
+    return attempt;
   };
 
   const start = (): Promise<void> => {
@@ -1146,6 +1373,14 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
         } catch (cleanupError: unknown) {
           throw new AggregateError([error, cleanupError], "demo IMAP start rollback failed");
         }
+        try {
+          await releasePort();
+        } catch (observerError: unknown) {
+          throw new AggregateError(
+            [error, observerError],
+            "demo IMAP start rollback observer failed",
+          );
+        }
         throw error;
       }
     })();
@@ -1154,19 +1389,28 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
 
   const close = (): Promise<void> => {
     closeRequested = true;
-    closePromise ??= (async () => {
+    if (closeAttempt !== undefined) return closeAttempt;
+    const attempt = (async () => {
       if (startPromise !== undefined) {
         try {
           await startPromise;
         } catch {
-          return;
+          // Failed start already removed its listener and sessions.
         }
       }
-      const listener = lifecycleListener(lifecycle);
-      lifecycle = transitionServerLifecycle(lifecycle, { kind: "close-requested" });
-      await cleanupOwnedResources(listener);
+      if (lifecycle.kind !== "stopped") {
+        const listener = lifecycleListener(lifecycle);
+        lifecycle = transitionServerLifecycle(lifecycle, { kind: "close-requested" });
+        await cleanupOwnedResources(listener);
+      }
+      await releasePort();
     })();
-    return closePromise;
+    closeAttempt = attempt;
+    const clearAttempt = (): void => {
+      if (closeAttempt === attempt) closeAttempt = undefined;
+    };
+    void attempt.then(clearAttempt, clearAttempt);
+    return attempt;
   };
 
   const scheduleFault = (fault: DemoImapFault): void => {
@@ -1285,8 +1529,10 @@ export function createDemoImapServer(options: DemoImapServerOptions = {}): DemoI
       pendingTimers: pendingTimers.size,
       childProcesses: 0,
       activeTestLeases: activeDemoImapTestPortLeases(),
-      commands: Object.freeze(commands.map((record) => Object.freeze({ ...record }))),
-      forbiddenCommands: Object.freeze([...forbiddenCommands]),
+      commands: Object.freeze(
+        fixedRingValues(commands).map((record) => Object.freeze({ ...record })),
+      ),
+      forbiddenCommands: Object.freeze(fixedRingValues(forbiddenCommands)),
       faultState,
       mailboxes: Object.freeze([...mailboxes.values()].map(mailboxSnapshot)),
     });

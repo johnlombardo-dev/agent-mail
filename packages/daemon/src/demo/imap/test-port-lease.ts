@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { dlopen, FFIType, ptr, read } from "bun:ffi";
 import {
   closeSync,
   existsSync,
   fsyncSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -12,11 +13,28 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { DEMO_IMAP_TEST_PORTS, type DemoImapTestPort, type DemoImapTestPortLease } from "./types";
 
 const DEFAULT_LEASE_DIRECTORY = "/private/tmp/agent-mail-fm1-demo-imap-leases";
 const ownedTokens = new Set<string>();
+const PROC_PIDTBSDINFO = 3;
+const PROC_BSDINFO_BYTES = 136;
+const PBI_PID_OFFSET = 12;
+const PBI_START_SECONDS_OFFSET = 120;
+const PBI_START_MICROSECONDS_OFFSET = 128;
+const ESRCH = 3;
+
+const darwinProcessApi =
+  process.platform === "darwin"
+    ? dlopen("/usr/lib/libSystem.B.dylib", {
+        proc_pidinfo: {
+          args: [FFIType.i32, FFIType.i32, FFIType.u64, FFIType.ptr, FFIType.i32],
+          returns: FFIType.i32,
+        },
+        __error: { args: [], returns: FFIType.ptr },
+      })
+    : undefined;
 
 type LeaseRecord = Readonly<{
   readonly schema: 1;
@@ -57,7 +75,7 @@ function parseRecord(value: unknown): LeaseRecord | null {
     !Number.isSafeInteger(value.pid) ||
     value.pid <= 0 ||
     typeof value.processStartIdentity !== "string" ||
-    value.processStartIdentity.length === 0 ||
+    !/^\d+:[0-9]{6}$/u.test(value.processStartIdentity) ||
     typeof value.ownerToken !== "string" ||
     !/^[0-9a-f-]{36}$/u.test(value.ownerToken)
   ) {
@@ -76,58 +94,65 @@ function leasePath(directory: string, port: DemoImapTestPort): string {
   return join(directory, `${port}.json`);
 }
 
-function processExists(pid: number): "live" | "not-live" | "unknown" {
+function syncDirectory(directory: string): void {
+  const descriptor = openSync(directory, "r");
   try {
-    process.kill(pid, 0);
-    return "live";
-  } catch (error: unknown) {
-    return isFileSystemError(error, "ESRCH") ? "not-live" : "unknown";
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
   }
 }
 
-function linuxProcessIdentity(pid: number): ProcessIdentityObservation {
-  let contents: string;
-  try {
-    contents = readFileSync(`/proc/${pid}/stat`, "utf8");
-  } catch (error: unknown) {
-    return isFileSystemError(error, "ENOENT") || isFileSystemError(error, "ESRCH")
-      ? { kind: "not-live" }
-      : { kind: "unknown" };
+function secureLeaseDirectory(input: string): string {
+  const directory = resolve(input);
+  const created = mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const identity = lstatSync(directory);
+  const uid = process.getuid?.();
+  if (
+    identity.isSymbolicLink() ||
+    !identity.isDirectory() ||
+    uid === undefined ||
+    identity.uid !== uid ||
+    (identity.mode & 0o077) !== 0
+  ) {
+    throw new Error("demo IMAP lease directory is not private");
   }
-  const commandEnd = contents.lastIndexOf(")");
-  if (commandEnd < 0) return { kind: "unknown" };
-  const fields = contents
-    .slice(commandEnd + 1)
-    .trim()
-    .split(/\s+/u);
-  if (fields[0] === "Z" || fields[0] === "X") return { kind: "not-live" };
-  const startTime = fields[19];
-  return startTime === undefined || startTime.length === 0
-    ? { kind: "unknown" }
-    : { kind: "live", processStartIdentity: `linux:${startTime}` };
-}
-
-function darwinProcessIdentity(pid: number): ProcessIdentityObservation {
-  const liveness = processExists(pid);
-  if (liveness !== "live") return { kind: liveness };
-  try {
-    const startTime = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return startTime.length === 0
-      ? { kind: "unknown" }
-      : { kind: "live", processStartIdentity: `darwin:${startTime}` };
-  } catch {
-    const afterFailure = processExists(pid);
-    return afterFailure === "not-live" ? { kind: "not-live" } : { kind: "unknown" };
-  }
+  if (created !== undefined) syncDirectory(dirname(directory));
+  syncDirectory(directory);
+  return directory;
 }
 
 function observeProcessIdentity(pid: number): ProcessIdentityObservation {
-  if (process.platform === "linux") return linuxProcessIdentity(pid);
-  if (process.platform === "darwin") return darwinProcessIdentity(pid);
-  return { kind: "unknown" };
+  if (darwinProcessApi === undefined) return { kind: "unknown" };
+  const bytes = Buffer.alloc(PROC_BSDINFO_BYTES);
+  const result = darwinProcessApi.symbols.proc_pidinfo(
+    pid,
+    PROC_PIDTBSDINFO,
+    0n,
+    ptr(bytes),
+    bytes.byteLength,
+  );
+  if (result === 0) {
+    const errorPointer = darwinProcessApi.symbols.__error();
+    if (errorPointer === null) return { kind: "unknown" };
+    return read.i32(errorPointer, 0) === ESRCH ? { kind: "not-live" } : { kind: "unknown" };
+  }
+  if (result !== PROC_BSDINFO_BYTES || bytes.readUInt32LE(PBI_PID_OFFSET) !== pid) {
+    return { kind: "unknown" };
+  }
+  const seconds = bytes.readBigUInt64LE(PBI_START_SECONDS_OFFSET);
+  const microseconds = bytes.readBigUInt64LE(PBI_START_MICROSECONDS_OFFSET);
+  if (
+    seconds > BigInt(Number.MAX_SAFE_INTEGER) ||
+    microseconds >= 1_000_000n ||
+    microseconds > BigInt(Number.MAX_SAFE_INTEGER)
+  ) {
+    return { kind: "unknown" };
+  }
+  return {
+    kind: "live",
+    processStartIdentity: `${seconds}:${String(Number(microseconds)).padStart(6, "0")}`,
+  };
 }
 
 function currentProcessStartIdentity(): string {
@@ -154,7 +179,7 @@ function readRecord(path: string): LeaseRecord | null {
   }
 }
 
-function createRecord(path: string, record: LeaseRecord): boolean {
+function createRecord(directory: string, path: string, record: LeaseRecord): boolean {
   const candidate = `${path}.candidate.${record.ownerToken}`;
   let descriptor: number;
   try {
@@ -181,25 +206,58 @@ function createRecord(path: string, record: LeaseRecord): boolean {
     } catch {
       // The original write/close failure remains authoritative.
     }
+    try {
+      syncDirectory(directory);
+    } catch {
+      // The original write/close failure remains authoritative.
+    }
     throw failure;
   }
+  try {
+    syncDirectory(directory);
+  } catch (error: unknown) {
+    try {
+      unlinkSync(candidate);
+      syncDirectory(directory);
+    } catch {
+      // The directory sync failure remains authoritative.
+    }
+    throw error;
+  }
   let acquired = false;
+  let publicationFailure: unknown;
   try {
     linkSync(candidate, path);
     acquired = true;
   } catch (error: unknown) {
-    if (!isFileSystemError(error, "EEXIST")) throw error;
+    if (!isFileSystemError(error, "EEXIST")) publicationFailure = error;
   } finally {
     try {
       unlinkSync(candidate);
-    } catch {
-      // The canonical hard link, when acquired, owns the durable record.
+    } catch (error: unknown) {
+      publicationFailure ??= error;
     }
+    try {
+      syncDirectory(directory);
+    } catch (error: unknown) {
+      publicationFailure ??= error;
+    }
+  }
+  if (publicationFailure !== undefined) {
+    if (acquired) {
+      try {
+        unlinkSync(path);
+        syncDirectory(directory);
+      } catch {
+        // The publication failure remains authoritative.
+      }
+    }
+    throw publicationFailure;
   }
   return acquired;
 }
 
-function reclaimDeadOwner(path: string, record: LeaseRecord): boolean {
+function reclaimDeadOwner(directory: string, path: string, record: LeaseRecord): boolean {
   const observation = observeProcessIdentity(record.pid);
   if (
     observation.kind === "unknown" ||
@@ -220,6 +278,7 @@ function reclaimDeadOwner(path: string, record: LeaseRecord): boolean {
   } catch {
     // The canonical path is already free. Retained stale evidence is inert.
   }
+  syncDirectory(directory);
   return true;
 }
 
@@ -236,33 +295,58 @@ function acquirePort(
       processStartIdentity: currentProcessStartIdentity(),
       ownerToken: randomUUID(),
     });
-    if (createRecord(path, record)) return Object.freeze({ record, path });
+    if (createRecord(directory, path, record)) return Object.freeze({ record, path });
     const existing = readRecord(path);
-    if (existing === null || !reclaimDeadOwner(path, existing)) return null;
+    if (existing === null || !reclaimDeadOwner(directory, path, existing)) return null;
   }
   return null;
 }
 
-function releaseOwnedLease(path: string, record: LeaseRecord): void {
-  const current = readRecord(path);
-  if (current === null || current.ownerToken !== record.ownerToken) {
+function releaseOwnedLease(directory: string, path: string, record: LeaseRecord): void {
+  const retired = `${path}.released.${record.ownerToken}`;
+  if (existsSync(retired)) {
+    const retained = readRecord(retired);
+    if (retained === null || retained.ownerToken !== record.ownerToken) {
+      throw new Error("demo IMAP released lease ownership is unavailable");
+    }
+    unlinkSync(retired);
+    syncDirectory(directory);
     ownedTokens.delete(record.ownerToken);
     return;
   }
-  const retired = `${path}.released.${record.ownerToken}`;
-  renameSync(path, retired);
+  const current = readRecord(path);
+  if (current === null) {
+    if (existsSync(path)) throw new Error("demo IMAP lease ownership is unavailable");
+    syncDirectory(directory);
+    ownedTokens.delete(record.ownerToken);
+    return;
+  }
+  if (current.ownerToken !== record.ownerToken) {
+    ownedTokens.delete(record.ownerToken);
+    return;
+  }
+  try {
+    renameSync(path, retired);
+  } catch (error: unknown) {
+    if (isFileSystemError(error, "ENOENT")) {
+      syncDirectory(directory);
+      ownedTokens.delete(record.ownerToken);
+      return;
+    }
+    throw error;
+  }
   try {
     unlinkSync(retired);
   } finally {
-    ownedTokens.delete(record.ownerToken);
+    syncDirectory(directory);
   }
+  ownedTokens.delete(record.ownerToken);
 }
 
 export function leaseDemoImapTestPort(
   options: DemoImapTestPortLeaseOptions = {},
 ): DemoImapTestPortLease {
-  const directory = options.directory ?? DEFAULT_LEASE_DIRECTORY;
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const directory = secureLeaseDirectory(options.directory ?? DEFAULT_LEASE_DIRECTORY);
   const ports =
     options.preferredPort === undefined ? DEMO_IMAP_TEST_PORTS : [options.preferredPort];
   for (const port of ports) {
@@ -274,7 +358,7 @@ export function leaseDemoImapTestPort(
       port,
       release: () => {
         if (released) return;
-        releaseOwnedLease(acquired.path, acquired.record);
+        releaseOwnedLease(directory, acquired.path, acquired.record);
         released = true;
       },
     });
