@@ -5,6 +5,7 @@ import {
   fsyncSync,
   lstatSync,
   linkSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readFileSync,
@@ -17,12 +18,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   capture,
   canonicalJson,
   observationThresholdValues,
+  runtimePathPlaceholders,
   sha256,
   thresholdMetricRegistry,
 } from "./capture-release-evidence.mjs";
@@ -94,6 +96,157 @@ function assertManifestStep(step) {
     "manifest step thresholds are required",
   );
   assert(Array.isArray(step.probes), "manifest step probes are required");
+  for (const arg of step.argv) {
+    const tokens = [...arg.matchAll(/<[^>]*>/gu)].map(([token]) => token);
+    if (tokens.length === 0) continue;
+    assert(
+      tokens.length === 1 && tokens[0] === arg && Object.hasOwn(runtimePathPlaceholders, tokens[0]),
+      "manifest argv placeholder is unsupported or embedded",
+    );
+    if (tokens[0] === "<temp-corpus>")
+      assert(step.fixture?.kind === "generated-file", "manifest temp-corpus role is invalid");
+  }
+}
+
+function ownedRuntimePath(root, value, runId, label) {
+  assert(typeof value === "string" && isAbsolute(value), `${label} path is not absolute`);
+  assert(!value.includes("\\"), `${label} path contains a separator escape`);
+  const lexical = resolve(value);
+  let probe = lexical;
+  const missing = [];
+  let stat;
+  while (true) {
+    try {
+      stat = lstatSync(probe);
+      break;
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      const parent = dirname(probe);
+      assert(parent !== probe, `${label} path has no existing owner`);
+      missing.unshift(basename(probe));
+      probe = parent;
+    }
+  }
+  assert(!stat.isSymbolicLink(), `${label} path is a symlink alias`);
+  const canonical = join(realpathSync(probe), ...missing);
+  const relativePath = relative(root, canonical);
+  assert(
+    relativePath &&
+      !relativePath.startsWith("..") &&
+      !isAbsolute(relativePath) &&
+      relativePath.split("/").every((part) => part && part !== "." && part !== "..") &&
+      relativePath.split("/")[0] === runId,
+    `${label} path is not run-bound to its output root`,
+  );
+  if (missing.length === 0) {
+    assert(stat.isFile() && stat.nlink === 1, `${label} path is not a unique regular file`);
+    return `${stat.dev}:${stat.ino}`;
+  }
+  assert(stat.isDirectory(), `${label} path parent is not a directory`);
+  return null;
+}
+
+function canonicalRuntimePath(root, value, runId, label) {
+  ownedRuntimePath(root, value, runId, label);
+  let probe = resolve(value);
+  const missing = [];
+  while (true) {
+    try {
+      return join(realpathSync(probe), ...missing);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      const parent = dirname(probe);
+      assert(parent !== probe, `${label} path has no existing owner`);
+      missing.unshift(basename(probe));
+      probe = parent;
+    }
+  }
+}
+
+function expectedRuntimePath(token, receipt, step, outputRoot, label) {
+  let relativePath;
+  if (token === "<temp-corpus>") {
+    const materialized = receipt.fixture?.materialized;
+    assert(materialized, `${label} fixture input binding is missing`);
+    assert(
+      receipt.fixture?.id === step.fixture?.id && receipt.fixture?.kind === step.fixture?.kind,
+      `${label} fixture identity diverged from manifest`,
+    );
+    const expectedOwner = step.fixture.generationStepId ? "prior-generator" : "generator";
+    const expectedRelativePath = `${receipt.runId}/${
+      step.fixture.generationStepId ? "fixtures" : "staging"
+    }/${step.fixture.id}.bin`;
+    assert(materialized.owner === expectedOwner, `${label} fixture input owner is invalid`);
+    relativePath = materialized.retainedFrom ?? materialized.path;
+    assert(relativePath === expectedRelativePath, `${label} fixture input role is invalid`);
+  } else {
+    relativePath = `${receipt.runId}/${
+      token === "<measurement-output>" ? "measurement.json" : "benchmark-copy.sqlite"
+    }`;
+  }
+  assert(
+    typeof relativePath === "string" &&
+      !isAbsolute(relativePath) &&
+      !relativePath.includes("\\") &&
+      relativePath.split("/").every((part) => part && part !== "." && part !== ".."),
+    `${label} runtime path binding is malformed`,
+  );
+  const expected = resolve(outputRoot, relativePath);
+  ownedRuntimePath(outputRoot, expected, receipt.runId, label);
+  return expected;
+}
+
+function compareManifestArgv(primary, replay, step, primaryRoot, replayRoot) {
+  assert(Array.isArray(primary.argv) && Array.isArray(replay.argv), "receipt argv is missing");
+  assert(primary.argv.length === step.argv.length, "primary argv length diverged");
+  assert(replay.argv.length === step.argv.length, "replay argv length diverged");
+  const identities = new Set();
+  for (let index = 0; index < step.argv.length; index += 1) {
+    const expected = step.argv[index];
+    const tokens = [...expected.matchAll(/<[^>]*>/gu)].map(([token]) => token);
+    if (tokens.length === 0) {
+      assert(!/<[^>]*>/u.test(expected), "ordinary argv contains an unresolved placeholder");
+      assert(primary.argv[index] === expected, `primary argv argument ${index} diverged`);
+      assert(replay.argv[index] === expected, `replay argv argument ${index} diverged`);
+      continue;
+    }
+    assert(tokens.length === 1 && tokens[0] === expected, "argv placeholder position is invalid");
+    assert(Object.hasOwn(runtimePathPlaceholders, expected), "argv placeholder is unknown");
+    const primaryExpected = expectedRuntimePath(
+      expected,
+      primary,
+      step,
+      primaryRoot,
+      "primary argv",
+    );
+    const replayExpected = expectedRuntimePath(expected, replay, step, replayRoot, "replay argv");
+    assert(
+      canonicalRuntimePath(primaryRoot, primary.argv[index], primary.runId, "primary argv") ===
+        canonicalRuntimePath(primaryRoot, primaryExpected, primary.runId, "primary argv"),
+      `primary ${expected} path is misplaced`,
+    );
+    assert(
+      canonicalRuntimePath(replayRoot, replay.argv[index], replay.runId, "replay argv") ===
+        canonicalRuntimePath(replayRoot, replayExpected, replay.runId, "replay argv"),
+      `replay ${expected} path is misplaced`,
+    );
+    const primaryIdentity = ownedRuntimePath(
+      primaryRoot,
+      primary.argv[index],
+      primary.runId,
+      "primary argv",
+    );
+    const replayIdentity = ownedRuntimePath(
+      replayRoot,
+      replay.argv[index],
+      replay.runId,
+      "replay argv",
+    );
+    for (const identity of [primaryIdentity, replayIdentity].filter(Boolean)) {
+      assert(!identities.has(identity), "runtime argv path reuses an existing inode");
+      identities.add(identity);
+    }
+  }
 }
 
 function receiptPidSet(receipt, label) {
@@ -594,7 +747,13 @@ export function compareReceipts(primary, replay, options = {}) {
   }
   for (const key of ["manifestStepId", "cwd"])
     assert(primary[key] === replay[key], `${key} diverged`);
-  assert(canonicalJson(primary.argv) === canonicalJson(replay.argv), "replay argv diverged");
+  compareManifestArgv(
+    primary,
+    replay,
+    options.step,
+    canonicalOutputRoot(options.primaryOutputRoot, "primary"),
+    canonicalOutputRoot(options.replayOutputRoot, "replay"),
+  );
   assert(
     canonicalJson(primary.sources) === canonicalJson(replay.sources),
     "replay source bindings diverged",
@@ -642,7 +801,10 @@ async function selfTest() {
     git(root, ["init", "-q"]);
     git(root, ["config", "user.email", "replay@example.invalid"]);
     git(root, ["config", "user.name", "replay self-test"]);
-    writeFileSync(join(root, "tiny-receipt.mjs"), "process.stdout.write('tiny-pass\\n');\n");
+    writeFileSync(
+      join(root, "tiny-receipt.mjs"),
+      "process.stdout.write('tiny-pass\\n'); setTimeout(() => {}, 250);\n",
+    );
     git(root, ["add", "tiny-receipt.mjs"]);
     git(root, ["commit", "-qm", "tiny command"]);
     const source = execFileSync("git", ["cat-file", "blob", "HEAD:tiny-receipt.mjs"], {
@@ -664,7 +826,7 @@ async function selfTest() {
           gate: "capacity",
           obligationIds: ["F17"],
           cwd: ".",
-          argv: ["node", "tiny-receipt.mjs"],
+          argv: ["node", "tiny-receipt.mjs", "<measurement-output>"],
           sources: [
             {
               role: "entrypoint",
@@ -677,7 +839,7 @@ async function selfTest() {
           observations: ["stdout", "stderr", "exitCode", "durationNs"],
           thresholds: { timeoutMs: 5000 },
           probes: ["process", "streams", "tempRoot"],
-          fixture: { kind: "generated-stream", id: "tiny-fixture", recipe: "stdout:tiny-pass" },
+          fixture: { kind: "generated-stream", id: "tiny-fixture", minimumBytes: 1 },
         },
       ],
     };
@@ -702,6 +864,31 @@ async function selfTest() {
       step: manifest.steps[0],
       runnerSources: manifest.runner?.sources ?? [],
     });
+    const manifestAttacks = [
+      ["unknown runtime placeholder", "<unknown-path>"],
+      ["embedded runtime placeholder", "prefix<temp-corpus>"],
+      ["misplaced runtime placeholder", "<temp-corpus>"],
+      ["wrong runtime placeholder role", "<benchmark-copy>"],
+    ];
+    let manifestRejected = 0;
+    for (const [name, value] of manifestAttacks) {
+      const forgedStep = structuredClone(manifest.steps[0]);
+      if (name === "misplaced runtime placeholder")
+        forgedStep.argv = ["node", value, "tiny-receipt.mjs"];
+      else forgedStep.argv[2] = value;
+      let accepted = false;
+      try {
+        compareReceipts(primary, replay, {
+          primaryOutputRoot: primaryRoot,
+          replayOutputRoot: replayRoot,
+          step: forgedStep,
+          runnerSources: manifest.runner?.sources ?? [],
+        });
+        accepted = true;
+      } catch {}
+      assert(!accepted, `${name} was accepted`);
+      manifestRejected += 1;
+    }
     const attacks = [
       ["reused run ID", (value) => (value.runId = primary.runId)],
       ["reused temp root", (value) => (value.probes.tempRoot.path = primary.probes.tempRoot.path)],
@@ -712,6 +899,12 @@ async function selfTest() {
       ],
       ["source drift", (value) => (value.sources[0].sha256 = "0".repeat(64))],
       ["argv drift", (value) => (value.argv = ["node", "forged.mjs"])],
+      ["primary runtime path reuse", (value) => (value.argv[2] = primary.argv[2])],
+      ["runtime path escape", (value) => (value.argv[2] = join(replayRoot, "../escaped-fixture"))],
+      [
+        "runtime ordinary argument normalization",
+        (value) => (value.argv[1] = "./tiny-receipt.mjs"),
+      ],
       ["assertion drift", (value) => (value.assertions[0].pass = false)],
       [
         "fixture path reuse",
@@ -835,6 +1028,36 @@ async function selfTest() {
       hardlinkRejected = true;
     }
     assert(hardlinkRejected, "hard-linked artifact alias was accepted");
+    const runtimePath = join(replayRoot, replay.runId, "measurement.json");
+    mkdirSync(dirname(runtimePath), { recursive: true });
+    symlinkSync(join(primaryRoot, primary.streams.stdout.path), runtimePath);
+    let symlinkRuntimeRejected = false;
+    try {
+      compareReceipts(primary, replay, {
+        primaryOutputRoot: primaryRoot,
+        replayOutputRoot: replayRoot,
+        step: manifest.steps[0],
+        runnerSources: manifest.runner?.sources ?? [],
+      });
+    } catch {
+      symlinkRuntimeRejected = true;
+    }
+    assert(symlinkRuntimeRejected, "symlink runtime path alias was accepted");
+    unlinkSync(runtimePath);
+    linkSync(join(primaryRoot, primary.streams.stdout.path), runtimePath);
+    let hardlinkRuntimeRejected = false;
+    try {
+      compareReceipts(primary, replay, {
+        primaryOutputRoot: primaryRoot,
+        replayOutputRoot: replayRoot,
+        step: manifest.steps[0],
+        runnerSources: manifest.runner?.sources ?? [],
+      });
+    } catch {
+      hardlinkRuntimeRejected = true;
+    }
+    assert(hardlinkRuntimeRejected, "hard-linked runtime path alias was accepted");
+    unlinkSync(runtimePath);
     let rejected = 0;
     for (const [name, mutate] of attacks) {
       const forged = structuredClone(replay);
@@ -859,7 +1082,7 @@ async function selfTest() {
       JSON.stringify({
         format: "agent-mail.executable-receipt/v2",
         accepted: true,
-        attacks: rejected + authorityRejected + 4,
+        attacks: rejected + authorityRejected + manifestRejected + 4,
         comparison,
       }),
     );

@@ -118,6 +118,29 @@ function assert(condition, message) {
   if (!condition) fail(message);
 }
 
+export const runtimePathPlaceholders = Object.freeze({
+  "<temp-corpus>": "fixture-input",
+  "<measurement-output>": "measurement-output",
+  "<benchmark-copy>": "benchmark-copy",
+});
+
+function validateArgvPlaceholders(step) {
+  for (const arg of step.argv) {
+    const tokens = [...arg.matchAll(/<[^>]*>/gu)].map(([token]) => token);
+    if (tokens.length === 0) continue;
+    assert(
+      tokens.length === 1 && tokens[0] === arg && Object.hasOwn(runtimePathPlaceholders, tokens[0]),
+      `${step.id} argv placeholder is unsupported or embedded`,
+    );
+    if (tokens[0] === "<temp-corpus>") {
+      assert(
+        step.fixture?.kind === "generated-file",
+        `${step.id} temp-corpus placeholder is not fixture-bound`,
+      );
+    }
+  }
+}
+
 function json(value) {
   return JSON.stringify(value, null, 2) + "\n";
 }
@@ -520,6 +543,7 @@ export function validateManifest(
       step.argv.every((arg) => typeof arg === "string" && arg.length > 0),
       `${step.id} argv is malformed`,
     );
+    validateArgvPlaceholders(step);
     assert(
       ["bun", "node", "python3", "swift", "xcodebuild"].includes(step.argv[0]),
       `${step.id} executable is not allowlisted`,
@@ -1510,7 +1534,15 @@ function resolveArgv(argv, fixturePath, outputRoot, runId) {
     "<measurement-output>": join(outputRoot, runId, "measurement.json"),
     "<benchmark-copy>": join(outputRoot, runId, "benchmark-copy.sqlite"),
   };
-  const resolved = argv.map((arg) => replacements[arg] ?? arg);
+  const resolved = argv.map((arg) => {
+    const replacement = replacements[arg];
+    if (replacement !== undefined) return replacement;
+    assert(
+      !/<[^>]*>/u.test(arg),
+      "argv contains an unsupported or unresolved runtime path placeholder",
+    );
+    return arg;
+  });
   assert(!resolved.some((arg) => /<[^>]+>/u.test(arg)), "unresolved literal placeholder in argv");
   return resolved;
 }
