@@ -364,6 +364,16 @@ function receiptPidSet(receipt, label) {
   );
   const sorted = (values) => [...values].sort((left, right) => left - right);
   const samePids = (left, right) => JSON.stringify(sorted(left)) === JSON.stringify(sorted(right));
+  const hermesPortsArray = (values, message) => {
+    assert(Array.isArray(values), `${message} is missing`);
+    assert(
+      values.every((port) => Number.isSafeInteger(port) && port >= 6110 && port <= 6119),
+      `${message} contains an invalid port`,
+    );
+    assert(new Set(values).size === values.length, `${message} repeats a port`);
+    assert(JSON.stringify(values) === JSON.stringify(sorted(values)), `${message} is not sorted`);
+    return values;
+  };
   const uniquePids = (values, message) => {
     assert(
       values.every((pid) => Number.isSafeInteger(pid) && pid > 1),
@@ -422,12 +432,16 @@ function receiptPidSet(receipt, label) {
     );
     const observedSamplePids = observedResults.map((result) => result.pid);
     const unavailableSamplePids = unavailableResults.map((result) => result.pid);
-    uniquePids(sample.observedPids ?? [], `${label} observed resource PID is invalid`);
     assert(
-      samePids(sample.observedPids ?? [], observedSamplePids),
+      Array.isArray(sample.observedPids),
+      `${label} observed resource PID inventory is missing`,
+    );
+    uniquePids(sample.observedPids, `${label} observed resource PID is invalid`);
+    assert(
+      samePids(sample.observedPids, observedSamplePids),
       `${label} observed resource PID attribution is inconsistent`,
     );
-    const unavailableRecords = sample.unavailablePids ?? [];
+    const unavailableRecords = sample.unavailablePids;
     assert(
       Array.isArray(unavailableRecords),
       `${label} unavailable resource PID inventory is malformed`,
@@ -469,23 +483,22 @@ function receiptPidSet(receipt, label) {
           Number.isSafeInteger(result[metric]) && result[metric] >= 0,
           `${label} observed resource metric is malformed`,
         );
-      assert(Array.isArray(result.hermesPorts), `${label} observed Hermes ports are malformed`);
-      assert(
-        new Set(result.hermesPorts).size === result.hermesPorts.length,
-        `${label} observed Hermes ports repeat a value`,
-      );
+      hermesPortsArray(result.hermesPorts, `${label} observed Hermes ports`);
       assert(
         !Object.hasOwn(result, "reason"),
         `${label} observed resource has an unavailable reason`,
       );
-      for (const port of result.hermesPorts) hermesPorts.add(port);
       observedUnion.add(result.pid);
     }
-    for (const result of unavailableResults)
+    for (const result of unavailableResults) {
       assert(
         typeof result.reason === "string" && result.reason.length > 0,
         `${label} unavailable resource reason is missing`,
       );
+      hermesPortsArray(result.hermesPorts, `${label} unavailable Hermes ports`);
+      assert(result.hermesPorts.length === 0, `${label} unavailable resource has Hermes ports`);
+    }
+    for (const result of results) for (const port of result.hermesPorts) hermesPorts.add(port);
     anyObserved ||= observedResults.length > 0;
     assert(
       sample.observed === observedResults.length > 0,
@@ -501,18 +514,9 @@ function receiptPidSet(receipt, label) {
         maximums[metric] =
           maximums[metric] === null ? expected : Math.max(maximums[metric], expected);
     }
+    hermesPortsArray(sample.hermesPorts, `${label} resource sample Hermes ports`);
     assert(
-      Array.isArray(sample.hermesPorts),
-      `${label} resource sample Hermes ports are malformed`,
-    );
-    assert(
-      new Set(sample.hermesPorts).size === sample.hermesPorts.length,
-      `${label} resource sample Hermes ports repeat a value`,
-    );
-    assert(
-      samePids(sample.hermesPorts, [
-        ...new Set(observedResults.flatMap((result) => result.hermesPorts)),
-      ]),
+      samePids(sample.hermesPorts, [...new Set(results.flatMap((result) => result.hermesPorts))]),
       `${label} resource sample Hermes ports are inconsistent`,
     );
   }
@@ -582,11 +586,7 @@ function receiptPidSet(receipt, label) {
       resources[metric] === maximums[metric],
       `${label} top resource ${metric} maximum is inconsistent`,
     );
-  assert(Array.isArray(resources.hermesPorts), `${label} top resource Hermes ports are missing`);
-  assert(
-    new Set(resources.hermesPorts).size === resources.hermesPorts.length,
-    `${label} top resource Hermes ports repeat a value`,
-  );
+  hermesPortsArray(resources.hermesPorts, `${label} top resource Hermes ports`);
   assert(
     samePids(resources.hermesPorts, [...hermesPorts]),
     `${label} top resource Hermes ports union is inconsistent`,
@@ -1059,6 +1059,11 @@ export function compareReceipts(primary, replay, options = {}) {
     "replay source bindings diverged",
   );
   assert(
+    canonicalJson(primary.probes.resources.hermesPorts) ===
+      canonicalJson(replay.probes.resources.hermesPorts),
+    "replay Hermes port summary diverged",
+  );
+  assert(
     canonicalJson(comparableFixture(primary.fixture)) ===
       canonicalJson(comparableFixture(replay.fixture)),
     "replay fixture diverged",
@@ -1357,6 +1362,60 @@ async function selfTest() {
           if (value.probes.resources.observedPids.length > 0)
             value.probes.resources.observedPids.pop();
           else value.probes.resources.observedPids = [1234];
+        },
+      ],
+      [
+        "resource sample observed PID omission",
+        (value) => delete value.probes.resources.samples[0].observedPids,
+      ],
+      [
+        "resource sample unavailable PID omission",
+        (value) => delete value.probes.resources.samples[0].unavailablePids,
+      ],
+      ["resource top observed PID omission", (value) => delete value.probes.resources.observedPids],
+      [
+        "resource top unavailable PID omission",
+        (value) => delete value.probes.resources.unavailablePids,
+      ],
+      [
+        "resource per-PID Hermes omission",
+        (value) => delete value.probes.resources.samples[0].pidResults[0].hermesPorts,
+      ],
+      [
+        "resource sample Hermes omission",
+        (value) => delete value.probes.resources.samples[0].hermesPorts,
+      ],
+      ["resource top Hermes omission", (value) => delete value.probes.resources.hermesPorts],
+      [
+        "resource Hermes noninteger",
+        (value) => (value.probes.resources.samples[0].pidResults[0].hermesPorts = [6110.5]),
+      ],
+      [
+        "resource Hermes out of range",
+        (value) => (value.probes.resources.samples[0].pidResults[0].hermesPorts = [6109]),
+      ],
+      [
+        "resource Hermes duplicate",
+        (value) => (value.probes.resources.samples[0].pidResults[0].hermesPorts = [6110, 6110]),
+      ],
+      [
+        "resource Hermes unsorted",
+        (value) => (value.probes.resources.samples[0].pidResults[0].hermesPorts = [6111, 6110]),
+      ],
+      [
+        "resource coordinated Hermes forgery",
+        (value) => {
+          const sample = value.probes.resources.samples.find((candidate) =>
+            candidate.pidResults.some((result) => result.observed),
+          );
+          const result = sample?.pidResults.find((candidate) => candidate.observed);
+          if (sample && result) {
+            result.hermesPorts = [6110];
+            sample.hermesPorts = [6110];
+            value.probes.resources.hermesPorts = [6110];
+          } else {
+            value.probes.resources.hermesPorts = [6110];
+          }
         },
       ],
       [

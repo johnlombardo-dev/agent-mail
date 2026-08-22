@@ -1464,7 +1464,7 @@ export function kernelResourceSnapshot(pids, { runLsof } = {}) {
           });
       return parseKernelLsofOutput(output, pid);
     } catch (error) {
-      return { pid, observed: false, reason: String(error) };
+      return { pid, observed: false, hermesPorts: [], reason: String(error) };
     }
   });
   const observedResults = results.filter((result) => result.observed);
