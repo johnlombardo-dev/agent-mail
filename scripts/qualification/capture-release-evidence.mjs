@@ -124,21 +124,51 @@ export const runtimePathPlaceholders = Object.freeze({
   "<benchmark-copy>": "benchmark-copy",
 });
 
+export function runtimePathPlacement(step, index) {
+  return runtimePathPlacements(step)[index];
+}
+
 function validateArgvPlaceholders(step) {
-  for (const arg of step.argv) {
+  for (const [index, expected] of Object.entries(runtimePathPlacements(step))) {
+    assert(step.argv[Number(index)] === expected, `${step.id} runtime path placeholder is missing`);
+  }
+  for (const [index, arg] of step.argv.entries()) {
     const tokens = [...arg.matchAll(/<[^>]*>/gu)].map(([token]) => token);
     if (tokens.length === 0) continue;
     assert(
       tokens.length === 1 && tokens[0] === arg && Object.hasOwn(runtimePathPlaceholders, tokens[0]),
       `${step.id} argv placeholder is unsupported or embedded`,
     );
+    assert(
+      runtimePathPlacement(step, index) === tokens[0],
+      `${step.id} argv placeholder is misplaced`,
+    );
     if (tokens[0] === "<temp-corpus>") {
       assert(
         step.fixture?.kind === "generated-file",
         `${step.id} temp-corpus placeholder is not fixture-bound`,
       );
+      assert(
+        step.id === "fts-generate-250k"
+          ? step.fixture.generationStepId === undefined
+          : step.fixture.generationStepId === "fts-generate-250k",
+        `${step.id} temp-corpus fixture owner is invalid`,
+      );
     }
   }
+}
+
+function runtimePathPlacements(step) {
+  return (
+    {
+      "fts-generate-250k": { 3: "<temp-corpus>" },
+      "fts-measure-250k": {
+        2: "<temp-corpus>",
+        3: "<measurement-output>",
+        5: "<benchmark-copy>",
+      },
+    }[step.id] ?? {}
+  );
 }
 
 function json(value) {
@@ -1014,7 +1044,7 @@ async function finalizeFixture(fixture, outputRoot, fixturePath, checkout, integ
         bytes: physical.bytes,
         integrity: integrity
           ? { ...integrity, inventorySha256: inventory.sha256, inventoryBytes: inventory.bytes }
-          : undefined,
+          : fixture.materialized.integrity,
       },
     };
   }
@@ -1026,6 +1056,7 @@ async function finalizeFixture(fixture, outputRoot, fixturePath, checkout, integ
     fixture.materialized.sha256,
     "fixture",
   );
+  materialized.owner = fixture.materialized.owner;
   if (integrityBefore !== undefined) {
     const integrityAfter = await validateGeneratedSearchArtifact(
       fixturePath,
@@ -1816,7 +1847,24 @@ function selfTestManifest(root) {
   const tiny = "tiny-receipt.mjs";
   writeFileSync(
     join(root, tiny),
-    "process.stdout.write('tiny-pass\\n'); setTimeout(() => {}, 250);\n",
+    [
+      "import { mkdirSync, writeFileSync } from 'node:fs';",
+      "import { dirname } from 'node:path';",
+      "const args = process.argv.slice(2);",
+      "const temp = args.find((arg) => arg.endsWith('.bin'));",
+      "if (temp) {",
+      "  mkdirSync(dirname(temp), { recursive: true });",
+      "  writeFileSync(temp, 'tiny-corpus');",
+      "  writeFileSync(`${temp}.inventory.json`, JSON.stringify({ logicalChecksum: '0'.repeat(64) }));",
+      "}",
+      "for (const output of args.filter((arg) => arg.endsWith('measurement.json') || arg.endsWith('benchmark-copy.sqlite'))) {",
+      "  mkdirSync(dirname(output), { recursive: true });",
+      "  writeFileSync(output, 'tiny-output');",
+      "}",
+      "process.stdout.write('tiny-pass\\n');",
+      "setTimeout(() => {}, 250);",
+      "",
+    ].join("\n"),
   );
   git(root, ["add", tiny]);
   git(root, ["commit", "-qm", "tiny command"]);
@@ -1830,12 +1878,12 @@ function selfTestManifest(root) {
     attackInventory: Array.from({ length: 40 }, (_, index) => `tiny-attack-${index + 1}`),
     steps: [
       {
-        id: "tiny-command",
+        id: "fts-generate-250k",
         ownerIssueId: 176,
         gate: "capacity",
         obligationIds: ["F17"],
         cwd: ".",
-        argv: ["node", tiny],
+        argv: ["node", tiny, "250000", "<temp-corpus>", "1162026"],
         sources: [
           { role: "entrypoint", path: tiny, gitBlob: source.gitBlob, sha256: source.sha256 },
         ],
@@ -1843,15 +1891,32 @@ function selfTestManifest(root) {
         observations: ["stdout", "stderr", "exitCode", "durationNs"],
         thresholds: {
           timeoutMs: 5000,
-          processRssBytes: {
-            source: "kernel:ps",
-            operator: "<=",
-            limit: 1073741824,
-            unit: "bytes",
-          },
         },
-        probes: ["processTreeRss", "streams", "tempRoot"],
-        fixture: { kind: "generated-stream", id: "tiny-fixture", recipe: "stdout:tiny-pass" },
+        probes: ["streams", "tempRoot"],
+        fixture: { kind: "generated-file", id: "tiny-fixture", recipe: "tiny-corpus" },
+      },
+      {
+        id: "fts-measure-250k",
+        ownerIssueId: 176,
+        gate: "capacity",
+        obligationIds: ["F17"],
+        cwd: ".",
+        argv: ["node", tiny, "<temp-corpus>", "<measurement-output>", "1500", "<benchmark-copy>"],
+        sources: [
+          { role: "entrypoint", path: tiny, gitBlob: source.gitBlob, sha256: source.sha256 },
+        ],
+        assertions: [{ id: "tiny-measure-exit-zero", kind: "exitCode", expected: 0 }],
+        observations: ["stdout", "stderr", "exitCode", "durationNs"],
+        thresholds: {
+          timeoutMs: 5000,
+        },
+        probes: ["streams", "tempRoot"],
+        fixture: {
+          kind: "generated-file",
+          id: "tiny-fixture",
+          recipe: "generated-corpus-from-prior-step",
+          generationStepId: "fts-generate-250k",
+        },
       },
     ],
   };
@@ -2258,6 +2323,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.selfTest) {
     const root = mkdtempSync("/tmp/agent-mail-capture-self-test-");
+    const outputRoot = mkdtempSync("/tmp/agent-mail-capture-output-self-test-");
     try {
       git(root, ["init", "-q"]);
       git(root, ["config", "user.email", "capture@example.invalid"]);
@@ -2267,15 +2333,28 @@ async function main() {
       writeFileSync(manifestPath, json(manifest));
       git(root, ["add", "manifest.json"]);
       git(root, ["commit", "-qm", "tiny manifest"]);
+      const generation = await capture({
+        manifestPath,
+        root,
+        outputRoot,
+        stepId: "fts-generate-250k",
+      });
+      assert(generation.result === "pass", "tiny generation did not pass");
+      const generationReceiptPath = join(outputRoot, "generation.receipt.json");
+      writeFileSync(generationReceiptPath, json(generation));
       const receipt = await capture({
         manifestPath,
         root,
-        stepId: "tiny-command",
+        outputRoot,
+        stepId: "fts-measure-250k",
+        generationReceiptPath,
+        generationOutputRoot: outputRoot,
       });
-      assert(receipt.result === "pass", "tiny command did not pass");
+      assert(receipt.result === "pass", "tiny measurement did not pass");
       console.log(JSON.stringify({ format: receiptFormat, accepted: true, receipt }));
     } finally {
       rmSync(root, { recursive: true, force: true });
+      rmSync(outputRoot, { recursive: true, force: true });
     }
     return;
   }

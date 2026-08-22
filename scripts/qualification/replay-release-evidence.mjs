@@ -25,6 +25,7 @@ import {
   canonicalJson,
   observationThresholdValues,
   runtimePathPlaceholders,
+  runtimePathPlacement,
   sha256,
   thresholdMetricRegistry,
 } from "./capture-release-evidence.mjs";
@@ -42,7 +43,14 @@ function assert(condition, message) {
 function comparableFixture(fixture) {
   if (!fixture || typeof fixture !== "object") return fixture;
   const value = structuredClone(fixture);
-  if (value.materialized) delete value.materialized.path;
+  if (value.materialized) {
+    delete value.materialized.path;
+    delete value.materialized.retainedFrom;
+  }
+  if (value.generationReceipt) {
+    for (const key of ["receiptPath", "receiptSha256", "artifactPath", "inventoryPath"])
+      delete value.generationReceipt[key];
+  }
   // Peak RSS growth is a measurement of this run, not fixture identity. Keep
   // bytes/digests comparable while validating each receipt independently.
   if (value.observation) delete value.observation.peakRssGrowthBytes;
@@ -96,19 +104,41 @@ function assertManifestStep(step) {
     "manifest step thresholds are required",
   );
   assert(Array.isArray(step.probes), "manifest step probes are required");
-  for (const arg of step.argv) {
+  const placements =
+    {
+      "fts-generate-250k": { 3: "<temp-corpus>" },
+      "fts-measure-250k": {
+        2: "<temp-corpus>",
+        3: "<measurement-output>",
+        5: "<benchmark-copy>",
+      },
+    }[step.id] ?? {};
+  for (const [index, expected] of Object.entries(placements))
+    assert(step.argv[Number(index)] === expected, "manifest runtime path placeholder is missing");
+  for (const [index, arg] of step.argv.entries()) {
     const tokens = [...arg.matchAll(/<[^>]*>/gu)].map(([token]) => token);
     if (tokens.length === 0) continue;
     assert(
       tokens.length === 1 && tokens[0] === arg && Object.hasOwn(runtimePathPlaceholders, tokens[0]),
       "manifest argv placeholder is unsupported or embedded",
     );
+    assert(
+      runtimePathPlacement(step, index) === tokens[0],
+      "manifest argv placeholder is misplaced",
+    );
     if (tokens[0] === "<temp-corpus>")
       assert(step.fixture?.kind === "generated-file", "manifest temp-corpus role is invalid");
+    if (tokens[0] === "<temp-corpus>")
+      assert(
+        step.id === "fts-generate-250k"
+          ? step.fixture.generationStepId === undefined
+          : step.fixture.generationStepId === "fts-generate-250k",
+        "manifest temp-corpus fixture owner is invalid",
+      );
   }
 }
 
-function ownedRuntimePath(root, value, runId, label) {
+function runtimePathObservation(root, value, runId, label, { allowMissing = false } = {}) {
   assert(typeof value === "string" && isAbsolute(value), `${label} path is not absolute`);
   assert(!value.includes("\\"), `${label} path contains a separator escape`);
   const lexical = resolve(value);
@@ -131,6 +161,10 @@ function ownedRuntimePath(root, value, runId, label) {
   const canonical = join(realpathSync(probe), ...missing);
   const relativePath = relative(root, canonical);
   assert(
+    missing.length === 0 || (allowMissing && missing.length === 1),
+    `${label} path is missing or has missing intermediate components`,
+  );
+  assert(
     relativePath &&
       !relativePath.startsWith("..") &&
       !isAbsolute(relativePath) &&
@@ -138,29 +172,50 @@ function ownedRuntimePath(root, value, runId, label) {
       relativePath.split("/")[0] === runId,
     `${label} path is not run-bound to its output root`,
   );
+  const lexicalRoot = (() => {
+    let ancestor = lexical;
+    while (true) {
+      try {
+        const ancestorStat = lstatSync(ancestor);
+        if (ancestorStat.isDirectory() && realpathSync(ancestor) === root) return ancestor;
+      } catch (error) {
+        if (error?.code !== "ENOENT") throw error;
+      }
+      const parent = dirname(ancestor);
+      if (parent === ancestor) return root;
+      ancestor = parent;
+    }
+  })();
+  const walk = (base, relativeValue) => {
+    let current = base;
+    for (const [index, part] of relativeValue.split("/").entries()) {
+      current = join(current, part);
+      let component;
+      try {
+        component = lstatSync(current);
+      } catch (error) {
+        assert(
+          error?.code === "ENOENT" && allowMissing && index === relativeValue.split("/").length - 1,
+          `${label} path component is unavailable`,
+        );
+        continue;
+      }
+      assert(!component.isSymbolicLink(), `${label} path component is a symlink alias`);
+      if (index < relativeValue.split("/").length - 1)
+        assert(component.isDirectory(), `${label} path component is not a directory`);
+      else assert(component.isFile() && component.nlink === 1, `${label} path is not unique`);
+    }
+  };
+  const canonicalRelative = relative(root, canonical);
+  if (canonicalRelative) walk(root, canonicalRelative);
+  const lexicalRelative = relative(lexicalRoot, lexical);
+  if (lexicalRelative) walk(lexicalRoot, lexicalRelative);
   if (missing.length === 0) {
     assert(stat.isFile() && stat.nlink === 1, `${label} path is not a unique regular file`);
-    return `${stat.dev}:${stat.ino}`;
+    return { canonical, identity: `${stat.dev}:${stat.ino}`, exists: true };
   }
   assert(stat.isDirectory(), `${label} path parent is not a directory`);
-  return null;
-}
-
-function canonicalRuntimePath(root, value, runId, label) {
-  ownedRuntimePath(root, value, runId, label);
-  let probe = resolve(value);
-  const missing = [];
-  while (true) {
-    try {
-      return join(realpathSync(probe), ...missing);
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-      const parent = dirname(probe);
-      assert(parent !== probe, `${label} path has no existing owner`);
-      missing.unshift(basename(probe));
-      probe = parent;
-    }
-  }
+  return { canonical, identity: null, exists: false };
 }
 
 function expectedRuntimePath(token, receipt, step, outputRoot, label) {
@@ -179,6 +234,16 @@ function expectedRuntimePath(token, receipt, step, outputRoot, label) {
     assert(materialized.owner === expectedOwner, `${label} fixture input owner is invalid`);
     relativePath = materialized.retainedFrom ?? materialized.path;
     assert(relativePath === expectedRelativePath, `${label} fixture input role is invalid`);
+    if (expectedOwner === "generator") {
+      assert(
+        materialized.retainedFrom === expectedRelativePath &&
+          materialized.path === `${receipt.runId}/retained/${step.fixture.id}.sqlite` &&
+          receipt.probes?.cleanup?.generatedStaging?.path === expectedRelativePath &&
+          receipt.probes.cleanup.generatedStaging.removed === true &&
+          receipt.probes.cleanup.generatedStaging.retainedPath === materialized.path,
+        `${label} generator staging cleanup is not proven`,
+      );
+    }
   } else {
     relativePath = `${receipt.runId}/${
       token === "<measurement-output>" ? "measurement.json" : "benchmark-copy.sqlite"
@@ -192,7 +257,11 @@ function expectedRuntimePath(token, receipt, step, outputRoot, label) {
     `${label} runtime path binding is malformed`,
   );
   const expected = resolve(outputRoot, relativePath);
-  ownedRuntimePath(outputRoot, expected, receipt.runId, label);
+  const allowMissing =
+    token === "<temp-corpus>" &&
+    step.id === "fts-generate-250k" &&
+    receipt.fixture?.materialized?.owner === "generator";
+  runtimePathObservation(outputRoot, expected, receipt.runId, label, { allowMissing });
   return expected;
 }
 
@@ -220,29 +289,38 @@ function compareManifestArgv(primary, replay, step, primaryRoot, replayRoot) {
       "primary argv",
     );
     const replayExpected = expectedRuntimePath(expected, replay, step, replayRoot, "replay argv");
-    assert(
-      canonicalRuntimePath(primaryRoot, primary.argv[index], primary.runId, "primary argv") ===
-        canonicalRuntimePath(primaryRoot, primaryExpected, primary.runId, "primary argv"),
-      `primary ${expected} path is misplaced`,
-    );
-    assert(
-      canonicalRuntimePath(replayRoot, replay.argv[index], replay.runId, "replay argv") ===
-        canonicalRuntimePath(replayRoot, replayExpected, replay.runId, "replay argv"),
-      `replay ${expected} path is misplaced`,
-    );
-    const primaryIdentity = ownedRuntimePath(
+    const allowMissing =
+      expected === "<temp-corpus>" &&
+      step.id === "fts-generate-250k" &&
+      primary.fixture?.materialized?.owner === "generator";
+    const primaryPath = runtimePathObservation(
       primaryRoot,
       primary.argv[index],
       primary.runId,
       "primary argv",
+      { allowMissing },
     );
-    const replayIdentity = ownedRuntimePath(
+    const replayPath = runtimePathObservation(
       replayRoot,
       replay.argv[index],
       replay.runId,
       "replay argv",
+      {
+        allowMissing:
+          expected === "<temp-corpus>" &&
+          step.id === "fts-generate-250k" &&
+          replay.fixture?.materialized?.owner === "generator",
+      },
     );
-    for (const identity of [primaryIdentity, replayIdentity].filter(Boolean)) {
+    assert(
+      primaryPath.canonical === resolve(primaryExpected),
+      `primary ${expected} path is misplaced`,
+    );
+    assert(
+      replayPath.canonical === resolve(replayExpected),
+      `replay ${expected} path is misplaced`,
+    );
+    for (const identity of [primaryPath.identity, replayPath.identity].filter(Boolean)) {
       assert(!identities.has(identity), "runtime argv path reuses an existing inode");
       identities.add(identity);
     }
@@ -797,13 +875,31 @@ function parseArgs(argv) {
 
 async function selfTest() {
   const root = mkdtempSync("/tmp/agent-mail-replay-self-test-");
+  let replayCheckout;
   try {
     git(root, ["init", "-q"]);
     git(root, ["config", "user.email", "replay@example.invalid"]);
     git(root, ["config", "user.name", "replay self-test"]);
     writeFileSync(
       join(root, "tiny-receipt.mjs"),
-      "process.stdout.write('tiny-pass\\n'); setTimeout(() => {}, 250);\n",
+      [
+        "import { mkdirSync, writeFileSync } from 'node:fs';",
+        "import { dirname } from 'node:path';",
+        "const args = process.argv.slice(2);",
+        "const temp = args.find((arg) => arg.endsWith('.bin'));",
+        "if (temp) {",
+        "  mkdirSync(dirname(temp), { recursive: true });",
+        "  writeFileSync(temp, 'tiny-corpus');",
+        "  writeFileSync(`${temp}.inventory.json`, JSON.stringify({ logicalChecksum: '0'.repeat(64) }));",
+        "}",
+        "for (const output of args.filter((arg) => arg.endsWith('measurement.json') || arg.endsWith('benchmark-copy.sqlite'))) {",
+        "  mkdirSync(dirname(output), { recursive: true });",
+        "  writeFileSync(output, 'tiny-output');",
+        "}",
+        "process.stdout.write('tiny-pass\\n');",
+        "setTimeout(() => {}, 250);",
+        "",
+      ].join("\n"),
     );
     git(root, ["add", "tiny-receipt.mjs"]);
     git(root, ["commit", "-qm", "tiny command"]);
@@ -821,12 +917,12 @@ async function selfTest() {
       attackInventory: Array.from({ length: 40 }, (_, index) => `tiny-attack-${index + 1}`),
       steps: [
         {
-          id: "tiny-command",
+          id: "fts-generate-250k",
           ownerIssueId: 176,
           gate: "capacity",
           obligationIds: ["F17"],
           cwd: ".",
-          argv: ["node", "tiny-receipt.mjs", "<measurement-output>"],
+          argv: ["node", "tiny-receipt.mjs", "250000", "<temp-corpus>", "1162026"],
           sources: [
             {
               role: "entrypoint",
@@ -839,7 +935,40 @@ async function selfTest() {
           observations: ["stdout", "stderr", "exitCode", "durationNs"],
           thresholds: { timeoutMs: 5000 },
           probes: ["process", "streams", "tempRoot"],
-          fixture: { kind: "generated-stream", id: "tiny-fixture", minimumBytes: 1 },
+          fixture: { kind: "generated-file", id: "tiny-fixture", recipe: "tiny-corpus" },
+        },
+        {
+          id: "fts-measure-250k",
+          ownerIssueId: 176,
+          gate: "capacity",
+          obligationIds: ["F17"],
+          cwd: ".",
+          argv: [
+            "node",
+            "tiny-receipt.mjs",
+            "<temp-corpus>",
+            "<measurement-output>",
+            "1500",
+            "<benchmark-copy>",
+          ],
+          sources: [
+            {
+              role: "entrypoint",
+              path: "tiny-receipt.mjs",
+              gitBlob: git(root, ["rev-parse", "HEAD:tiny-receipt.mjs"]),
+              sha256: sha256(source),
+            },
+          ],
+          assertions: [{ id: "tiny-measure-exit-zero", kind: "exitCode", expected: 0 }],
+          observations: ["stdout", "stderr", "exitCode", "durationNs"],
+          thresholds: { timeoutMs: 5000 },
+          probes: ["streams", "tempRoot"],
+          fixture: {
+            kind: "generated-file",
+            id: "tiny-fixture",
+            recipe: "generated-corpus-from-prior-step",
+            generationStepId: "fts-generate-250k",
+          },
         },
       ],
     };
@@ -849,32 +978,78 @@ async function selfTest() {
     git(root, ["commit", "-qm", "tiny manifest"]);
     const primaryRoot = mkdtempSync(join(tmpdir(), "agent-mail-replay-primary-"));
     const replayRoot = mkdtempSync(join(tmpdir(), "agent-mail-replay-replay-"));
-    const primary = await capture({ manifestPath, root, outputRoot: primaryRoot, role: "primary" });
-    const replayCheckout = join(root, "replay-checkout");
+    const generationStep = manifest.steps[0];
+    const measureStep = manifest.steps[1];
+    const primaryGeneration = await capture({
+      manifestPath,
+      root,
+      outputRoot: primaryRoot,
+      role: "primary",
+      stepId: generationStep.id,
+    });
+    const primaryGenerationReceiptPath = join(primaryRoot, "generation.receipt.json");
+    writeFileSync(primaryGenerationReceiptPath, JSON.stringify(primaryGeneration, null, 2) + "\n");
+    replayCheckout = mkdtempSync(join(tmpdir(), "agent-mail-replay-checkout-"));
+    rmSync(replayCheckout, { recursive: true, force: true });
     git(root, ["clone", "-q", root, replayCheckout]);
+    const replayGeneration = await capture({
+      manifestPath: join(replayCheckout, "manifest.json"),
+      root: replayCheckout,
+      outputRoot: replayRoot,
+      role: "independent-replay",
+      stepId: generationStep.id,
+    });
+    const replayGenerationReceiptPath = join(replayRoot, "generation.receipt.json");
+    writeFileSync(replayGenerationReceiptPath, JSON.stringify(replayGeneration, null, 2) + "\n");
+    const primary = await capture({
+      manifestPath,
+      root,
+      outputRoot: primaryRoot,
+      role: "primary",
+      stepId: measureStep.id,
+      generationReceiptPath: primaryGenerationReceiptPath,
+      generationOutputRoot: primaryRoot,
+    });
     const replay = await capture({
       manifestPath: join(replayCheckout, "manifest.json"),
       root: replayCheckout,
       outputRoot: replayRoot,
       role: "independent-replay",
+      stepId: measureStep.id,
+      generationReceiptPath: replayGenerationReceiptPath,
+      generationOutputRoot: replayRoot,
+    });
+    const generationComparison = compareReceipts(primaryGeneration, replayGeneration, {
+      primaryOutputRoot: primaryRoot,
+      replayOutputRoot: replayRoot,
+      step: generationStep,
+      runnerSources: manifest.runner?.sources ?? [],
     });
     const comparison = compareReceipts(primary, replay, {
       primaryOutputRoot: primaryRoot,
       replayOutputRoot: replayRoot,
-      step: manifest.steps[0],
+      step: measureStep,
       runnerSources: manifest.runner?.sources ?? [],
     });
     const manifestAttacks = [
       ["unknown runtime placeholder", "<unknown-path>"],
       ["embedded runtime placeholder", "prefix<temp-corpus>"],
       ["misplaced runtime placeholder", "<temp-corpus>"],
+      ["omitted required runtime placeholder", "input.bin"],
       ["wrong runtime placeholder role", "<benchmark-copy>"],
     ];
     let manifestRejected = 0;
     for (const [name, value] of manifestAttacks) {
-      const forgedStep = structuredClone(manifest.steps[0]);
+      const forgedStep = structuredClone(measureStep);
       if (name === "misplaced runtime placeholder")
-        forgedStep.argv = ["node", value, "tiny-receipt.mjs"];
+        forgedStep.argv = [
+          "node",
+          value,
+          "input.bin",
+          "<measurement-output>",
+          "1500",
+          "<benchmark-copy>",
+        ];
       else forgedStep.argv[2] = value;
       let accepted = false;
       try {
@@ -937,9 +1112,9 @@ async function selfTest() {
     ];
     let authorityRejected = 0;
     for (const invalidOptions of [
-      { step: manifest.steps[0], runnerSources: manifest.runner?.sources ?? [] },
+      { step: measureStep, runnerSources: manifest.runner?.sources ?? [] },
       { primaryOutputRoot: primaryRoot, replayOutputRoot: replayRoot },
-      { primaryOutputRoot: primaryRoot, replayOutputRoot: replayRoot, step: manifest.steps[0] },
+      { primaryOutputRoot: primaryRoot, replayOutputRoot: replayRoot, step: measureStep },
     ]) {
       try {
         compareReceipts(primary, replay, invalidOptions);
@@ -953,7 +1128,7 @@ async function selfTest() {
       compareReceipts(primary, replay, {
         primaryOutputRoot: primaryRoot,
         replayOutputRoot: primaryRoot,
-        step: manifest.steps[0],
+        step: measureStep,
         runnerSources: manifest.runner?.sources ?? [],
       });
     } catch {
@@ -968,7 +1143,7 @@ async function selfTest() {
       compareReceipts(primary, replay, {
         primaryOutputRoot: primaryRoot,
         replayOutputRoot: replayRoot,
-        step: manifest.steps[0],
+        step: measureStep,
         runnerSources: manifest.runner?.sources ?? [],
       });
     } catch {
@@ -983,7 +1158,7 @@ async function selfTest() {
       compareReceipts(primary, replay, {
         primaryOutputRoot: primaryRoot,
         replayOutputRoot: replayRoot,
-        step: manifest.steps[0],
+        step: measureStep,
         runnerSources: manifest.runner?.sources ?? [],
       });
     } catch {
@@ -1003,7 +1178,7 @@ async function selfTest() {
       compareReceipts(primary, symlinkForged, {
         primaryOutputRoot: primaryRoot,
         replayOutputRoot: replayRoot,
-        step: manifest.steps[0],
+        step: measureStep,
         runnerSources: manifest.runner?.sources ?? [],
       });
     } catch {
@@ -1021,7 +1196,7 @@ async function selfTest() {
       compareReceipts(primary, hardlinkForged, {
         primaryOutputRoot: primaryRoot,
         replayOutputRoot: replayRoot,
-        step: manifest.steps[0],
+        step: measureStep,
         runnerSources: manifest.runner?.sources ?? [],
       });
     } catch {
@@ -1029,14 +1204,15 @@ async function selfTest() {
     }
     assert(hardlinkRejected, "hard-linked artifact alias was accepted");
     const runtimePath = join(replayRoot, replay.runId, "measurement.json");
-    mkdirSync(dirname(runtimePath), { recursive: true });
+    const runtimeBytes = readFileSync(runtimePath);
+    unlinkSync(runtimePath);
     symlinkSync(join(primaryRoot, primary.streams.stdout.path), runtimePath);
     let symlinkRuntimeRejected = false;
     try {
       compareReceipts(primary, replay, {
         primaryOutputRoot: primaryRoot,
         replayOutputRoot: replayRoot,
-        step: manifest.steps[0],
+        step: measureStep,
         runnerSources: manifest.runner?.sources ?? [],
       });
     } catch {
@@ -1050,7 +1226,7 @@ async function selfTest() {
       compareReceipts(primary, replay, {
         primaryOutputRoot: primaryRoot,
         replayOutputRoot: replayRoot,
-        step: manifest.steps[0],
+        step: measureStep,
         runnerSources: manifest.runner?.sources ?? [],
       });
     } catch {
@@ -1058,6 +1234,28 @@ async function selfTest() {
     }
     assert(hardlinkRuntimeRejected, "hard-linked runtime path alias was accepted");
     unlinkSync(runtimePath);
+    writeFileSync(runtimePath, runtimeBytes);
+    let missingOutputRejected = 0;
+    for (const [name, path] of [
+      ["measurement output", runtimePath],
+      ["benchmark copy", join(replayRoot, replay.runId, "benchmark-copy.sqlite")],
+    ]) {
+      const bytes = readFileSync(path);
+      unlinkSync(path);
+      let accepted = false;
+      try {
+        compareReceipts(primary, replay, {
+          primaryOutputRoot: primaryRoot,
+          replayOutputRoot: replayRoot,
+          step: measureStep,
+          runnerSources: manifest.runner?.sources ?? [],
+        });
+        accepted = true;
+      } catch {}
+      assert(!accepted, `${name} absence was accepted`);
+      writeFileSync(path, bytes);
+      missingOutputRejected += 1;
+    }
     let rejected = 0;
     for (const [name, mutate] of attacks) {
       const forged = structuredClone(replay);
@@ -1067,7 +1265,7 @@ async function selfTest() {
         compareReceipts(primary, forged, {
           primaryOutputRoot: primaryRoot,
           replayOutputRoot: replayRoot,
-          step: manifest.steps[0],
+          step: measureStep,
           runnerSources: manifest.runner?.sources ?? [],
         });
         accepted = true;
@@ -1078,15 +1276,17 @@ async function selfTest() {
     }
     rmSync(primaryRoot, { recursive: true, force: true });
     rmSync(replayRoot, { recursive: true, force: true });
+    rmSync(replayCheckout, { recursive: true, force: true });
     console.log(
       JSON.stringify({
         format: "agent-mail.executable-receipt/v2",
         accepted: true,
-        attacks: rejected + authorityRejected + manifestRejected + 4,
+        attacks: rejected + authorityRejected + manifestRejected + missingOutputRejected + 4,
         comparison,
       }),
     );
   } finally {
+    if (replayCheckout) rmSync(replayCheckout, { recursive: true, force: true });
     rmSync(root, { recursive: true, force: true });
   }
 }
