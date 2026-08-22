@@ -2688,7 +2688,8 @@
       "targetCandidateCommit",
       "targetCandidateTree",
       "targetEvidenceCommit"
-    ]
+    ],
+    "correctedRerunFields": ["correctedFromSequence", "correctedFromRecordDigest"]
   },
   "resultRecords": [],
   "executionManifest": {

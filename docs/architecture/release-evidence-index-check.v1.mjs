@@ -389,6 +389,7 @@ const resultRecordSchema = {
     "targetCandidateTree",
     "targetEvidenceCommit",
   ],
+  correctedRerunFields: ["correctedFromSequence", "correctedFromRecordDigest"],
 };
 let repositoryFilesCache;
 let currentCommitCache;
@@ -805,6 +806,28 @@ function canonicalJson(value) {
       .join(",")}}`;
   }
   return JSON.stringify(value);
+}
+
+function deepJsonEqual(left, right) {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
+function resolveJsonPointer(document, pointer) {
+  assert(
+    typeof pointer === "string" && (pointer === "" || pointer.startsWith("/")),
+    "oracle pointer is invalid",
+  );
+  if (pointer === "") return document;
+  let value = document;
+  for (const token of pointer.slice(1).split("/")) {
+    const key = token.replaceAll("~1", "/").replaceAll("~0", "~");
+    assert(
+      value !== null && typeof value === "object" && key in value,
+      "oracle pointer is unresolved",
+    );
+    value = value[key];
+  }
+  return value;
 }
 
 function canonicalEvidencePath(path, label, ownerIssueId = 176) {
@@ -2032,7 +2055,16 @@ function validateV2Record(record, baseline, sequence, previousDigest, root, opti
       const step = manifest.steps.find((candidate) => candidate.id === receipt.manifestStepId);
       assert(step, `${label} receipt step is not in manifest`);
       assert(receipt.role === role, `${label} receipt role is detached`);
-      validateExecutableReceipt(receipt, manifest, step, { repositoryRoot: root });
+      const eventBytes = v2EvidenceRef(
+        record,
+        receipt.streams?.events,
+        root,
+        `${label} ${role} ${receipt.manifestStepId} event stream`,
+      );
+      validateExecutableReceipt(receipt, manifest, step, {
+        repositoryRoot: root,
+        eventBytes,
+      });
       assert(
         receipt.provenance &&
           typeof receipt.provenance.path === "string" &&
@@ -2144,6 +2176,7 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
   assert(Array.isArray(indexData.resultRecords), "resultRecords must be append-only array");
   const baseline = new Map(baselineRows.map((row) => [row.id, row]));
   const seenTargets = new Set();
+  const seenCorrections = new Set();
   let previousDigest = null;
   const validationRoot = options.repositoryRoot ?? repositoryRoot;
   const evidenceHead = options.repositoryRoot
@@ -2309,6 +2342,43 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
         );
       }
     }
+    if (
+      record.protocol === "agent-mail.release-evidence/v2" &&
+      record.recordType === "qualification"
+    ) {
+      const priorDispositions = indexData.resultRecords
+        .slice(0, recordIndex)
+        .filter(
+          (candidate) =>
+            candidate.protocol === "agent-mail.release-evidence/v2" &&
+            candidate.recordType === "disposition" &&
+            candidate.gateId === "disposition",
+        );
+      const revokedTargets = priorDispositions.filter(
+        (disposition) =>
+          disposition.targetSequence > 0 &&
+          indexData.resultRecords[disposition.targetSequence - 1]?.obligationIds?.some((id) =>
+            record.obligationIds.includes(id),
+          ),
+      );
+      if (revokedTargets.length > 0) {
+        assert(
+          revokedTargets.length === 1 &&
+            Number.isInteger(record.correctedFromSequence) &&
+            record.correctedFromSequence === revokedTargets[0].targetSequence &&
+            record.correctedFromRecordDigest === revokedTargets[0].targetRecordDigest,
+          `v2 corrected qualification ${record.sequence} is not digest-bound to its revocation`,
+        );
+      } else if (record.correctedFromSequence !== undefined) {
+        const correction = indexData.resultRecords[record.correctedFromSequence - 1];
+        assert(
+          correction?.protocol === "agent-mail.release-evidence/v2" &&
+            correction.recordType === "disposition" &&
+            correction.targetRecordDigest === record.correctedFromRecordDigest,
+          `v2 corrected qualification ${record.sequence} targets an inactive record`,
+        );
+      }
+    }
     if (options.mode !== "prospective" && !options.bundleCommit) {
       assert(
         record.evidenceCommit === evidenceHead ||
@@ -2423,8 +2493,20 @@ function validateResultRecords(indexData, baselineRows, options = {}) {
     }
     for (const obligationId of record.obligationIds) {
       const target = `${record.gateId}:${obligationId}`;
-      assert(!seenTargets.has(target), `result sequence ${record.sequence} duplicates ${target}`);
-      seenTargets.add(target);
+      if (seenTargets.has(target)) {
+        const correctionKey = `${target}:${record.correctedFromSequence ?? ""}`;
+        assert(
+          record.protocol === "agent-mail.release-evidence/v2" &&
+            record.recordType === "qualification" &&
+            Number.isInteger(record.correctedFromSequence) &&
+            record.correctedFromRecordDigest &&
+            !seenCorrections.has(correctionKey),
+          `result sequence ${record.sequence} duplicates ${target}`,
+        );
+        seenCorrections.add(correctionKey);
+      } else {
+        seenTargets.add(target);
+      }
       assert(
         ownerRule.obligationIds.includes(obligationId),
         `result sequence ${record.sequence} crosses owner scope`,
@@ -2955,6 +3037,165 @@ function validateReceiptRuntimeEvidence(receipt, step, label) {
   validateReceiptCleanup(receipt, label);
 }
 
+function validateReceiptAssertionSemantics(receipt, manifest, step, eventBytes, root, label) {
+  const expectedIds = step.assertions.map((assertion) => assertion.id);
+  assert(
+    new Set(expectedIds).size === expectedIds.length,
+    `${label} manifest assertion IDs repeat`,
+  );
+  assert(
+    receipt.assertions.length === expectedIds.length &&
+      new Set(receipt.assertions.map((assertion) => assertion.id)).size ===
+        receipt.assertions.length &&
+      receipt.assertions.every((assertion) => expectedIds.includes(assertion.id)),
+    `${label} assertion IDs are not an exact unique manifest set`,
+  );
+  const actualIds = new Set(receipt.assertions.map((assertion) => assertion.id));
+  assert(
+    expectedIds.every((id) => actualIds.has(id)),
+    `${label} assertion IDs are incomplete`,
+  );
+  const sourceKey = (source) =>
+    JSON.stringify([source.role, source.path, source.gitBlob, source.sha256]);
+  const expectedSources = step.sources ?? [];
+  assert(
+    new Set(expectedSources.map(sourceKey)).size === expectedSources.length &&
+      new Set((receipt.sources ?? []).map(sourceKey)).size === (receipt.sources ?? []).length &&
+      JSON.stringify([...new Set((receipt.sources ?? []).map(sourceKey))].sort()) ===
+        JSON.stringify([...new Set(expectedSources.map(sourceKey))].sort()),
+    `${label} selected source bindings are not an exact manifest set`,
+  );
+  if (Object.hasOwn(receipt, "selectedSources")) {
+    assert(
+      JSON.stringify([...new Set((receipt.selectedSources ?? []).map(sourceKey))].sort()) ===
+        JSON.stringify([...new Set(expectedSources.map(sourceKey))].sort()),
+      `${label} selectedSources are detached`,
+    );
+  }
+  if (manifest?.runner?.sources) {
+    assert(
+      new Set(manifest.runner.sources.map(sourceKey)).size === manifest.runner.sources.length &&
+        new Set((receipt.runnerSources ?? []).map(sourceKey)).size ===
+          (receipt.runnerSources ?? []).length &&
+        JSON.stringify([...new Set((receipt.runnerSources ?? []).map(sourceKey))].sort()) ===
+          JSON.stringify([...new Set(manifest.runner.sources.map(sourceKey))].sort()),
+      `${label} runner source bindings are not an exact manifest set`,
+    );
+  }
+  if (!eventBytes) return;
+  const events = eventBytes
+    .toString("utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        fail(`${label} event stream is not JSONL`);
+      }
+    });
+  const sourceByPath = new Map(expectedSources.map((source) => [source.path, source]));
+  for (const expected of step.assertions) {
+    const observed = receipt.assertions.find((assertion) => assertion.id === expected.id);
+    assert(observed, `${label} assertion ${expected.id} is missing`);
+    if (expected.kind === "source-token") {
+      const matching = events.filter(
+        (event) => event.event === "source-token" && event.assertionId === expected.id,
+      );
+      assert(matching.length === 1, `${label} source-token event count is not exactly one`);
+      const event = matching[0];
+      const source = sourceByPath.get(expected.sourcePath);
+      assert(
+        event.format === "agent-mail.observation/v1" &&
+          source &&
+          event.sourcePath === expected.sourcePath &&
+          event.sourceSha256 === source.sha256 &&
+          event.token === expected.token &&
+          Number.isSafeInteger(event.observed) &&
+          event.observed >= 0 &&
+          event.expected === expected.occurrences &&
+          typeof event.pass === "boolean" &&
+          event.pass === (event.observed === event.expected) &&
+          observed.observed === event.observed &&
+          observed.pass === event.pass,
+        `${label} source-token event is detached`,
+      );
+    } else if (expected.kind === "fixture-observation") {
+      const matching = events.filter(
+        (event) => event.event === "fixture-observation" && event.fixtureId === expected.fixtureId,
+      );
+      assert(matching.length === 1, `${label} fixture observation count is not exactly one`);
+      const event = matching[0];
+      const source = sourceByPath.get(expected.sourcePath);
+      for (const field of [
+        "producedBytes",
+        "consumedBytes",
+        "producedChunks",
+        "consumedChunks",
+        "expectedBytes",
+      ])
+        assert(
+          Number.isSafeInteger(event[field]) && event[field] >= 0,
+          `${label} fixture observation number is invalid`,
+        );
+      const bytesEqual = event.producedBytes === event.consumedBytes;
+      const sha256Equal = event.producedSha256 === event.consumedSha256;
+      const exactBytes =
+        event.producedBytes === expected.expectedBytes &&
+        event.consumedBytes === expected.expectedBytes;
+      const pass =
+        event.format === "agent-mail.fixture-observation/v1" &&
+        source &&
+        event.sourcePath === expected.sourcePath &&
+        event.sourceSha256 === source.sha256 &&
+        event.fixtureId === expected.fixtureId &&
+        /^[0-9a-f]{64}$/u.test(event.producedSha256 ?? "") &&
+        /^[0-9a-f]{64}$/u.test(event.consumedSha256 ?? "") &&
+        event.producerCompleted === true &&
+        event.consumerCompleted === true &&
+        bytesEqual &&
+        sha256Equal &&
+        exactBytes &&
+        event.producedChunks > 0 &&
+        event.consumedChunks > 0;
+      assert(
+        event.expectedBytes === expected.expectedBytes &&
+          event.bytesEqual === bytesEqual &&
+          event.sha256Equal === sha256Equal &&
+          event.exactBytes === exactBytes &&
+          event.pass === pass &&
+          deepJsonEqual(observed.observed, event) &&
+          observed.pass === pass,
+        `${label} fixture observation is detached`,
+      );
+    } else if (expected.kind === "structured-oracle") {
+      const matching = events.filter((event) => event.event === expected.event);
+      assert(matching.length === 1, `${label} structured oracle event count is not exactly one`);
+      const event = matching[0];
+      const oracleBytes = regularCandidateBlob(
+        receipt.candidate.commit,
+        expected.path,
+        root,
+        `${label} structured oracle`,
+      );
+      assert(digest(oracleBytes) === expected.sha256, `${label} structured oracle digest drifted`);
+      const oracleValue = resolveJsonPointer(
+        JSON.parse(oracleBytes.toString("utf8")),
+        expected.pointer,
+      );
+      assert(
+        event.path === expected.path &&
+          event.sha256 === expected.sha256 &&
+          event.pointer === expected.pointer &&
+          deepJsonEqual(event.value, oracleValue) &&
+          deepJsonEqual(observed.observed, event.value) &&
+          observed.pass === deepJsonEqual(event.value, expected.value),
+        `${label} structured oracle event is detached`,
+      );
+    }
+  }
+}
+
 export function validateExecutableReceipt(receipt, manifest, step, options = {}) {
   const label = `receipt ${receipt?.runId ?? "unknown"}`;
   assert(receipt?.format === "agent-mail.executable-receipt/v2", `${label} format is invalid`);
@@ -3064,6 +3305,14 @@ export function validateExecutableReceipt(receipt, manifest, step, options = {})
         `${label} exit assertion is detached`,
       );
   }
+  validateReceiptAssertionSemantics(
+    receipt,
+    manifest,
+    step,
+    options.eventBytes,
+    options.repositoryRoot ?? repositoryRoot,
+    label,
+  );
   assert(
     receipt.result !== "pass" ||
       (receipt.process.exitCode === 0 && receipt.assertions.every((assertion) => assertion.pass)),
@@ -3226,10 +3475,10 @@ function runV2ExecutionSelfTest() {
       },
     ],
     [
-      "receipt missing assertion",
+      "receipt duplicate assertion ID",
       () => {
         const value = structuredClone(receipt);
-        value.assertions = [];
+        value.assertions = [value.assertions[0], structuredClone(value.assertions[0])];
         return value;
       },
     ],
