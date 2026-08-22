@@ -1446,7 +1446,10 @@ function parseArgs(argv) {
 
 function selfTestManifest(root) {
   const tiny = "tiny-receipt.mjs";
-  writeFileSync(join(root, tiny), "process.stdout.write('tiny-pass\\n');\n");
+  writeFileSync(
+    join(root, tiny),
+    "process.stdout.write('tiny-pass\\n'); setTimeout(() => {}, 250);\n",
+  );
   git(root, ["add", tiny]);
   git(root, ["commit", "-qm", "tiny command"]);
   const head = git(root, ["rev-parse", "HEAD"]);
