@@ -240,6 +240,19 @@ function validateAssertion(assertion, step) {
       Number.isSafeInteger(assertion.occurrences) && assertion.occurrences >= 1,
       `${step.id} source token occurrence count is invalid`,
     );
+  } else if (assertion.kind === "fixture-observation") {
+    assert(
+      step.sources.some((source) => source.path === assertion.sourcePath),
+      `${step.id} fixture observation is not source-bound`,
+    );
+    assert(
+      typeof assertion.fixtureId === "string" && assertion.fixtureId.length > 0,
+      `${step.id} fixture observation id is missing`,
+    );
+    assert(
+      Number.isSafeInteger(assertion.expectedBytes) && assertion.expectedBytes > 0,
+      `${step.id} fixture observation byte target is invalid`,
+    );
   } else if (assertion.kind === "structured-oracle") {
     assert(
       typeof assertion.event === "string" && assertion.event.length > 0,
@@ -517,12 +530,12 @@ async function validateGeneratedSearchArtifact(path, checkout, expectedInventory
       canonicalJson(inventory) === canonicalJson(expectedInventory),
       "search inventory drifted",
     );
+  const generator = await import(
+    pathToFileURL(join(repositoryRoot, "scripts/capacity/generate-search-corpus.ts")).href
+  );
   const sqlite = await import("bun:sqlite");
-  const database = new sqlite.Database(path, { readonly: true });
+  const database = new sqlite.Database(path);
   try {
-    const generator = await import(
-      pathToFileURL(join(checkout, "scripts/capacity/generate-search-corpus.ts")).href
-    );
     generator.validateCorpusInventory(database, inventory);
   } finally {
     database.close();
@@ -572,6 +585,21 @@ function generationReceipt(receiptPath, outputRoot, fixture, candidateCommit) {
     actual.sha256 === generated.sha256 && actual.bytes === generated.bytes,
     "generation artifact drifted",
   );
+  const generatedInventory = generated.integrity;
+  assert(
+    generatedInventory &&
+      /^[0-9a-f]{64}$/u.test(generatedInventory.inventorySha256 ?? "") &&
+      Number.isSafeInteger(generatedInventory.inventoryBytes) &&
+      generatedInventory.inventoryBytes > 0,
+    "generation receipt inventory binding is missing",
+  );
+  const inventoryPath = `${sourcePath}.inventory.json`;
+  const inventory = fileDigest(inventoryPath, "generation inventory");
+  assert(
+    inventory.sha256 === generatedInventory.inventorySha256 &&
+      inventory.bytes === generatedInventory.inventoryBytes,
+    "generation inventory drifted",
+  );
   const receiptAbsolute = resolve(receiptPath);
   const receiptDigest = sha256(receiptBytes);
   return {
@@ -581,11 +609,16 @@ function generationReceipt(receiptPath, outputRoot, fixture, candidateCommit) {
     artifactRelativePath: ownerRelativePath(outputRoot, sourcePath, "generation artifact"),
     artifactSha256: actual.sha256,
     artifactBytes: actual.bytes,
+    inventoryPath,
+    inventoryRelativePath: ownerRelativePath(outputRoot, inventoryPath, "generation inventory"),
+    inventorySha256: inventory.sha256,
+    inventoryBytes: inventory.bytes,
   };
 }
 
 async function finalizeFixture(fixture, outputRoot, fixturePath, checkout, integrityBefore) {
   if (!fixture?.materialized) return fixture;
+  if (fixture.materialized.owner === "observation") return fixture;
   if (fixture.materialized.owner === "generator") {
     ownerRelativePath(outputRoot, fixturePath, "generator fixture");
     const physical = fileDigest(fixturePath, "generator fixture");
@@ -593,6 +626,9 @@ async function finalizeFixture(fixture, outputRoot, fixturePath, checkout, integ
       fixture.rowCount === 250000
         ? await validateGeneratedSearchArtifact(fixturePath, checkout)
         : undefined;
+    const inventory = integrity
+      ? fileDigest(`${fixturePath}.inventory.json`, "generator inventory")
+      : undefined;
     return {
       ...fixture,
       materialized: {
@@ -600,7 +636,9 @@ async function finalizeFixture(fixture, outputRoot, fixturePath, checkout, integ
         presentAfterRun: true,
         sha256: physical.sha256,
         bytes: physical.bytes,
-        integrity,
+        integrity: integrity
+          ? { ...integrity, inventorySha256: inventory.sha256, inventoryBytes: inventory.bytes }
+          : undefined,
       },
     };
   }
@@ -780,18 +818,23 @@ function fixtureBytes(fixture) {
 }
 
 function materializeFixture(fixture, destination, runId, priorGeneration) {
-  const bytes = fixtureBytes(fixture);
   if (!fixture) return null;
+  const bytes = fixture.observationAssertionId ? null : fixtureBytes(fixture);
+  if (fixture.kind === "generated-stream" && fixture.observationAssertionId) return { ...fixture };
   const path = join(destination, runId, "fixtures", `${fixture.id ?? "fixture"}.bin`);
   if (fixture.kind === "generated-file") {
     if (fixture.generationStepId) {
       assert(priorGeneration, `${fixture.id} requires a prior generation receipt`);
       mkdirSync(dirname(path), { recursive: true });
       cpSync(priorGeneration.artifactPath, path);
+      cpSync(priorGeneration.inventoryPath, `${path}.inventory.json`);
       const copied = fileDigest(path, "measurement fixture");
+      const copiedInventory = fileDigest(`${path}.inventory.json`, "measurement inventory");
       assert(
         copied.sha256 === priorGeneration.artifactSha256 &&
-          copied.bytes === priorGeneration.artifactBytes,
+          copied.bytes === priorGeneration.artifactBytes &&
+          copiedInventory.sha256 === priorGeneration.inventorySha256 &&
+          copiedInventory.bytes === priorGeneration.inventoryBytes,
         "measurement fixture does not match generation artifact",
       );
       return {
@@ -802,6 +845,9 @@ function materializeFixture(fixture, destination, runId, priorGeneration) {
           artifactPath: priorGeneration.artifactRelativePath,
           artifactSha256: priorGeneration.artifactSha256,
           artifactBytes: priorGeneration.artifactBytes,
+          inventoryPath: priorGeneration.inventoryRelativePath,
+          inventorySha256: priorGeneration.inventorySha256,
+          inventoryBytes: priorGeneration.inventoryBytes,
         },
         materialized: {
           path: relative(destination, path),
@@ -874,6 +920,76 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
         pass: event.pass === true && event.observed === assertion.occurrences,
       };
     }
+    if (assertion.kind === "fixture-observation") {
+      const matching = events.filter(
+        (event) => event.event === "fixture-observation" && event.fixtureId === assertion.fixtureId,
+      );
+      assert(matching.length === 1, `${step.id} fixture observation count is not exactly one`);
+      const event = matching[0];
+      assert(
+        event.format === "agent-mail.fixture-observation/v1",
+        `${step.id} fixture observation format is invalid`,
+      );
+      const source = step.sources.find((candidate) => candidate.path === assertion.sourcePath);
+      assert(
+        source && event.sourcePath === assertion.sourcePath && event.sourceSha256 === source.sha256,
+        `${step.id} fixture observation source is detached`,
+      );
+      assert(
+        event.fixtureId === assertion.fixtureId,
+        `${step.id} fixture observation id is detached`,
+      );
+      for (const field of [
+        "producedBytes",
+        "consumedBytes",
+        "producedChunks",
+        "consumedChunks",
+        "expectedBytes",
+      ])
+        assert(
+          Number.isSafeInteger(event[field]) && event[field] >= 0,
+          `${step.id} fixture observation numbers are invalid`,
+        );
+      assert(
+        /^[0-9a-f]{64}$/u.test(event.producedSha256 ?? "") &&
+          /^[0-9a-f]{64}$/u.test(event.consumedSha256 ?? ""),
+        `${step.id} fixture observation digests are invalid`,
+      );
+      for (const field of [
+        "producerCompleted",
+        "consumerCompleted",
+        "bytesEqual",
+        "sha256Equal",
+        "exactBytes",
+        "pass",
+      ])
+        assert(
+          typeof event[field] === "boolean",
+          `${step.id} fixture observation flags are invalid`,
+        );
+      const bytesEqual = event.producedBytes === event.consumedBytes;
+      const sha256Equal = event.producedSha256 === event.consumedSha256;
+      const exactBytes =
+        event.producedBytes === assertion.expectedBytes &&
+        event.consumedBytes === assertion.expectedBytes;
+      const pass =
+        event.producerCompleted &&
+        event.consumerCompleted &&
+        bytesEqual &&
+        sha256Equal &&
+        exactBytes &&
+        event.producedChunks > 0 &&
+        event.consumedChunks > 0;
+      assert(
+        event.expectedBytes === assertion.expectedBytes &&
+          event.bytesEqual === bytesEqual &&
+          event.sha256Equal === sha256Equal &&
+          event.exactBytes === exactBytes &&
+          event.pass === pass,
+        `${step.id} fixture observation result is detached`,
+      );
+      return { ...assertion, observed: event, pass };
+    }
     const matching = events.filter(
       (event) =>
         event.event === assertion.event &&
@@ -902,6 +1018,27 @@ function evaluateAssertions(step, sourceRoot, processResult, events) {
       pass: deepJsonEqual(observed, assertion.value) && deepJsonEqual(observed, oracleValue),
     };
   });
+}
+
+function fixtureFromObservation(fixture, assertions) {
+  if (!fixture?.observationAssertionId) return fixture;
+  const assertion = assertions.find((candidate) => candidate.id === fixture.observationAssertionId);
+  assert(
+    assertion?.kind === "fixture-observation" && assertion.pass,
+    "fixture observation did not pass",
+  );
+  const observed = assertion.observed;
+  return {
+    ...fixture,
+    materialized: {
+      owner: "observation",
+      presentBeforeRun: false,
+      presentAfterRun: true,
+      bytes: observed.producedBytes,
+      sha256: observed.producedSha256,
+    },
+    observation: observed,
+  };
 }
 
 function parseArgs(argv) {
@@ -1058,8 +1195,9 @@ export async function capture({
     );
     const durationNs = processResult.completed - processResult.started;
     const assertions = evaluateAssertions(step, checkout, processResult, eventsValue);
+    const observedFixture = fixtureFromObservation(fixture, assertions);
     const retainedFixture = await finalizeFixture(
-      fixture,
+      observedFixture,
       destination,
       fixturePath,
       checkout,
@@ -1221,14 +1359,16 @@ async function main() {
     manifestPath: args.manifest,
     stepId: args.step,
     root: args.root ? resolve(args.root) : repositoryRoot,
-    outputRoot: args.outputRoot ? resolve(args.outputRoot) : undefined,
-    generationReceiptPath: args.generationReceipt ? resolve(args.generationReceipt) : undefined,
-    generationOutputRoot: args.generationOutputRoot
-      ? resolve(args.generationOutputRoot)
+    outputRoot: args["output-root"] ? resolve(args["output-root"]) : undefined,
+    generationReceiptPath: args["generation-receipt"]
+      ? resolve(args["generation-receipt"])
+      : undefined,
+    generationOutputRoot: args["generation-output-root"]
+      ? resolve(args["generation-output-root"])
       : undefined,
     role: args.role ?? "primary",
-    runId: args.runId,
-    timeoutMs: args.timeoutMs ? Number(args.timeoutMs) : undefined,
+    runId: args["run-id"],
+    timeoutMs: args["timeout-ms"] ? Number(args["timeout-ms"]) : undefined,
   });
   const receiptPath = args.receipt
     ? resolve(args.receipt)

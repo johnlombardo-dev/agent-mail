@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "bun:test";
+import { z } from "zod";
 import {
   capacityProbeReportSchema,
   FIXTURE_BYTES,
@@ -16,6 +17,79 @@ import {
 } from "./mime-capacity-p2-c11";
 
 const temporaryDirectories: string[] = [];
+
+const fixtureObservationSchema = z
+  .object({
+    format: z.literal("agent-mail.fixture-observation/v1"),
+    event: z.literal("fixture-observation"),
+    fixtureId: z.literal("issue-176-mime-250mib"),
+    sourcePath: z.literal("packages/imap/test/helpers/mime-capacity-p2-c11-child.ts"),
+    sourceSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    producedBytes: z.number().int().nonnegative(),
+    producedSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    producedChunks: z.number().int().positive(),
+    producerCompleted: z.boolean(),
+    consumedBytes: z.number().int().nonnegative(),
+    consumedSha256: z.string().regex(/^[a-f0-9]{64}$/u),
+    consumedChunks: z.number().int().positive(),
+    consumerCompleted: z.boolean(),
+    expectedBytes: z.literal(FIXTURE_BYTES),
+    bytesEqual: z.boolean(),
+    sha256Equal: z.boolean(),
+    exactBytes: z.boolean(),
+    pass: z.boolean(),
+  })
+  .strict();
+
+type FixtureObservation = z.infer<typeof fixtureObservationSchema>;
+
+function derivedFixtureObservation(observation: FixtureObservation): FixtureObservation {
+  const bytesEqual = observation.producedBytes === observation.consumedBytes;
+  const sha256Equal = observation.producedSha256 === observation.consumedSha256;
+  const exactBytes =
+    observation.producedBytes === FIXTURE_BYTES && observation.consumedBytes === FIXTURE_BYTES;
+  const pass =
+    observation.producerCompleted &&
+    observation.consumerCompleted &&
+    bytesEqual &&
+    sha256Equal &&
+    exactBytes &&
+    observation.producedChunks > 0 &&
+    observation.consumedChunks > 0;
+  return {
+    ...observation,
+    bytesEqual,
+    sha256Equal,
+    exactBytes,
+    pass,
+  };
+}
+
+async function validateFixtureObservation(value: unknown): Promise<FixtureObservation> {
+  const parsed = fixtureObservationSchema.parse(value);
+  const sourceBytes = await readFile(join(import.meta.dir, "helpers/mime-capacity-p2-c11-child.ts"));
+  expect(parsed.sourceSha256).toBe(createHash("sha256").update(sourceBytes).digest("hex"));
+  const derived = derivedFixtureObservation(parsed);
+  expect(parsed.bytesEqual).toBe(derived.bytesEqual);
+  expect(parsed.sha256Equal).toBe(derived.sha256Equal);
+  expect(parsed.exactBytes).toBe(derived.exactBytes);
+  expect(parsed.pass).toBe(derived.pass);
+  return derived;
+}
+
+function createFixtureObservationEmitter(
+  sink: (observation: FixtureObservation) => void = (observation) =>
+    process.stdout.write(`${JSON.stringify(observation)}\n`),
+): (observation: FixtureObservation) => void {
+  let emitted = false;
+  return (observation) => {
+    if (emitted) throw new Error("duplicate fixture observation");
+    emitted = true;
+    sink(observation);
+  };
+}
+
+const emitFixtureObservation = createFixtureObservationEmitter();
 
 async function emitSourceToken(assertionId: string, sourcePath: string, tokenParts: string[]) {
   const token = tokenParts.join("");
@@ -39,7 +113,13 @@ async function emitSourceToken(assertionId: string, sourcePath: string, tokenPar
 async function runProbe(
   mode: CapacityProbeMode,
   directory: string,
-): Promise<{ exitCode: number; stderr: string; report: CapacityProbeReport | null; stdout: string }> {
+): Promise<{
+  exitCode: number;
+  observation: FixtureObservation | null;
+  stderr: string;
+  report: CapacityProbeReport | null;
+  stdout: string;
+}> {
   const child = Bun.spawn(
     [process.execPath, join(import.meta.dir, "helpers/mime-capacity-p2-c11-child.ts"), mode, directory],
     { cwd: join(import.meta.dir, "../.."), stdout: "pipe", stderr: "pipe" },
@@ -50,12 +130,23 @@ async function runProbe(
     child.exited,
   ]);
   let report: CapacityProbeReport | null = null;
-  try {
-    report = capacityProbeReportSchema.parse(JSON.parse(stdout));
-  } catch {
-    report = null;
+  let observation: FixtureObservation | null = null;
+  for (const line of stdout.split("\n").filter((value) => value.length > 0)) {
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const reportResult = capacityProbeReportSchema.safeParse(value);
+    if (reportResult.success) report = reportResult.data;
+    const observationResult = fixtureObservationSchema.safeParse(value);
+    if (observationResult.success) {
+      if (observation !== null) throw new Error("duplicate fixture observation from capacity child");
+      observation = observationResult.data;
+    }
   }
-  return { exitCode, stderr, report, stdout };
+  return { exitCode, observation, stderr, report, stdout };
 }
 
 async function retainEvidence(evidence: CapacityEvidence): Promise<string> {
@@ -118,6 +209,19 @@ describe("P2-C11 MIME capacity qualification", () => {
       expect(buffering.report.gate).toBe("fail");
 
       expect(evidencePath.length).toBeGreaterThan(0);
+      expect(streaming.observation).not.toBeNull();
+      expect(buffering.observation).toBeNull();
+      if (streaming.observation === null) throw new Error("streaming fixture observation missing");
+      const observation = await validateFixtureObservation(streaming.observation);
+      expect(observation.producedBytes).toBe(FIXTURE_BYTES);
+      expect(observation.consumedBytes).toBe(FIXTURE_BYTES);
+      expect(observation.producedSha256).toBe(observation.consumedSha256);
+      expect(observation.producedChunks).toBeGreaterThan(0);
+      expect(observation.consumedChunks).toBeGreaterThan(0);
+      expect(observation.producerCompleted).toBe(true);
+      expect(observation.consumerCompleted).toBe(true);
+      expect(observation.pass).toBe(true);
+      emitFixtureObservation(observation);
       await emitSourceToken(
         "mime-streaming-gate",
         "packages/imap/test/mime-capacity-p2-c11.test.ts",
@@ -131,4 +235,35 @@ describe("P2-C11 MIME capacity qualification", () => {
     },
     120_000,
   );
+
+  test("rejects dishonest fixture observations at the harness boundary", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "agent-mail-mime-capacity-attacks-"));
+    temporaryDirectories.push(directory);
+    const streaming = await runProbe("streaming", directory);
+    expect(streaming.observation).not.toBeNull();
+    if (streaming.observation === null) throw new Error("streaming fixture observation missing");
+    const baseline = await validateFixtureObservation(streaming.observation);
+    const withPatch = (patch: Partial<FixtureObservation>): FixtureObservation =>
+      derivedFixtureObservation({ ...baseline, ...patch });
+
+    expect(derivedFixtureObservation(withPatch({ producedBytes: FIXTURE_BYTES - 1 })).pass).toBe(false);
+    expect(derivedFixtureObservation(withPatch({ consumedBytes: FIXTURE_BYTES - 1 })).pass).toBe(false);
+    expect(
+      derivedFixtureObservation(withPatch({ consumedSha256: "0".repeat(64) })).pass,
+    ).toBe(false);
+    expect(derivedFixtureObservation(withPatch({ producerCompleted: false })).pass).toBe(false);
+    expect(derivedFixtureObservation(withPatch({ consumerCompleted: false })).pass).toBe(false);
+    expect(() =>
+      fixtureObservationSchema.parse({ ...baseline, format: "agent-mail.observation/v1" }),
+    ).toThrow();
+    await expect(
+      validateFixtureObservation({ ...baseline, sourcePath: "packages/imap/test/other.ts" }),
+    ).rejects.toThrow();
+
+    const emissions: FixtureObservation[] = [];
+    const emit = createFixtureObservationEmitter((observation) => emissions.push(observation));
+    emit(baseline);
+    expect(() => emit(baseline)).toThrow("duplicate fixture observation");
+    expect(emissions).toHaveLength(1);
+  });
 });

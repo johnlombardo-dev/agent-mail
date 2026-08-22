@@ -21,6 +21,15 @@
     "forged-timing",
     "forged-environment",
     "forged-stream-digest",
+    "fixture-observation-missing",
+    "fixture-observation-duplicate",
+    "fixture-observation-wrong-format",
+    "fixture-observation-wrong-source",
+    "fixture-observation-wrong-id",
+    "fixture-observation-byte-drift",
+    "fixture-observation-digest-drift",
+    "fixture-observation-incomplete",
+    "fixture-observation-child-pass-forgery",
     "forged-exit",
     "forged-signal",
     "forged-timeout",
@@ -82,8 +91,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "7e1c296d2c7cb91f6eb66604727ff4da789b4199",
-        "sha256": "5a4ff309f9eb5bc0317ebe4f202994411e7ec092e8fe9465a095097c0e3f2ee2"
+        "gitBlob": "8f30c2d587985720334b36b28deb099400929c22",
+        "sha256": "5a614a316583aa898a4808691fd58e7d5f3c98080f90c173b350b1c51b299a24"
       },
       {
         "role": "replay-runner",
@@ -104,8 +113,14 @@
         {
           "role": "test",
           "path": "packages/imap/test/mime-capacity-p2-c11.test.ts",
-          "gitBlob": "638c84ba17ec86832f6d8395a39932079f66dd4d",
-          "sha256": "41998b9c94fa5762d92f83c5a9f60c84ec7dbed96665f1396b0c578a1348a29c"
+          "gitBlob": "a6a076e89dd28e62ac72b24db573873a0377cc0c",
+          "sha256": "77234285b9f1dab3bb9b7c2596d335f0a12c0052e182a57bd1969bc4cd6f9f5b"
+        },
+        {
+          "role": "fixture-observation-helper",
+          "path": "packages/imap/test/helpers/mime-capacity-p2-c11-child.ts",
+          "gitBlob": "3744882024ccea09480eed2dc53615ec6e4da4b2",
+          "sha256": "222845c0a784b1568d2da5b4d82a0928b35a838fdb5fcbefecf359a8e437e9e0"
         },
         {
           "role": "package-manifest",
@@ -124,7 +139,8 @@
         "kind": "generated-stream",
         "id": "issue-176-mime-250mib",
         "recipe": "materialize-or-stream-exactly-262144000-bytes",
-        "minimumBytes": 262144000
+        "minimumBytes": 262144000,
+        "observationAssertionId": "mime-fixture-observation"
       },
       "assertions": [
         {
@@ -140,6 +156,13 @@
           "sourcePath": "packages/imap/test/mime-capacity-p2-c11.test.ts",
           "token": "buffering.report.gate",
           "occurrences": 1
+        },
+        {
+          "id": "mime-fixture-observation",
+          "kind": "fixture-observation",
+          "sourcePath": "packages/imap/test/helpers/mime-capacity-p2-c11-child.ts",
+          "fixtureId": "issue-176-mime-250mib",
+          "expectedBytes": 262144000
         }
       ],
       "observations": [
