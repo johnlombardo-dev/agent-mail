@@ -90,6 +90,9 @@ export const thresholdMetricRegistry = Object.freeze({
 export const numericSourceConstantRegistry = Object.freeze({
   "mime-rss-growth-threshold": Object.freeze({
     sourcePath: "packages/imap/test/mime-capacity-p2-c11.ts",
+    sourceRole: "mime-threshold-authority",
+    gitBlob: "83a7e2f902e3cd05c7d5075491ac62728e1ff8bc",
+    sha256: "da7315808d2510c9f17841e61f53a95174c23d1f3c9a68fcdfe0b7ff3a07417a",
     exportName: "RSS_GROWTH_THRESHOLD_BYTES",
     expression: "128 * MEBIBYTE",
     value: 134217728,
@@ -97,6 +100,9 @@ export const numericSourceConstantRegistry = Object.freeze({
     fixtureAssertionField: "expectedPeakGrowthBytes",
     thresholdMetric: "peakGrowth",
     thresholdField: "limit",
+    operator: "<",
+    source: "fixture-observation",
+    unit: "bytes",
   }),
 });
 
@@ -261,370 +267,6 @@ function committedText(root, commit, path, label) {
   }
 }
 
-const numericSourceIdentifierAllowlist = Object.freeze(["MEBIBYTE"]);
-const numericSourceExpressionPattern = /^(?:0|[1-9](?:_?[0-9])*)(?:\s*[*/]\s*[A-Z][A-Z0-9_]*)?$/u;
-
-function skipQuotedSource(source, start, quote) {
-  let cursor = start + 1;
-  while (cursor < source.length) {
-    if (source[cursor] === "\\") {
-      assert(cursor + 1 < source.length, "numeric source quoted string is unterminated");
-      cursor += 2;
-    } else if (source[cursor] === quote) {
-      return cursor + 1;
-    } else {
-      cursor += 1;
-    }
-  }
-  fail("numeric source quoted string is unterminated");
-}
-
-function skipLineComment(source, start) {
-  const newline = source.indexOf("\n", start + 2);
-  return newline === -1 ? source.length : newline + 1;
-}
-
-function skipBlockComment(source, start) {
-  const end = source.indexOf("*/", start + 2);
-  assert(end !== -1, "numeric source block comment is unterminated");
-  return end + 2;
-}
-
-const regexKeywordAllowlist = Object.freeze([
-  "await",
-  "case",
-  "delete",
-  "do",
-  "else",
-  "in",
-  "instanceof",
-  "of",
-  "return",
-  "throw",
-  "typeof",
-  "void",
-  "yield",
-]);
-
-const regexControlHeaderKeywords = Object.freeze(["if", "while", "for", "with", "switch", "catch"]);
-const objectBracePreviousValues = Object.freeze(["=", "(", "[", ",", ":", "?", "return", "yield"]);
-
-function delimiterFrame(character, previous) {
-  if (character === "(") {
-    return {
-      open: character,
-      kind:
-        previous?.kind === "identifier" && regexControlHeaderKeywords.includes(previous.value)
-          ? "control-header"
-          : "parenthesis",
-    };
-  }
-  if (character === "{") {
-    return {
-      open: character,
-      kind:
-        previous?.value === "=>" ||
-        previous?.value === ")" ||
-        previous?.value === "else" ||
-        previous?.value === "do" ||
-        previous?.value === "try" ||
-        previous?.value === "finally" ||
-        !previous ||
-        !objectBracePreviousValues.includes(previous.value)
-          ? "block"
-          : "object",
-    };
-  }
-  return { open: character, kind: character };
-}
-
-function regexLiteralAllowed(previous) {
-  if (!previous) return true;
-  if (previous.regexAfterClose === true) return true;
-  if (previous.kind === "identifier") return regexKeywordAllowlist.includes(previous.value);
-  if (["number", "literal", "regex"].includes(previous.kind)) return false;
-  return ![")", "]", "}"].includes(previous.value);
-}
-
-function skipRegexLiteral(source, start) {
-  let cursor = start + 1;
-  let characterClass = false;
-  while (cursor < source.length) {
-    const character = source[cursor];
-    assert(character !== "\n" && character !== "\r", "numeric source regex contains a newline");
-    if (character === "\\") {
-      assert(cursor + 1 < source.length, "numeric source regex escape is unterminated");
-      assert(
-        source[cursor + 1] !== "\n" && source[cursor + 1] !== "\r",
-        "numeric source regex escape is invalid",
-      );
-      cursor += 2;
-      continue;
-    }
-    if (character === "[") {
-      characterClass = true;
-      cursor += 1;
-      continue;
-    }
-    if (character === "]" && characterClass) {
-      characterClass = false;
-      cursor += 1;
-      continue;
-    }
-    if (character === "/" && !characterClass) {
-      cursor += 1;
-      const flags = new Set();
-      while (cursor < source.length && /[A-Za-z]/u.test(source[cursor])) {
-        const flag = source[cursor];
-        assert(
-          "dgimsuvy".includes(flag) && !flags.has(flag),
-          "numeric source regex flags are invalid",
-        );
-        flags.add(flag);
-        cursor += 1;
-      }
-      assert(!(flags.has("u") && flags.has("v")), "numeric source regex flags are invalid");
-      return cursor;
-    }
-    cursor += 1;
-  }
-  assert(!characterClass, "numeric source regex character class is unterminated");
-  fail("numeric source regex is unterminated");
-}
-
-function skipTemplateInterpolation(source, start) {
-  let cursor = start;
-  const delimiters = [delimiterFrame("{", null)];
-  let previous = null;
-  const identifier = /[A-Za-z_$][A-Za-z0-9_$]*/y;
-  const integer = /(?:0|[1-9](?:_?[0-9])*)/y;
-  while (cursor < source.length) {
-    const character = source[cursor];
-    if (/\s/u.test(character)) {
-      cursor += 1;
-      continue;
-    }
-    if (character === "/" && source[cursor + 1] === "/") {
-      cursor = skipLineComment(source, cursor);
-    } else if (character === "/" && source[cursor + 1] === "*") {
-      cursor = skipBlockComment(source, cursor);
-    } else if (character === "'" || character === '"') {
-      cursor = skipQuotedSource(source, cursor, character);
-      previous = { kind: "literal", value: "<string>" };
-    } else if (character === "`") {
-      cursor = skipTemplateLiteral(source, cursor);
-      previous = { kind: "literal", value: "<template>" };
-    } else if (character === "/" && source[cursor + 1] !== "=" && regexLiteralAllowed(previous)) {
-      cursor = skipRegexLiteral(source, cursor);
-      previous = { kind: "regex", value: "<regex>" };
-    } else {
-      identifier.lastIndex = cursor;
-      const identifierMatch = identifier.exec(source);
-      if (identifierMatch) {
-        previous = { kind: "identifier", value: identifierMatch[0] };
-        cursor = identifier.lastIndex;
-        continue;
-      }
-      integer.lastIndex = cursor;
-      const integerMatch = integer.exec(source);
-      if (integerMatch) {
-        previous = { kind: "number", value: integerMatch[0] };
-        cursor = integer.lastIndex;
-        continue;
-      }
-      if (character === "{" || character === "[" || character === "(") {
-        delimiters.push(delimiterFrame(character, previous));
-      } else if (character === "}" || character === "]" || character === ")") {
-        const expected = character === "}" ? "{" : character === "]" ? "[" : "(";
-        const frame = delimiters.at(-1);
-        assert(frame?.open === expected, "numeric source template delimiter mismatch");
-        delimiters.pop();
-        if (delimiters.length === 0) return cursor + 1;
-        previous = {
-          kind: "punctuation",
-          value: character,
-          regexAfterClose:
-            (character === ")" && frame.kind === "control-header") ||
-            (character === "}" && frame.kind === "block"),
-        };
-        cursor += 1;
-        continue;
-      }
-      previous = { kind: "punctuation", value: character };
-      cursor += 1;
-    }
-  }
-  fail("numeric source template interpolation is unterminated");
-}
-
-function skipTemplateLiteral(source, start) {
-  let cursor = start + 1;
-  while (cursor < source.length) {
-    const character = source[cursor];
-    if (character === "\\") {
-      assert(cursor + 1 < source.length, "numeric source template is unterminated");
-      cursor += 2;
-    } else if (character === "`") {
-      return cursor + 1;
-    } else if (character === "$" && source[cursor + 1] === "{") {
-      cursor = skipTemplateInterpolation(source, cursor + 2);
-    } else {
-      cursor += 1;
-    }
-  }
-  fail("numeric source template is unterminated");
-}
-
-function sourceTokens(source) {
-  const tokens = [];
-  const delimiters = [];
-  const identifier = /[A-Za-z_$][A-Za-z0-9_$]*/y;
-  const integer = /(?:0|[1-9](?:_?[0-9])*)/y;
-  let cursor = 0;
-  let previous = null;
-  while (cursor < source.length) {
-    const character = source[cursor];
-    if (/\s/u.test(character)) {
-      cursor += 1;
-      continue;
-    }
-    if (character === "/" && source[cursor + 1] === "/") {
-      cursor = skipLineComment(source, cursor);
-      continue;
-    }
-    if (character === "/" && source[cursor + 1] === "*") {
-      cursor = skipBlockComment(source, cursor);
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      cursor = skipQuotedSource(source, cursor, character);
-      previous = { kind: "literal", value: "<string>" };
-      continue;
-    }
-    if (character === "`") {
-      cursor = skipTemplateLiteral(source, cursor);
-      previous = { kind: "literal", value: "<template>" };
-      continue;
-    }
-    if (character === "/" && source[cursor + 1] !== "=" && regexLiteralAllowed(previous)) {
-      const start = cursor;
-      cursor = skipRegexLiteral(source, cursor);
-      const token = { value: "<regex>", start, end: cursor, depth: delimiters.length };
-      tokens.push(token);
-      previous = { kind: "regex", value: "<regex>" };
-      continue;
-    }
-    identifier.lastIndex = cursor;
-    const identifierMatch = identifier.exec(source);
-    if (identifierMatch) {
-      const token = {
-        value: identifierMatch[0],
-        start: cursor,
-        end: identifier.lastIndex,
-        depth: delimiters.length,
-      };
-      tokens.push(token);
-      previous = { kind: "identifier", value: token.value };
-      cursor = identifier.lastIndex;
-      continue;
-    }
-    integer.lastIndex = cursor;
-    const integerMatch = integer.exec(source);
-    if (integerMatch) {
-      const token = {
-        value: integerMatch[0],
-        start: cursor,
-        end: integer.lastIndex,
-        depth: delimiters.length,
-      };
-      tokens.push(token);
-      previous = { kind: "number", value: token.value };
-      cursor = integer.lastIndex;
-      continue;
-    }
-    const depth = delimiters.length;
-    let closedFrame;
-    if (character === "}" || character === "]" || character === ")") {
-      const expected = character === "}" ? "{" : character === "]" ? "[" : "(";
-      closedFrame = delimiters.at(-1);
-      assert(closedFrame?.open === expected, "numeric source delimiter mismatch");
-      delimiters.pop();
-    }
-    const openerPrevious = previous;
-    const token = { value: character, start: cursor, end: cursor + 1, depth };
-    tokens.push(token);
-    previous = {
-      kind: "punctuation",
-      value: character,
-      regexAfterClose:
-        (character === ")" && closedFrame?.kind === "control-header") ||
-        (character === "}" && closedFrame?.kind === "block"),
-    };
-    if (character === "{" || character === "[" || character === "(") {
-      delimiters.push(delimiterFrame(character, openerPrevious));
-    }
-    cursor += 1;
-  }
-  assert(delimiters.length === 0, "numeric source delimiter is unterminated");
-  return tokens;
-}
-
-function numericSourceDeclarations(source) {
-  const tokens = sourceTokens(source);
-  const declarations = [];
-  for (let index = 0; index < tokens.length; index += 1) {
-    const exportToken = tokens[index];
-    const constToken = tokens[index + 1];
-    const nameToken = tokens[index + 2];
-    if (
-      exportToken?.depth !== 0 ||
-      exportToken.value !== "export" ||
-      constToken?.depth !== 0 ||
-      constToken.value !== "const" ||
-      nameToken?.depth !== 0
-    )
-      continue;
-    const declaration = { name: nameToken.value, expression: null };
-    const equals = tokens[index + 3];
-    const first = tokens[index + 4];
-    if (equals?.depth === 0 && equals.value === "=" && first?.depth === 0) {
-      const number = Number(first.value.replaceAll("_", ""));
-      const operator = tokens[index + 5];
-      const identifierToken = tokens[index + 6];
-      const semicolon = tokens[index + 7];
-      const validInteger = /^\d(?:_?\d)*$/u.test(first.value) && Number.isSafeInteger(number);
-      const validIdentifier =
-        identifierToken?.depth === 0 &&
-        numericSourceIdentifierAllowlist.includes(identifierToken.value);
-      const validExpression =
-        validInteger &&
-        (operator?.value === ";" ||
-          ((operator?.value === "*" || operator?.value === "/") &&
-            validIdentifier &&
-            semicolon?.value === ";"));
-      if (validExpression) {
-        const expressionEnd = operator.value === ";" ? operator.start : identifierToken.end;
-        declaration.expression = source.slice(first.start, expressionEnd).trim();
-      }
-    }
-    declarations.push(declaration);
-  }
-  return declarations;
-}
-
-function validateCommittedTypeScriptSyntax(source, label) {
-  const transpilerConstructor = globalThis.Bun?.Transpiler;
-  assert(
-    typeof transpilerConstructor === "function",
-    `${label} TypeScript syntax parser is unavailable`,
-  );
-  try {
-    new transpilerConstructor({ loader: "ts" }).transformSync(source);
-  } catch {
-    fail(`${label} TypeScript syntax is invalid`);
-  }
-}
-
 function validateNumericSourceConstants(step, root, commit) {
   const fixtureAssertions = step.assertions.filter(
     (assertion) => assertion.kind === "fixture-observation",
@@ -664,55 +306,45 @@ function validateNumericSourceConstants(step, root, commit) {
         constant[field] === registered[field],
         `${step.id} numeric source constant authority drifted`,
       );
+    const sourceBindings = step.sources.filter((source) => source.path === registered.sourcePath);
     assert(
-      typeof constant.sourcePath === "string" &&
-        step.sources.some((source) => source.path === constant.sourcePath),
+      typeof constant.sourcePath === "string" && sourceBindings.length === 1,
       `${step.id} numeric source constant path is not source-bound`,
     );
+    const sourceBinding = sourceBindings[0];
     assert(
-      typeof constant.exportName === "string" && /^[A-Z][A-Z0-9_]*$/u.test(constant.exportName),
-      `${step.id} numeric source constant export is invalid`,
+      sourceBinding?.role === registered.sourceRole &&
+        sourceBinding.gitBlob === registered.gitBlob &&
+        sourceBinding.sha256 === registered.sha256,
+      `${step.id} numeric source constant source binding drifted`,
+    );
+    const actualSource = committedBlob(
+      root,
+      commit,
+      registered.sourcePath,
+      `${step.id} numeric source authority`,
     );
     assert(
-      Number.isSafeInteger(constant.value) && constant.value > 0,
-      `${step.id} numeric source constant value is invalid`,
-    );
-    assert(
-      typeof constant.expression === "string" &&
-        numericSourceExpressionPattern.test(constant.expression),
-      `${step.id} numeric source constant expression is invalid`,
-    );
-    assert(
-      typeof constant.fixtureAssertionId === "string" &&
-        constant.fixtureAssertionField === "expectedPeakGrowthBytes" &&
-        constant.thresholdMetric === "peakGrowth" &&
-        constant.thresholdField === "limit",
-      `${step.id} numeric source constant authority is invalid`,
+      actualSource.gitBlob === registered.gitBlob && actualSource.sha256 === registered.sha256,
+      `${step.id} numeric source authority bytes drifted`,
     );
     const fixtureAssertion = fixtureAssertions.find(
       (assertion) => assertion.id === constant.fixtureAssertionId,
     );
     assert(
-      fixtureAssertion && fixtureAssertion.expectedPeakGrowthBytes === constant.value,
+      fixtureAssertion &&
+        fixtureAssertion.kind === "fixture-observation" &&
+        fixtureAssertion[registered.fixtureAssertionField] === registered.value,
       `${step.id} numeric source constant fixture binding is detached`,
     );
     const threshold = step.thresholds[constant.thresholdMetric];
     assert(
-      threshold && threshold[constant.thresholdField] === constant.value,
+      threshold &&
+        threshold[registered.thresholdField] === registered.value &&
+        threshold.operator === registered.operator &&
+        threshold.source === registered.source &&
+        threshold.unit === registered.unit,
       `${step.id} numeric source constant threshold binding is detached`,
-    );
-    const source = committedText(root, commit, constant.sourcePath, `${step.id} numeric source`);
-    validateCommittedTypeScriptSyntax(source, `${step.id} numeric source`);
-    const declarations = numericSourceDeclarations(source).filter(
-      (declaration) => declaration.name === constant.exportName,
-    );
-    assert(
-      declarations.length === 1,
-      `${step.id} numeric source constant declaration is missing or ambiguous`,
-    );
-    assert(
-      declarations[0].expression === constant.expression,
-      `${step.id} numeric source constant declaration drifted`,
     );
   }
 }

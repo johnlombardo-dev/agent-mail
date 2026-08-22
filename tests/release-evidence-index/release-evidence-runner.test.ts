@@ -124,9 +124,7 @@ function disposableRepo(
 function numericSourceFixture() {
   const fixture = disposableRepo();
   const sourcePath = "packages/imap/test/mime-capacity-p2-c11.ts";
-  const sourceBytes = Buffer.from(
-    "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
-  );
+  const sourceBytes = readFileSync(sourcePath);
   mkdirSync(join(fixture.root, "packages/imap/test"), { recursive: true });
   writeFileSync(join(fixture.root, sourcePath), sourceBytes);
   git(fixture.root, ["add", sourcePath]);
@@ -470,6 +468,7 @@ describe("release evidence executable runner", () => {
     const manifest = JSON.parse(
       readFileSync("docs/architecture/release-evidence-execution-manifest.v2.json", "utf8"),
     );
+    expect(() => validateManifest(manifest, ".", git(".", ["rev-parse", "HEAD"]))).not.toThrow();
     const attacks = [
       (candidate: typeof manifest) => {
         candidate.steps.find((step: { id: string }) => step.id === "mime-250mib").thresholds.peakGrowth.limit =
@@ -501,10 +500,15 @@ describe("release evidence executable runner", () => {
     }
   });
 
-  test("source-binds MIME growth authority to committed numeric declaration", () => {
+  test("source-binds MIME growth authority to frozen committed digest", () => {
     const fixture = numericSourceFixture();
     const base = structuredClone(fixture.manifest);
     const authority = (candidate: typeof base) => candidate.steps[0].numericSourceConstants[0];
+    const sourceAuthority = (candidate: typeof base) =>
+      candidate.steps[0].sources.find(
+        (entry: { path: string }) => entry.path === fixture.sourcePath,
+      );
+    expect(() => validateManifest(base, fixture.root, fixture.commit)).not.toThrow();
     const metadataAttacks = [
       ["missing authority metadata", (candidate: typeof base) => delete candidate.steps[0].numericSourceConstants],
       ["unbound authority source", (candidate: typeof base) => candidate.steps[0].sources.pop()],
@@ -512,10 +516,18 @@ describe("release evidence executable runner", () => {
       ["wrong authority export", (candidate: typeof base) => (authority(candidate).exportName = "OTHER")],
       ["wrong authority expression", (candidate: typeof base) => (authority(candidate).expression = "1024 * MEBIBYTE")],
       ["wrong authority value", (candidate: typeof base) => (authority(candidate).value = 1024 * 1024 * 1024)],
+      ["wrong authority assertion", (candidate: typeof base) => (authority(candidate).fixtureAssertionId = "other")],
       ["wrong authority assertion field", (candidate: typeof base) => (authority(candidate).fixtureAssertionField = "expectedBytes")],
-      ["wrong authority threshold", (candidate: typeof base) => (authority(candidate).thresholdMetric = "bytes")],
-      ["wrong source SHA", (candidate: typeof base) => (candidate.steps[0].sources[2].sha256 = "0".repeat(64))],
-      ["wrong source blob", (candidate: typeof base) => (candidate.steps[0].sources[2].gitBlob = "0".repeat(40))],
+      ["wrong authority metric", (candidate: typeof base) => (authority(candidate).thresholdMetric = "bytes")],
+      ["wrong authority threshold field", (candidate: typeof base) => (authority(candidate).thresholdField = "operator")],
+      ["wrong threshold operator", (candidate: typeof base) => (candidate.steps[0].thresholds.peakGrowth.operator = "<=")],
+      ["wrong threshold source", (candidate: typeof base) => (candidate.steps[0].thresholds.peakGrowth.source = "kernel:ps")],
+      ["wrong threshold unit", (candidate: typeof base) => (candidate.steps[0].thresholds.peakGrowth.unit = "MiB")],
+      ["wrong fixture assertion value", (candidate: typeof base) => (candidate.steps[0].assertions[3].expectedPeakGrowthBytes = 1024 * 1024 * 1024)],
+      ["wrong source role", (candidate: typeof base) => (sourceAuthority(candidate).role = "test")],
+      ["wrong source path", (candidate: typeof base) => (sourceAuthority(candidate).path = "other.ts")],
+      ["wrong source SHA", (candidate: typeof base) => (sourceAuthority(candidate).sha256 = "0".repeat(64))],
+      ["wrong source blob", (candidate: typeof base) => (sourceAuthority(candidate).gitBlob = "0".repeat(40))],
     ] as const;
     for (const [name, mutate] of metadataAttacks) {
       const candidate = structuredClone(base);
@@ -523,142 +535,49 @@ describe("release evidence executable runner", () => {
       expect(() => validateManifest(candidate, fixture.root, fixture.commit), name).toThrow();
     }
 
-    const commitAuthoritySource = (source: string) => {
+    const commitSource = (source: Buffer) => {
       writeFileSync(join(fixture.root, fixture.sourcePath), source);
       git(fixture.root, ["add", fixture.sourcePath]);
-      git(fixture.root, ["commit", "-qm", "mutate numeric source authority"]);
+      git(fixture.root, ["commit", "-qm", "mutate frozen source authority"]);
       return {
         commit: git(fixture.root, ["rev-parse", "HEAD"]),
         gitBlob: git(fixture.root, ["rev-parse", `HEAD:${fixture.sourcePath}`]),
-        sha256: sha256(Buffer.from(source)),
+        sha256: sha256(source),
       };
     };
-    const committedAttacks = [
-      ["block comment declaration", "/* export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE; */\n"],
-      ["line comment declaration", "// export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
-      ["single string declaration", "const text = 'export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;';\n"],
-      ["double string declaration", "const text = \"export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\";\n"],
-      ["template string declaration", "const text = `export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;`;\n"],
-      [
-        "template interpolation declaration",
-        "const text = `${\"export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\"}`;\n",
-      ],
-      ["nested block declaration", "if (true) { export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE; }\n"],
-      ["nested function declaration", "function f() { export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE; }\n"],
-      ["missing export", "export const OTHER_THRESHOLD = 128 * MEBIBYTE;\n"],
-      ["wrong committed value", "export const RSS_GROWTH_THRESHOLD_BYTES = 1024 * MEBIBYTE;\n"],
-      ["unsafe expression", "export const RSS_GROWTH_THRESHOLD_BYTES = 128 + MEBIBYTE;\n"],
-      ["unsafe identifier", "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * NOT_ALLOWLISTED;\n"],
-      ["multiline expression trick", "export const RSS_GROWTH_THRESHOLD_BYTES = 128 *\nMEBIBYTE;\n"],
-      ["escaped string trick", "const text = 'export const RSS_GROWTH_\\nTHRESHOLD_BYTES = 128 * MEBIBYTE;';\n"],
-      ["unterminated block comment", "/* export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
-      ["unterminated string", "const text = 'export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
-      ["unterminated template", "const text = `export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
-      ["regex at file start", "/export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["regex after equals", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/giu;\n"],
-      ["regex after return", "function f() { return /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/; }\n"],
-      ["regex argument", "call(/export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/);\n"],
-      ["regex escaped slash and class", "const pattern = /export[\\/] const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["regex malformed delimiter text", "/[)] export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["regex malformed nesting text", "const pattern = /([)] export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["regex comments and template", "const text = `value ${/* comment */ /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g}`;\n"],
-      ["regex invalid flags", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/z;\n"],
-      ["regex incompatible flags", "const pattern = /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/uv;\n"],
-      ["unterminated regex", "/export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
-      ["if body regex", "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["while body regex", "while (false) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["for body regex", "for (;;) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["with body regex", "function f(value) { with (value) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g; }\n"],
-      ["switch condition regex", "switch (value) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["catch body regex", "try {} catch (error) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["do body regex", "do /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g; while (false);\n"],
-      ["else body regex", "if (false) {} else /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["block close regex", "{} /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["ternary regex", "const value = condition ? /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g : other;\n"],
-      ["arrow regex", "const value = () => /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\n"],
-      ["division chain", "const ratio = 512 / MEBIBYTE / 2;\n"],
-      ["divide assign", "let value = 1; value /= 2;\n"],
-      ["malformed control regex", "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
-      [
-        "wrong export with regex decoy",
-        "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 + MEBIBYTE;\n",
-      ],
-      [
-        "export alias with regex decoy",
-        "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\nexport { RSS_GROWTH_THRESHOLD_BYTES };\n",
-      ],
-      ["delimiter mismatch", "const value = (];\n"],
-      ["delimiter underflow", "const value = );\n"],
-      ["delimiter unclosed", "const value = ({\n"],
-      [
-        "ambiguous export",
-        "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
-      ],
-    ] as const;
-    for (const [name, source] of committedAttacks) {
-      const committed = commitAuthoritySource(source);
-      const candidate = structuredClone(base);
-      const sourceBinding = candidate.steps[0].sources.find(
-        (entry: { path: string }) => entry.path === fixture.sourcePath,
-      );
-      sourceBinding.gitBlob = committed.gitBlob;
-      sourceBinding.sha256 = committed.sha256;
-      expect(() => validateManifest(candidate, fixture.root, committed.commit), name).toThrow();
-    }
-
-    const malformedTypeScript = commitAuthoritySource(
-      "export const RSS_GROWTH_THRESHOLD_BYTES = (128 * MEBIBYTE;\n",
+    const driftedSource = commitSource(
+      Buffer.from(
+        readFileSync("packages/imap/test/mime-capacity-p2-c11.ts", "utf8").replace(
+          "128 * MEBIBYTE",
+          "1024 * MEBIBYTE",
+        ),
+      ),
     );
-    const malformedTypeScriptCandidate = structuredClone(base);
-    const malformedTypeScriptSource = malformedTypeScriptCandidate.steps[0].sources.find(
+    const sourceDrift = structuredClone(base);
+    const sourceDriftBinding = sourceDrift.steps[0].sources.find(
       (entry: { path: string }) => entry.path === fixture.sourcePath,
     );
-    malformedTypeScriptSource.gitBlob = malformedTypeScript.gitBlob;
-    malformedTypeScriptSource.sha256 = malformedTypeScript.sha256;
-    expect(() => validateManifest(malformedTypeScriptCandidate, fixture.root, malformedTypeScript.commit)).toThrow(
-      /TypeScript syntax is invalid/u,
+    sourceDriftBinding.gitBlob = driftedSource.gitBlob;
+    sourceDriftBinding.sha256 = driftedSource.sha256;
+    expect(() => validateManifest(sourceDrift, fixture.root, driftedSource.commit)).toThrow(
+      /source binding drifted/u,
     );
 
-    const division = commitAuthoritySource(
-      "const ratio = 128 / MEBIBYTE;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
-    );
-    const divisionCandidate = structuredClone(base);
-    const divisionSource = divisionCandidate.steps[0].sources.find(
-      (entry: { path: string }) => entry.path === fixture.sourcePath,
-    );
-    divisionSource.gitBlob = division.gitBlob;
-    divisionSource.sha256 = division.sha256;
-    expect(() => validateManifest(divisionCandidate, fixture.root, division.commit)).not.toThrow();
-
-    const controlRegexDecoy = commitAuthoritySource(
-      "if (true) /export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;/g;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",
-    );
-    const controlRegexDecoyCandidate = structuredClone(base);
-    const controlRegexDecoySource = controlRegexDecoyCandidate.steps[0].sources.find(
-      (entry: { path: string }) => entry.path === fixture.sourcePath,
-    );
-    controlRegexDecoySource.gitBlob = controlRegexDecoy.gitBlob;
-    controlRegexDecoySource.sha256 = controlRegexDecoy.sha256;
-    expect(() => validateManifest(controlRegexDecoyCandidate, fixture.root, controlRegexDecoy.commit)).not.toThrow();
-
-    const coordinated = commitAuthoritySource(
-      "export const RSS_GROWTH_THRESHOLD_BYTES = 1024 * MEBIBYTE;\n",
-    );
-    const coordinatedCandidate = structuredClone(base);
-    const coordinatedAuthority = coordinatedCandidate.steps[0].numericSourceConstants[0];
+    const coordinated = structuredClone(base);
+    const coordinatedAuthority = coordinated.steps[0].numericSourceConstants[0];
     coordinatedAuthority.expression = "1024 * MEBIBYTE";
     coordinatedAuthority.value = 1024 * 1024 * 1024;
-    coordinatedAuthority.fixtureAssertionField = "expectedPeakGrowthBytes";
-    coordinatedCandidate.steps[0].assertions[3].expectedPeakGrowthBytes = 1024 * 1024 * 1024;
-    coordinatedCandidate.steps[0].thresholds.peakGrowth.limit = 1024 * 1024 * 1024;
-    const coordinatedSource = coordinatedCandidate.steps[0].sources.find(
+    coordinated.steps[0].assertions[3].expectedPeakGrowthBytes = 1024 * 1024 * 1024;
+    coordinated.steps[0].thresholds.peakGrowth.limit = 1024 * 1024 * 1024;
+    const coordinatedSource = coordinated.steps[0].sources.find(
       (entry: { path: string }) => entry.path === fixture.sourcePath,
     );
-    coordinatedSource.gitBlob = coordinated.gitBlob;
-    coordinatedSource.sha256 = coordinated.sha256;
-    expect(() => validateManifest(coordinatedCandidate, fixture.root, coordinated.commit)).toThrow(
+    coordinatedSource.gitBlob = driftedSource.gitBlob;
+    coordinatedSource.sha256 = driftedSource.sha256;
+    expect(() => validateManifest(coordinated, fixture.root, driftedSource.commit)).toThrow(
       /authority drifted/u,
     );
+
     rmSync(fixture.root, { recursive: true, force: true });
   });
 
