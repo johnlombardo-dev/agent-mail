@@ -2159,15 +2159,26 @@ function validateReceiptIntervals(receipt, label) {
 
 function validateReceiptResources(receipt, step, label) {
   const resources = receipt.probes?.resources;
+  const processSamples = receipt.probes?.process?.samples;
   assert(resources && typeof resources === "object", `${label} resource probe is missing`);
+  assert(
+    Array.isArray(processSamples),
+    `${label} process samples are missing for resource binding`,
+  );
   assert(typeof resources.observed === "boolean", `${label} resource availability is invalid`);
   assert(
     Array.isArray(resources.samples) && resources.samples.length >= 2,
     `${label} resource samples are incomplete`,
   );
+  assert(
+    resources.samples.length === processSamples.length,
+    `${label} resource/process sample alignment is incomplete`,
+  );
   const resourceKeys = ["fileDescriptors", "sockets", "listeners"];
   const observedSamples = [];
   const samplePids = new Set();
+  const processTrackedPids = new Set(processSamples.flatMap((sample) => sample?.pids ?? []));
+  assert(processTrackedPids.size > 0, `${label} process-derived PID inventory is empty`);
   for (const [index, sample] of resources.samples.entries()) {
     assert(sample && typeof sample === "object", `${label} resource sample ${index} is invalid`);
     assert(
@@ -2183,6 +2194,10 @@ function validateReceiptResources(receipt, step, label) {
       );
       pids.add(pid);
       samplePids.add(pid);
+      assert(
+        processTrackedPids.has(pid),
+        `${label} resource sample ${index} PID is not process-bound`,
+      );
     }
     for (const key of resourceKeys) {
       if (sample.observed)
@@ -2208,7 +2223,9 @@ function validateReceiptResources(receipt, step, label) {
   );
   assert(
     JSON.stringify([...samplePids].sort((left, right) => left - right)) ===
-      JSON.stringify([...new Set(resources.pids)].sort((left, right) => left - right)),
+      JSON.stringify([...new Set(resources.pids)].sort((left, right) => left - right)) &&
+      JSON.stringify([...samplePids].sort((left, right) => left - right)) ===
+        JSON.stringify([...processTrackedPids].sort((left, right) => left - right)),
     `${label} resource PID inventory is detached`,
   );
   for (const key of resourceKeys) {
@@ -2694,6 +2711,15 @@ function runV2ExecutionSelfTest() {
       () => {
         const value = structuredClone(receipt);
         value.probes.resources.fileDescriptors += 1;
+        return value;
+      },
+    ],
+    [
+      "receipt forged resource PID",
+      () => {
+        const value = structuredClone(receipt);
+        value.probes.resources.samples[0].pids.push(1234);
+        value.probes.resources.pids.push(1234);
         return value;
       },
     ],
