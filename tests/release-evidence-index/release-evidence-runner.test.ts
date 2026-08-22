@@ -1,9 +1,12 @@
 import { execFileSync } from "node:child_process";
 import {
   existsSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -21,7 +24,10 @@ import {
   sha256,
   validateManifest,
 } from "../../scripts/qualification/capture-release-evidence.mjs";
-import { compareReceipts } from "../../scripts/qualification/replay-release-evidence.mjs";
+import {
+  compareReceipts,
+  writeExclusiveReceipt,
+} from "../../scripts/qualification/replay-release-evidence.mjs";
 
 function git(root: string, args: string[]) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
@@ -207,6 +213,69 @@ describe("release evidence executable runner", () => {
       ).rejects.toThrow(/placeholder/u);
       rmSync(placeholder.root, { recursive: true, force: true });
     } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects CLI receipt overwrite and aliases before replay capture", async () => {
+    const fixture = disposableRepo();
+    const primaryOutput = mkdtempSync(join(tmpdir(), "agent-mail-runner-primary-receipt-"));
+    const replayOutput = mkdtempSync(join(tmpdir(), "agent-mail-runner-replay-receipt-"));
+    const primaryReceiptPath = join(primaryOutput, "primary.receipt.json");
+    try {
+      const primary = await testCapture({
+        root: fixture.root,
+        manifestPath: fixture.manifestPath,
+        outputRoot: primaryOutput,
+      });
+      writeFileSync(primaryReceiptPath, `${JSON.stringify(primary, null, 2)}\n`);
+      const originalBytes = readFileSync(primaryReceiptPath);
+      const originalStat = lstatSync(primaryReceiptPath);
+      const hardlinkPath = join(primaryOutput, "hardlink.receipt.json");
+      const symlinkPath = join(primaryOutput, "symlink.receipt.json");
+      linkSync(primaryReceiptPath, hardlinkPath);
+      symlinkSync(primaryReceiptPath, symlinkPath);
+      const targets = [
+        primaryReceiptPath,
+        join(primaryOutput, ".", "primary.receipt.json"),
+        join(primaryOutput, primary.provenance.path),
+        hardlinkPath,
+        symlinkPath,
+      ];
+      for (const target of targets) {
+        expect(() =>
+          execFileSync(
+            "bun",
+            [
+              "scripts/qualification/replay-release-evidence.mjs",
+              "--primary",
+              primaryReceiptPath,
+              "--manifest",
+              fixture.manifestPath,
+              "--root",
+              fixture.root,
+              "--primary-output-root",
+              primaryOutput,
+              "--output-root",
+              replayOutput,
+              "--receipt",
+              target,
+            ],
+            { encoding: "utf8" },
+          ),
+        ).toThrow(/receipt output|overwrite|alias/u);
+        expect(readdirSync(replayOutput)).toEqual([]);
+        expect(readFileSync(primaryReceiptPath)).toEqual(originalBytes);
+        const currentStat = lstatSync(primaryReceiptPath);
+        expect([currentStat.dev, currentStat.ino]).toEqual([originalStat.dev, originalStat.ino]);
+      }
+      const exclusiveReceiptPath = join(replayOutput, "replay.receipt.json");
+      writeExclusiveReceipt(exclusiveReceiptPath, Buffer.from('{"result":"pass"}\n'));
+      expect(JSON.parse(readFileSync(exclusiveReceiptPath, "utf8")).result).toBe("pass");
+      expect(() => writeExclusiveReceipt(exclusiveReceiptPath, Buffer.from("overwrite\n"))).toThrow();
+    } finally {
+      rmSync(primaryOutput, { recursive: true, force: true });
+      rmSync(replayOutput, { recursive: true, force: true });
       rmSync(fixture.root, { recursive: true, force: true });
     }
   });

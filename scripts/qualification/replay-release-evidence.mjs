@@ -1,11 +1,18 @@
 import {
+  closeSync,
+  constants,
+  fstatSync,
+  fsyncSync,
   lstatSync,
   linkSync,
   mkdtempSync,
+  openSync,
   readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
+  writeSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -387,6 +394,105 @@ function validateProvenanceEnvelope(root, receipt, step, label) {
   return { identity: `${envelopeStat.dev}:${envelopeStat.ino}`, path: envelopePath };
 }
 
+function existingRegularPath(path, label) {
+  const stat = lstatSync(path);
+  assert(stat.isFile() && !stat.isSymbolicLink(), `${label} is not a regular non-symlink file`);
+  return {
+    absolute: resolve(path),
+    canonical: realpathSync(path),
+    dev: stat.dev,
+    ino: stat.ino,
+  };
+}
+
+function candidateOutputPath(path) {
+  const absolute = resolve(path);
+  const parent = dirname(absolute);
+  const parentStat = lstatSync(parent);
+  assert(
+    parentStat.isDirectory() && !parentStat.isSymbolicLink(),
+    "receipt output parent is invalid",
+  );
+  const canonicalParent = realpathSync(parent);
+  return { absolute, canonical: join(canonicalParent, absolute.slice(parent.length + 1)) };
+}
+
+function assertSafeReceiptOutput(primary, primaryPath, primaryOutputRoot, receiptPath, step) {
+  assert(receiptPath, "--receipt is required");
+  const primaryFile = existingRegularPath(primaryPath, "primary receipt");
+  const primaryEnvelope = validateProvenanceEnvelope(primaryOutputRoot, primary, step, "primary");
+  const output = candidateOutputPath(receiptPath);
+  const protectedTargets = [
+    primaryFile,
+    existingRegularPath(primaryEnvelope.path, "primary provenance envelope"),
+  ];
+  for (const target of protectedTargets) {
+    assert(
+      output.absolute !== target.absolute,
+      "receipt output would overwrite a primary artifact",
+    );
+    assert(
+      output.canonical !== target.canonical,
+      "receipt output is a lexical or symlink alias of a primary artifact",
+    );
+  }
+  let existing;
+  try {
+    existing = lstatSync(output.absolute);
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  if (existing) {
+    assert(
+      existing.dev !== primaryFile.dev || existing.ino !== primaryFile.ino,
+      "receipt output reuses the primary inode",
+    );
+    fail("receipt output already exists");
+  }
+  return output.absolute;
+}
+
+export function writeExclusiveReceipt(path, bytes) {
+  let descriptor;
+  let created = false;
+  try {
+    const noFollow = constants.O_NOFOLLOW ?? 0;
+    descriptor = openSync(
+      path,
+      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | noFollow,
+      0o600,
+    );
+    created = true;
+    let offset = 0;
+    while (offset < bytes.length)
+      offset += writeSync(descriptor, bytes, offset, bytes.length - offset);
+    fsyncSync(descriptor);
+    const file = fstatSync(descriptor);
+    assert(
+      file.isFile() && file.size === bytes.length,
+      "receipt output changed during exclusive write",
+    );
+    const pathStat = lstatSync(path);
+    assert(
+      !pathStat.isSymbolicLink() && pathStat.dev === file.dev && pathStat.ino === file.ino,
+      "receipt output identity changed during write",
+    );
+  } catch (error) {
+    if (created) {
+      try {
+        const pathStat = lstatSync(path);
+        if (descriptor !== undefined) {
+          const file = fstatSync(descriptor);
+          if (pathStat.dev === file.dev && pathStat.ino === file.ino) unlinkSync(path);
+        }
+      } catch {}
+    }
+    throw error;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
 export function compareReceipts(primary, replay, options = {}) {
   assertManifestStep(options.step);
   assert(
@@ -751,24 +857,30 @@ async function main() {
   const stepId = args.step ?? primary.manifestStepId;
   const step = manifest.steps?.find((candidate) => candidate.id === stepId);
   assert(step, `manifest step ${stepId} is missing`);
+  const primaryOutputRoot = canonicalOutputRoot(args["primary-output-root"], "primary");
+  const replayOutputRoot = canonicalOutputRoot(args["output-root"], "replay");
+  const receiptPath = assertSafeReceiptOutput(
+    primary,
+    resolve(args.primary),
+    primaryOutputRoot,
+    args.receipt,
+    step,
+  );
   const receipt = await capture({
     manifestPath: args.manifest,
     root: args.root ? resolve(args.root) : resolve(here, "../.."),
-    outputRoot: args.outputRoot ? resolve(args.outputRoot) : undefined,
+    outputRoot: resolve(args["output-root"]),
     role: "independent-replay",
     stepId,
   });
   const comparison = compareReceipts(primary, receipt, {
-    primaryOutputRoot: args["primary-output-root"],
-    replayOutputRoot: args["output-root"],
+    primaryOutputRoot,
+    replayOutputRoot,
     step,
     runnerSources: manifest.runner?.sources ?? [],
   });
-  const output = args.receipt
-    ? resolve(args.receipt)
-    : join(process.cwd(), `${receipt.runId}.replay.json`);
-  writeFileSync(output, JSON.stringify(receipt, null, 2) + "\n");
-  console.log(JSON.stringify({ receiptPath: output, comparison }));
+  writeExclusiveReceipt(receiptPath, Buffer.from(JSON.stringify(receipt, null, 2) + "\n"));
+  console.log(JSON.stringify({ receiptPath, comparison }));
 }
 
 if (import.meta.main) await main();
