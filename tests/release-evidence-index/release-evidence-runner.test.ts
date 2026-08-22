@@ -534,8 +534,26 @@ describe("release evidence executable runner", () => {
       };
     };
     const committedAttacks = [
+      ["block comment declaration", "/* export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE; */\n"],
+      ["line comment declaration", "// export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
+      ["single string declaration", "const text = 'export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;';\n"],
+      ["double string declaration", "const text = \"export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\";\n"],
+      ["template string declaration", "const text = `export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;`;\n"],
+      [
+        "template interpolation declaration",
+        "const text = `${\"export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\"}`;\n",
+      ],
+      ["nested block declaration", "if (true) { export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE; }\n"],
+      ["nested function declaration", "function f() { export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE; }\n"],
       ["missing export", "export const OTHER_THRESHOLD = 128 * MEBIBYTE;\n"],
       ["wrong committed value", "export const RSS_GROWTH_THRESHOLD_BYTES = 1024 * MEBIBYTE;\n"],
+      ["unsafe expression", "export const RSS_GROWTH_THRESHOLD_BYTES = 128 + MEBIBYTE;\n"],
+      ["unsafe identifier", "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * NOT_ALLOWLISTED;\n"],
+      ["multiline expression trick", "export const RSS_GROWTH_THRESHOLD_BYTES = 128 *\nMEBIBYTE;\n"],
+      ["escaped string trick", "const text = 'export const RSS_GROWTH_\\nTHRESHOLD_BYTES = 128 * MEBIBYTE;';\n"],
+      ["unterminated block comment", "/* export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
+      ["unterminated string", "const text = 'export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
+      ["unterminated template", "const text = `export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n"],
       [
         "ambiguous export",
         "export const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\nexport const RSS_GROWTH_THRESHOLD_BYTES = 128 * MEBIBYTE;\n",

@@ -261,9 +261,194 @@ function committedText(root, commit, path, label) {
   }
 }
 
+const numericSourceIdentifierAllowlist = Object.freeze(["MEBIBYTE"]);
 const numericSourceExpressionPattern = /^(?:0|[1-9](?:_?[0-9])*)(?:\s*[*/]\s*[A-Z][A-Z0-9_]*)?$/u;
-const numericSourceDeclarationPattern =
-  /^\s*export\s+const\s+([A-Z][A-Z0-9_]*)\s*=\s*([^;\n]+)\s*;\s*$/gmu;
+
+function skipQuotedSource(source, start, quote) {
+  let cursor = start + 1;
+  while (cursor < source.length) {
+    if (source[cursor] === "\\") {
+      assert(cursor + 1 < source.length, "numeric source quoted string is unterminated");
+      cursor += 2;
+    } else if (source[cursor] === quote) {
+      return cursor + 1;
+    } else {
+      cursor += 1;
+    }
+  }
+  fail("numeric source quoted string is unterminated");
+}
+
+function skipLineComment(source, start) {
+  const newline = source.indexOf("\n", start + 2);
+  return newline === -1 ? source.length : newline + 1;
+}
+
+function skipBlockComment(source, start) {
+  const end = source.indexOf("*/", start + 2);
+  assert(end !== -1, "numeric source block comment is unterminated");
+  return end + 2;
+}
+
+function skipTemplateInterpolation(source, start) {
+  let cursor = start;
+  let depth = 1;
+  while (cursor < source.length) {
+    const character = source[cursor];
+    if (character === "/" && source[cursor + 1] === "/") {
+      cursor = skipLineComment(source, cursor);
+    } else if (character === "/" && source[cursor + 1] === "*") {
+      cursor = skipBlockComment(source, cursor);
+    } else if (character === "'" || character === '"') {
+      cursor = skipQuotedSource(source, cursor, character);
+    } else if (character === "`") {
+      cursor = skipTemplateLiteral(source, cursor);
+    } else if (character === "{") {
+      depth += 1;
+      cursor += 1;
+    } else if (character === "}") {
+      depth -= 1;
+      cursor += 1;
+      if (depth === 0) return cursor;
+    } else if (character === "\\") {
+      assert(cursor + 1 < source.length, "numeric source template interpolation is unterminated");
+      cursor += 2;
+    } else {
+      cursor += 1;
+    }
+  }
+  fail("numeric source template interpolation is unterminated");
+}
+
+function skipTemplateLiteral(source, start) {
+  let cursor = start + 1;
+  while (cursor < source.length) {
+    const character = source[cursor];
+    if (character === "\\") {
+      assert(cursor + 1 < source.length, "numeric source template is unterminated");
+      cursor += 2;
+    } else if (character === "`") {
+      return cursor + 1;
+    } else if (character === "$" && source[cursor + 1] === "{") {
+      cursor = skipTemplateInterpolation(source, cursor + 2);
+    } else {
+      cursor += 1;
+    }
+  }
+  fail("numeric source template is unterminated");
+}
+
+function sourceTokens(source) {
+  const tokens = [];
+  const scopes = { brace: 0, bracket: 0, parenthesis: 0 };
+  const identifier = /[A-Za-z_$][A-Za-z0-9_$]*/y;
+  const integer = /(?:0|[1-9](?:_?[0-9])*)/y;
+  let cursor = 0;
+  const scopeDepth = () => scopes.brace + scopes.bracket + scopes.parenthesis;
+  while (cursor < source.length) {
+    const character = source[cursor];
+    if (/\s/u.test(character)) {
+      cursor += 1;
+      continue;
+    }
+    if (character === "/" && source[cursor + 1] === "/") {
+      cursor = skipLineComment(source, cursor);
+      continue;
+    }
+    if (character === "/" && source[cursor + 1] === "*") {
+      cursor = skipBlockComment(source, cursor);
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      cursor = skipQuotedSource(source, cursor, character);
+      continue;
+    }
+    if (character === "`") {
+      cursor = skipTemplateLiteral(source, cursor);
+      continue;
+    }
+    identifier.lastIndex = cursor;
+    const identifierMatch = identifier.exec(source);
+    if (identifierMatch) {
+      tokens.push({
+        value: identifierMatch[0],
+        start: cursor,
+        end: identifier.lastIndex,
+        depth: scopeDepth(),
+      });
+      cursor = identifier.lastIndex;
+      continue;
+    }
+    integer.lastIndex = cursor;
+    const integerMatch = integer.exec(source);
+    if (integerMatch) {
+      tokens.push({
+        value: integerMatch[0],
+        start: cursor,
+        end: integer.lastIndex,
+        depth: scopeDepth(),
+      });
+      cursor = integer.lastIndex;
+      continue;
+    }
+    const depth = scopeDepth();
+    if (character === "}" || character === "]" || character === ")") {
+      const scope = character === "}" ? "brace" : character === "]" ? "bracket" : "parenthesis";
+      assert(scopes[scope] > 0, "numeric source scope is unbalanced");
+      scopes[scope] -= 1;
+    }
+    tokens.push({ value: character, start: cursor, end: cursor + 1, depth });
+    if (character === "{") scopes.brace += 1;
+    if (character === "[") scopes.bracket += 1;
+    if (character === "(") scopes.parenthesis += 1;
+    cursor += 1;
+  }
+  assert(scopeDepth() === 0, "numeric source scope is unterminated");
+  return tokens;
+}
+
+function numericSourceDeclarations(source) {
+  const tokens = sourceTokens(source);
+  const declarations = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const exportToken = tokens[index];
+    const constToken = tokens[index + 1];
+    const nameToken = tokens[index + 2];
+    if (
+      exportToken?.depth !== 0 ||
+      exportToken.value !== "export" ||
+      constToken?.depth !== 0 ||
+      constToken.value !== "const" ||
+      nameToken?.depth !== 0
+    )
+      continue;
+    const declaration = { name: nameToken.value, expression: null };
+    const equals = tokens[index + 3];
+    const first = tokens[index + 4];
+    if (equals?.depth === 0 && equals.value === "=" && first?.depth === 0) {
+      const number = Number(first.value.replaceAll("_", ""));
+      const operator = tokens[index + 5];
+      const identifierToken = tokens[index + 6];
+      const semicolon = tokens[index + 7];
+      const validInteger = /^\d(?:_?\d)*$/u.test(first.value) && Number.isSafeInteger(number);
+      const validIdentifier =
+        identifierToken?.depth === 0 &&
+        numericSourceIdentifierAllowlist.includes(identifierToken.value);
+      const validExpression =
+        validInteger &&
+        (operator?.value === ";" ||
+          ((operator?.value === "*" || operator?.value === "/") &&
+            validIdentifier &&
+            semicolon?.value === ";"));
+      if (validExpression) {
+        const expressionEnd = operator.value === ";" ? operator.start : identifierToken.end;
+        declaration.expression = source.slice(first.start, expressionEnd).trim();
+      }
+    }
+    declarations.push(declaration);
+  }
+  return declarations;
+}
 
 function validateNumericSourceConstants(step, root, commit) {
   const fixtureAssertions = step.assertions.filter(
@@ -342,15 +527,15 @@ function validateNumericSourceConstants(step, root, commit) {
       `${step.id} numeric source constant threshold binding is detached`,
     );
     const source = committedText(root, commit, constant.sourcePath, `${step.id} numeric source`);
-    const declarations = [...source.matchAll(numericSourceDeclarationPattern)].filter(
-      (match) => match[1] === constant.exportName,
+    const declarations = numericSourceDeclarations(source).filter(
+      (declaration) => declaration.name === constant.exportName,
     );
     assert(
       declarations.length === 1,
       `${step.id} numeric source constant declaration is missing or ambiguous`,
     );
     assert(
-      declarations[0][2].trim() === constant.expression,
+      declarations[0].expression === constant.expression,
       `${step.id} numeric source constant declaration drifted`,
     );
   }
