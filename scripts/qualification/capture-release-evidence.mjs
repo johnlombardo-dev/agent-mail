@@ -63,7 +63,10 @@ function gitStatus(root) {
 }
 
 function gitStatusEntries(root) {
-  return execFileSync("git", ["status", "--short"], { cwd: root, encoding: "utf8" })
+  return execFileSync("git", ["status", "--short", "--untracked-files=all"], {
+    cwd: root,
+    encoding: "utf8",
+  })
     .split("\n")
     .filter(Boolean)
     .map((line) => ({ code: line.slice(0, 2), path: line.slice(3).trim() }));

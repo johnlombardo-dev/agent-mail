@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
@@ -135,6 +135,23 @@ describe("release evidence executable runner", () => {
     try {
       fixture.manifest.steps[0].assertions.push({ ...fixture.manifest.steps[0].assertions[0] });
       expect(() => validateManifest(fixture.manifest, fixture.root)).toThrow(/assertion id repeats/u);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects an evil descendant beneath an exact untracked allowlist entry", async () => {
+    const fixture = disposableRepo();
+    try {
+      fixture.manifest.runner = { untrackedAllowlist: ["safe-entry"] };
+      writeFileSync(fixture.manifestPath, `${JSON.stringify(fixture.manifest, null, 2)}\n`);
+      git(fixture.root, ["add", "manifest.json"]);
+      git(fixture.root, ["commit", "-qm", "allowlist authority"]);
+      mkdirSync(join(fixture.root, "safe-entry"), { recursive: true });
+      writeFileSync(join(fixture.root, "safe-entry", "evil.txt"), "untrusted\n");
+      await expect(
+        capture({ root: fixture.root, manifestPath: fixture.manifestPath }),
+      ).rejects.toThrow(/worktree is dirty/u);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
