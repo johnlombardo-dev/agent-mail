@@ -375,6 +375,27 @@ export function validateManifest(
       step.observations && step.thresholds && step.probes,
       `${step.id} observation authority is incomplete`,
     );
+    if (step.fixture !== undefined) {
+      assert(
+        step.fixture &&
+          ["generated-stream", "generated-file", "committed-bytes"].includes(step.fixture.kind),
+        `${step.id} fixture kind is invalid`,
+      );
+      assert(
+        typeof step.fixture.id === "string" &&
+          step.fixture.id.length > 0 &&
+          !isAbsolute(step.fixture.id) &&
+          !step.fixture.id.includes("\\") &&
+          step.fixture.id.split("/").every((part) => part && part !== "." && part !== ".."),
+        `${step.id} fixture id is unsafe`,
+      );
+      if (step.fixture.kind === "generated-stream") {
+        assert(
+          Number.isSafeInteger(step.fixture.minimumBytes) && step.fixture.minimumBytes >= 0,
+          `${step.id} stream fixture size is invalid`,
+        );
+      }
+    }
     const helperPath = "scripts/capacity/source-token-event.ts";
     const importsSourceTokenHelper = step.sources.some((source) => {
       if (source.path === helperPath) return false;
@@ -418,9 +439,87 @@ function outputRef(root, outputRoot, runId, filename, bytes) {
   const path = join(outputRoot, runId, filename);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, bytes, { mode: 0o600 });
-  const relativePath = relative(root, path);
-  assert(!relativePath.startsWith(".."), "output escaped output root");
-  return { path: relativePath, sha256: sha256(bytes), bytes: bytes.length };
+  return retainedFileRef(root, outputRoot, path, bytes.length, sha256(bytes), "output");
+}
+
+function retainedFileRef(root, outputRoot, path, expectedBytes, expectedSha256, label) {
+  const relativePath = relative(outputRoot, path);
+  assert(
+    relativePath.length > 0 &&
+      !relativePath.startsWith("..") &&
+      !relativePath.includes("\\0") &&
+      !isAbsolute(relativePath) &&
+      !relativePath.includes("\\"),
+    `${label} path escaped owner root`,
+  );
+  const stat = lstatSync(path);
+  assert(stat.isFile() && !stat.isSymbolicLink(), `${label} is not a regular non-symlink file`);
+  const bytes = readFileSync(path);
+  const digest = sha256(bytes);
+  assert(bytes.length === expectedBytes, `${label} byte count drifted`);
+  assert(digest === expectedSha256, `${label} digest drifted`);
+  return { path: relativePath, sha256: digest, bytes: bytes.length };
+}
+
+async function finalizeFixture(fixture, outputRoot, fixturePath) {
+  if (!fixture?.materialized) return fixture;
+  if (fixture.materialized.owner === "generator") {
+    const stat = lstatSync(fixturePath);
+    assert(
+      stat.isFile() && !stat.isSymbolicLink(),
+      "generator fixture is not a regular non-symlink file",
+    );
+    const bytes = readFileSync(fixturePath);
+    const digest = sha256(bytes);
+    if (fixture.rowCount === 250000)
+      await validateGeneratedSearchArtifact(fixturePath, bytes, digest);
+    return {
+      ...fixture,
+      materialized: {
+        ...fixture.materialized,
+        presentAfterRun: true,
+        sha256: digest,
+        bytes: bytes.length,
+      },
+    };
+  }
+  const materialized = retainedFileRef(
+    outputRoot,
+    outputRoot,
+    fixturePath,
+    fixture.materialized.bytes,
+    fixture.materialized.sha256,
+    "fixture",
+  );
+  return { ...fixture, materialized };
+}
+
+async function validateGeneratedSearchArtifact(path, bytes, digest) {
+  const inventoryPath = `${path}.inventory.json`;
+  const inventoryStat = lstatSync(inventoryPath);
+  assert(
+    inventoryStat.isFile() && !inventoryStat.isSymbolicLink(),
+    "search inventory is not a regular non-symlink file",
+  );
+  const inventory = JSON.parse(readFileSync(inventoryPath, "utf8"));
+  assert(inventory.rowCount === 250000, "search inventory row count drifted");
+  assert(inventory.bytes === bytes.length, "search inventory byte count drifted");
+  assert(
+    typeof inventory.logicalChecksum === "string" &&
+      /^[0-9a-f]{64}$/u.test(inventory.logicalChecksum),
+    "search logical checksum is missing",
+  );
+  const sqlite = await import("bun:sqlite");
+  const database = new sqlite.Database(path, { readonly: true });
+  try {
+    const integrity = database.query("PRAGMA integrity_check").get();
+    assert(integrity?.integrity_check === "ok", "search SQLite integrity check failed");
+    const foreignKeys = database.query("PRAGMA foreign_key_check").all();
+    assert(foreignKeys.length === 0, "search SQLite foreign-key check failed");
+  } finally {
+    database.close();
+  }
+  assert(sha256(readFileSync(path)) === digest, "search artifact changed during validation");
 }
 
 function now() {
@@ -575,13 +674,26 @@ function fixtureBytes(fixture) {
 
 function materializeFixture(fixture, destination, runId) {
   const bytes = fixtureBytes(fixture);
-  if (!bytes) return fixture ?? null;
+  if (!fixture) return null;
   const path = join(destination, runId, "fixtures", `${fixture.id ?? "fixture"}.bin`);
+  if (fixture.kind === "generated-file") {
+    return {
+      ...fixture,
+      materialized: {
+        path: relative(destination, path),
+        owner: "generator",
+        presentBeforeRun: false,
+      },
+    };
+  }
+  if (!bytes) return fixture;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, bytes, { mode: 0o600 });
   return {
     ...fixture,
     materialized: {
+      owner: "runner",
+      presentBeforeRun: true,
       path: relative(destination, path),
       sha256: sha256(bytes),
       bytes: bytes.length,
@@ -754,7 +866,7 @@ export async function capture({
     const fixturePath = fixture?.materialized?.path
       ? resolve(destination, fixture.materialized.path)
       : join(executionRoot, "generated-fixture");
-    if (fixture?.materialized && !existsSync(fixturePath))
+    if (fixture?.materialized?.presentBeforeRun && !existsSync(fixturePath))
       fail("runner fixture was not materialized");
     const argv = resolveArgv(step.argv, fixturePath, destination, runId);
     const beforeRun = repositorySnapshot(checkout);
@@ -795,6 +907,7 @@ export async function capture({
     );
     const durationNs = processResult.completed - processResult.started;
     const assertions = evaluateAssertions(step, checkout, processResult, eventsValue);
+    const retainedFixture = await finalizeFixture(fixture, destination, fixturePath);
     const result =
       processResult.timedOut || processResult.exitCode === null
         ? "blocked"
@@ -830,7 +943,7 @@ export async function capture({
       stdin: { kind: "none" },
       sources: stepBindings,
       runnerSources: runnerBindings,
-      fixture,
+      fixture: retainedFixture,
       assertions,
       startedAt,
       completedAt,
