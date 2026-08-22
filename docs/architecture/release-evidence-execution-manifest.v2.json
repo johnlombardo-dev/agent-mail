@@ -43,6 +43,10 @@
     "unmeasured-zero",
     "parent-only-rss",
     "leaked-descendant",
+    "detached-descendant-survivor",
+    "late-kernel-resource",
+    "missing-rss-not-applicable",
+    "sigterm-ignoring-timeout",
     "leaked-handle",
     "leaked-listener",
     "leaked-lease",
@@ -91,8 +95,8 @@
       {
         "role": "capture-runner",
         "path": "scripts/qualification/capture-release-evidence.mjs",
-        "gitBlob": "a78f079ccf50516fd84f3efe542e44717cb8132b",
-        "sha256": "f3ce4c37691bbd9a0aa58f05b2c1d0aaf545a006211b7b0f71418c47c6d0347c"
+        "gitBlob": "42097c2ff05e149528b34d225c5c96cfc47379aa",
+        "sha256": "f9c1eb5248941aa933effbcf14980918e723af7bb66f48ccb1576f0b07381519"
       },
       {
         "role": "replay-runner",

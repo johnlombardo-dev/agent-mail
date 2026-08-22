@@ -776,7 +776,67 @@ function now() {
   return new Date().toISOString();
 }
 
-function runProcess(argv, cwd, timeoutMs) {
+const KERNEL_SAMPLE_INTERVAL_MS = 25;
+const TERMINATION_GRACE_MS = 100;
+const TERMINATION_ESCALATION_MS = 500;
+
+function delay(milliseconds) {
+  return new Promise((resolveResult) => setTimeout(resolveResult, milliseconds));
+}
+
+function signalTrackedProcesses(rootPid, processGroups, pids, signal) {
+  for (const processGroup of processGroups) {
+    try {
+      process.kill(-processGroup, signal);
+    } catch {}
+  }
+  for (const pid of pids) {
+    if (!Number.isInteger(pid) || pid <= 1 || pid === process.pid) continue;
+    try {
+      process.kill(pid, signal);
+    } catch {}
+  }
+  if (Number.isInteger(rootPid) && rootPid > 1 && rootPid !== process.pid) {
+    try {
+      process.kill(rootPid, signal);
+    } catch {}
+  }
+}
+
+function resourceSummary(samples) {
+  const observed = samples.filter((sample) => sample.observed);
+  const maximum = (key) => {
+    const values = observed.map((sample) => sample[key]).filter(Number.isFinite);
+    return values.length > 0 ? Math.max(...values) : null;
+  };
+  return {
+    observed: observed.length > 0,
+    pids: [...new Set(samples.flatMap((sample) => sample.pids ?? []))],
+    fileDescriptors: maximum("fileDescriptors"),
+    sockets: maximum("sockets"),
+    listeners: maximum("listeners"),
+    hermesPorts: [...new Set(samples.flatMap((sample) => sample.hermesPorts ?? []))].sort(
+      (left, right) => left - right,
+    ),
+    samples,
+    ...(observed.length === 0 && samples.at(-1)?.reason ? { reason: samples.at(-1).reason } : {}),
+  };
+}
+
+function treeSummary(samples) {
+  const rssSamples = samples
+    .filter((sample) => sample.rssStatus === "observed" && Number.isFinite(sample.rssBytes))
+    .map((sample) => sample.rssBytes);
+  return {
+    observed: samples.some((sample) => sample.rootPresent),
+    samples,
+    completed: samples.at(-1),
+    peakRssBytes: rssSamples.length > 0 ? Math.max(...rssSamples) : null,
+    rssStatus: rssSamples.length > 0 ? "observed" : "notApplicable",
+  };
+}
+
+export function runProcess(argv, cwd, timeoutMs) {
   return new Promise((resolveResult) => {
     const started = process.hrtime.bigint();
     const child = spawn(argv[0], argv.slice(1), {
@@ -784,28 +844,77 @@ function runProcess(argv, cwd, timeoutMs) {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const spawnedAt = processTreeSnapshot(child.pid);
-    const treeSamples = [spawnedAt];
-    const resourceAtSpawn = kernelResourceSnapshot(spawnedAt.pids ?? [child.pid]);
-    const sampler = setInterval(() => treeSamples.push(processTreeSnapshot(child.pid)), 25);
+    const trackedPids = new Set([child.pid]);
+    const trackedProcessGroups = new Set([child.pid]);
+    const treeSamples = [];
+    const resourceSamples = [];
+    const sample = () => {
+      const tree = processTreeSnapshot(child.pid, [...trackedPids]);
+      for (const pid of tree.pids) trackedPids.add(pid);
+      for (const processGroup of tree.processGroups ?? []) trackedProcessGroups.add(processGroup);
+      treeSamples.push(tree);
+      resourceSamples.push(kernelResourceSnapshot([...trackedPids]));
+      return tree;
+    };
+    const spawnedAt = sample();
     const stdout = [];
     const stderr = [];
     child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
     child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+    let sampler = setInterval(sample, KERNEL_SAMPLE_INTERVAL_MS);
     let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      try {
-        process.kill(-child.pid, "SIGTERM");
-      } catch {}
-    }, timeoutMs);
-    child.on("close", (exitCode, signal) => {
+    let timeoutSigkillSent = false;
+    let settled = false;
+    let escalationTimer;
+    let hardTimeoutTimer;
+    let terminationPromise;
+    let result;
+
+    const terminateTracked = async (reason = "cleanup") => {
+      if (!terminationPromise) {
+        terminationPromise = (async () => {
+          signalTrackedProcesses(child.pid, trackedProcessGroups, trackedPids, "SIGTERM");
+          await delay(TERMINATION_GRACE_MS);
+          const beforeKill = sample();
+          const survivorsBeforeKill = beforeKill.pids.filter(
+            (pid) => pid !== process.pid && pid > 1,
+          );
+          let escalated = false;
+          if (survivorsBeforeKill.length > 0) {
+            escalated = true;
+            signalTrackedProcesses(child.pid, trackedProcessGroups, survivorsBeforeKill, "SIGKILL");
+            await delay(TERMINATION_GRACE_MS);
+          }
+          const afterKill = sample();
+          const survivorsAfterKill = afterKill.pids.filter((pid) => pid !== process.pid && pid > 1);
+          const termination = {
+            reason,
+            sigtermSent: true,
+            sigkillSent: escalated,
+            survivorsBeforeKill,
+            survivorsAfterKill,
+            completed: survivorsAfterKill.length === 0,
+          };
+          if (result) {
+            result.tree = treeSummary(treeSamples);
+            result.resources = resourceSummary(resourceSamples);
+            result.termination = termination;
+          }
+          return termination;
+        })();
+      }
+      return terminationPromise;
+    };
+
+    const settle = (exitCode, signal) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      clearTimeout(escalationTimer);
+      clearTimeout(hardTimeoutTimer);
       clearInterval(sampler);
-      const completedTree = processTreeSnapshot(child.pid);
-      treeSamples.push(completedTree);
-      const observedTrees = treeSamples.filter((sample) => sample.observed);
-      resolveResult({
+      sample();
+      result = {
         pid: child.pid,
         processGroup: -child.pid,
         exitCode,
@@ -816,45 +925,38 @@ function runProcess(argv, cwd, timeoutMs) {
         started,
         completed: process.hrtime.bigint(),
         spawnedAt,
-        tree: {
-          observed: observedTrees.some((sample) => sample.rootPresent),
-          samples: treeSamples,
-          completed: completedTree,
-          peakRssBytes: observedTrees.reduce(
-            (peak, sample) => Math.max(peak, sample.rssBytes ?? 0),
-            0,
-          ),
-        },
-        resources: resourceAtSpawn,
-      });
-    });
+        tree: treeSummary(treeSamples),
+        resources: resourceSummary(resourceSamples),
+        termination: undefined,
+        timeoutSigkillSent,
+        terminate: terminateTracked,
+        refresh: sample,
+      };
+      resolveResult(result);
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      signalTrackedProcesses(child.pid, trackedProcessGroups, trackedPids, "SIGTERM");
+      escalationTimer = setTimeout(() => {
+        timeoutSigkillSent = true;
+        signalTrackedProcesses(child.pid, trackedProcessGroups, trackedPids, "SIGKILL");
+      }, TERMINATION_GRACE_MS);
+      hardTimeoutTimer = setTimeout(() => {
+        timeoutSigkillSent = true;
+        signalTrackedProcesses(child.pid, trackedProcessGroups, trackedPids, "SIGKILL");
+        settle(null, "SIGKILL");
+      }, TERMINATION_ESCALATION_MS);
+    }, timeoutMs);
+    child.on("close", (exitCode, signal) => settle(exitCode, signal));
     child.on("error", (error) => {
-      clearTimeout(timer);
-      clearInterval(sampler);
-      resolveResult({
-        pid: child.pid ?? null,
-        processGroup: child.pid ? -child.pid : null,
-        exitCode: null,
-        signal: null,
-        timedOut,
-        stdout: Buffer.concat(stdout),
-        stderr: Buffer.from(String(error)),
-        started,
-        completed: process.hrtime.bigint(),
-        spawnedAt,
-        tree: {
-          observed: false,
-          samples: treeSamples,
-          completed: processTreeSnapshot(child.pid),
-          peakRssBytes: null,
-        },
-        resources: resourceAtSpawn,
-      });
+      stderr.push(Buffer.from(String(error)));
+      settle(null, null);
     });
   });
 }
 
-function processTreeSnapshot(pid) {
+export function processTreeSnapshot(pid, trackedPids = []) {
   if (!pid)
     return {
       observed: false,
@@ -862,7 +964,9 @@ function processTreeSnapshot(pid) {
       rootPresent: false,
       descendants: [],
       rssBytes: null,
+      rssStatus: "notApplicable",
       pids: [],
+      processGroups: [],
     };
   try {
     const rows = execFileSync("ps", ["-axo", "pid=,ppid=,pgid=,rss="], { encoding: "utf8" })
@@ -871,28 +975,55 @@ function processTreeSnapshot(pid) {
       .filter(Boolean)
       .map((line) => {
         const [pidValue, ppidValue, pgidValue, rssValue] = line.trim().split(/\s+/u).map(Number);
-        return { pid: pidValue, ppid: ppidValue, pgid: pgidValue, rssBytes: rssValue * 1024 };
+        return {
+          pid: pidValue,
+          ppid: ppidValue,
+          pgid: pgidValue,
+          rssBytes: Number.isFinite(rssValue) ? rssValue * 1024 : null,
+        };
       });
+    const selected = new Map();
     const descendants = [];
     const pending = [pid];
     while (pending.length > 0) {
       const parent = pending.shift();
       for (const row of rows.filter((candidate) => candidate.ppid === parent)) {
-        descendants.push(row);
+        if (!selected.has(row.pid)) descendants.push(row);
+        selected.set(row.pid, row);
         pending.push(row.pid);
       }
     }
     const root = rows.find((row) => row.pid === pid);
     const groupRows = rows.filter((row) => row.pgid === pid && row.pid !== pid);
-    for (const row of groupRows)
-      if (!descendants.some((candidate) => candidate.pid === row.pid)) descendants.push(row);
+    for (const row of groupRows) {
+      if (!selected.has(row.pid)) descendants.push(row);
+      selected.set(row.pid, row);
+    }
+    for (const row of rows) {
+      if (trackedPids.includes(row.pid) && row.pid !== pid && !selected.has(row.pid)) {
+        descendants.push(row);
+        selected.set(row.pid, row);
+      }
+    }
+    const rssValues = [root, ...selected.values()]
+      .map((row) => row?.rssBytes)
+      .filter(Number.isFinite);
     return {
       observed: true,
       rootPid: pid,
       rootPresent: root !== undefined,
       descendants: descendants.map(({ pid: childPid, rssBytes }) => ({ pid: childPid, rssBytes })),
-      rssBytes: (root?.rssBytes ?? 0) + descendants.reduce((sum, row) => sum + row.rssBytes, 0),
+      rssBytes:
+        root?.rssBytes !== null && root?.rssBytes !== undefined
+          ? rssValues.reduce((sum, value) => sum + value, 0)
+          : null,
+      rssStatus:
+        root?.rssBytes !== null && root?.rssBytes !== undefined ? "observed" : "notApplicable",
       pids: [root?.pid, ...descendants.map((row) => row.pid)].filter(Boolean),
+      processGroups: [root?.pgid, ...descendants.map((row) => row.pgid)].filter(
+        (processGroup, index, values) =>
+          Number.isInteger(processGroup) && values.indexOf(processGroup) === index,
+      ),
     };
   } catch {
     return {
@@ -901,7 +1032,9 @@ function processTreeSnapshot(pid) {
       rootPresent: false,
       descendants: [],
       rssBytes: null,
+      rssStatus: "notApplicable",
       pids: [],
+      processGroups: [],
     };
   }
 }
@@ -993,15 +1126,10 @@ function createCleanupBarrier(executionRoot, processResult) {
       promise = (async () => {
         const currentProcessResult =
           typeof processResult === "function" ? processResult() : processResult;
-        if (currentProcessResult?.processGroup) {
-          try {
-            process.kill(currentProcessResult.processGroup, "SIGTERM");
-          } catch {}
-        }
-        await new Promise((resolveResult) => setTimeout(resolveResult, 25));
-        const descendantsBeforeRemoval = currentProcessResult?.pid
-          ? processTreeSnapshot(currentProcessResult.pid).descendants
-          : [];
+        const termination = currentProcessResult?.terminate
+          ? await currentProcessResult.terminate(reason)
+          : undefined;
+        const finalTree = currentProcessResult?.tree?.completed;
         rmSync(executionRoot, { recursive: true, force: true });
         return {
           attempted: true,
@@ -1009,7 +1137,11 @@ function createCleanupBarrier(executionRoot, processResult) {
           barrier: "awaited-idempotent",
           reason,
           invocations,
-          descendantsBeforeRemoval,
+          sigtermSent: termination?.sigtermSent ?? false,
+          sigkillSent: termination?.sigkillSent ?? false,
+          survivorsBeforeKill: termination?.survivorsBeforeKill ?? [],
+          survivorsAfterKill: termination?.survivorsAfterKill ?? [],
+          descendantsBeforeRemoval: finalTree?.descendants ?? [],
           executionRootRemoved: !existsSync(executionRoot),
         };
       })();
@@ -1432,6 +1564,7 @@ export async function capture({
     const captureStartedNs = process.hrtime.bigint();
     const processBefore = processTreeSnapshot(process.pid);
     processResult = await runProcess(argv, cwd, timeoutMs ?? step.thresholds.timeoutMs ?? 300_000);
+    const termination = await processResult.terminate("post-process");
     const processAfter = processResult.tree.completed;
     const descendants = processAfter.descendants;
     const eventsValue = parseMachineEvents(processResult.stdout, processResult.stderr);
@@ -1462,7 +1595,10 @@ export async function capture({
     const durationNs = processResult.completed - processResult.started;
     const assertions = evaluateAssertions(step, checkout, processResult, eventsValue);
     const probeUnavailable =
-      (step.probes.includes("processTreeRss") && !processResult.tree.observed) ||
+      (step.probes.includes("processTreeRss") &&
+        (!processResult.tree.observed ||
+          processResult.tree.rssStatus !== "observed" ||
+          !Number.isFinite(processResult.tree.peakRssBytes))) ||
       (["fileDescriptors", "sockets", "listeners", "HermesLease"].some((probe) =>
         step.probes.includes(probe),
       ) &&
@@ -1471,7 +1607,10 @@ export async function capture({
             processResult.resources.hermesPorts.length === 0)));
     const kernelThresholdsPass = kernelThresholdsSatisfied(step, processResult);
     const result =
-      probeUnavailable || processResult.timedOut || processResult.exitCode === null
+      probeUnavailable ||
+      processResult.timedOut ||
+      processResult.exitCode === null ||
+      termination.survivorsAfterKill.length > 0
         ? "blocked"
         : processResult.exitCode === 0 &&
             assertions.every((assertion) => assertion.pass) &&
@@ -1629,6 +1768,7 @@ export async function capture({
           descendants: processAfter.descendants,
           rssBytes: processResult.tree.peakRssBytes,
           peakRssBytes: processResult.tree.peakRssBytes,
+          rssStatus: processResult.tree.rssStatus,
           samples: processResult.tree.samples,
           spawned: processResult.spawnedAt,
         },
@@ -1641,7 +1781,7 @@ export async function capture({
           events: events.bytes,
         },
         tempRoot: { path: executionRoot, removed: cleanup.executionRootRemoved },
-        cleanup,
+        cleanup: { ...cleanup, termination },
       },
       result,
       observedOutcome: {

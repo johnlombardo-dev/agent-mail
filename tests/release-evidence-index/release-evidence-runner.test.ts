@@ -15,7 +15,9 @@ import {
   capture,
   cleanGeneratedStaging,
   generationReceipt,
+  processTreeSnapshot,
   retainGeneratedArtifact,
+  runProcess,
   sha256,
   validateManifest,
 } from "../../scripts/qualification/capture-release-evidence.mjs";
@@ -437,6 +439,87 @@ describe("release evidence executable runner", () => {
       expect(() => generationReceipt(receiptPath, receiptOutput, { generationStepId: "generation" }, "candidate")).toThrow(
         /artifact drifted/u,
       );
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("tracks and kills a detached descendant after its parent exits", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-mail-runner-detached-"));
+    const script = join(root, "detached.mjs");
+    writeFileSync(
+      script,
+      `import { spawn } from "node:child_process";
+const child = spawn(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setTimeout(() => {}, 10000)"], { detached: true, stdio: "ignore" });
+child.unref();
+setTimeout(() => process.exit(0), 250);
+`,
+    );
+    try {
+      const result = await runProcess([process.execPath, script], root, 2_000);
+      const sawDetached = result.tree.samples.some(
+        (sample: { pids: number[] }) => sample.pids.length > 1,
+      );
+      const termination = await result.terminate("detached-attack");
+      expect(sawDetached).toBe(true);
+      expect(termination.completed).toBe(true);
+      expect(termination.survivorsAfterKill).toEqual([]);
+      expect(termination.sigkillSent).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("samples resources after a late listener appears", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-mail-runner-late-resource-"));
+    const script = join(root, "late-listener.mjs");
+    writeFileSync(
+      script,
+      `import { createServer } from "node:net";
+const server = createServer();
+setTimeout(() => server.listen(0, "127.0.0.1"), 100);
+setTimeout(() => server.close(() => process.exit(0)), 350);
+`,
+    );
+    try {
+      const result = await runProcess([process.execPath, script], root, 2_000);
+      await result.terminate("late-resource-attack");
+      expect(result.resources.samples.length).toBeGreaterThan(2);
+      expect(
+        result.resources.samples.some(
+          (sample: { observed: boolean; listeners: number | null }) =>
+            sample.observed && (sample.listeners ?? 0) > 0,
+        ),
+      ).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("represents an exited process RSS as notApplicable instead of zero", () => {
+    const snapshot = processTreeSnapshot(2_147_483_647);
+    expect(snapshot.rssBytes).toBeNull();
+    expect(snapshot.rssStatus).toBe("notApplicable");
+  });
+
+  test("escalates when a timed-out child ignores SIGTERM", async () => {
+    const root = mkdtempSync(join(tmpdir(), "agent-mail-runner-sigterm-"));
+    const script = join(root, "ignore-term.mjs");
+    writeFileSync(
+      script,
+      `process.on("SIGTERM", () => {});
+setInterval(() => {}, 1000);
+`,
+    );
+    const started = Date.now();
+    try {
+      const result = await runProcess([process.execPath, script], root, 100);
+      const termination = await result.terminate("sigterm-attack");
+      expect(result.timedOut).toBe(true);
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(termination.completed).toBe(true);
+      expect(result.timeoutSigkillSent || termination.sigkillSent).toBe(true);
+      expect(termination.survivorsAfterKill).toEqual([]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
