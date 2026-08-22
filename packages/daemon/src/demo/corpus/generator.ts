@@ -16,6 +16,7 @@ import {
   type CorpusInventoryEntry,
   type CorpusMessage,
   type CorpusOptions,
+  type CorpusRelationship,
   type CorpusTimelineEvent,
   type DemoCorpus,
   type MailboxState,
@@ -55,8 +56,32 @@ function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function copySafeMessage(
+  message: Omit<CorpusMessage, "coverage"> & {
+    readonly coverage: readonly RequiredCoverageCase[];
+  },
+): CorpusMessage {
+  const rawSnapshot = new Uint8Array(message.rawBytes);
+  const result = { ...message, rawBytes: rawSnapshot };
+  Object.defineProperty(result, "rawBytes", {
+    enumerable: true,
+    get: () => new Uint8Array(rawSnapshot),
+  });
+  return Object.freeze(result);
+}
+
 function randomWord(seed: string, index: number): string {
   return hashText(`${seed}\0${index}`).slice(0, 12);
+}
+
+function messageIdentifier(options: CorpusOptions, index: number): string {
+  return `<demo-message:${options.scenarioVersion}:${randomWord(options.seed, index)}@example.test>`;
+}
+
+function messageIdentifierForRecord(options: CorpusOptions, index: number): string {
+  return coverageFor(index).includes("duplicate-id")
+    ? "<duplicate@example.test>"
+    : messageIdentifier(options, index);
 }
 
 function categoryFor(options: CorpusOptions, index: number): ScenarioCategory {
@@ -77,7 +102,30 @@ function categoryFor(options: CorpusOptions, index: number): ScenarioCategory {
 function coverageFor(index: number): readonly RequiredCoverageCase[] {
   const first = requiredCoverageCases[index % requiredCoverageCases.length];
   const second = requiredCoverageCases[(index * 7 + 3) % requiredCoverageCases.length];
-  return first === second ? [first] : [first, second];
+  const initial = first === second ? [first] : [first, second];
+  if (index === 12 && !initial.includes("duplicate-id")) return [...initial, "duplicate-id"];
+  return initial;
+}
+
+function relationshipFor(
+  options: CorpusOptions,
+  index: number,
+  coverage: readonly RequiredCoverageCase[],
+): CorpusRelationship {
+  if (coverage.includes("missing-reference"))
+    return Object.freeze({
+      kind: "missing-reference",
+      inReplyTo: `<missing-reference:${options.seed}:${index}@example.test>`,
+      references: Object.freeze([`<missing-reference:${options.seed}:${index}@example.test>`]),
+    });
+  if (index === 0) return Object.freeze({ kind: "root" });
+  const parentIndex =
+    coverage.includes("forked-thread") || (index >= 16 && index <= 18) ? 15 : index - 1;
+  const inReplyTo = messageIdentifierForRecord(options, parentIndex);
+  const references = Object.freeze([inReplyTo]);
+  if (coverage.includes("forked-thread") || (index >= 16 && index <= 18))
+    return Object.freeze({ kind: "fork", inReplyTo, references, branch: index - 15 });
+  return Object.freeze({ kind: "reply", inReplyTo, references });
 }
 
 function attachmentStream(seed: string, byteLength: number): () => AsyncIterable<Uint8Array> {
@@ -113,6 +161,7 @@ function buildAttachment(seed: string, large: boolean, hostileName: boolean): Co
   return {
     kind: "attachment",
     filename: hostileName ? "..\\\u001b]8;;https://evil.example\u0007invoice.pdf" : "invoice.pdf",
+    disposition: "attachment",
     mediaType: "application/octet-stream",
     byteLength,
     contentDigest: attachmentDigest(seed, byteLength),
@@ -127,6 +176,7 @@ function buildMessage(
 ): CorpusMessage {
   const category = categoryFor(options, index);
   const coverage = coverageFor(index);
+  const relationship = relationshipFor(options, index, coverage);
   const id = createCorpusMessageId(`${options.scenarioVersion}:${randomWord(options.seed, index)}`);
   const thread = createCorpusThreadId(
     coverage.includes("long-thread") || (index >= 6 && index <= 15)
@@ -138,6 +188,9 @@ function buildMessage(
           : `thread:${Math.floor(index / 3)}`,
   );
   const uid = index % 11 === 0 ? 1_000_000 + index * 17 : index + 1;
+  const mailboxIndex = index % 3;
+  const uidValidity = 7000 + mailboxIndex;
+  const modSeq = mailboxIndex === 2 ? null : 1000 + index;
   const parts: CorpusBodyPart[] = [];
   const has = (item: RequiredCoverageCase): boolean => coverage.includes(item);
   if (has("alternative-body"))
@@ -163,7 +216,7 @@ function buildMessage(
       mediaType: "image/png",
       bytes: 24,
     });
-  if (has("attachment") || has("large-streaming-attachment"))
+  if (has("attachment") || has("large-streaming-attachment") || has("hostile-filename"))
     parts.push(
       buildAttachment(
         `${options.seed}\0${index}`,
@@ -177,19 +230,18 @@ function buildMessage(
     subject: has("terminal-controls")
       ? `Subject ${HOSTILE_TEXT}`
       : `Synthetic ${category} ${index}`,
-    "message-id": `<${id}@example.test>`,
+    "message-id": coverage.includes("duplicate-id")
+      ? "<duplicate@example.test>"
+      : messageIdentifierForRecord(options, index),
   };
   if (has("unicode") || has("bidi-text"))
     headers.subject = `Δοκιμή 日本語 ${has("bidi-text") ? "\u202eabc\u202c" : ""}`;
   if (has("missing-headers")) delete headers.to;
   if (has("legal-unusual-headers")) headers["x-legal-hold"] = "retention=indefinite";
-  if (has("missing-reference")) delete headers.references;
-  else {
-    headers["in-reply-to"] =
-      index > 0 ? `<synthetic-${index - 1}@example.test>` : "<root@example.test>";
-    headers.references = headers["in-reply-to"];
+  if (relationship.kind !== "root") {
+    headers["in-reply-to"] = relationship.inReplyTo;
+    headers.references = relationship.references.join(" ");
   }
-  if (has("duplicate-id")) headers["message-id"] = "<duplicate@example.test>";
   if (has("malformed-boundary"))
     headers["content-type"] = 'multipart/mixed; boundary=unterminated"';
   const flags = has("flags") ? ["\\Seen", "\\Flagged"] : [];
@@ -213,12 +265,15 @@ function buildMessage(
   const rawBytes = new TextEncoder().encode(
     `${logical}\r\n${parts.map((part) => part.kind).join("\r\n")}`,
   );
-  return Object.freeze({
+  return copySafeMessage({
     id,
     messageId: headers["message-id"] ?? `<missing-${index}@example.test>`,
     mailboxId,
     threadId: thread,
+    relationship,
+    uidValidity,
     uid,
+    modSeq,
     internalDate: date,
     category,
     coverage,
@@ -234,22 +289,89 @@ function mailboxState(
   id: ReturnType<typeof createCorpusMailboxId>,
   name: string,
   index: number,
-  exists: number,
+  messages: readonly CorpusMessage[],
 ): MailboxState {
+  const extant = messages.filter((message) => message.mailboxId === id && !message.tombstone);
+  const maxUid = extant.reduce((maximum, message) => Math.max(maximum, message.uid), 0);
+  const maxModSeq = extant.reduce((maximum, message) => Math.max(maximum, message.modSeq ?? 0), 0);
   return Object.freeze({
     id,
     name,
     uidValidity: 7000 + index,
-    uidNext: index === 1 ? null : 100,
-    highestModSeq: index === 2 ? null : 1000,
-    exists,
+    uidNext: index === 1 ? null : maxUid + 1,
+    highestModSeq: index === 2 ? null : maxModSeq + 1,
+    exists: extant.length,
     flags: Object.freeze(["\\Seen", "\\Flagged"]),
   });
 }
 
-function inventoryFor(messages: readonly CorpusMessage[]): CorpusInventory {
+function derivedCoverageFor(
+  message: CorpusMessage,
+  messages: readonly CorpusMessage[],
+  mailboxes: readonly MailboxState[],
+): readonly RequiredCoverageCase[] {
+  const cases = new Set<RequiredCoverageCase>();
+  cases.add(message.category);
+  const thread = messages.filter((candidate) => candidate.threadId === message.threadId);
+  if (thread.length >= 4) cases.add("long-thread");
+  if (message.relationship.kind === "fork") cases.add("forked-thread");
+  if (message.relationship.kind === "missing-reference") cases.add("missing-reference");
+  if (new Set(thread.map((candidate) => candidate.mailboxId)).size > 1)
+    cases.add("cross-mailbox-thread");
+  if (messages.filter((candidate) => candidate.messageId === message.messageId).length > 1)
+    cases.add("duplicate-id");
+  const mailbox = mailboxes.find((candidate) => candidate.id === message.mailboxId);
+  if (mailbox?.uidNext === null) cases.add("missing-uidnext");
+  if (mailbox?.highestModSeq === null || message.modSeq === null) cases.add("missing-modseq");
+  cases.add("uidvalidity");
+  if (message.uid >= 1_000_000) cases.add("sparse-high-uid");
+  if (message.internalDate.includes("+")) cases.add("offset-date");
+  const text = [
+    ...Object.values(message.headers),
+    ...message.parts.flatMap((part) => {
+      if (part.kind === "text") return [part.text];
+      if (part.kind === "html") return [part.html];
+      if (part.kind === "alternative") return [part.text, part.html];
+      if (part.kind === "inline") return [part.contentId, part.mediaType];
+      return [part.filename, part.mediaType, part.disposition, part.contentDigest];
+    }),
+  ].join("\n");
+  if (/[\u0080-\u{10ffff}]/u.test(text)) cases.add("unicode");
+  if (/[\u202a-\u202e]/u.test(text)) cases.add("bidi-text");
+  if (/[\u0000-\u001f\u007f-\u009f]/u.test(text)) cases.add("terminal-controls");
+  if (/https?:\/\//u.test(text)) cases.add("hostile-link");
+  if (/Ignore prior instructions/u.test(text)) cases.add("prompt-injection");
+  if (/password|API token/iu.test(text)) cases.add("secret-request");
+  if (/delete the mailbox/iu.test(text)) cases.add("unauthorized-action-request");
+  if (message.headers["x-legal-hold"] !== undefined) cases.add("legal-unusual-headers");
+  if (message.headers.to === undefined || message.headers.from === undefined)
+    cases.add("missing-headers");
+  if (message.headers["content-type"]?.includes("unterminated")) cases.add("malformed-boundary");
+  for (const part of message.parts) {
+    if (part.kind === "text") cases.add("text-body");
+    if (part.kind === "html") cases.add("html-body");
+    if (part.kind === "alternative") cases.add("alternative-body");
+    if (part.kind === "inline") cases.add("inline-part");
+    if (part.kind === "attachment") {
+      cases.add("attachment");
+      if (part.byteLength >= 8 * 1024 * 1024) cases.add("large-streaming-attachment");
+      if (part.filename.includes("..\\") || /[\u0000-\u001f\u007f-\u009f]/u.test(part.filename))
+        cases.add("hostile-filename");
+    }
+  }
+  if (message.flags.length > 0) cases.add("flags");
+  if (message.tombstone) cases.add("tombstone");
+  return Object.freeze(requiredCoverageCases.filter((caseId) => cases.has(caseId)));
+}
+
+function inventoryFor(
+  messages: readonly CorpusMessage[],
+  mailboxes: readonly MailboxState[],
+): CorpusInventory {
   const entries: CorpusInventoryEntry[] = requiredCoverageCases.map((caseId) => {
-    const matching = messages.filter((message) => message.coverage.includes(caseId));
+    const matching = messages.filter((message) =>
+      derivedCoverageFor(message, messages, mailboxes).includes(caseId),
+    );
     return Object.freeze({
       caseId,
       messageIds: Object.freeze(matching.map((message) => message.id)),
@@ -273,22 +395,38 @@ function timelineFor(
   messages: readonly CorpusMessage[],
   mailboxes: readonly MailboxState[],
 ): readonly CorpusTimelineEvent[] {
-  const events: CorpusTimelineEvent[] = mailboxes.map((mailbox, index) => ({
-    kind: "mailbox-created",
-    mailboxId: mailbox.id,
-    at: `2024-01-01T00:0${index}:00.000Z`,
-  }));
+  const events: CorpusTimelineEvent[] = mailboxes.flatMap((mailbox, index) => [
+    Object.freeze({
+      kind: "mailbox-created" as const,
+      mailboxId: mailbox.id,
+      at: `2024-01-01T00:0${index}:00.000Z`,
+    }),
+    Object.freeze({
+      kind: "mailbox-state-observed" as const,
+      mailboxId: mailbox.id,
+      uidNext: mailbox.uidNext,
+      highestModSeq: mailbox.highestModSeq,
+      exists: mailbox.exists,
+      at: `2024-01-01T00:0${index}:00.500Z`,
+    }),
+  ]);
   for (const message of messages) {
-    events.push({ kind: "message-added", messageId: message.id, at: message.internalDate });
+    events.push(
+      Object.freeze({ kind: "message-added", messageId: message.id, at: message.internalDate }),
+    );
     if (message.flags.length > 0)
-      events.push({
-        kind: "flags-updated",
-        messageId: message.id,
-        flags: message.flags,
-        at: message.internalDate,
-      });
+      events.push(
+        Object.freeze({
+          kind: "flags-updated",
+          messageId: message.id,
+          flags: message.flags,
+          at: message.internalDate,
+        }),
+      );
     if (message.tombstone)
-      events.push({ kind: "tombstoned", messageId: message.id, at: message.internalDate });
+      events.push(
+        Object.freeze({ kind: "tombstoned", messageId: message.id, at: message.internalDate }),
+      );
   }
   return Object.freeze(events);
 }
@@ -311,9 +449,38 @@ function logicalProjection(
     size: corpus.size,
     scenarioMix: corpus.scenarioMix,
     messages: corpus.messages.map((message) => ({
-      ...message,
-      rawBytes: undefined,
-      parts: message.parts.map((part) => part.kind),
+      id: message.id,
+      messageId: message.messageId,
+      mailboxId: message.mailboxId,
+      threadId: message.threadId,
+      relationship: message.relationship,
+      uidValidity: message.uidValidity,
+      uid: message.uid,
+      modSeq: message.modSeq,
+      internalDate: message.internalDate,
+      category: message.category,
+      coverage: message.coverage,
+      headers: message.headers,
+      parts: message.parts.map((part) => {
+        if (part.kind === "text") return part;
+        if (part.kind === "html") return part;
+        if (part.kind === "alternative") return part;
+        if (part.kind === "inline") return part;
+        return {
+          kind: part.kind,
+          filename: part.filename,
+          disposition: part.disposition,
+          mediaType: part.mediaType,
+          byteLength: part.byteLength,
+          contentDigest: part.contentDigest,
+        };
+      }),
+      flags: message.flags,
+      tombstone: message.tombstone,
+      rawBytes: {
+        byteLength: message.rawBytes.byteLength,
+        digest: createCorpusDigest(message.rawBytes),
+      },
     })),
     mailboxes: corpus.mailboxes,
     timeline: corpus.timeline,
@@ -323,8 +490,64 @@ function logicalProjection(
 
 function byteProjection(messages: readonly CorpusMessage[]): Uint8Array {
   const hash = createHash("sha256");
-  for (const message of messages) hash.update(message.rawBytes);
+  for (const message of messages) {
+    hash.update(message.id);
+    hash.update(String(message.rawBytes.byteLength));
+    hash.update(createCorpusDigest(message.rawBytes));
+  }
   return hash.digest();
+}
+
+function normalizeMessages(
+  messages: readonly CorpusMessage[],
+  mailboxes: readonly MailboxState[],
+): readonly CorpusMessage[] {
+  return Object.freeze(
+    messages.map((message) =>
+      copySafeMessage({
+        ...message,
+        coverage: derivedCoverageFor(message, messages, mailboxes),
+      }),
+    ),
+  );
+}
+
+function digestState(
+  scenarioVersion: string,
+  seed: string,
+  size: number,
+  scenarioMix: CorpusOptions["scenarioMix"],
+  messages: readonly CorpusMessage[],
+  mailboxes: readonly MailboxState[],
+): Readonly<{
+  readonly inventory: CorpusInventory;
+  readonly timeline: readonly CorpusTimelineEvent[];
+  readonly logicalDigest: CorpusDigest;
+  readonly byteDigest: CorpusDigest;
+  readonly checksum: CorpusDigest;
+}> {
+  const normalizedMessages = normalizeMessages(messages, mailboxes);
+  const inventory = inventoryFor(normalizedMessages, mailboxes);
+  const timeline = timelineFor(normalizedMessages, mailboxes);
+  const logical = logicalProjection({
+    scenarioVersion,
+    seed,
+    size,
+    scenarioMix,
+    messages: normalizedMessages,
+    mailboxes,
+    timeline,
+    inventory,
+  });
+  const logicalDigest = createCorpusDigest(logical);
+  const byteDigest = createCorpusDigest(byteProjection(normalizedMessages));
+  return Object.freeze({
+    inventory,
+    timeline,
+    logicalDigest,
+    byteDigest,
+    checksum: createCorpusDigest(`${logicalDigest}\0${byteDigest}`),
+  });
 }
 
 export function buildCorpus(input: unknown): DemoCorpus {
@@ -344,30 +567,29 @@ export function buildCorpus(input: unknown): DemoCorpus {
     ),
   );
   const mailboxes = mailboxIds.map((id, index) =>
-    mailboxState(
-      id,
-      ["INBOX", "Archive", "Sparse"][index],
-      index,
-      messages.filter((message) => message.mailboxId === id).length,
-    ),
+    mailboxState(id, ["INBOX", "Archive", "Sparse"][index], index, messages),
   );
-  const inventory = inventoryFor(messages);
-  const timeline = timelineFor(messages, mailboxes);
-  const logical = logicalProjection({ ...options, messages, mailboxes, timeline, inventory });
-  const logicalDigest = createCorpusDigest(logical);
-  const byteDigest = createCorpusDigest(byteProjection(messages));
+  const derivedMessages = normalizeMessages(messages, mailboxes);
+  const state = digestState(
+    options.scenarioVersion,
+    options.seed,
+    options.size,
+    options.scenarioMix,
+    derivedMessages,
+    mailboxes,
+  );
   return Object.freeze({
     scenarioVersion: options.scenarioVersion,
     seed: options.seed,
     size: options.size,
     scenarioMix: options.scenarioMix,
-    messages,
-    mailboxes,
-    timeline,
-    inventory,
-    logicalDigest,
-    byteDigest,
-    checksum: createCorpusDigest(`${logicalDigest}\0${byteDigest}`),
+    messages: derivedMessages,
+    mailboxes: Object.freeze(mailboxes),
+    timeline: state.timeline,
+    inventory: state.inventory,
+    logicalDigest: state.logicalDigest,
+    byteDigest: state.byteDigest,
+    checksum: state.checksum,
   });
 }
 
@@ -387,15 +609,112 @@ export async function* streamCorpus(input: unknown): AsyncIterable<CorpusMessage
 
 export const streamDemoCorpus = streamCorpus;
 
-export function assertRequiredCoverage(corpus: Pick<DemoCorpus, "inventory">): void {
-  if (corpus.inventory.missingCases.length > 0)
-    throw new Error(
-      `corpus is missing required cases: ${corpus.inventory.missingCases.join(", ")}`,
+export function deriveCorpusInventory(
+  corpus: Pick<DemoCorpus, "messages" | "mailboxes">,
+): CorpusInventory {
+  return inventoryFor(corpus.messages, corpus.mailboxes);
+}
+
+function canonicalEqual(left: unknown, right: unknown): boolean {
+  return canonical(left) === canonical(right);
+}
+
+export function assertRequiredCoverage(
+  corpus: Pick<DemoCorpus, "messages" | "mailboxes" | "inventory">,
+): void {
+  const derived = deriveCorpusInventory(corpus);
+  if (!canonicalEqual(derived, corpus.inventory))
+    throw new Error("corpus inventory is not derived from generated messages");
+  if (derived.missingCases.length > 0)
+    throw new Error(`corpus is missing required cases: ${derived.missingCases.join(", ")}`);
+}
+
+export function assertCorpusIntegrity(corpus: DemoCorpus): void {
+  if (corpus.size !== corpus.messages.length)
+    throw new Error("corpus size does not match generated message count");
+  const state = digestState(
+    corpus.scenarioVersion,
+    corpus.seed,
+    corpus.size,
+    corpus.scenarioMix,
+    corpus.messages,
+    corpus.mailboxes,
+  );
+  assertRequiredCoverage(corpus);
+  if (!canonicalEqual(state.timeline, corpus.timeline))
+    throw new Error("corpus timeline does not match generated messages");
+  if (state.logicalDigest !== corpus.logicalDigest)
+    throw new Error("corpus logical digest does not match generated state");
+  if (state.byteDigest !== corpus.byteDigest)
+    throw new Error("corpus byte digest does not match generated bytes");
+  if (state.checksum !== corpus.checksum)
+    throw new Error("corpus checksum does not match generated state");
+  for (const [index, message] of corpus.messages.entries()) {
+    const expectedCoverage = derivedCoverageFor(message, corpus.messages, corpus.mailboxes);
+    if (!canonicalEqual(expectedCoverage, message.coverage))
+      throw new Error(`message ${index} coverage is not derived from generated structure`);
+  }
+  for (const mailbox of corpus.mailboxes) {
+    const extant = corpus.messages.filter(
+      (message) => message.mailboxId === mailbox.id && !message.tombstone,
     );
+    const maxUid = extant.reduce((maximum, message) => Math.max(maximum, message.uid), 0);
+    const maxModSeq = extant.reduce(
+      (maximum, message) => Math.max(maximum, message.modSeq ?? 0),
+      0,
+    );
+    if (mailbox.uidValidity < 1) throw new Error(`mailbox ${mailbox.id} UIDVALIDITY is invalid`);
+    if (
+      corpus.messages.some(
+        (message) =>
+          message.mailboxId === mailbox.id && message.uidValidity !== mailbox.uidValidity,
+      )
+    )
+      throw new Error(`mailbox ${mailbox.id} UIDVALIDITY is inconsistent`);
+    if (mailbox.exists !== extant.length)
+      throw new Error(`mailbox ${mailbox.id} exists count is inconsistent`);
+    if (mailbox.uidNext !== null && mailbox.uidNext <= maxUid)
+      throw new Error(`mailbox ${mailbox.id} UIDNEXT is not above extant UIDs`);
+    if (mailbox.highestModSeq !== null && mailbox.highestModSeq <= maxModSeq)
+      throw new Error(`mailbox ${mailbox.id} HIGHESTMODSEQ is not above extant MODSEQ values`);
+  }
+  const mailboxIds = new Set(corpus.mailboxes.map((mailbox) => mailbox.id));
+  if (corpus.messages.some((message) => !mailboxIds.has(message.mailboxId)))
+    throw new Error("message placement references an unknown mailbox");
 }
 
 export function checksumCorpus(
-  corpus: Pick<DemoCorpus, "logicalDigest" | "byteDigest">,
+  corpus: Pick<
+    DemoCorpus,
+    "scenarioVersion" | "seed" | "size" | "scenarioMix" | "messages" | "mailboxes"
+  >,
 ): CorpusDigest {
-  return createCorpusDigest(`${corpus.logicalDigest}\0${corpus.byteDigest}`);
+  return digestState(
+    corpus.scenarioVersion,
+    corpus.seed,
+    corpus.size,
+    corpus.scenarioMix,
+    corpus.messages,
+    corpus.mailboxes,
+  ).checksum;
 }
+
+export async function assertCorpusAttachmentStreams(corpus: DemoCorpus): Promise<void> {
+  for (const message of corpus.messages) {
+    for (const part of message.parts) {
+      if (part.kind !== "attachment") continue;
+      const hash = createHash("sha256");
+      let byteLength = 0;
+      for await (const chunk of part.openStream()) {
+        if (chunk.byteLength > STREAM_CHUNK_BYTES)
+          throw new Error("attachment stream exceeded the bounded chunk size");
+        byteLength += chunk.byteLength;
+        hash.update(chunk);
+      }
+      if (byteLength !== part.byteLength || hash.digest("hex") !== part.contentDigest)
+        throw new Error(`attachment ${part.filename} content digest is inconsistent`);
+    }
+  }
+}
+
+export const verifyCorpusAttachmentStreams = assertCorpusAttachmentStreams;

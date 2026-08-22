@@ -16,17 +16,17 @@ export const MAX_GENERATED_SIZE = 250_000;
 export const MAX_MATERIALIZED_SIZE = 10_000;
 export const STREAM_CHUNK_BYTES = 64 * 1024;
 
-export const scenarioCategories = [
+export const scenarioCategories = Object.freeze([
   "ordinary",
   "transactional",
   "mailing-list",
   "newsletter",
   "automated",
   "spam",
-] as const;
+] as const);
 export type ScenarioCategory = (typeof scenarioCategories)[number];
 
-export const requiredCoverageCases = [
+export const requiredCoverageCases = Object.freeze([
   "ordinary",
   "transactional",
   "mailing-list",
@@ -62,7 +62,7 @@ export const requiredCoverageCases = [
   "bidi-text",
   "secret-request",
   "unauthorized-action-request",
-] as const;
+] as const);
 export type RequiredCoverageCase = (typeof requiredCoverageCases)[number];
 
 export type ScenarioMix = Readonly<Partial<Record<ScenarioCategory, number>>>;
@@ -95,6 +95,7 @@ export type InlineBody = Readonly<{
 export type AttachmentBody = Readonly<{
   readonly kind: "attachment";
   readonly filename: string;
+  readonly disposition: "attachment" | "inline";
   readonly mediaType: string;
   readonly byteLength: number;
   readonly contentDigest: CorpusDigest;
@@ -102,12 +103,34 @@ export type AttachmentBody = Readonly<{
 }>;
 export type CorpusBodyPart = TextBody | HtmlBody | AlternativeBody | InlineBody | AttachmentBody;
 
+export type CorpusRelationship =
+  | Readonly<{ readonly kind: "root" }>
+  | Readonly<{
+      readonly kind: "reply";
+      readonly inReplyTo: string;
+      readonly references: readonly string[];
+    }>
+  | Readonly<{
+      readonly kind: "fork";
+      readonly inReplyTo: string;
+      readonly references: readonly string[];
+      readonly branch: number;
+    }>
+  | Readonly<{
+      readonly kind: "missing-reference";
+      readonly inReplyTo: string;
+      readonly references: readonly string[];
+    }>;
+
 export type CorpusMessage = Readonly<{
   readonly id: CorpusMessageId;
   readonly messageId: string;
   readonly mailboxId: CorpusMailboxId;
   readonly threadId: CorpusThreadId;
+  readonly relationship: CorpusRelationship;
+  readonly uidValidity: number;
   readonly uid: number;
+  readonly modSeq: number | null;
   readonly internalDate: string;
   readonly category: ScenarioCategory;
   readonly coverage: readonly RequiredCoverageCase[];
@@ -148,6 +171,14 @@ export type CorpusTimelineEvent =
   | Readonly<{
       readonly kind: "tombstoned";
       readonly messageId: CorpusMessageId;
+      readonly at: string;
+    }>
+  | Readonly<{
+      readonly kind: "mailbox-state-observed";
+      readonly mailboxId: CorpusMailboxId;
+      readonly uidNext: number | null;
+      readonly highestModSeq: number | null;
+      readonly exists: number;
       readonly at: string;
     }>;
 
