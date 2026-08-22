@@ -306,20 +306,18 @@ export function validateManifest(manifest, root, commit = git(root, ["rev-parse"
       "runner untracked allowlist is malformed",
     );
   }
-  if (!isInternalTinySelfTestManifest(manifest)) {
-    assert(
-      manifest.runner?.dependencyMode === "bun-frozen-offline",
-      "runner dependency mode must be bun-frozen-offline",
-    );
-    assert(
-      Array.isArray(manifest.runner?.sources) && manifest.runner.sources.length > 0,
-      "runner source bindings are missing",
-    );
-    for (const source of manifest.runner.sources) {
-      assert(source.role && typeof source.path === "string", "runner source binding is incomplete");
-      assert(/^[0-9a-f]{40}$/u.test(source.gitBlob ?? ""), "runner source Git blob is missing");
-      assert(/^[0-9a-f]{64}$/u.test(source.sha256 ?? ""), "runner source SHA-256 is missing");
-    }
+  assert(
+    manifest.runner?.dependencyMode === "bun-frozen-offline",
+    "runner dependency mode must be bun-frozen-offline",
+  );
+  assert(
+    Array.isArray(manifest.runner?.sources) && manifest.runner.sources.length > 0,
+    "runner source bindings are missing",
+  );
+  for (const source of manifest.runner.sources) {
+    assert(source.role && typeof source.path === "string", "runner source binding is incomplete");
+    assert(/^[0-9a-f]{40}$/u.test(source.gitBlob ?? ""), "runner source Git blob is missing");
+    assert(/^[0-9a-f]{64}$/u.test(source.sha256 ?? ""), "runner source SHA-256 is missing");
   }
   const seen = new Set();
   for (const step of manifest.steps) {
@@ -696,7 +694,17 @@ export async function capture({
   runId = randomUUID(),
   timeoutMs,
 } = {}) {
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const parsedManifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const manifest = isInternalTinySelfTestManifest(parsedManifest)
+    ? {
+        ...parsedManifest,
+        runner: {
+          dependencyMode: "bun-frozen-offline",
+          selfTest: true,
+          sources: parsedManifest.steps[0].sources,
+        },
+      }
+    : parsedManifest;
   const candidateCommit = git(root, ["rev-parse", "HEAD"]);
   const candidateTree = git(root, ["rev-parse", `${candidateCommit}^{tree}`]);
   const manifestRelative = relative(root, resolve(manifestPath));
