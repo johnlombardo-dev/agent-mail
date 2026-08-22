@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   CORPUS_VERSION,
@@ -25,6 +26,25 @@ const scenarioMix = {
 
 function options(seed: string, size = DEFAULT_REFERENCE_SIZE) {
   return { scenarioVersion: CORPUS_VERSION, seed, size, scenarioMix };
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isProfileObservation(value: unknown): value is Readonly<Record<string, unknown>> {
+  return (
+    isRecord(value) &&
+    typeof value.producedCount === "number" &&
+    typeof value.logicalDigest === "string" &&
+    typeof value.contentDigest === "string" &&
+    typeof value.peakRss === "number" &&
+    typeof value.retainedRss === "number" &&
+    typeof value.maximumStreamChunk === "number" &&
+    typeof value.completed === "boolean" &&
+    typeof value.cleanupCompleted === "boolean" &&
+    typeof value.survivors === "number"
+  );
 }
 
 describe("deterministic demo corpus", () => {
@@ -89,7 +109,7 @@ describe("deterministic demo corpus", () => {
     expect(() => parseCorpusOptions({ ...valid, size: undefined })).toThrow(/size must be/);
   });
 
-  test("resolves replies, records intentional exceptions, and binds mailbox state", () => {
+  test("resolves replies, records intentional exceptions, and binds mailbox state", async () => {
     const corpus = buildCorpus(options("relationships"));
     const generatedIds = new Set(corpus.messages.map((message) => message.messageId));
     const missing = corpus.messages.filter((message) => message.relationship.kind === "missing-reference");
@@ -109,10 +129,10 @@ describe("deterministic demo corpus", () => {
       if (mailbox.uidNext !== null)
         expect(mailbox.uidNext).toBeGreaterThan(Math.max(0, ...extant.map((message) => message.uid)));
     }
-    assertCorpusIntegrity(corpus);
+    await expect(assertCorpusIntegrity(corpus)).resolves.toBeUndefined();
   });
 
-  test("derives coverage and rejects independent authority mutations", () => {
+  test("derives coverage and rejects independent authority mutations", async () => {
     const corpus = buildCorpus(options("integrity"));
     expect(deriveCorpusInventory(corpus)).toEqual(corpus.inventory);
 
@@ -124,12 +144,12 @@ describe("deterministic demo corpus", () => {
         index === 0 ? { ...message, rawBytes: raw } : message,
       ),
     };
-    expect(() => assertCorpusIntegrity(rawTampered)).toThrow(/digest/);
+    await expect(assertCorpusIntegrity(rawTampered)).rejects.toThrow(/digest/);
 
     const timeline = [...corpus.timeline];
     timeline[0] = { ...timeline[0], at: "2099-01-01T00:00:00.000Z" };
     const timelineTampered = { ...corpus, timeline };
-    expect(() => assertCorpusIntegrity(timelineTampered)).toThrow(/timeline/);
+    await expect(assertCorpusIntegrity(timelineTampered)).rejects.toThrow(/timeline/);
 
     const emptyInventory = {
       requiredCases: corpus.inventory.requiredCases,
@@ -137,8 +157,12 @@ describe("deterministic demo corpus", () => {
       presentCases: [],
       missingCases: corpus.inventory.requiredCases,
     };
-    const forged = { ...corpus, inventory: emptyInventory, checksum: checksumCorpus(corpus) };
-    expect(() => assertCorpusIntegrity(forged)).toThrow(/inventory/);
+    const forged = {
+      ...rawTampered,
+      inventory: emptyInventory,
+      checksum: checksumCorpus(rawTampered),
+    };
+    await expect(assertCorpusIntegrity(forged)).rejects.toThrow(/inventory/);
   });
 
   test("returns copy-safe byte buffers and immutable containers", () => {
@@ -153,6 +177,14 @@ describe("deterministic demo corpus", () => {
     expect(Object.isFrozen(corpus.inventory)).toBe(true);
     expect(Object.isFrozen(corpus.messages[0].headers)).toBe(true);
     expect(Object.isFrozen(corpus.messages[0].parts)).toBe(true);
+    expect(Object.isFrozen(corpus.messages[20].parts[0])).toBe(true);
+    const attachment = corpus.messages[20].parts.find((part) => part.kind === "attachment");
+    expect(attachment).toBeDefined();
+    if (attachment?.kind === "attachment") {
+      expect(Object.isFrozen(attachment)).toBe(true);
+      expect(Reflect.set(attachment, "filename", "changed.txt")).toBe(false);
+      expect(attachment.filename).not.toBe("changed.txt");
+    }
   });
 
   test("binds attachment stream bytes to their declared digest", async () => {
@@ -176,7 +208,39 @@ describe("deterministic demo corpus", () => {
         index === messageIndex ? { ...candidate, parts } : candidate,
       ),
     };
-    await expect(assertCorpusAttachmentStreams(corpus)).resolves.toBeUndefined();
-    await expect(assertCorpusAttachmentStreams(tampered)).rejects.toThrow(/content digest/);
+    await expect(assertCorpusIntegrity(corpus)).resolves.toBeUndefined();
+    await expect(assertCorpusIntegrity(tampered)).rejects.toThrow(/content digest/);
   });
+
+  test(
+    "runs the named 250k profile in an isolated child and retains observations",
+    { timeout: 120_000 },
+    async () => {
+      const child = Bun.spawn(
+        [process.execPath, join(import.meta.dir, "helpers/demo-corpus-large-profile-child.ts")],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+        child.exited,
+      ]);
+      expect(exitCode).toBe(0);
+      expect(stderr).toBe("");
+      const lines = stdout.trim().split("\n");
+      const parsed: unknown = JSON.parse(lines[lines.length - 1] ?? "null");
+      expect(isProfileObservation(parsed)).toBe(true);
+      if (!isProfileObservation(parsed)) return;
+      expect(parsed.producedCount).toBe(250_000);
+      expect(parsed.completed).toBe(true);
+      expect(parsed.cleanupCompleted).toBe(true);
+      expect(parsed.survivors).toBe(0);
+      expect(parsed.maximumStreamChunk).toBeLessThanOrEqual(64 * 1024);
+      expect(parsed.peakRss).toBeGreaterThanOrEqual(parsed.retainedRss);
+      expect(parsed.peakRss).toBeGreaterThan(0);
+      expect(parsed.retainedRss).toBeGreaterThan(0);
+      expect(parsed.logicalDigest).toMatch(/^[0-9a-f]{64}$/u);
+      expect(parsed.contentDigest).toMatch(/^[0-9a-f]{64}$/u);
+    },
+  );
 });

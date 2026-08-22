@@ -100,6 +100,7 @@ function categoryFor(options: CorpusOptions, index: number): ScenarioCategory {
 }
 
 function coverageFor(index: number): readonly RequiredCoverageCase[] {
+  if (index >= requiredCoverageCases.length) return Object.freeze([]);
   const first = requiredCoverageCases[index % requiredCoverageCases.length];
   const second = requiredCoverageCases[(index * 7 + 3) % requiredCoverageCases.length];
   const initial = first === second ? [first] : [first, second];
@@ -158,7 +159,7 @@ function attachmentDigest(seed: string, byteLength: number): CorpusDigest {
 function buildAttachment(seed: string, large: boolean, hostileName: boolean): CorpusBodyPart {
   const byteLength = large ? 8 * 1024 * 1024 : 41;
   const stream = attachmentStream(seed, byteLength);
-  return {
+  return Object.freeze({
     kind: "attachment",
     filename: hostileName ? "..\\\u001b]8;;https://evil.example\u0007invoice.pdf" : "invoice.pdf",
     disposition: "attachment",
@@ -166,7 +167,7 @@ function buildAttachment(seed: string, large: boolean, hostileName: boolean): Co
     byteLength,
     contentDigest: attachmentDigest(seed, byteLength),
     openStream: stream,
-  };
+  });
 }
 
 function buildMessage(
@@ -245,6 +246,7 @@ function buildMessage(
   if (has("malformed-boundary"))
     headers["content-type"] = 'multipart/mixed; boundary=unterminated"';
   const flags = has("flags") ? ["\\Seen", "\\Flagged"] : [];
+  const frozenParts = Object.freeze(parts.map((part) => Object.freeze(part)));
   const tombstone = has("tombstone");
   const date = has("offset-date")
     ? `2024-01-${String((index % 9) + 1).padStart(2, "0")}T12:00:00+05:30`
@@ -260,10 +262,10 @@ function buildMessage(
     headers,
     flags,
     tombstone,
-    parts: parts.map((part) => part.kind),
+    parts: frozenParts.map((part) => part.kind),
   });
   const rawBytes = new TextEncoder().encode(
-    `${logical}\r\n${parts.map((part) => part.kind).join("\r\n")}`,
+    `${logical}\r\n${frozenParts.map((part) => part.kind).join("\r\n")}`,
   );
   return copySafeMessage({
     id,
@@ -278,7 +280,7 @@ function buildMessage(
     category,
     coverage,
     headers: Object.freeze(headers),
-    parts: Object.freeze(parts),
+    parts: frozenParts,
     flags: Object.freeze(flags),
     tombstone,
     rawBytes,
@@ -629,7 +631,7 @@ export function assertRequiredCoverage(
     throw new Error(`corpus is missing required cases: ${derived.missingCases.join(", ")}`);
 }
 
-export function assertCorpusIntegrity(corpus: DemoCorpus): void {
+function assertCorpusStructure(corpus: DemoCorpus): void {
   if (corpus.size !== corpus.messages.length)
     throw new Error("corpus size does not match generated message count");
   const state = digestState(
@@ -699,7 +701,8 @@ export function checksumCorpus(
   ).checksum;
 }
 
-export async function assertCorpusAttachmentStreams(corpus: DemoCorpus): Promise<void> {
+export async function assertCorpusIntegrity(corpus: DemoCorpus): Promise<void> {
+  assertCorpusStructure(corpus);
   for (const message of corpus.messages) {
     for (const part of message.parts) {
       if (part.kind !== "attachment") continue;
@@ -717,4 +720,5 @@ export async function assertCorpusAttachmentStreams(corpus: DemoCorpus): Promise
   }
 }
 
-export const verifyCorpusAttachmentStreams = assertCorpusAttachmentStreams;
+export const assertCorpusAttachmentStreams = assertCorpusIntegrity;
+export const verifyCorpusAttachmentStreams = assertCorpusIntegrity;
