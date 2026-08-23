@@ -1,4 +1,14 @@
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
@@ -38,8 +48,11 @@ describe("disposable demo profile ownership #301", () => {
     const profile = await createDemoProfile({ root }, adapter);
     const rootEntry = await lstat(root);
     const markerEntry = await lstat(join(root, DEMO_PROFILE_MARKER_NAME));
+    expect(Object.isFrozen(profile)).toBe(true);
+    expect(Object.isFrozen(profile.marker)).toBe(true);
     expect(rootEntry.mode & 0o777).toBe(0o700);
     expect(markerEntry.mode & 0o777).toBe(0o600);
+    expect(profile).toMatchObject({ device: rootEntry.dev, inode: rootEntry.ino });
     await expect(verifyDemoProfile(profile, adapter)).resolves.toMatchObject({
       dev: rootEntry.dev,
       ino: rootEntry.ino,
@@ -85,6 +98,74 @@ describe("disposable demo profile ownership #301", () => {
     );
     expect(await readFile(sentinel, "utf8")).toBe("symlink-sentinel");
     expect((await lstat(root)).isSymbolicLink()).toBe(true);
+  });
+
+  test("rejects a same-path directory swap even when its copied marker is valid", async () => {
+    const { parent, root } = await profileRoot("directory-swap");
+    const adapter = identity("process-start-a");
+    const profile = await createDemoProfile({ root }, adapter);
+    const parked = join(parent, "parked-original");
+    await rename(root, parked);
+    await mkdir(root, { mode: 0o700 });
+    const copiedMarker = await readFile(join(parked, DEMO_PROFILE_MARKER_NAME), "utf8");
+    await writeFile(join(root, DEMO_PROFILE_MARKER_NAME), copiedMarker, { mode: 0o600 });
+    const victim = join(root, "victim.txt");
+    await writeFile(victim, "replacement-victim", { mode: 0o600 });
+
+    await expect(removeDemoProfile(profile, adapter)).rejects.toThrow("creation inode");
+    expect(await readFile(victim, "utf8")).toBe("replacement-victim");
+    expect((await lstat(root)).isDirectory()).toBe(true);
+    expect((await lstat(root)).ino).not.toBe(profile.inode);
+    expect((await lstat(parked)).ino).toBe(profile.inode);
+    expect(await readFile(join(parked, DEMO_PROFILE_MARKER_NAME), "utf8")).toBe(copiedMarker);
+  });
+
+  test("rejects post-creation symlink and mode attacks without deleting either path", async () => {
+    const symlinkCase = await profileRoot("post-create-symlink");
+    const adapter = identity("process-start-a");
+    const symlinkProfile = await createDemoProfile({ root: symlinkCase.root }, adapter);
+    const parked = join(symlinkCase.parent, "parked-original");
+    const parkedVictim = join(parked, "victim.txt");
+    await writeFile(join(symlinkCase.root, "victim.txt"), "parked-victim", { mode: 0o600 });
+    await rename(symlinkCase.root, parked);
+    await symlink(parked, symlinkCase.root);
+    await expect(removeDemoProfile(symlinkProfile, adapter)).rejects.toThrow(
+      "not a private owned directory",
+    );
+    expect((await lstat(symlinkCase.root)).isSymbolicLink()).toBe(true);
+    expect(await readFile(parkedVictim, "utf8")).toBe("parked-victim");
+
+    const modeCase = await profileRoot("post-create-mode");
+    const modeProfile = await createDemoProfile({ root: modeCase.root }, adapter);
+    const modeVictim = join(modeCase.root, "victim.txt");
+    await writeFile(modeVictim, "mode-victim", { mode: 0o600 });
+    await chmod(modeCase.root, 0o755);
+    await expect(removeDemoProfile(modeProfile, adapter)).rejects.toThrow(
+      "not a private owned directory",
+    );
+    expect(await readFile(modeVictim, "utf8")).toBe("mode-victim");
+    expect((await lstat(modeCase.root)).mode & 0o777).toBe(0o755);
+  });
+
+  test("revalidates identity after rename and restores the exact inode without deleting it", async () => {
+    const { root } = await profileRoot("post-rename");
+    let identityReads = 0;
+    const adapter: ProcessIdentityAdapter = {
+      currentProcessStartIdentity: async () => {
+        identityReads += 1;
+        return identityReads <= 3 ? "process-start-a" : "process-start-b";
+      },
+      inspectProcess: async () => ({ kind: "live", processStartIdentity: "process-start-a" }),
+    };
+    const profile = await createDemoProfile({ root }, adapter);
+    await writeFile(join(root, "victim.txt"), "post-rename-victim", { mode: 0o600 });
+    await expect(removeDemoProfile(profile, adapter)).rejects.toThrow(
+      "process identity does not match",
+    );
+    const tombstone = `${root}.removing-${profile.marker.ownerToken}`;
+    expect((await lstat(root)).ino).toBe(profile.inode);
+    expect(await readFile(join(root, "victim.txt"), "utf8")).toBe("post-rename-victim");
+    await expect(lstat(tombstone)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   test("refuses marker and process-identity mismatches without deleting the root", async () => {

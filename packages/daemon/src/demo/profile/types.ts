@@ -19,6 +19,8 @@ export type DemoProfile = Readonly<{
   readonly root: string;
   readonly markerPath: string;
   readonly marker: DemoProfileMarker;
+  readonly device: number;
+  readonly inode: number;
 }>;
 
 export type DemoProfileOptions = Readonly<{

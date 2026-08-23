@@ -125,15 +125,20 @@ async function verifyProcessIdentity(
   }
 }
 
-export async function verifyDemoProfile(
+async function verifyDemoProfileAtPath(
   profile: DemoProfile,
-  adapter: ProcessIdentityAdapter = platformProcessIdentityAdapter,
+  path: string,
+  adapter: ProcessIdentityAdapter,
 ): Promise<Readonly<{ dev: number; ino: number }>> {
-  const identity = await assertPrivateDirectory(profile.root);
-  const marker = await readMarker(profile.markerPath);
+  const identity = await assertPrivateDirectory(path);
+  if (identity.dev !== profile.device || identity.ino !== profile.inode) {
+    throw new DemoProfileOwnershipError("Demo root identity does not match its creation inode.");
+  }
+  const marker = await readMarker(join(path, DEMO_PROFILE_MARKER_NAME));
   if (
     marker.root !== profile.root ||
     marker.ownerToken !== profile.marker.ownerToken ||
+    marker.pid !== profile.marker.pid ||
     marker.processStartIdentity !== profile.marker.processStartIdentity ||
     marker.createdAt !== profile.marker.createdAt
   ) {
@@ -141,6 +146,13 @@ export async function verifyDemoProfile(
   }
   await verifyProcessIdentity(marker, adapter);
   return identity;
+}
+
+export async function verifyDemoProfile(
+  profile: DemoProfile,
+  adapter: ProcessIdentityAdapter = platformProcessIdentityAdapter,
+): Promise<Readonly<{ dev: number; ino: number }>> {
+  return verifyDemoProfileAtPath(profile, profile.root, adapter);
 }
 
 export async function createDemoProfile(
@@ -163,17 +175,26 @@ export async function createDemoProfile(
   const markerPath = join(root, DEMO_PROFILE_MARKER_NAME);
   try {
     await chmod(root, PRIVATE_DIRECTORY_MODE);
-    const marker = demoProfileMarkerSchema.parse({
-      version: DEMO_PROFILE_VERSION,
-      kind: "agent-mail-disposable-demo",
-      root,
-      ownerToken: randomUUID(),
-      pid: process.pid,
-      processStartIdentity: await adapter.currentProcessStartIdentity(),
-      createdAt: new Date().toISOString(),
-    });
+    const identity = await assertPrivateDirectory(root);
+    const marker = Object.freeze(
+      demoProfileMarkerSchema.parse({
+        version: DEMO_PROFILE_VERSION,
+        kind: "agent-mail-disposable-demo",
+        root,
+        ownerToken: randomUUID(),
+        pid: process.pid,
+        processStartIdentity: await adapter.currentProcessStartIdentity(),
+        createdAt: new Date().toISOString(),
+      }),
+    );
     await writeMarker(markerPath, marker);
-    const profile = Object.freeze({ root, markerPath, marker });
+    const profile = Object.freeze({
+      root,
+      markerPath,
+      marker,
+      device: identity.dev,
+      inode: identity.ino,
+    });
     await verifyDemoProfile(profile, adapter);
     return profile;
   } catch (error: unknown) {
@@ -187,25 +208,28 @@ export async function removeDemoProfile(
   profile: DemoProfile,
   adapter: ProcessIdentityAdapter = platformProcessIdentityAdapter,
 ): Promise<void> {
-  const expected = await verifyDemoProfile(profile, adapter);
+  await verifyDemoProfile(profile, adapter);
   const tombstone = `${profile.root}.removing-${profile.marker.ownerToken}`;
   await rename(profile.root, tombstone);
-  const moved = await assertPrivateDirectory(tombstone);
-  if (moved.dev !== expected.dev || moved.ino !== expected.ino) {
-    await rename(tombstone, profile.root).catch(() => undefined);
-    throw new DemoProfileOwnershipError("Demo root identity changed during removal.");
+  try {
+    await verifyDemoProfileAtPath(profile, tombstone, adapter);
+  } catch (error: unknown) {
+    try {
+      const moved = await lstat(tombstone);
+      if (
+        moved.isDirectory() &&
+        !moved.isSymbolicLink() &&
+        moved.dev === profile.device &&
+        moved.ino === profile.inode &&
+        !(await demoProfileRootExists(profile.root))
+      ) {
+        await rename(tombstone, profile.root);
+      }
+    } catch {
+      // Retain any unverifiable entry rather than broadening deletion authority.
+    }
+    throw error;
   }
-  const movedMarker = await readMarker(join(tombstone, DEMO_PROFILE_MARKER_NAME));
-  if (
-    movedMarker.root !== profile.root ||
-    movedMarker.ownerToken !== profile.marker.ownerToken ||
-    movedMarker.pid !== profile.marker.pid ||
-    movedMarker.processStartIdentity !== profile.marker.processStartIdentity
-  ) {
-    await rename(tombstone, profile.root).catch(() => undefined);
-    throw new DemoProfileOwnershipError("Demo marker changed during removal.");
-  }
-  await verifyProcessIdentity(movedMarker, adapter);
   await rm(tombstone, { recursive: true, force: false });
 }
 

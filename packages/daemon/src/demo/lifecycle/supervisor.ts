@@ -113,15 +113,53 @@ export function createDemoLifecycleSupervisor(
     });
 
   const start = (): ReturnType<DemoLifecycleSupervisor["start"]> => {
-    if (startPromise !== undefined) return startPromise;
-    if (state() !== "absent") {
+    const snapshot = actor.getSnapshot();
+    const current = demoLifecycleStateSchema.parse(snapshot.value);
+    if (current === "ready") {
+      return snapshot.context.ready === null
+        ? Promise.reject(
+            new DemoLifecycleError({
+              code: "demo.sync",
+              message: "Disposable demo readiness authority is unavailable.",
+            }),
+          )
+        : (startPromise ?? Promise.resolve(snapshot.context.ready));
+    }
+    if (
+      current === "generating" ||
+      current === "startingImap" ||
+      current === "startingDaemon" ||
+      current === "syncing"
+    ) {
+      return (
+        startPromise ??
+        Promise.reject(
+          new DemoLifecycleError({
+            code: "demo.generate",
+            message: "Disposable demo startup has no active completion authority.",
+          }),
+        )
+      );
+    }
+    if (current === "failed") {
+      return Promise.reject(
+        new DemoLifecycleError(
+          snapshot.context.failure ?? {
+            code: "demo.cleanup",
+            message: "Disposable demo failed without a diagnostic.",
+          },
+        ),
+      );
+    }
+    if (current === "stopping" || current === "resetting") {
       return Promise.reject(
         new DemoLifecycleError({
-          code: "demo.generate",
-          message: "Disposable demo is not available to start.",
+          code: "demo.cleanup",
+          message: "Disposable demo cleanup is still active.",
         }),
       );
     }
+    startPromise = undefined;
     startPromise = (async () => {
       cleanupPromise = undefined;
       actor.send({ type: "demo.start" });
@@ -179,11 +217,13 @@ export function createDemoLifecycleSupervisor(
       const snapshot = actor.getSnapshot();
       const current = demoLifecycleStateSchema.parse(snapshot.value);
       const resources = composition.snapshot();
+      const ready = current === "ready" ? snapshot.context.ready : null;
+      const isReady = ready !== null;
       return Object.freeze({
         state: current,
-        ready: current === "ready",
+        ready: isReady,
         root: resources.profileRoot,
-        baseUrl: snapshot.context.ready?.baseUrl ?? null,
+        baseUrl: ready?.baseUrl ?? null,
         diagnostic: snapshot.context.failure,
         resources,
       });

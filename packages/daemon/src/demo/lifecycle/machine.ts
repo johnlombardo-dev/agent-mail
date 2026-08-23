@@ -62,17 +62,25 @@ export function createDemoLifecycleMachine(composition: DemoComposition) {
         terminal: () => "failed" as const,
       }),
       recordCleanupFailure: assign({
+        ready: () => null,
         failure: ({ context }) =>
           context.failure ?? diagnostic("demo.cleanup", "Disposable demo cleanup failed."),
         terminal: () => "failed" as const,
       }),
+      clearReady: assign({ ready: () => null }),
       requestStop: assign({ terminal: () => "absent" as const }),
       requestFailedCleanup: assign({ terminal: () => "failed" as const }),
     },
   });
 
-  const stopTransition = { target: "stopping", actions: "requestStop" } as const;
-  const resetTransition = { target: "resetting", actions: "requestStop" } as const;
+  const stopTransition = {
+    target: "stopping",
+    actions: ["clearReady", "requestStop"],
+  } as const;
+  const resetTransition = {
+    target: "resetting",
+    actions: ["clearReady", "requestStop"],
+  } as const;
   return machineSetup.createMachine({
     id: "agent-mail-disposable-demo",
     initial: "absent",
@@ -182,7 +190,10 @@ export function createDemoLifecycleMachine(composition: DemoComposition) {
       },
       failed: {
         on: {
-          "demo.stop": { target: "stopping", actions: "requestFailedCleanup" },
+          "demo.stop": {
+            target: "stopping",
+            actions: ["clearReady", "requestFailedCleanup"],
+          },
           "demo.reset": resetTransition,
           "demo.remove": resetTransition,
         },

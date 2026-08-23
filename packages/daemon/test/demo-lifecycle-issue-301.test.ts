@@ -184,6 +184,16 @@ describe("disposable demo lifecycle #301", () => {
 
     const ready = await supervisor.start();
     expect(ready.completedMessages).toBeGreaterThan(0);
+    const readyStop = supervisor.stop();
+    expect(supervisor.status()).toMatchObject({
+      state: "stopping",
+      ready: false,
+      baseUrl: null,
+    });
+    await expect(supervisor.start()).rejects.toThrow("cleanup is still active");
+    await readyStop;
+    const restarted = await supervisor.start();
+    expect(restarted.completedMessages).toBeGreaterThan(0);
     const resetting = supervisor.reset();
     expect(supervisor.remove()).toBe(resetting);
     await resetting;
@@ -207,6 +217,7 @@ describe("disposable demo lifecycle #301", () => {
       },
     });
     expect(await demoProfileRootExists(root)).toBe(false);
+    await expect(supervisor.start()).rejects.toThrow("IMAP startup failed");
     await supervisor.reset();
     await closeServer(blocker);
     const index = tcpBlockers.indexOf(blocker);
@@ -245,15 +256,21 @@ describe("disposable demo lifecycle #301", () => {
     const { root } = await demoRoot("marker-attack");
     const supervisor = createDemoLifecycleSupervisor({ root });
     supervisors.push(supervisor);
-    await supervisor.start();
+    const readiness = await supervisor.start();
+    expect(readiness.baseUrl).toBe("http://127.0.0.1:6119");
     const markerPath = join(root, ".agent-mail-demo-owner.json");
     const marker = JSON.parse(await readFile(markerPath, "utf8")) as Record<string, unknown>;
     marker.ownerToken = "00000000-0000-4000-8000-000000000000";
     await writeFile(markerPath, JSON.stringify(marker), { mode: 0o600 });
 
-    await expect(supervisor.remove()).rejects.toThrow("Disposable demo cleanup failed");
+    const removing = supervisor.remove();
+    expect(supervisor.status()).toMatchObject({ state: "resetting", ready: false, baseUrl: null });
+    await expect(supervisor.start()).rejects.toThrow("cleanup is still active");
+    await expect(removing).rejects.toThrow("Disposable demo cleanup failed");
     expect(supervisor.status()).toMatchObject({
       state: "failed",
+      ready: false,
+      baseUrl: null,
       diagnostic: { code: "demo.cleanup" },
       resources: {
         profileOwned: true,
@@ -264,6 +281,7 @@ describe("disposable demo lifecycle #301", () => {
     expect((await readFile(markerPath, "utf8")).includes("00000000-0000-4000-8000-000000000000")).toBe(
       true,
     );
+    await expect(supervisor.start()).rejects.toThrow("Disposable demo cleanup failed");
   }, 30_000);
 
   test("cleans actual composition acquisition failures at their owning boundary", async () => {
