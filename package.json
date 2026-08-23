@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@hono/zod-openapi": "1.6.0",
+    "@push.rocks/smartimap": "2.1.0",
     "hono": "4.13.2",
     "imapflow": "1.7.1",
     "mailparser": "3.9.15",

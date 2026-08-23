@@ -6,6 +6,7 @@
       "name": "agent-mail",
       "dependencies": {
         "@hono/zod-openapi": "1.6.0",
+        "@push.rocks/smartimap": "2.1.0",
         "hono": "4.13.2",
         "imapflow": "1.7.1",
         "mailparser": "3.9.15",
@@ -215,6 +216,8 @@
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
 
     "@polka/url": ["@polka/url@1.0.0-next.29", "", {}, "sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww=="],
+
+    "@push.rocks/smartimap": ["@push.rocks/smartimap@2.1.0", "", { "dependencies": { "@types/mailparser": "^3.4.6", "imapflow": "^1.3.3", "mailparser": "^3.9.8" } }, "sha512-4/Cd0EbezCGHOvWn9QUoxjAU0fZWPKe7/EV0QVrl2ZodnPpV8MfVUgXQPRQ4XOCur98ooerRpSz0m7Hu9LNYKQ=="],
 
     "@rolldown/binding-android-arm64": ["@rolldown/binding-android-arm64@1.2.4", "", { "os": "android", "cpu": "arm64" }, "sha512-jHC2cnyKz5xU2fhECtFl8OZ83cYNt13GZQD+0uMJ/X3o+ijmd56okHhTUwxVSHPx1IRVIJEZ1/1pPzeLCU6XKA=="],
 
