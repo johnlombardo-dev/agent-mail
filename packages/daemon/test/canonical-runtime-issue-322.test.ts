@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { existsSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readdir, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
@@ -235,7 +236,9 @@ function sourceFor(
 }
 
 function messageCount(root: string): number {
-  const database = new Database(join(root, "data", "archive.sqlite"), {
+  const databasePath = join(root, "data", "archive.sqlite");
+  if (!existsSync(databasePath)) return 0;
+  const database = new Database(databasePath, {
     create: false,
     readonly: true,
     strict: true,
@@ -247,28 +250,17 @@ function messageCount(root: string): number {
   }
 }
 
-function retainedSyncRows(root: string): Readonly<{
-  readonly messages: number;
-  readonly placements: number;
-  readonly checkpoints: number;
+function databaseArtifacts(root: string): Readonly<{
+  readonly archive: boolean;
+  readonly wal: boolean;
+  readonly shm: boolean;
 }> {
-  const database = new Database(join(root, "data", "archive.sqlite"), {
-    create: false,
-    readonly: true,
-    strict: true,
+  const databasePath = join(root, "data", "archive.sqlite");
+  return Object.freeze({
+    archive: existsSync(databasePath),
+    wal: existsSync(`${databasePath}-wal`),
+    shm: existsSync(`${databasePath}-shm`),
   });
-  try {
-    const count = (table: "messages" | "remote_placements" | "mailbox_checkpoints"): number =>
-      database.query<Readonly<{ count: number }>, []>(`SELECT COUNT(*) AS count FROM ${table};`).get()
-        ?.count ?? -1;
-    return Object.freeze({
-      messages: count("messages"),
-      placements: count("remote_placements"),
-      checkpoints: count("mailbox_checkpoints"),
-    });
-  } finally {
-    database.close();
-  }
 }
 
 async function stagingEntries(root: string): Promise<readonly string[]> {
@@ -376,6 +368,8 @@ describe("canonical read-only daemon runtime #322", () => {
       activeHttpConnections: 0,
     });
     expect(releases).toBe(1);
+    expect(databaseArtifacts(root).archive).toBe(true);
+    expect(messageCount(root)).toBeGreaterThan(0);
   }, 20_000);
 
   test("fails closed on injected source denial with no promotion or secret diagnostic", async () => {
@@ -527,7 +521,10 @@ describe("canonical read-only daemon runtime #322", () => {
     });
 
     await expect(runtime.start()).rejects.toThrow("Canonical read-only initial sync failed.");
-    await runtime.close();
+    const close = runtime.close();
+    expect(runtime.close()).toBe(close);
+    await close;
+    expect(runtime.close()).toBe(close);
     expect(downloads).toBe(2);
     expect(releases).toBe(1);
     expect(runtime.snapshot()).toMatchObject({
@@ -536,7 +533,7 @@ describe("canonical read-only daemon runtime #322", () => {
       sourceReleaseCount: 1,
       activeHttpConnections: 0,
     });
-    expect(retainedSyncRows(root)).toEqual({ messages: 0, placements: 0, checkpoints: 0 });
+    expect(databaseArtifacts(root)).toEqual({ archive: false, wal: false, shm: false });
     expect(await readdir(join(root, "blobs"))).toEqual([]);
     expect(await stagingEntries(root)).toEqual([]);
     expect(server.backend().snapshot()).toEqual(before);
@@ -620,11 +617,7 @@ describe("canonical read-only daemon runtime #322", () => {
       activeHttpConnections: 0,
     });
     expect(readinessReleases.count).toBe(1);
-    expect(retainedSyncRows(readinessRoot)).toEqual({
-      messages: 0,
-      placements: 0,
-      checkpoints: 0,
-    });
+    expect(databaseArtifacts(readinessRoot)).toEqual({ archive: false, wal: false, shm: false });
     expect(await readdir(join(readinessRoot, "blobs"))).toEqual([]);
     expect(await stagingEntries(readinessRoot)).toEqual([]);
     expect(readinessServer.backend().snapshot()).toEqual(readinessBefore);

@@ -242,8 +242,6 @@ async function rollbackStartupStorage(
   ]) {
     await removeFileIfPresent(path);
   }
-  const emptyDatabase = await openDatabase(input.databasePath);
-  await emptyDatabase.close();
   await removeFileIfPresent(input.ownership.markerPath);
 }
 
