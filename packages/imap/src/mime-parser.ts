@@ -223,13 +223,13 @@ function isHorizontalWhitespace(value: number): boolean {
 
 function rawHeaderValue(line: string, separator: number, maxBytes: number): string {
   const projected = Buffer.from(line.slice(separator + 1), "latin1");
+  if (projected.byteLength > maxBytes)
+    throw new MimeParseError("metadata-limit", "header value exceeds the safe metadata boundary");
   let start = 0;
   let end = projected.byteLength;
   while (start < end && isHorizontalWhitespace(projected[start] ?? -1)) start += 1;
   while (end > start && isHorizontalWhitespace(projected[end - 1] ?? -1)) end -= 1;
   const original = projected.subarray(start, end);
-  if (original.byteLength > maxBytes)
-    throw new MimeParseError("metadata-limit", "header value exceeds the safe metadata boundary");
 
   const unfolded: number[] = [];
   for (let position = 0; position < original.byteLength; position += 1) {
