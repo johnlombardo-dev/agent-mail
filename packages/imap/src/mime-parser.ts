@@ -197,6 +197,13 @@ function decodedHeaderValue(value: unknown, index: number): string | null {
   return null;
 }
 
+function rawHeaderValue(line: string, separator: number): string {
+  return line
+    .slice(separator + 1)
+    .replace(/\r?\n[ \t]+/gu, " ")
+    .trim();
+}
+
 function normalizedHeaders(
   lines: unknown,
   headers: Headers,
@@ -213,14 +220,10 @@ function normalizedHeaders(
     if (separator <= 0)
       throw new MimeParseError("malformed-header", "header line has no field name");
     const name = text(line.line.slice(0, separator).trim(), "header name", maxBytes);
-    const rawValue = text(line.line.slice(separator + 1).trim(), "header value", maxBytes);
     const valueIndex = seen.get(name.toLowerCase()) ?? 0;
     seen.set(name.toLowerCase(), valueIndex + 1);
-    const value = text(
-      decodedHeaderValue(headers.get(name.toLowerCase()), valueIndex) ?? rawValue,
-      "header value",
-      maxBytes,
-    );
+    const decoded = decodedHeaderValue(headers.get(name.toLowerCase()), valueIndex);
+    const value = text(decoded ?? rawHeaderValue(line.line, separator), "header value", maxBytes);
     return {
       ordinal: index + 1,
       name,
@@ -297,7 +300,18 @@ class HeaderAndSourceLimit extends Transform {
       this.#line += value;
       let newline = this.#line.indexOf("\n");
       while (newline >= 0) {
-        const line = this.#line.slice(0, newline).replace(/\r$/u, "");
+        const rawLine = this.#line.slice(0, newline);
+        for (let position = 0; position < rawLine.length - 1; position += 1) {
+          if (rawLine[position] === "\r" && rawLine[position + 1] !== "\n") {
+            callback(new MimeParseError("malformed-header", "header line ending is malformed"));
+            return;
+          }
+        }
+        if (!rawLine.endsWith("\r")) {
+          callback(new MimeParseError("malformed-header", "header line ending is malformed"));
+          return;
+        }
+        const line = rawLine.slice(0, -1);
         this.#line = this.#line.slice(newline + 1);
         this.#headerBytes += Buffer.byteLength(line, "latin1") + 1;
         this.#headerLines += 1;
@@ -329,6 +343,14 @@ class HeaderAndSourceLimit extends Transform {
       }
     }
     callback(null, chunk);
+  }
+
+  _flush(callback: TransformCallback): void {
+    if (!this.#headerDone && this.#line.includes("\r")) {
+      callback(new MimeParseError("malformed-header", "header line ending is malformed"));
+      return;
+    }
+    callback();
   }
 }
 
