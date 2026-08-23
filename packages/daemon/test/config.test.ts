@@ -27,6 +27,7 @@ const fixture = {
     apiIntegration: 6112,
     browserPreview: 6113,
     destructiveLiveHarness: 6117,
+    demoService: 6119,
   },
 } as const;
 
@@ -125,7 +126,7 @@ describe("startup configuration", () => {
   test("rejects a port that is in range but not assigned to its role", () => {
     const result = safeParseStartupConfig({
       ...fixture,
-      ports: { ...fixture.ports, productionService: 6119 },
+      ports: { ...fixture.ports, productionService: 6118 },
     });
     expect(result).toEqual({
       success: false,

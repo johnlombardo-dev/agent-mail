@@ -9,6 +9,7 @@ describe("root Hermes port-role configuration", () => {
       apiIntegration: 6112,
       browserPreview: 6113,
       destructiveLiveHarness: 6117,
+      demoService: 6119,
     });
     const ports = Object.values(PORT_ROLES);
     expect(new Set(ports).size).toBe(ports.length);

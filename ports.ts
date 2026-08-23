@@ -9,6 +9,7 @@ export const portRoleSchema = z.enum([
   "apiIntegration",
   "browserPreview",
   "destructiveLiveHarness",
+  "demoService",
 ]);
 
 const portNumberSchema = z.number().int().min(HERMES_PORT_RANGE.min).max(HERMES_PORT_RANGE.max);
@@ -21,6 +22,7 @@ export const portRoleConfigSchema = z
     apiIntegration: portNumberSchema,
     browserPreview: portNumberSchema,
     destructiveLiveHarness: portNumberSchema,
+    demoService: portNumberSchema.default(6119),
   })
   .superRefine((config, context) => {
     const assignments = Object.entries(config);
@@ -49,5 +51,6 @@ export const PORT_ROLES: PortRoleConfig = Object.freeze(
     apiIntegration: 6112,
     browserPreview: 6113,
     destructiveLiveHarness: 6117,
+    demoService: 6119,
   }),
 );
