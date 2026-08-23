@@ -1,18 +1,18 @@
 import { randomUUID } from "node:crypto";
+import { constants as fsConstants, type Stats } from "node:fs";
 import {
   chmod,
   lstat,
   mkdir,
   open,
   readFile,
-  rename,
-  rm,
   rmdir,
   unlink,
   type FileHandle,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, parse } from "node:path";
+import { dlopen, FFIType, ptr } from "bun:ffi";
 import {
   platformProcessIdentityAdapter,
   type ProcessIdentityAdapter,
@@ -29,6 +29,22 @@ import {
 const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 const MAX_MARKER_BYTES = 8 * 1024;
+const REMOVEFILE_RECURSIVE = 1 << 0; // macOS SDK <removefile.h>
+const RENAME_EXCL = 0x0000_0004; // macOS SDK <sys/stdio.h>
+
+const darwinProfileFileApi =
+  process.platform === "darwin"
+    ? dlopen("/usr/lib/libSystem.B.dylib", {
+        removefileat: {
+          args: [FFIType.i32, FFIType.ptr, FFIType.ptr, FFIType.u32],
+          returns: FFIType.i32,
+        },
+        renameatx_np: {
+          args: [FFIType.i32, FFIType.ptr, FFIType.i32, FFIType.ptr, FFIType.u32],
+          returns: FFIType.i32,
+        },
+      })
+    : undefined;
 
 export class DemoProfileOwnershipError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -70,6 +86,12 @@ async function assertPrivateDirectory(
   path: string,
 ): Promise<Readonly<{ dev: number; ino: number }>> {
   const entry = await lstat(path);
+  return assertPrivateDirectoryEntry(entry);
+}
+
+function assertPrivateDirectoryEntry(
+  entry: Stats,
+): Readonly<{ readonly dev: number; readonly ino: number }> {
   const expectedUid = typeof process.getuid === "function" ? process.getuid() : undefined;
   if (
     !entry.isDirectory() ||
@@ -80,6 +102,102 @@ async function assertPrivateDirectory(
     throw new DemoProfileOwnershipError("Demo root is not a private owned directory.");
   }
   return Object.freeze({ dev: entry.dev, ino: entry.ino });
+}
+
+async function openExactProfileDirectory(profile: DemoProfile, path: string): Promise<FileHandle> {
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(
+      path,
+      fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+    );
+    const identity = assertPrivateDirectoryEntry(await handle.stat());
+    if (identity.dev !== profile.device || identity.ino !== profile.inode) {
+      throw new DemoProfileOwnershipError("Demo root identity does not match its creation inode.");
+    }
+    return handle;
+  } catch (error: unknown) {
+    await handle?.close().catch(() => undefined);
+    if (error instanceof DemoProfileOwnershipError) throw error;
+    throw new DemoProfileOwnershipError("Demo root descriptor cannot be acquired safely.", {
+      cause: error,
+    });
+  }
+}
+
+async function openVerifiedParent(path: string): Promise<FileHandle> {
+  const pathEntry = await lstat(path);
+  if (!pathEntry.isDirectory() || pathEntry.isSymbolicLink()) {
+    throw new DemoProfileOwnershipError("Demo root parent is unsafe.");
+  }
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(
+      path,
+      fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW,
+    );
+    const descriptorEntry = await handle.stat();
+    if (
+      !descriptorEntry.isDirectory() ||
+      descriptorEntry.dev !== pathEntry.dev ||
+      descriptorEntry.ino !== pathEntry.ino
+    ) {
+      throw new DemoProfileOwnershipError("Demo root parent changed during acquisition.");
+    }
+    return handle;
+  } catch (error: unknown) {
+    await handle?.close().catch(() => undefined);
+    if (error instanceof DemoProfileOwnershipError) throw error;
+    throw new DemoProfileOwnershipError("Demo root parent cannot be acquired safely.", {
+      cause: error,
+    });
+  }
+}
+
+function nulTerminated(value: string): Buffer {
+  return Buffer.from(`${value}\0`, "utf8");
+}
+
+function renameOwnedDirectoryExclusive(
+  parentDescriptor: number,
+  sourceName: string,
+  targetName: string,
+): void {
+  if (darwinProfileFileApi === undefined) {
+    throw new DemoProfileOwnershipError(
+      "Descriptor-relative demo cleanup is unavailable on this platform.",
+    );
+  }
+  const source = nulTerminated(sourceName);
+  const target = nulTerminated(targetName);
+  const result = darwinProfileFileApi.symbols.renameatx_np(
+    parentDescriptor,
+    ptr(source),
+    parentDescriptor,
+    ptr(target),
+    RENAME_EXCL,
+  );
+  if (result !== 0) {
+    throw new DemoProfileOwnershipError("Demo root cannot enter exclusive cleanup ownership.");
+  }
+}
+
+function removeExactOpenedDirectory(descriptor: number): void {
+  if (darwinProfileFileApi === undefined) {
+    throw new DemoProfileOwnershipError(
+      "Descriptor-relative demo cleanup is unavailable on this platform.",
+    );
+  }
+  const currentDirectory = nulTerminated(".");
+  const result = darwinProfileFileApi.symbols.removefileat(
+    descriptor,
+    ptr(currentDirectory),
+    null,
+    REMOVEFILE_RECURSIVE,
+  );
+  if (result !== 0) {
+    throw new DemoProfileOwnershipError("Descriptor-relative demo cleanup failed.");
+  }
 }
 
 async function writeMarker(path: string, marker: DemoProfileMarker): Promise<void> {
@@ -209,28 +327,45 @@ export async function removeDemoProfile(
   adapter: ProcessIdentityAdapter = platformProcessIdentityAdapter,
 ): Promise<void> {
   await verifyDemoProfile(profile, adapter);
-  const tombstone = `${profile.root}.removing-${profile.marker.ownerToken}`;
-  await rename(profile.root, tombstone);
-  try {
-    await verifyDemoProfileAtPath(profile, tombstone, adapter);
-  } catch (error: unknown) {
-    try {
-      const moved = await lstat(tombstone);
-      if (
-        moved.isDirectory() &&
-        !moved.isSymbolicLink() &&
-        moved.dev === profile.device &&
-        moved.ino === profile.inode &&
-        !(await demoProfileRootExists(profile.root))
-      ) {
-        await rename(tombstone, profile.root);
-      }
-    } catch {
-      // Retain any unverifiable entry rather than broadening deletion authority.
-    }
-    throw error;
+  if (darwinProfileFileApi === undefined) {
+    throw new DemoProfileOwnershipError(
+      "Descriptor-relative demo cleanup is unavailable on this platform.",
+    );
   }
-  await rm(tombstone, { recursive: true, force: false });
+  const parentPath = dirname(profile.root);
+  const sourceName = basename(profile.root);
+  const tombstoneName = `${sourceName}.removing-${profile.marker.ownerToken}`;
+  const tombstone = join(parentPath, tombstoneName);
+  let parentHandle: FileHandle | undefined;
+  let tombstoneHandle: FileHandle | undefined;
+  let operationError: unknown;
+  try {
+    parentHandle = await openVerifiedParent(parentPath);
+    renameOwnedDirectoryExclusive(parentHandle.fd, sourceName, tombstoneName);
+    tombstoneHandle = await openExactProfileDirectory(profile, tombstone);
+    await verifyDemoProfileAtPath(profile, tombstone, adapter);
+    removeExactOpenedDirectory(tombstoneHandle.fd);
+    if ((await demoProfileRootExists(profile.root)) || (await demoProfileRootExists(tombstone))) {
+      throw new DemoProfileOwnershipError("Demo cleanup left an unowned path residue.");
+    }
+  } catch (error: unknown) {
+    operationError = error;
+  }
+  try {
+    await tombstoneHandle?.close();
+  } catch (error: unknown) {
+    operationError ??= new DemoProfileOwnershipError("Demo cleanup descriptor close failed.", {
+      cause: error,
+    });
+  }
+  try {
+    await parentHandle?.close();
+  } catch (error: unknown) {
+    operationError ??= new DemoProfileOwnershipError("Demo parent descriptor close failed.", {
+      cause: error,
+    });
+  }
+  if (operationError !== undefined) throw operationError;
 }
 
 export async function demoProfileRootExists(root: string): Promise<boolean> {

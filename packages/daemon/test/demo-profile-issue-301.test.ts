@@ -147,8 +147,8 @@ describe("disposable demo profile ownership #301", () => {
     expect((await lstat(modeCase.root)).mode & 0o777).toBe(0o755);
   });
 
-  test("revalidates identity after rename and restores the exact inode without deleting it", async () => {
-    const { root } = await profileRoot("post-rename");
+  test("retains a failed post-rename cleanup residue without deleting through its path", async () => {
+    const { root } = await profileRoot("post-rename-failure");
     let identityReads = 0;
     const adapter: ProcessIdentityAdapter = {
       currentProcessStartIdentity: async () => {
@@ -163,9 +163,65 @@ describe("disposable demo profile ownership #301", () => {
       "process identity does not match",
     );
     const tombstone = `${root}.removing-${profile.marker.ownerToken}`;
+    await expect(lstat(root)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(tombstone)).ino).toBe(profile.inode);
+    expect(await readFile(join(tombstone, "victim.txt"), "utf8")).toBe(
+      "post-rename-victim",
+    );
+  });
+
+  test("removes only the retained descriptor when its tombstone path is replaced", async () => {
+    const { parent, root } = await profileRoot("post-rename-replacement");
+    let identityReads = 0;
+    let tombstone = "";
+    let copiedMarker = "";
+    const parked = join(parent, "parked-original");
+    const adapter: ProcessIdentityAdapter = {
+      currentProcessStartIdentity: async () => {
+        identityReads += 1;
+        if (identityReads === 4) {
+          await rename(tombstone, parked);
+          await mkdir(tombstone, { mode: 0o700 });
+          await writeFile(join(tombstone, DEMO_PROFILE_MARKER_NAME), copiedMarker, {
+            mode: 0o600,
+          });
+          await writeFile(join(tombstone, "victim.txt"), "replacement-victim", {
+            mode: 0o600,
+          });
+        }
+        return "process-start-a";
+      },
+      inspectProcess: async () => ({ kind: "live", processStartIdentity: "process-start-a" }),
+    };
+    const profile = await createDemoProfile({ root }, adapter);
+    tombstone = `${root}.removing-${profile.marker.ownerToken}`;
+    copiedMarker = await readFile(profile.markerPath, "utf8");
+
+    await expect(removeDemoProfile(profile, adapter)).rejects.toThrow("unowned path residue");
+    await expect(lstat(root)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(lstat(parked)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(tombstone)).ino).not.toBe(profile.inode);
+    expect(await readFile(join(tombstone, DEMO_PROFILE_MARKER_NAME), "utf8")).toBe(
+      copiedMarker,
+    );
+    expect(await readFile(join(tombstone, "victim.txt"), "utf8")).toBe(
+      "replacement-victim",
+    );
+  });
+
+  test("never overwrites a preexisting tombstone entry", async () => {
+    const { root } = await profileRoot("preexisting-tombstone");
+    const adapter = identity("process-start-a");
+    const profile = await createDemoProfile({ root }, adapter);
+    const tombstone = `${root}.removing-${profile.marker.ownerToken}`;
+    await mkdir(tombstone, { mode: 0o700 });
+    const tombstoneEntry = await lstat(tombstone);
+
+    await expect(removeDemoProfile(profile, adapter)).rejects.toThrow(
+      "exclusive cleanup ownership",
+    );
     expect((await lstat(root)).ino).toBe(profile.inode);
-    expect(await readFile(join(root, "victim.txt"), "utf8")).toBe("post-rename-victim");
-    await expect(lstat(tombstone)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await lstat(tombstone)).ino).toBe(tombstoneEntry.ino);
   });
 
   test("refuses marker and process-identity mismatches without deleting the root", async () => {
