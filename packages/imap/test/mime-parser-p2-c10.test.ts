@@ -7,7 +7,7 @@ import { parseStagedEml, safeParseStagedEml, type MimeStreamPart } from "../src/
 
 const temporaryDirectories: string[] = [];
 
-async function fixture(name: string, value: string): Promise<string> {
+async function fixture(name: string, value: string | Uint8Array): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "agent-mail-mime-"));
   temporaryDirectories.push(directory);
   const path = join(directory, name);
@@ -182,6 +182,54 @@ describe("staged MIME parser", () => {
       expect(subjectHeader?.value).toBe(subject);
       expect(subjectHeader?.normalizedValue).toBe(subject);
       expect(await readFile(path)).toEqual(Buffer.from(source));
+    }
+  });
+
+  test("bounds original UTF-8 header bytes and rejects invalid wire sequences", async () => {
+    for (const characterCount of [4_096, 6_000, 8_000, 8_192]) {
+      const subject = "é".repeat(characterCount);
+      const source = Buffer.from(
+        [`Subject: ${subject}`, "", "body", ""].join("\r\n"),
+        "utf8",
+      );
+      const path = await fixture(`subject-${characterCount}.eml`, source);
+      const parsed = await parseStagedEml({ sourcePath: path });
+      expect(parsed.headers.find((header) => header.normalizedName === "subject")?.value).toBe(
+        subject,
+      );
+      expect(await readFile(path)).toEqual(source);
+    }
+
+    const overLimit = "é".repeat(8_193);
+    const overLimitPath = await fixture(
+      "subject-over-limit-by-original-bytes.eml",
+      Buffer.from([`Subject: ${overLimit}`, "", "body", ""].join("\r\n"), "utf8"),
+    );
+    const overLimitResult = await safeParseStagedEml({ sourcePath: overLimitPath });
+    expect(overLimitResult.kind).toBe("error");
+
+    const invalidValues: readonly [string, Uint8Array][] = [
+      ["raw-80", Uint8Array.from([0x80])],
+      ["raw-81", Uint8Array.from([0x81])],
+      ["raw-9f", Uint8Array.from([0x9f])],
+      ["raw-7f", Uint8Array.from([0x7f])],
+      ["nul", Uint8Array.from([0x00])],
+      ["c0", Uint8Array.from([0x01])],
+      ["truncated", Uint8Array.from([0xc3])],
+      ["overlong", Uint8Array.from([0xc0, 0xaf])],
+      ["surrogate", Uint8Array.from([0xed, 0xa0, 0x80])],
+    ];
+    for (const [name, value] of invalidValues) {
+      const source = Buffer.concat([
+        Buffer.from("Subject: ", "ascii"),
+        value,
+        Buffer.from("\r\n\r\nbody\r\n", "ascii"),
+      ]);
+      const path = await fixture(`subject-${name}.eml`, source);
+      const result = await safeParseStagedEml({ sourcePath: path });
+      expect(result.kind, name).toBe("error");
+      if (result.kind === "error")
+        expect(result.error.code).toMatch(/metadata-limit|parser-error|malformed-header/);
     }
   });
 

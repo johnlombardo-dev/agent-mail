@@ -210,19 +210,54 @@ function decodedHeaderValues(value: unknown, count: number): readonly (string | 
   return values.every((item) => item !== null) ? values : null;
 }
 
-function rawHeaderValue(line: string, separator: number): string {
-  return line
-    .slice(separator + 1)
-    .replace(/\r?\n[ \t]+/gu, " ")
-    .trim();
-}
-
 type RawHeaderOccurrence = Readonly<{
   ordinal: number;
   name: string;
   normalizedName: string;
   value: string;
 }>;
+
+function isHorizontalWhitespace(value: number): boolean {
+  return value === 0x20 || value === 0x09;
+}
+
+function rawHeaderValue(line: string, separator: number, maxBytes: number): string {
+  const projected = Buffer.from(line.slice(separator + 1), "latin1");
+  let start = 0;
+  let end = projected.byteLength;
+  while (start < end && isHorizontalWhitespace(projected[start] ?? -1)) start += 1;
+  while (end > start && isHorizontalWhitespace(projected[end - 1] ?? -1)) end -= 1;
+  const original = projected.subarray(start, end);
+  if (original.byteLength > maxBytes)
+    throw new MimeParseError("metadata-limit", "header value exceeds the safe metadata boundary");
+
+  const unfolded: number[] = [];
+  for (let position = 0; position < original.byteLength; position += 1) {
+    const byte = original[position];
+    if (byte === undefined) continue;
+    if (byte === 0x0d || byte === 0x0a) {
+      if (
+        byte !== 0x0d ||
+        original[position + 1] !== 0x0a ||
+        !isHorizontalWhitespace(original[position + 2] ?? -1)
+      ) {
+        throw new MimeParseError("malformed-header", "header fold is malformed");
+      }
+      unfolded.push(0x20);
+      position += 2;
+      while (isHorizontalWhitespace(original[position + 1] ?? -1)) position += 1;
+      continue;
+    }
+    unfolded.push(byte);
+  }
+  let decoded: string;
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(new Uint8Array(unfolded));
+  } catch {
+    throw new MimeParseError("metadata-limit", "header value encoding is invalid");
+  }
+  return text(decoded, "header value", maxBytes);
+}
 
 function rawHeaderOccurrences(
   lines: readonly unknown[],
@@ -240,24 +275,13 @@ function rawHeaderOccurrences(
       ordinal: index + 1,
       name,
       normalizedName: name.toLowerCase(),
-      value: rawHeaderValue(line.line, separator),
+      value: rawHeaderValue(line.line, separator, maxBytes),
     };
   });
 }
 
 function validateRawHeaderOccurrence(value: string, maxBytes: number): void {
-  const bytes = Buffer.byteLength(value, "utf8");
-  let hasLowControl = false;
-  for (const character of value) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint !== undefined && codePoint <= 0x1f) {
-      hasLowControl = true;
-      break;
-    }
-  }
-  if (value.length === 0 || bytes > maxBytes || hasLowControl) {
-    text(value, "header value", maxBytes);
-  }
+  text(value, "header value", maxBytes);
 }
 
 function normalizedHeaders(
