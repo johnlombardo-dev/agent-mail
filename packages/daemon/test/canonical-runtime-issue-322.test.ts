@@ -108,11 +108,11 @@ function trackedRuntime(options: CanonicalDaemonRuntimeOptions): CanonicalDaemon
   return runtime;
 }
 
-function corpus() {
+function corpus(size = 1) {
   return buildCorpus({
     scenarioVersion: CORPUS_VERSION,
     seed: "canonical-runtime-322",
-    size: 1,
+    size,
     scenarioMix: {
       ordinary: 1,
       transactional: 1,
@@ -242,6 +242,30 @@ function messageCount(root: string): number {
   });
   try {
     return database.query<Readonly<{ count: number }>, []>("SELECT COUNT(*) AS count FROM messages;").get()?.count ?? -1;
+  } finally {
+    database.close();
+  }
+}
+
+function retainedSyncRows(root: string): Readonly<{
+  readonly messages: number;
+  readonly placements: number;
+  readonly checkpoints: number;
+}> {
+  const database = new Database(join(root, "data", "archive.sqlite"), {
+    create: false,
+    readonly: true,
+    strict: true,
+  });
+  try {
+    const count = (table: "messages" | "remote_placements" | "mailbox_checkpoints"): number =>
+      database.query<Readonly<{ count: number }>, []>(`SELECT COUNT(*) AS count FROM ${table};`).get()
+        ?.count ?? -1;
+    return Object.freeze({
+      messages: count("messages"),
+      placements: count("remote_placements"),
+      checkpoints: count("mailbox_checkpoints"),
+    });
   } finally {
     database.close();
   }
@@ -454,6 +478,70 @@ describe("canonical read-only daemon runtime #322", () => {
     }
   }, 60_000);
 
+  test("rolls back the first committed message when the signed source denies the second download", async () => {
+    const root = await privateRoot();
+    const lease = await leaseDemoImapTestPort(6112);
+    const server = createDemoImapServer({
+      corpus: corpus(2),
+      port: lease.port,
+      releasePort: lease.release,
+    });
+    servers.push(server);
+    await server.start();
+    const before = server.backend().snapshot();
+    let releases = 0;
+    let downloads = 0;
+    const runtime = trackedRuntime({
+      configuration: configuration(root),
+      accountId: "account:runtime-rollback-322",
+      source: {
+        acquire: async () => {
+          const flow = createFlow(server);
+          await flow.connect();
+          const client = new Proxy(flow, {
+            get(target, property) {
+              const value = Reflect.get(target, property, target);
+              if (property === "download" && typeof value === "function") {
+                return (...arguments_: unknown[]) => {
+                  downloads += 1;
+                  if (downloads === 2) return Promise.reject(injectedFailure());
+                  return value.apply(target, arguments_);
+                };
+              }
+              return typeof value === "function" ? value.bind(target) : value;
+            },
+          });
+          return {
+            client,
+            release: async () => {
+              releases += 1;
+              if (flow.usable) await flow.logout().catch(() => undefined);
+              flow.close();
+            },
+          };
+        },
+      },
+      authenticate,
+      readinessAuthorization: "Bearer runtime-322",
+      listenerFactory: leasedHttpListener(6114),
+    });
+
+    await expect(runtime.start()).rejects.toThrow("Canonical read-only initial sync failed.");
+    await runtime.close();
+    expect(downloads).toBe(2);
+    expect(releases).toBe(1);
+    expect(runtime.snapshot()).toMatchObject({
+      state: "failed",
+      ready: false,
+      sourceReleaseCount: 1,
+      activeHttpConnections: 0,
+    });
+    expect(retainedSyncRows(root)).toEqual({ messages: 0, placements: 0, checkpoints: 0 });
+    expect(await readdir(join(root, "blobs"))).toEqual([]);
+    expect(await stagingEntries(root)).toEqual([]);
+    expect(server.backend().snapshot()).toEqual(before);
+  }, 20_000);
+
   test("fails infrastructure and readiness acquisition with stable ownership truth", async () => {
     const databaseRoot = await privateRoot();
     await mkdir(join(databaseRoot, "data"), { mode: 0o700 });
@@ -532,7 +620,13 @@ describe("canonical read-only daemon runtime #322", () => {
       activeHttpConnections: 0,
     });
     expect(readinessReleases.count).toBe(1);
-    expect(messageCount(readinessRoot)).toBe(1);
+    expect(retainedSyncRows(readinessRoot)).toEqual({
+      messages: 0,
+      placements: 0,
+      checkpoints: 0,
+    });
+    expect(await readdir(join(readinessRoot, "blobs"))).toEqual([]);
+    expect(await stagingEntries(readinessRoot)).toEqual([]);
     expect(readinessServer.backend().snapshot()).toEqual(readinessBefore);
   }, 30_000);
 

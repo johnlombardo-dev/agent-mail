@@ -15,16 +15,20 @@ import {
   type UtcInstant,
 } from "@agent-mail/core";
 import {
-  acquireReadOnlyImapSession,
   discoverMailboxes,
-  normalizeMailboxStatus,
-  normalizeProtocolError,
+  type MailboxSynchronizationCandidate,
+} from "../../../imap/src/mailbox-discovery";
+import {
+  acquireReadOnlyImapSession,
   parseReadOnlyMailboxLock,
   projectReadOnlyMailboxStatus,
-  type MailboxSynchronizationCandidate,
   type ReadOnlyImapSession,
   type ReadOnlyImapSourceAuthority,
-} from "../../../imap/src/index";
+} from "../../../imap/src/read-only-session";
+import {
+  normalizeMailboxStatus,
+  normalizeProtocolError,
+} from "../../../imap/src/status-normalizer";
 import { createMetadataBatchAdapter } from "../../../imap/src/metadata-batch";
 import { createRawMessageDownloadAdapter } from "../../../imap/src/raw-download";
 import { createRawMessageDownloadQueueActor } from "../../../imap/src/raw-download-queue";

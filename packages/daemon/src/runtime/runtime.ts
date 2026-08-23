@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, readdir, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { Database } from "bun:sqlite";
 import { searchResponseSchema, type SyncCheckpointSummary } from "@agent-mail/contracts";
@@ -101,6 +101,11 @@ type Resources = {
   listener?: CanonicalHttpListener;
 };
 
+type StartupStorageOwnership = Readonly<{
+  readonly markerPath: string;
+  readonly identity: string;
+}>;
+
 function diagnostic(
   code: CanonicalRuntimeDiagnostic["code"],
   message: string,
@@ -135,6 +140,111 @@ async function ensurePrivateChild(parent: string, path: string): Promise<void> {
     if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
   }
   await assertPrivateDirectory(path);
+}
+
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+async function removeFileIfPresent(path: string): Promise<void> {
+  try {
+    await unlink(path);
+  } catch (error: unknown) {
+    if (!isMissingFileError(error)) throw error;
+  }
+}
+
+async function writeOwnershipMarker(path: string, identity: string): Promise<void> {
+  const handle = await open(path, "wx", 0o600);
+  try {
+    await handle.writeFile(identity, "utf8");
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+async function verifyOwnershipMarker(ownership: StartupStorageOwnership): Promise<void> {
+  const entry = await lstat(ownership.markerPath);
+  const expectedUid = typeof process.getuid === "function" ? process.getuid() : undefined;
+  if (
+    !entry.isFile() ||
+    entry.isSymbolicLink() ||
+    (entry.mode & 0o077) !== 0 ||
+    (expectedUid !== undefined && entry.uid !== expectedUid) ||
+    (await readFile(ownership.markerPath, "utf8")) !== ownership.identity
+  ) {
+    throw new Error("canonical startup storage ownership changed");
+  }
+}
+
+async function claimStartupStorage(
+  input: Readonly<{
+    readonly dataDirectory: string;
+    readonly blobDirectory: string;
+    readonly stagingDirectory: string;
+    readonly runtimeDirectory: string;
+    readonly identity: string;
+  }>,
+): Promise<StartupStorageOwnership> {
+  const markerPath = join(input.runtimeDirectory, ".canonical-runtime-startup-owner");
+  const directories = [input.dataDirectory, input.blobDirectory, input.stagingDirectory];
+  if (
+    (await Promise.all(directories.map((directory) => readdir(directory)))).some(
+      (names) => names.length > 0,
+    )
+  ) {
+    throw new Error("canonical disposable startup storage is not empty");
+  }
+  await writeOwnershipMarker(markerPath, input.identity);
+  const ownership = Object.freeze({ markerPath, identity: input.identity });
+  try {
+    if (
+      (await Promise.all(directories.map((directory) => readdir(directory)))).some(
+        (names) => names.length > 0,
+      )
+    ) {
+      throw new Error("canonical disposable startup storage changed during acquisition");
+    }
+    await verifyOwnershipMarker(ownership);
+    return ownership;
+  } catch (error: unknown) {
+    await removeFileIfPresent(markerPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function commitStartupStorage(ownership: StartupStorageOwnership): Promise<void> {
+  await verifyOwnershipMarker(ownership);
+  await removeFileIfPresent(ownership.markerPath);
+}
+
+async function rollbackStartupStorage(
+  input: Readonly<{
+    readonly ownership: StartupStorageOwnership;
+    readonly databasePath: string;
+    readonly blobDirectory: string;
+    readonly stagingDirectory: string;
+  }>,
+): Promise<void> {
+  await verifyOwnershipMarker(input.ownership);
+  const stages = await readdir(input.stagingDirectory);
+  if (stages.length > 0) throw new Error("canonical startup staging cleanup is incomplete");
+  const blobs = await readdir(input.blobDirectory);
+  if (blobs.some((name) => !/^[0-9a-f]{64}$/u.test(name))) {
+    throw new Error("canonical startup blob ownership is ambiguous");
+  }
+  for (const name of blobs) await removeFileIfPresent(join(input.blobDirectory, name));
+  for (const path of [
+    input.databasePath,
+    `${input.databasePath}-wal`,
+    `${input.databasePath}-shm`,
+  ]) {
+    await removeFileIfPresent(path);
+  }
+  const emptyDatabase = await openDatabase(input.databasePath);
+  await emptyDatabase.close();
+  await removeFileIfPresent(input.ownership.markerPath);
 }
 
 function hasControlCharacter(value: string): boolean {
@@ -367,6 +477,8 @@ export function createCanonicalDaemonRuntime(
   let failure: CanonicalRuntimeError | undefined;
   let startPromise: Promise<CanonicalRuntimeReadiness> | undefined;
   let closePromise: Promise<void> | undefined;
+  let startupStorage: StartupStorageOwnership | undefined;
+  let startupStorageCommitted = false;
 
   const setStartingState = (
     next: Extract<CanonicalRuntimeState, "preparing" | "starting-listener" | "syncing">,
@@ -383,6 +495,15 @@ export function createCanonicalDaemonRuntime(
         () => resources.sync?.close(),
         () => cleanupOwnedStages(stagingDirectory, identity),
         () => resources.database?.close(),
+        async () => {
+          if (startupStorage === undefined || startupStorageCommitted) return;
+          await rollbackStartupStorage({
+            ownership: startupStorage,
+            databasePath,
+            blobDirectory: configuration.paths.blob,
+            stagingDirectory,
+          });
+        },
       ]) {
         try {
           await operation();
@@ -410,6 +531,13 @@ export function createCanonicalDaemonRuntime(
       await ensurePrivateChild(configuration.paths.runtime, stagingDirectory);
       if (abort.signal.aborted) throw abort.signal.reason;
       try {
+        startupStorage = await claimStartupStorage({
+          dataDirectory: configuration.paths.data,
+          blobDirectory: configuration.paths.blob,
+          stagingDirectory,
+          runtimeDirectory: configuration.paths.runtime,
+          identity,
+        });
         resources.database = await openDatabase(databasePath);
       } catch (error: unknown) {
         throw new CanonicalRuntimeError(
@@ -486,6 +614,13 @@ export function createCanonicalDaemonRuntime(
         checkpoint,
       );
       if (abort.signal.aborted) throw abort.signal.reason;
+      if (startupStorage === undefined) {
+        throw new CanonicalRuntimeError(
+          diagnostic("runtime.database", "Canonical startup storage ownership is unavailable."),
+        );
+      }
+      await commitStartupStorage(startupStorage);
+      startupStorageCommitted = true;
       state = "ready";
       return ready;
     } catch (error: unknown) {
