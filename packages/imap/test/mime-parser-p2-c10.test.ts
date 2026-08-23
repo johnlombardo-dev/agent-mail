@@ -147,6 +147,91 @@ describe("staged MIME parser", () => {
     expect(await readFile(path)).toEqual(Buffer.from(source));
   });
 
+  test("parses all twelve signed #300-style UTF-8 subjects without changing bytes", async () => {
+    const subjects = [
+      "Synthetic 1",
+      "אבג",
+      "Ελληνικά",
+      "日本語",
+      "مرحبا",
+      "שלום \u200fΕλληνικά",
+      "日本語 \u202eBidi",
+      "Résumé",
+      "中文消息",
+      "東京レポート",
+      "Καλημέρα κόσμε",
+      "Mix אבג Ελληνικά 日本語",
+    ] as const;
+    for (const [index, subject] of subjects.entries()) {
+      const source = [
+        `Message-ID: <demo-${index + 1}@example.test>`,
+        "Date: Sun, 23 Aug 2026 02:00:00 GMT",
+        "From: sender@example.test",
+        "To: recipient@example.test",
+        `Subject: ${subject}`,
+        "MIME-Version: 1.0",
+        "Content-Type: text/plain; charset=utf-8",
+        "Content-Transfer-Encoding: 8bit",
+        "",
+        `signed #300 body ${index + 1}`,
+        "",
+      ].join("\r\n");
+      const path = await fixture(`signed-300-${index + 1}.eml`, source);
+      const parsed = await parseStagedEml({ sourcePath: path });
+      const subjectHeader = parsed.headers.find((header) => header.normalizedName === "subject");
+      expect(subjectHeader?.value).toBe(subject);
+      expect(subjectHeader?.normalizedValue).toBe(subject);
+      expect(await readFile(path)).toEqual(Buffer.from(source));
+    }
+  });
+
+  test("correlates duplicate decoded occurrences and unfolds legal header folds", async () => {
+    const source = [
+      "X-Duplicate: one",
+      "X-Duplicate: two",
+      "X-Duplicate: three",
+      "X-Folded: alpha ",
+      "\t beta",
+      "  gamma",
+      "Subject: folded",
+      "",
+      "body",
+      "",
+    ].join("\r\n");
+    const path = await fixture("headers-and-duplicates.eml", source);
+    const parsed = await parseStagedEml({ sourcePath: path });
+    expect(parsed.headers.filter((header) => header.normalizedName === "x-duplicate")).toEqual([
+      {
+        ordinal: 1,
+        name: "X-Duplicate",
+        normalizedName: "x-duplicate",
+        value: "one",
+        normalizedValue: "one",
+      },
+      {
+        ordinal: 2,
+        name: "X-Duplicate",
+        normalizedName: "x-duplicate",
+        value: "two",
+        normalizedValue: "two",
+      },
+      {
+        ordinal: 3,
+        name: "X-Duplicate",
+        normalizedName: "x-duplicate",
+        value: "three",
+        normalizedValue: "three",
+      },
+    ]);
+    expect(parsed.headers.find((header) => header.normalizedName === "x-folded")).toEqual({
+      ordinal: 4,
+      name: "X-Folded",
+      normalizedName: "x-folded",
+      value: "alpha  beta gamma",
+      normalizedValue: "alpha beta gamma",
+    });
+  });
+
   test("preserves MailParser names and normalizes its empty optional names", async () => {
     const namedPath = await fixture(
       "named-group.eml",
@@ -268,8 +353,32 @@ describe("staged MIME parser", () => {
         [from, "To: recipient@example.test", "Subject: invalid", "", "body", ""].join("\r\n"),
       );
       const result = await safeParseStagedEml({ sourcePath: path });
-      expect(result.kind).toBe("error");
+      expect(result.kind, name).toBe("error");
       if (result.kind === "error") expect(result.error.code).toMatch(/metadata-limit|parser-error/);
+    }
+  });
+
+  test("rejects malformed header boundaries and decoded/raw value limits", async () => {
+    const invalidSources = [
+      ["bad-name", "Bad Name: value\r\nSubject: valid"],
+      ["missing-separator", "NoSeparator\r\nSubject: valid"],
+      ["obs-fold-without-wsp", "Subject: one\r\ncontinuation"],
+      ["bare-cr", "Subject: one\rmore"],
+      ["bare-lf", "Subject: one\nmore"],
+      ["nul", "Subject: bad\u0000value"],
+      ["c0", "Subject: bad\u0001value"],
+      ["c1", "Subject: bad\u0080value"],
+      ["empty-decoded", "Subject: "],
+      ["overlimit-decoded", `Subject: ${"x".repeat(17_000)}`],
+      ["empty-raw-fallback", "X-Fallback:"],
+      ["overlimit-raw-fallback", `X-Fallback: ${"x".repeat(17_000)}`],
+    ] as const;
+    for (const [name, headers] of invalidSources) {
+      const path = await fixture(`${name}.eml`, `${headers}\r\n\r\nbody\r\n`);
+      const result = await safeParseStagedEml({ sourcePath: path });
+      expect(result.kind, name).toBe("error");
+      if (result.kind === "error")
+        expect(result.error.code).toMatch(/header-limit|malformed-header|metadata-limit/);
     }
   });
 
@@ -313,6 +422,17 @@ describe("staged MIME parser", () => {
     });
     expect(headers.kind).toBe("error");
     if (headers.kind === "error") expect(headers.error.code).toBe("header-limit");
+
+    const lineCountPath = await fixture(
+      "header-count.eml",
+      ["Subject: one", "X-Second: two", "", "body", ""].join("\r\n"),
+    );
+    const lineCount = await safeParseStagedEml({
+      sourcePath: lineCountPath,
+      limits: { maxHeaderLines: 1 },
+    });
+    expect(lineCount.kind).toBe("error");
+    if (lineCount.kind === "error") expect(lineCount.error.code).toBe("header-limit");
   });
 
   test("returns from a closed nested multipart to its parent boundary", async () => {
