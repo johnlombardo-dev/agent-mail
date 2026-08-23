@@ -189,7 +189,7 @@ describe("staged MIME parser", () => {
     for (const characterCount of [4_096, 6_000, 8_000, 8_192]) {
       const subject = "é".repeat(characterCount);
       const source = Buffer.from(
-        [`Subject: ${subject}`, "", "body", ""].join("\r\n"),
+        [`Subject:${subject}`, "", "body", ""].join("\r\n"),
         "utf8",
       );
       const path = await fixture(`subject-${characterCount}.eml`, source);
@@ -203,10 +203,36 @@ describe("staged MIME parser", () => {
     const overLimit = "é".repeat(8_193);
     const overLimitPath = await fixture(
       "subject-over-limit-by-original-bytes.eml",
-      Buffer.from([`Subject: ${overLimit}`, "", "body", ""].join("\r\n"), "utf8"),
+      Buffer.from([`Subject:${overLimit}`, "", "body", ""].join("\r\n"), "utf8"),
     );
     const overLimitResult = await safeParseStagedEml({ sourcePath: overLimitPath });
     expect(overLimitResult.kind).toBe("error");
+
+    const exactPath = await fixture(
+      "subject-exact-original-bytes.eml",
+      Buffer.from([`Subject:${"x".repeat(16_384)}`, "", "body", ""].join("\r\n"), "ascii"),
+    );
+    expect((await parseStagedEml({ sourcePath: exactPath })).headers).toHaveLength(1);
+    const foldedExact = `${"a".repeat(8_190)}\r\n ${"b".repeat(8_191)}`;
+    const foldedExactPath = await fixture(
+      "subject-exact-folded-original-bytes.eml",
+      Buffer.from([`Subject:${foldedExact}`, "", "body", ""].join("\r\n"), "ascii"),
+    );
+    expect(
+      (await parseStagedEml({ sourcePath: foldedExactPath })).headers[0]?.value,
+    ).toBe(`${"a".repeat(8_190)} ${"b".repeat(8_191)}`);
+
+    const whitespaceInvalidSources = [
+      ["leading-spaces", `Subject:${" ".repeat(17_000)}x`],
+      ["trailing-tabs", `Subject:x${"\t".repeat(17_000)}`],
+    ] as const;
+    for (const [name, header] of whitespaceInvalidSources) {
+      const path = await fixture(
+        `subject-${name}.eml`,
+        Buffer.from([header, "", "body", ""].join("\r\n"), "ascii"),
+      );
+      expect((await safeParseStagedEml({ sourcePath: path })).kind, name).toBe("error");
+    }
 
     const invalidValues: readonly [string, Uint8Array][] = [
       ["raw-80", Uint8Array.from([0x80])],
