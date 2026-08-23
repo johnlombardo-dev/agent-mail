@@ -193,7 +193,15 @@ describe("staged MIME parser", () => {
       "X-Folded: alpha ",
       "\t beta",
       "  gamma",
-      "Subject: folded",
+      "Subject: first subject",
+      "subject: second subject",
+      "SUBJECT: third subject",
+      "Date: Mon, 01 Jan 2024 00:00:00 GMT",
+      "date: Tue, 02 Jan 2024 00:00:00 GMT",
+      "Message-ID: <first@example.test>",
+      "message-id: <second@example.test>",
+      "Received: first-hop",
+      "Received: second-hop",
       "",
       "body",
       "",
@@ -230,6 +238,58 @@ describe("staged MIME parser", () => {
       value: "alpha  beta gamma",
       normalizedValue: "alpha beta gamma",
     });
+    expect(parsed.headers.filter((header) => header.normalizedName === "subject").map((header) => header.value)).toEqual([
+      "first subject",
+      "second subject",
+      "third subject",
+    ]);
+    expect(parsed.headers.filter((header) => header.normalizedName === "date").map((header) => header.value)).toEqual([
+      "Mon, 01 Jan 2024 00:00:00 GMT",
+      "Tue, 02 Jan 2024 00:00:00 GMT",
+    ]);
+    expect(parsed.headers.filter((header) => header.normalizedName === "message-id").map((header) => header.value)).toEqual([
+      "<first@example.test>",
+      "<second@example.test>",
+    ]);
+    expect(parsed.headers.filter((header) => header.normalizedName === "received").map((header) => header.value)).toEqual([
+      "first-hop",
+      "second-hop",
+    ]);
+  });
+
+  test("rejects an invalid exact duplicate occurrence instead of borrowing a safe value", async () => {
+    const invalidSources = [
+      ["empty", "Subject: \r\nSubject: safe"],
+      ["nul", "Subject: bad\u0000value\r\nSubject: safe"],
+      ["c0", "Subject: bad\u0001value\r\nSubject: safe"],
+      ["c1", "Subject: bad\u0080value\r\nSubject: safe"],
+      ["over-limit", `Subject: ${"x".repeat(17_000)}\r\nSubject: safe`],
+    ] as const;
+    for (const [name, headers] of invalidSources) {
+      const path = await fixture(
+        `duplicate-invalid-${name}.eml`,
+        `${headers}\r\n\r\nbody\r\n`,
+      );
+      const result = await safeParseStagedEml({ sourcePath: path });
+      expect(result.kind, name).toBe("error");
+      if (result.kind === "error") expect(result.error.code).toBe("metadata-limit");
+    }
+
+    const encodedPath = await fixture(
+      "duplicate-encoded-then-safe.eml",
+      [
+        "Subject: =?UTF-8?B?5pel5pys?= first",
+        "Subject: safe second",
+        "",
+        "body",
+        "",
+      ].join("\r\n"),
+    );
+    const encoded = await parseStagedEml({ sourcePath: encodedPath });
+    expect(encoded.headers.filter((header) => header.normalizedName === "subject").map((header) => header.value)).toEqual([
+      "=?UTF-8?B?5pel5pys?= first",
+      "safe second",
+    ]);
   });
 
   test("preserves MailParser names and normalizes its empty optional names", async () => {

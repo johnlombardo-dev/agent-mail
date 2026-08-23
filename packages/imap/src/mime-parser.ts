@@ -186,15 +186,28 @@ function depthOf(partId: string | null): number {
   return partId === null ? 1 : partId.split(".").length;
 }
 
-function decodedHeaderValue(value: unknown, index: number): string | null {
-  if (typeof value === "string") return index === 0 ? value : null;
-  if (value instanceof Date) return index === 0 ? value.toISOString() : null;
-  if (Array.isArray(value)) {
-    const item = value[index];
-    return typeof item === "string" ? item : null;
+function decodedHeaderScalar(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value.toISOString() : null;
   }
-  if (isRecord(value) && typeof value.value === "string") return index === 0 ? value.value : null;
+  if (isRecord(value) && typeof value.value === "string") return value.value;
   return null;
+}
+
+function decodedHeaderValues(value: unknown, count: number): readonly (string | null)[] | null {
+  if (count === 1) {
+    const scalar = decodedHeaderScalar(value);
+    if (scalar !== null) return [scalar];
+    if (Array.isArray(value) && value.length === 1) {
+      const item = decodedHeaderScalar(value[0]);
+      if (item !== null) return [item];
+    }
+    return null;
+  }
+  if (!Array.isArray(value) || value.length !== count) return null;
+  const values = value.map(decodedHeaderScalar);
+  return values.every((item) => item !== null) ? values : null;
 }
 
 function rawHeaderValue(line: string, separator: number): string {
@@ -204,14 +217,17 @@ function rawHeaderValue(line: string, separator: number): string {
     .trim();
 }
 
-function normalizedHeaders(
-  lines: unknown,
-  headers: Headers,
+type RawHeaderOccurrence = Readonly<{
+  ordinal: number;
+  name: string;
+  normalizedName: string;
+  value: string;
+}>;
+
+function rawHeaderOccurrences(
+  lines: readonly unknown[],
   maxBytes: number,
-): readonly OrderedMimeHeader[] {
-  if (!Array.isArray(lines))
-    throw new MimeParseError("malformed-message", "headers were not emitted");
-  const seen = new Map<string, number>();
+): readonly RawHeaderOccurrence[] {
   return lines.map((line, index) => {
     if (!isRecord(line) || typeof line.key !== "string" || typeof line.line !== "string") {
       throw new MimeParseError("malformed-header", "MailParser emitted an invalid header line");
@@ -220,14 +236,58 @@ function normalizedHeaders(
     if (separator <= 0)
       throw new MimeParseError("malformed-header", "header line has no field name");
     const name = text(line.line.slice(0, separator).trim(), "header name", maxBytes);
-    const valueIndex = seen.get(name.toLowerCase()) ?? 0;
-    seen.set(name.toLowerCase(), valueIndex + 1);
-    const decoded = decodedHeaderValue(headers.get(name.toLowerCase()), valueIndex);
-    const value = text(decoded ?? rawHeaderValue(line.line, separator), "header value", maxBytes);
     return {
       ordinal: index + 1,
       name,
       normalizedName: name.toLowerCase(),
+      value: rawHeaderValue(line.line, separator),
+    };
+  });
+}
+
+function validateRawHeaderOccurrence(value: string, maxBytes: number): void {
+  const bytes = Buffer.byteLength(value, "utf8");
+  let hasLowControl = false;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (codePoint !== undefined && codePoint <= 0x1f) {
+      hasLowControl = true;
+      break;
+    }
+  }
+  if (value.length === 0 || bytes > maxBytes || hasLowControl) {
+    text(value, "header value", maxBytes);
+  }
+}
+
+function normalizedHeaders(
+  lines: unknown,
+  headers: Headers,
+  maxBytes: number,
+): readonly OrderedMimeHeader[] {
+  if (!Array.isArray(lines))
+    throw new MimeParseError("malformed-message", "headers were not emitted");
+  const occurrences = rawHeaderOccurrences(lines, maxBytes);
+  const counts = new Map<string, number>();
+  for (const occurrence of occurrences) {
+    counts.set(occurrence.normalizedName, (counts.get(occurrence.normalizedName) ?? 0) + 1);
+  }
+  const decodedByName = new Map<string, readonly (string | null)[] | null>();
+  for (const [name, count] of counts) {
+    decodedByName.set(name, decodedHeaderValues(headers.get(name), count));
+  }
+  const seen = new Map<string, number>();
+  return occurrences.map((occurrence) => {
+    validateRawHeaderOccurrence(occurrence.value, maxBytes);
+    const decoded = decodedByName.get(occurrence.normalizedName);
+    const occurrenceIndex = seen.get(occurrence.normalizedName) ?? 0;
+    seen.set(occurrence.normalizedName, occurrenceIndex + 1);
+    const decodedValue = decoded === null ? null : (decoded?.[occurrenceIndex] ?? null);
+    const value = text(decodedValue ?? occurrence.value, "header value", maxBytes);
+    return {
+      ordinal: occurrence.ordinal,
+      name: occurrence.name,
+      normalizedName: occurrence.normalizedName,
       value,
       normalizedValue: value.replace(/[ \t\r\n]+/gu, " ").trim(),
     };
