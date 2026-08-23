@@ -12,6 +12,7 @@ export type CanonicalHttpListenerInput = Readonly<{
   readonly host: "127.0.0.1";
   readonly port: number;
   readonly maxRequestBodyBytes: number;
+  readonly signal: AbortSignal;
   readonly fetch: (request: Request) => Promise<Response>;
 }>;
 
@@ -83,14 +84,22 @@ async function forwardResponse(response: Response, outgoing: ServerResponse): Pr
 }
 
 function normalizeListenerInput(input: CanonicalHttpListenerInput): void {
-  if (input.host !== "127.0.0.1") throw new TypeError("canonical daemon listener must use loopback");
+  if (input.host !== "127.0.0.1")
+    throw new TypeError("canonical daemon listener must use loopback");
   if (!Number.isSafeInteger(input.port) || input.port < 1 || input.port > 65_535) {
     throw new TypeError("canonical daemon listener port is invalid");
   }
   if (!Number.isSafeInteger(input.maxRequestBodyBytes) || input.maxRequestBodyBytes <= 0) {
     throw new TypeError("canonical daemon HTTP body limit is invalid");
   }
+  if (!(input.signal instanceof AbortSignal)) {
+    throw new TypeError("canonical daemon listener signal is invalid");
+  }
   if (typeof input.fetch !== "function") throw new TypeError("canonical HTTP fetch is invalid");
+}
+
+function abortReason(signal: AbortSignal): unknown {
+  return signal.reason ?? new DOMException("Canonical listener was aborted", "AbortError");
 }
 
 /** Bind one loopback listener with bounded request materialization and owned sockets. */
@@ -98,6 +107,7 @@ export async function createLoopbackHttpListener(
   input: CanonicalHttpListenerInput,
 ): Promise<CanonicalHttpListener> {
   normalizeListenerInput(input);
+  if (input.signal.aborted) throw abortReason(input.signal);
   const sockets = new Set<Socket>();
   let server: Server | undefined;
   let closePromise: Promise<void> | undefined;
@@ -124,19 +134,36 @@ export async function createLoopbackHttpListener(
       if (candidate === undefined) return reject(new Error("canonical listener is unavailable"));
       const onError = (error: Error): void => {
         candidate.off("listening", onListening);
+        input.signal.removeEventListener("abort", onAbort);
         reject(error);
       };
       const onListening = (): void => {
         candidate.off("error", onError);
+        input.signal.removeEventListener("abort", onAbort);
         resolve();
+      };
+      const onAbort = (): void => {
+        candidate.off("error", onError);
+        candidate.off("listening", onListening);
+        try {
+          candidate.close(() => undefined);
+        } catch {
+          // Abort remains the primary outcome before a bind becomes active.
+        }
+        reject(abortReason(input.signal));
       };
       candidate.once("error", onError);
       candidate.once("listening", onListening);
+      input.signal.addEventListener("abort", onAbort, { once: true });
       candidate.listen(input.port, input.host);
     });
   } catch (error: unknown) {
     for (const socket of sockets) socket.destroy();
-    server.close();
+    try {
+      server.close();
+    } catch {
+      // The bind failure remains the primary error.
+    }
     throw error;
   }
 

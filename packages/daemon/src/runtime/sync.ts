@@ -129,7 +129,8 @@ function uidSearchResult(value: unknown): readonly RemoteUidValue[] {
     throw new TypeError("IMAP UID search result is invalid or exceeds the initial-sync limit");
   }
   const uids = value.map((item) => createRemoteUidValue(item));
-  if (new Set(uids).size !== uids.length) throw new TypeError("IMAP UID search result is duplicated");
+  if (new Set(uids).size !== uids.length)
+    throw new TypeError("IMAP UID search result is duplicated");
   const sorted = [...uids].sort((left, right) => left - right);
   return Object.freeze(sorted);
 }
@@ -222,19 +223,30 @@ export function createCanonicalSyncComposition(
   let queue: ReturnType<typeof createRawMessageDownloadQueueActor> | undefined;
   let workSet: readonly MailboxWork[] = Object.freeze([]);
   let sourceReleases = 0;
+  let resourceCleanupFailed = false;
 
   const releaseSource = async (): Promise<void> => {
     if (session === undefined) return;
     sourceReleases += 1;
     const owned = session;
     session = undefined;
-    await owned.release();
+    try {
+      await owned.release();
+    } catch (error: unknown) {
+      resourceCleanupFailed = true;
+      throw error;
+    }
   };
   const stopQueue = async (): Promise<void> => {
     if (queue === undefined) return;
     const owned = queue;
     queue = undefined;
-    await owned.stop();
+    try {
+      await owned.stop();
+    } catch (error: unknown) {
+      resourceCleanupFailed = true;
+      throw error;
+    }
   };
 
   const bootstrapSession = fromPromise<BootstrapOutput, { checkpoint: SyncCheckpointSummary }>(
@@ -282,165 +294,163 @@ export function createCanonicalSyncComposition(
     },
   );
 
-  const initialBackfill = fromPromise<LoopOutput, InitialBackfillActorInput>(
-    async ({ signal }) => {
-      try {
-        const activeSession = session;
-        const activeQueue = queue;
-        if (activeSession === undefined || activeQueue === undefined) {
-          throw new Error("canonical sync source was not acquired");
-        }
-        const abortSignal = combinedSignal(options.signal, signal);
-        const checkpoints = createMailboxCheckpointRepository(options.database);
-        const completions = createInitialBackfillCompletionRepository(options.database);
-        const promotion = createSqlitePromotionAdapter(options.database);
-        const metadata = createMetadataBatchAdapter(activeSession.client);
-
-        for (const work of workSet) {
-          if (abortSignal.aborted) throw abortSignal.reason;
-          const lock = parseReadOnlyMailboxLock(
-            await activeSession.client.getMailboxLock(work.mailbox.path, { readOnly: true }),
-          );
-          try {
-            const status = normalizeMailboxStatus(projectReadOnlyMailboxStatus(activeSession.client));
-            if (status.uidValidity.kind !== "known") {
-              throw new Error("mailbox UIDVALIDITY is unavailable");
-            }
-            const uidValidity: UidValidity = status.uidValidity.value;
-            const uids = uidSearchResult(
-              await activeSession.client.search({ all: true }, { uid: true }),
-            );
-            boundedObservedSpan(uids);
-            const observedUidCeiling = uids.at(-1) ?? null;
-            if (
-              status.uidNext.kind === "known" &&
-              observedUidCeiling !== null &&
-              status.uidNext.value <= observedUidCeiling
-            ) {
-              throw new Error("mailbox UIDNEXT contradicts observed UIDs");
-            }
-            const identity = {
-              accountId: options.accountId,
-              mailboxId: work.mailboxId,
-              uidValidity,
-            };
-            if (checkpoints.read(identity) === undefined) {
-              checkpoints.save({
-                checkpoint: {
-                  ...identity,
-                  uidNext: { kind: "known", value: uids[0] ?? createRemoteUidValue(1) },
-                  modseq: { kind: "unknown" },
-                  sweepCursor: createStreamingOffset(0),
-                  backfillCompleted: false,
-                },
-                expectedVersion: 0,
-              });
-            }
-            const observedAt = observationTime(options.now);
-            await runInitialBackfillLoop(
-              {
-                ...identity,
-                observedUidCeiling,
-                observedUidNext:
-                  status.uidNext.kind === "known"
-                    ? { kind: "known", value: status.uidNext.value }
-                    : { kind: "unknown" },
-                observedAt,
-                nextSweepEligibleAt: futureTime(observedAt, configuration.periodicStatusIntervalMs),
-                maxBatchUids: 128,
-                stagingDirectory: options.stagingDirectory,
-                owner: options.owner,
-              },
-              {
-                checkpoints,
-                completions,
-                signal: abortSignal,
-                batch: {
-                  metadata,
-                  ingestSingleMessage: async (input) => {
-                    const occurredAt = input.metadata.internalDate;
-                    return ingestSingleMessage(input, {
-                      queue: activeQueue,
-                      promotion,
-                      stagingDirectory: options.stagingDirectory,
-                      canonicalDirectory: options.canonicalDirectory,
-                      owner: options.owner,
-                      routing: () => Object.freeze([]),
-                      occurredAt,
-                      journal: ({ downloaded, messageId }) => ({
-                        id: journalId(
-                          downloaded.identity.accountId,
-                          downloaded.identity.mailboxId,
-                          downloaded.identity.uid,
-                        ),
-                        occurredAt,
-                        category: "sync",
-                        subjectId: messageId,
-                        correlationId: sourceCheckpoint(
-                          downloaded.identity.accountId,
-                          downloaded.identity.mailboxId,
-                          downloaded.identity.uid,
-                        ),
-                        payloadVersion: 1,
-                        payloadJson: '{"status":"promoted"}',
-                      }),
-                    });
-                  },
-                  persistMetadata: (item, context) => {
-                    observeRemotePlacement(options.database, {
-                      ...item.identity,
-                      internalDate: item.internalDate,
-                      flags: item.flags,
-                      modseq: item.modseq,
-                      observationOrder: context.observationOrder,
-                      observedAt: context.observedAt,
-                      sourceCheckpoint: context.sourceCheckpoint,
-                    });
-                    updateMessageSearchProjection(
-                      options.database,
-                      createMessageId(
-                        options.database
-                          .query<Readonly<{ message_id: string }>, [string, string, number, number]>(
-                            "SELECT message_id FROM remote_placements WHERE account_id = ? AND mailbox_id = ? AND uid_validity = ? AND uid = ?;",
-                          )
-                          .get(
-                            item.identity.accountId,
-                            item.identity.mailboxId,
-                            item.identity.uidValidity,
-                            item.identity.uid,
-                          )?.message_id,
-                      ),
-                      () => undefined,
-                    );
-                  },
-                  persistMissing: (observation) => {
-                    storeIdentityOnlyMessage(options.database, {
-                      messageId: observation.messageId,
-                      remoteUid: observation.remoteUid,
-                      absenceReason: observation.absenceReason,
-                      observedAt: observation.observedAt,
-                      storedAt: observation.observedAt,
-                    });
-                  },
-                },
-              },
-            );
-          } finally {
-            await lock.release();
-          }
-        }
-        const checkpoint = summary(options.database, workSet);
-        return {
-          status: "completed",
-          checkpoint,
-          completion: Object.freeze({ mailboxes: workSet.length }),
-          watchStrategy: "poll",
-        };
-      } catch (error: unknown) {
-        throw safeFault(error);
+  const initialBackfill = fromPromise<LoopOutput, InitialBackfillActorInput>(async ({ signal }) => {
+    try {
+      const activeSession = session;
+      const activeQueue = queue;
+      if (activeSession === undefined || activeQueue === undefined) {
+        throw new Error("canonical sync source was not acquired");
       }
-    },
-  );
+      const abortSignal = combinedSignal(options.signal, signal);
+      const checkpoints = createMailboxCheckpointRepository(options.database);
+      const completions = createInitialBackfillCompletionRepository(options.database);
+      const promotion = createSqlitePromotionAdapter(options.database);
+      const metadata = createMetadataBatchAdapter(activeSession.client);
+
+      for (const work of workSet) {
+        if (abortSignal.aborted) throw abortSignal.reason;
+        const lock = parseReadOnlyMailboxLock(
+          await activeSession.client.getMailboxLock(work.mailbox.path, { readOnly: true }),
+        );
+        try {
+          const status = normalizeMailboxStatus(projectReadOnlyMailboxStatus(activeSession.client));
+          if (status.uidValidity.kind !== "known") {
+            throw new Error("mailbox UIDVALIDITY is unavailable");
+          }
+          const uidValidity: UidValidity = status.uidValidity.value;
+          const uids = uidSearchResult(
+            await activeSession.client.search({ all: true }, { uid: true }),
+          );
+          boundedObservedSpan(uids);
+          const observedUidCeiling = uids.at(-1) ?? null;
+          if (
+            status.uidNext.kind === "known" &&
+            observedUidCeiling !== null &&
+            status.uidNext.value <= observedUidCeiling
+          ) {
+            throw new Error("mailbox UIDNEXT contradicts observed UIDs");
+          }
+          const identity = {
+            accountId: options.accountId,
+            mailboxId: work.mailboxId,
+            uidValidity,
+          };
+          if (checkpoints.read(identity) === undefined) {
+            checkpoints.save({
+              checkpoint: {
+                ...identity,
+                uidNext: { kind: "known", value: uids[0] ?? createRemoteUidValue(1) },
+                modseq: { kind: "unknown" },
+                sweepCursor: createStreamingOffset(0),
+                backfillCompleted: false,
+              },
+              expectedVersion: 0,
+            });
+          }
+          const observedAt = observationTime(options.now);
+          await runInitialBackfillLoop(
+            {
+              ...identity,
+              observedUidCeiling,
+              observedUidNext:
+                status.uidNext.kind === "known"
+                  ? { kind: "known", value: status.uidNext.value }
+                  : { kind: "unknown" },
+              observedAt,
+              nextSweepEligibleAt: futureTime(observedAt, configuration.periodicStatusIntervalMs),
+              maxBatchUids: 128,
+              stagingDirectory: options.stagingDirectory,
+              owner: options.owner,
+            },
+            {
+              checkpoints,
+              completions,
+              signal: abortSignal,
+              batch: {
+                metadata,
+                ingestSingleMessage: async (input) => {
+                  const occurredAt = input.metadata.internalDate;
+                  return ingestSingleMessage(input, {
+                    queue: activeQueue,
+                    promotion,
+                    stagingDirectory: options.stagingDirectory,
+                    canonicalDirectory: options.canonicalDirectory,
+                    owner: options.owner,
+                    routing: () => Object.freeze([]),
+                    occurredAt,
+                    journal: ({ downloaded, messageId }) => ({
+                      id: journalId(
+                        downloaded.identity.accountId,
+                        downloaded.identity.mailboxId,
+                        downloaded.identity.uid,
+                      ),
+                      occurredAt,
+                      category: "sync",
+                      subjectId: messageId,
+                      correlationId: sourceCheckpoint(
+                        downloaded.identity.accountId,
+                        downloaded.identity.mailboxId,
+                        downloaded.identity.uid,
+                      ),
+                      payloadVersion: 1,
+                      payloadJson: '{"status":"promoted"}',
+                    }),
+                  });
+                },
+                persistMetadata: (item, context) => {
+                  observeRemotePlacement(options.database, {
+                    ...item.identity,
+                    internalDate: item.internalDate,
+                    flags: item.flags,
+                    modseq: item.modseq,
+                    observationOrder: context.observationOrder,
+                    observedAt: context.observedAt,
+                    sourceCheckpoint: context.sourceCheckpoint,
+                  });
+                  updateMessageSearchProjection(
+                    options.database,
+                    createMessageId(
+                      options.database
+                        .query<Readonly<{ message_id: string }>, [string, string, number, number]>(
+                          "SELECT message_id FROM remote_placements WHERE account_id = ? AND mailbox_id = ? AND uid_validity = ? AND uid = ?;",
+                        )
+                        .get(
+                          item.identity.accountId,
+                          item.identity.mailboxId,
+                          item.identity.uidValidity,
+                          item.identity.uid,
+                        )?.message_id,
+                    ),
+                    () => undefined,
+                  );
+                },
+                persistMissing: (observation) => {
+                  storeIdentityOnlyMessage(options.database, {
+                    messageId: observation.messageId,
+                    remoteUid: observation.remoteUid,
+                    absenceReason: observation.absenceReason,
+                    observedAt: observation.observedAt,
+                    storedAt: observation.observedAt,
+                  });
+                },
+              },
+            },
+          );
+        } finally {
+          await lock.release();
+        }
+      }
+      const checkpoint = summary(options.database, workSet);
+      return {
+        status: "completed",
+        checkpoint,
+        completion: Object.freeze({ mailboxes: workSet.length }),
+        watchStrategy: "poll",
+      };
+    } catch (error: unknown) {
+      throw safeFault(error);
+    }
+  });
 
   const lifecycleInput: SyncLifecycleInput = {
     configuration,
@@ -451,7 +461,11 @@ export function createCanonicalSyncComposition(
   const actor = createSyncLifecycleActor(
     lifecycleInput,
     { bootstrapSession, initialBackfill },
-    { ...createSyncLifecycleDependencies(lifecycleInput), resourceRegistry: registry, controlDecisionSink: decisions.publish },
+    {
+      ...createSyncLifecycleDependencies(lifecycleInput),
+      resourceRegistry: registry,
+      controlDecisionSink: decisions.publish,
+    },
   );
   const control = createSyncControlService({
     actor: {
@@ -467,43 +481,89 @@ export function createCanonicalSyncComposition(
 
   const waitForReady = (): Promise<SyncCheckpointSummary> =>
     new Promise((resolve, reject) => {
+      let settled = false;
+      let subscription: Readonly<{ unsubscribe: () => void }> | undefined;
+      const finish = (operation: () => void): void => {
+        if (settled) return;
+        settled = true;
+        subscription?.unsubscribe();
+        operation();
+      };
       const observe = (): void => {
         const snapshot = actor.getSnapshot();
         const status = projectSyncStatus(snapshot);
         const stateValue = JSON.stringify(snapshot.value);
         if (status.actorState === "watching") {
-          subscription.unsubscribe();
-          resolve(snapshot.context.checkpoint);
+          finish(() => resolve(snapshot.context.checkpoint));
         } else if (status.actorState === "authBlocked" || stateValue.includes("failed")) {
-          subscription.unsubscribe();
-          reject(new Error(status.diagnostics.at(-1)?.message ?? "canonical sync failed"));
+          finish(() =>
+            reject(new Error(status.diagnostics.at(-1)?.message ?? "canonical sync failed")),
+          );
         }
       };
-      const subscription = actor.subscribe(observe);
+      subscription = actor.subscribe(observe);
       observe();
     });
 
   let startPromise: Promise<SyncCheckpointSummary> | undefined;
+  let actorStarted = false;
   const start = (): Promise<SyncCheckpointSummary> => {
     startPromise ??= (async () => {
       actor.start();
-      actor.send({ type: "control.start.requested", commandId: `runtime:start:${crypto.randomUUID()}` });
+      actorStarted = true;
+      actor.send({
+        type: "control.start.requested",
+        commandId: `runtime:start:${crypto.randomUUID()}`,
+      });
       return waitForReady();
     })();
     return startPromise;
   };
 
+  const waitForShutdown = (): Promise<void> =>
+    new Promise((resolve) => {
+      let subscription: Readonly<{ unsubscribe: () => void }> | undefined;
+      let settled = false;
+      const observe = (): void => {
+        if (settled) return;
+        const snapshot = actor.getSnapshot();
+        if (JSON.stringify(snapshot.value).includes("shutdown")) {
+          settled = true;
+          subscription?.unsubscribe();
+          resolve();
+        }
+      };
+      subscription = actor.subscribe(observe);
+      observe();
+    });
+
   let closePromise: Promise<void> | undefined;
   const close = (signal = "runtime-close"): Promise<void> => {
     closePromise ??= (async () => {
-      actor.send({
-        type: "process.shutdown.requested",
-        requestId: `runtime:shutdown:${crypto.randomUUID()}`,
-        signal,
-      });
-      await Promise.allSettled([stopQueue(), releaseSource()]);
-      control.close();
-      actor.stop();
+      let cleanupFailed = false;
+      try {
+        if (actorStarted) {
+          const shutdown = waitForShutdown();
+          actor.send({
+            type: "process.shutdown.requested",
+            requestId: `runtime:shutdown:${crypto.randomUUID()}`,
+            signal,
+          });
+          await shutdown;
+          cleanupFailed =
+            resourceCleanupFailed ||
+            projectSyncStatus(actor.getSnapshot()).diagnostics.some(
+              (item) => item.code === "sync.cleanup-release",
+            );
+        } else {
+          const terminals = await Promise.allSettled([stopQueue(), releaseSource()]);
+          cleanupFailed = terminals.some((terminal) => terminal.status === "rejected");
+        }
+      } finally {
+        control.close();
+        actor.stop();
+      }
+      if (cleanupFailed) throw new Error("Canonical sync resource cleanup failed.");
     })();
     return closePromise;
   };

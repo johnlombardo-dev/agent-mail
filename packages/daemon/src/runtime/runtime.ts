@@ -13,11 +13,7 @@ import {
   type AttachmentContentRecord,
   type RawContentRecord,
 } from "../content-streaming";
-import {
-  createHttpApp,
-  type HttpCredentialAuthenticator,
-  type PrivateHttpLogger,
-} from "../http";
+import { createHttpApp, type HttpCredentialAuthenticator, type PrivateHttpLogger } from "../http";
 import { createRetrievalHandlers } from "../retrieval-handlers";
 import { createSyncHandlers } from "../sync-handlers";
 import {
@@ -141,13 +137,26 @@ async function ensurePrivateChild(parent: string, path: string): Promise<void> {
   await assertPrivateDirectory(path);
 }
 
+function hasControlCharacter(value: string): boolean {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0);
+    if (
+      codePoint !== undefined &&
+      (codePoint <= 0x1f || (codePoint >= 0x7f && codePoint <= 0x9f))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function authorization(value: unknown): string {
   if (
     typeof value !== "string" ||
     !value.startsWith("Bearer ") ||
     value.length <= "Bearer ".length ||
     value.length > 4_096 ||
-    /[\u0000-\u001f\u007f-\u009f]/u.test(value)
+    hasControlCharacter(value)
   ) {
     throw new CanonicalRuntimeError(
       diagnostic("runtime.invalid-input", "Canonical runtime authorization is invalid."),
@@ -317,7 +326,7 @@ function safeSignal(value: unknown): string {
     value.length === 0 ||
     value.length > 80 ||
     value.trim() !== value ||
-    /[\u0000-\u001f\u007f-\u009f]/u.test(value)
+    hasControlCharacter(value)
   ) {
     throw new TypeError("runtime shutdown signal is invalid");
   }
@@ -359,7 +368,9 @@ export function createCanonicalDaemonRuntime(
   let startPromise: Promise<CanonicalRuntimeReadiness> | undefined;
   let closePromise: Promise<void> | undefined;
 
-  const setStartingState = (next: Extract<CanonicalRuntimeState, "preparing" | "starting-listener" | "syncing">): void => {
+  const setStartingState = (
+    next: Extract<CanonicalRuntimeState, "preparing" | "starting-listener" | "syncing">,
+  ): void => {
     if (state !== "closing") state = next;
   };
 
@@ -442,6 +453,7 @@ export function createCanonicalDaemonRuntime(
           host: "127.0.0.1",
           port: configuration.ports.productionService,
           maxRequestBodyBytes: configuration.http.maxRequestBodyBytes,
+          signal: abort.signal,
           fetch: async (request) => {
             const path = new URL(request.url).pathname;
             return path.includes("/raw") || path.startsWith("/v1/attachments/")
@@ -485,10 +497,11 @@ export function createCanonicalDaemonRuntime(
               { cause: error },
             );
       failure = normalized;
+      let startupFailure = normalized;
       try {
         await cleanup();
       } catch (cleanupError: unknown) {
-        failure =
+        startupFailure =
           cleanupError instanceof CanonicalRuntimeError
             ? cleanupError
             : new CanonicalRuntimeError(
@@ -496,8 +509,9 @@ export function createCanonicalDaemonRuntime(
                 { cause: cleanupError },
               );
       }
+      failure = startupFailure;
       if (state !== "closing") state = "failed";
-      throw normalized;
+      throw startupFailure;
     }
   };
 
@@ -512,7 +526,8 @@ export function createCanonicalDaemonRuntime(
         if (startPromise === undefined) throw new Error("runtime start promise is unavailable");
         return startPromise;
       case "ready":
-        return Promise.reject(new Error("canonical runtime is already ready"));
+        if (startPromise === undefined) throw new Error("runtime start promise is unavailable");
+        return startPromise;
       case "closing":
       case "closed":
         return Promise.reject(new Error("canonical runtime is closed"));
@@ -528,8 +543,20 @@ export function createCanonicalDaemonRuntime(
     abort.abort(new DOMException("Canonical runtime is closing", "AbortError"));
     closePromise = (async () => {
       if (startPromise !== undefined) await startPromise.catch(() => undefined);
-      await cleanup();
-      state = previousState === "failed" ? "failed" : "closed";
+      try {
+        await cleanup();
+        state = previousState === "failed" ? "failed" : "closed";
+      } catch (error: unknown) {
+        failure =
+          error instanceof CanonicalRuntimeError
+            ? error
+            : new CanonicalRuntimeError(
+                diagnostic("runtime.cleanup", "Canonical runtime cleanup did not fully settle."),
+                { cause: error },
+              );
+        state = "failed";
+        throw failure;
+      }
     })();
     return closePromise;
   };

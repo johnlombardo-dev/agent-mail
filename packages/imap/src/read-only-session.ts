@@ -11,9 +11,7 @@ export type ReadOnlyMailboxLock = Readonly<{
  * ordinary initial synchronization. Mutation methods are intentionally absent.
  */
 export interface ReadOnlyImapClient
-  extends ImapFlowMailboxListClient,
-    ImapFlowMetadataBatchClient,
-    ImapFlowRawMessageDownloadClient {
+  extends ImapFlowMailboxListClient, ImapFlowMetadataBatchClient, ImapFlowRawMessageDownloadClient {
   readonly mailbox: unknown;
   readonly getMailboxLock: (
     path: string,
@@ -58,14 +56,7 @@ function projectIdentityProbe(value: unknown): unknown {
 
 function parseClient(value: unknown): ReadOnlyImapClient {
   if (!isRecord(value)) throw new TypeError("read-only IMAP client must be an object");
-  for (const method of [
-    "list",
-    "getMailboxLock",
-    "search",
-    "fetchAll",
-    "fetchOne",
-    "download",
-  ]) {
+  for (const method of ["list", "getMailboxLock", "search", "fetchAll", "fetchOne", "download"]) {
     if (!callable(value, method)) {
       throw new TypeError(`read-only IMAP client is missing ${method}`);
     }
@@ -133,6 +124,15 @@ function abortReason(signal: AbortSignal): unknown {
   return signal.reason ?? new DOMException("IMAP session acquisition was aborted", "AbortError");
 }
 
+async function releaseRejectedSession(value: unknown): Promise<void> {
+  if (!isRecord(value) || !callable(value, "release")) return;
+  try {
+    await (value.release as () => void | Promise<void>)();
+  } catch {
+    // Session validation remains the primary failure.
+  }
+}
+
 /** Validate one injected authority and make its release exact-once. */
 export async function acquireReadOnlyImapSession(
   authority: ReadOnlyImapSourceAuthority,
@@ -144,7 +144,14 @@ export async function acquireReadOnlyImapSession(
   if (!(signal instanceof AbortSignal)) throw new TypeError("session signal is invalid");
   if (signal.aborted) throw abortReason(signal);
 
-  const acquired = parseSession(await authority.acquire({ signal }));
+  const candidate = await authority.acquire({ signal });
+  let acquired: ReadOnlyImapSession;
+  try {
+    acquired = parseSession(candidate);
+  } catch (error: unknown) {
+    await releaseRejectedSession(candidate);
+    throw error;
+  }
   let releasePromise: Promise<void> | undefined;
   const release = (): Promise<void> => {
     releasePromise ??= Promise.resolve(acquired.release());
