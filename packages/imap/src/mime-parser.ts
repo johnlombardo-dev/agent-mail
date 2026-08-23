@@ -167,6 +167,10 @@ function optionalText(value: unknown, name: string, maxBytes: number): string | 
   return value === undefined || value === null ? null : text(value, name, maxBytes);
 }
 
+function optionalDisplayName(value: unknown, name: string, maxBytes: number): string | null {
+  return value === undefined || value === null || value === "" ? null : text(value, name, maxBytes);
+}
+
 function partIdFrom(value: unknown): string | null {
   if (!isRecord(value)) return null;
   return typeof value.partId === "string" && /^\d+(?:\.\d+)*$/u.test(value.partId)
@@ -240,7 +244,7 @@ function addresses(headers: Headers, maxBytes: number): readonly NormalizedMimeA
         throw new MimeParseError("metadata-limit", "address metadata is invalid");
       const group = Array.isArray(entry.group) ? entry.group : [entry];
       const groupName =
-        entry.group === undefined ? null : optionalText(entry.name, "group name", maxBytes);
+        entry.group === undefined ? null : optionalDisplayName(entry.name, "group name", maxBytes);
       for (const member of group) {
         if (!isRecord(member))
           throw new MimeParseError("metadata-limit", "address member is invalid");
@@ -251,7 +255,7 @@ function addresses(headers: Headers, maxBytes: number): readonly NormalizedMimeA
           role,
           position,
           address: optionalText(member.address, "address", maxBytes),
-          displayName: optionalText(member.name, "display name", maxBytes),
+          displayName: optionalDisplayName(member.name, "display name", maxBytes),
           groupName,
         });
       }

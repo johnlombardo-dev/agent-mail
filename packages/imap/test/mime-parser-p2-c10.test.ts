@@ -1,13 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-  parseStagedEml,
-  safeParseStagedEml,
-  type MimeStreamPart,
-} from "../src/mime-parser";
+import { parseStagedEml, safeParseStagedEml, type MimeStreamPart } from "../src/mime-parser";
 
 const temporaryDirectories: string[] = [];
 
@@ -111,6 +107,170 @@ describe("staged MIME parser", () => {
       contentId: "<part-1@example.test>",
       size: 10,
     });
+  });
+
+  test("accepts the signed #300 bare-address rendering without changing source bytes", async () => {
+    const source = [
+      "Message-ID: <demo-1@example.test>",
+      "Date: Sun, 23 Aug 2026 02:00:00 GMT",
+      "From: sender@example.test",
+      "To: recipient@example.test",
+      "Subject: Synthetic 1",
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      "signed #300 body",
+      "",
+    ].join("\r\n");
+    const path = await fixture("signed-300.eml", source);
+    const parsed = await parseStagedEml({ sourcePath: path });
+
+    expect(parsed.addresses).toEqual([
+      {
+        ordinal: 1,
+        role: "from",
+        position: 1,
+        address: "sender@example.test",
+        displayName: null,
+        groupName: null,
+      },
+      {
+        ordinal: 2,
+        role: "to",
+        position: 1,
+        address: "recipient@example.test",
+        displayName: null,
+        groupName: null,
+      },
+    ]);
+    expect(await readFile(path)).toEqual(Buffer.from(source));
+  });
+
+  test("preserves MailParser names and normalizes its empty optional names", async () => {
+    const namedPath = await fixture(
+      "named-group.eml",
+      [
+        'From: Jane "" <jane@example.test>',
+        'To: Jane "   " <space@example.test>',
+        "Cc: Jane =?UTF-8?Q?=20?= <encoded@example.test>",
+        "Bcc: Team: Jane =?UTF-8?Q?=20?= <member@example.test>;",
+        "Subject: named",
+        "",
+        "body",
+        "",
+      ].join("\r\n"),
+    );
+    const named = await parseStagedEml({ sourcePath: namedPath });
+    expect(named.addresses).toContainEqual({
+      ordinal: 1,
+      role: "from",
+      position: 1,
+      address: "jane@example.test",
+      displayName: "Jane",
+      groupName: null,
+    });
+    expect(named.addresses).toContainEqual({
+      ordinal: 2,
+      role: "to",
+      position: 1,
+      address: "space@example.test",
+      displayName: "Jane",
+      groupName: null,
+    });
+    expect(named.addresses).toContainEqual({
+      ordinal: 3,
+      role: "cc",
+      position: 1,
+      address: "encoded@example.test",
+      displayName: "Jane  ",
+      groupName: null,
+    });
+    expect(named.addresses).toContainEqual({
+      ordinal: 4,
+      role: "bcc",
+      position: 1,
+      address: "member@example.test",
+      displayName: "Jane  ",
+      groupName: "Team",
+    });
+
+    const emptyPath = await fixture(
+      "empty-address-names.eml",
+      [
+        'From: "" <first@example.test>',
+        'To: first@example.test, "   " <second@example.test>',
+        'Cc: Team: "" <member@example.test>;',
+        'Bcc: "": anonymous@example.test;',
+        "Subject: empty",
+        "",
+        "body",
+        "",
+      ].join("\r\n"),
+    );
+    const empty = await parseStagedEml({ sourcePath: emptyPath });
+    expect(empty.addresses).toEqual([
+      {
+        ordinal: 1,
+        role: "from",
+        position: 1,
+        address: "first@example.test",
+        displayName: null,
+        groupName: null,
+      },
+      {
+        ordinal: 2,
+        role: "to",
+        position: 1,
+        address: "first@example.test",
+        displayName: null,
+        groupName: null,
+      },
+      {
+        ordinal: 3,
+        role: "to",
+        position: 2,
+        address: "second@example.test",
+        displayName: null,
+        groupName: null,
+      },
+      {
+        ordinal: 4,
+        role: "cc",
+        position: 1,
+        address: "member@example.test",
+        displayName: null,
+        groupName: "Team",
+      },
+      {
+        ordinal: 5,
+        role: "bcc",
+        position: 1,
+        address: "anonymous@example.test",
+        displayName: null,
+        groupName: null,
+      },
+    ]);
+  });
+
+  test("rejects hostile nonempty metadata and required empty addresses", async () => {
+    const invalidSources = [
+      ["nul", 'From: "bad\u0000name" <sender@example.test>'],
+      ["c0", 'From: "bad\u0001name" <sender@example.test>'],
+      ["c1", 'From: "bad\u0080name" <sender@example.test>'],
+      ["over-limit", `From: "${"x".repeat(17_000)}" <sender@example.test>`],
+      ["malformed", "From: not-an-address <"],
+      ["empty-address", "From: <>"],
+    ] as const;
+    for (const [name, from] of invalidSources) {
+      const path = await fixture(
+        `${name}.eml`,
+        [from, "To: recipient@example.test", "Subject: invalid", "", "body", ""].join("\r\n"),
+      );
+      const result = await safeParseStagedEml({ sourcePath: path });
+      expect(result.kind).toBe("error");
+      if (result.kind === "error") expect(result.error.code).toMatch(/metadata-limit|parser-error/);
+    }
   });
 
   test("returns a typed safe error for malformed headers", async () => {
